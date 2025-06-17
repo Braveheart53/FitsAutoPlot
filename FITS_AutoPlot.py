@@ -264,7 +264,7 @@ class qtGUI:
         return msg.exec_() == QMessageBox.Yes
 
 
-class VZPlot:
+class VZPlotFITS:
     """Manages Veusz document creation and FITS data visualization."""
 
     def __init__(self):
@@ -476,8 +476,8 @@ class VZPlot:
         except Exception as e:
             QMessageBox.critical(
                 None,
-                "1D Plotting Error",
-                f"Failed to Plot 1D Data Set: {str(e)}"
+                "nD Plotting Error",
+                f"Failed to Plot nD Data Set: {str(e)}"
             )
 
     def save(self, filename: str):
@@ -518,13 +518,13 @@ if __name__ == '__main__':
     if not fits_path or not import_method:
         sys.exit()
 
-    vz = VZPlot()
+    vz = VZPlotFITS()
     getattr(vz, f'import_via_{import_method}')(fits_path)
     vz.create_plots()
 
     if save_path := gui.get_save_filename():
         vz.save(save_path)
         if gui.ask_open_veusz():
-            VZPlot.open_veusz_gui(save_path)
+            VZPlotFITS.open_veusz_gui(save_path)
 
     sys.exit(gui.app.exec_())

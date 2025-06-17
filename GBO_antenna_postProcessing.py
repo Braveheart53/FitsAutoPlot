@@ -18,6 +18,11 @@
 # --- Revision History----
 # 0.0.1: Initial Draft and structure, learn and use parallel processing and
 #           or cuda for this
+# 0.0.2: Need to think about either combining all various data processing
+# scripts into this one, or parse them out to separate modules and import
+# them here for examples.... leaning towards parsing them out...
+# 2025-06-17, working on plotting data from R&S FSW spectrum analyzer
+# automatically, will be completed in another script
 # =============================================================================
 
 # event loop QApplication.exec_()
@@ -71,6 +76,7 @@ import pprint
 # %%% File type Export/Import
 import h5py as h5
 from scipy.io import savemat
+from fastest_ascii_import import fastest_file_parser as fparser
 
 # %%% Parallelization
 # from multiprocessing import Pool  # udpate when you learn it!
@@ -727,10 +733,10 @@ class GBOutDoor:
                 # trying xr.dataarray
                 data_full_2 = xr.DataArray(data_col_stack,
                                            coords=[data_Az_angle, data_freq],
-                                           dims=["Azimuth", "frequnecy"]
-
+                                           dims=["Azimuth", "frequnecy"],
                                            attrs=dict(description=(
-                                               "Full Dataset for the associated " +
+                                               "Full Dataset for " +
+                                               "the associated " +
                                                "outdoor " +
                                                "range measurement.")
                                            )
