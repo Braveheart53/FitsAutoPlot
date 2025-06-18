@@ -316,48 +316,54 @@ class VZPlotRnS:
 
 # TODO
 # look at removing this function as it may not be needed her
-    def create_plots(self):
-        """Generate automated plots based on dataset dimensions.
-            Only after all data sets are created in veusz"""
-        for ds in self.doc.GetDatasets():
-            ds_type = self.doc.GetDataType(ds)
-            # create a new page for each plot and name it by ds
-            self._create_page(ds)
-
-            # use a case or switch statement to plot according to dataset
-            # veusz documentation does not address nd dataset
-            # if ds == 'data':
-            #     print('Found the nd Array Data')
-
-            for case in switch(ds_type):
-                if case('1d'):
-                    # somehow nd datatype  is not being passed
-                    currentDataDims = self.doc.GetData(ds)[0].ndim
-                    if currentDataDims == 1:
-                        self._plot_1d(ds)
-                    else:
-                        # This means it is ndimensional data...
-                        ds_type = 'nD'
-                        self._plot_nd(ds)
-                    del currentDataDims
-                    break
-                if case('2d'):
-                    self._plot_2d(ds)
-                    break
-                if case('text'):
-                    pass
-                    break
-                if case('datetime'):
-                    pass
-                    break
-                if case('nD'):
-                    print('An ND case was found in ' + ds)
-                    break
+# =============================================================================
+#     def create_plots(self):
+#         """Generate automated plots based on dataset dimensions.
+#             Only after all data sets are created in veusz"""
+#         for ds in self.doc.GetDatasets():
+#             ds_type = self.doc.GetDataType(ds)
+#             # create a new page for each plot and name it by ds
+#             self._create_page(ds)
+#
+#             # use a case or switch statement to plot according to dataset
+#             # veusz documentation does not address nd dataset
+#             # if ds == 'data':
+#             #     print('Found the nd Array Data')
+#
+#             for case in switch(ds_type):
+#                 if case('1d'):
+#                     # somehow nd datatype  is not being passed
+#                     currentDataDims = self.doc.GetData(ds)[0].ndim
+#                     if currentDataDims == 1:
+#                         self._plot_1d(ds)
+#                     else:
+#                         # This means it is ndimensional data...
+#                         ds_type = 'nD'
+#                         self._plot_nd(ds)
+#                     del currentDataDims
+#                     break
+#                 if case('2d'):
+#                     self._plot_2d(ds)
+#                     break
+#                 if case('text'):
+#                     pass
+#                     break
+#                 if case('datetime'):
+#                     pass
+#                     break
+#                 if case('nD'):
+#                     print('An ND case was found in ' + ds)
+#                     break
+# =============================================================================
 
     def _plot_1d(self, dataset: str):
         """Create line plot for 1D datasets with red initial trace."""
         try:
+            self._create_page(dataset)
             graph = self.grid.Add('graph')
+            breakpoint
+            # add graph title
+            graph.Add('label')
             xy = graph.Add('xy')
             xy.yData.val = dataset
             xy.xData.val = dataset + '_freq'
@@ -370,28 +376,28 @@ class VZPlotRnS:
             xy.marker.val = 'none'
             xy.PlotLine.color.val = 'red'
 
-            # make the dataset and the x axis aer of the same length
-            if dataset.size == xAxis.size:
-                # xy.xData.val = set x axis data
-                currentYDataTuple = self.doc.GetData(xy.yData.val)
-                if isinstance(currentYDataTuple[0], np.ndarray):
-                    if currentYDataTuple[0].ndim == 1:
-                        length = currentYDataTuple[0].size
-                        xy.xData.val = range(length)
-                    else:
-                        QMessageBox.critical(
-                            None,
-                            "Length of Data Array is non-integer",
-                            "This should not happen. \n"
-                            "Contact the Author and inform him of this error."
-                        )
-                        return
-                else:
-                    QMessageBox.warning(
-                        None,
-                        "The Data array is non-numeric \n",
-                        "X axis value not defined."
-                    )
+            # make the dataset and the x axis are of the same length
+            # if dataset.size == xAxis.size:
+            #     # xy.xData.val = set x axis data
+            #     currentYDataTuple = self.doc.GetData(xy.yData.val)
+            #     if isinstance(currentYDataTuple[0], np.ndarray):
+            #         if currentYDataTuple[0].ndim == 1:
+            #             length = currentYDataTuple[0].size
+            #             xy.xData.val = range(length)
+            #         else:
+            #             QMessageBox.critical(
+            #                 None,
+            #                 "Length of Data Array is non-integer",
+            #                 "This should not happen. \n"
+            #                 "Contact the Author and inform him of this error."
+            #             )
+            #             return
+            # else:
+            #     QMessageBox.warning(
+            #         None,
+            #         "The Data array is non-numeric \n",
+            #         "X axis value not defined."
+            #     )
 
             if self.first_1d:
                 self.first_1d = False
