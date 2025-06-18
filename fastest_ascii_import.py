@@ -78,11 +78,14 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
         Dictionary containing extracted data
     """
     import os
+    import numpy as np
+    from collections import defaultdict
 
     extracted_data = {
         'metadata': {'total_lines': 0, 'file_size': 0},
         'line_data': {},
         'pattern_matches': {},
+        'data_matches': {},
         'user_variables': {}
     }
 
@@ -101,6 +104,7 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
             lines = file.readlines()
 
     # Process lines
+    pattern_tracking = defaultdict(int)
     for line_number, line in enumerate(lines, 1):
         clean_line = line.strip()
         extracted_data['metadata']['total_lines'] = line_number
@@ -112,13 +116,60 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
         # Search for string patterns
         if string_patterns:
             for pattern_name, pattern in string_patterns.items():
-                if pattern in clean_line:
-                    extracted_data['pattern_matches'][pattern_name] = {
-                        'line_number': line_number,
-                        'content': clean_line,
-                        'extracted_value': clean_line.split(
-                            pattern,
-                            1)[1].strip() if ':' in pattern else clean_line
-                    }
+                # user lower or casefold to make it case insensitive.
+                # casefold is supposedly more robust
+                # print(pattern)
+
+                if pattern.casefold() in clean_line.casefold():
+                    # enumrate the pattern tracker each time is identified
+                    # pattern_tracking.update({pattern:1})
+                    pattern_tracking[pattern_name] += 1
+
+                    if pattern_tracking[pattern_name] == 1:
+                        extracted_data['pattern_matches'][pattern_name] = {
+                            'line_number': line_number,
+                            'content': clean_line,
+                            'extracted_value': clean_line.split(
+                                pattern,
+                                1)[1].strip() if ':' in pattern else clean_line
+                        }
+                    else:
+                        # add the pattern index after an underscore in the
+                        # returned data structure to capture all occurances
+                        pattern_name_now = (pattern_name + '_' +
+                                            str(pattern_tracking[pattern_name])
+                                            )
+                        extracted_data['pattern_matches'][pattern_name_now] = {
+                            'line_number': line_number,
+                            'content': clean_line,
+                            'extracted_value': clean_line.split(
+                                pattern,
+                                1)[1].strip() if ':' in pattern else clean_line
+                        }
+
+        # Search for pure data lines (by starting with a integer or float)
+        dataline = np.fromstring(line, dtype=float, sep=',').tolist()
+
+        # the following if statement only applies to R&S sft files
+        # the dataline only will work if it is just floats
+        # if line_number in range(59, len(lines), 2):
+        #     print('at the place')
+        if dataline:
+            # print('Found Data at Line Number ' + str(line_number))
+            pattern_tracking['data_located'] += 1
+            if pattern_tracking['data_located'] == 1:
+                pattern_name = 'data'
+                extracted_data['data_matches'][pattern_name] = {
+                    'line_number': line_number,
+                    'content': clean_line,
+                    'extracted_value': dataline
+                }
+            else:
+                pattern_name = 'data_' + str(pattern_tracking['data_located'])
+                extracted_data['data_matches'][pattern_name] = {
+                    'line_number': line_number,
+                    'content': clean_line,
+                    'extracted_value': dataline
+                }
 
     return extracted_data

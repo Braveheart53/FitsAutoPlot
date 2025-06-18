@@ -593,6 +593,7 @@ class GBOutDoor:
 
         # After the mainloop, I need to combine all the data into a multi-dimensional
         # array. Then call Veusz and parse the data into that gui.
+        return filename, fileParts
 
     class ATR_Plot_App:
         def __init__(self):

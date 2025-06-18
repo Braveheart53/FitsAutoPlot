@@ -35,7 +35,7 @@ Date: 2025-06-17
 # %% Import all required modules
 # %%% GUI Module Imports
 # %%%% QtPy
-# from qtpy.QtGui import *
+from qtpy.QtGui import *
 from qtpy.QtCore import Qt, QSize
 from qtpy.QtWidgets import (
     QApplication,
@@ -73,11 +73,12 @@ from tkinter.filedialog import askopenfilenames
 # from astropy.table import Table as astroTable
 # from astropy.wcs import WCS
 # =============================================================================
-# %%% Math Modules
+# %%% Math Modules and others
 # import pandas as pd
 # import xarray as xr
 import numpy as np
 # import skrf as rf
+from operator import itemgetter
 # %%% System Interface Modules
 import os
 # import time as time
@@ -315,7 +316,7 @@ class VZPlotRnS:
                 f"Failed to start Veusz: {str(e)}"
             )
 
-    def RnS_sft_plot(self, fileName: str = None):
+    def rns_sft_parser(self, fileName: str = None):
         """
         Used to import all data into the Vuesz environment. Then pass to
         create_plots to plot based on data within the veusz environment.
@@ -334,7 +335,8 @@ class VZPlotRnS:
         # process accordingly.
         if fileName is None:
             fileName, fileParts = self._select_sft_file()
-        elif isinstance(fileName, list) and os.path.splitext(fileName[0])[1] == '.sft':
+        elif ((isinstance(fileName, list) or isinstance(fileName, tuple)) and
+              os.path.splitext(fileName[0])[1] == '.sft'):
             fileParts = [None]*len(fileName)
             for mainLooper in range(len(fileName)):
                 # this loop processes the files passed one at a time,
@@ -356,16 +358,62 @@ class VZPlotRnS:
             return
 
         # parse all the data through a general parser
-        if isinstance(fileName, list):
+        if isinstance(fileName, list) or isinstance(fileName, tuple):
             for currentFile in fileName:
                 dataReturned = fparser(currentFile, line_targets=self.sft_lines,
                                        string_patterns=self.searchData_strings)
 
                 # used for data set name and label
-                base_name = os.path.splitext(os.path.basename(fileName))[0]
+                base_name = os.path.splitext(os.path.basename(currentFile))[0]
+
+                # based on section string in the sft file, extract on the
+                # section data defintions
+                data_Sections = dict(filter(lambda item: 'section' in item[0],
+                                            dataReturned['pattern_matches'].items()))
+
+                # test length of data sections and data_located
+                if len(data_Sections) != len(dataReturned['data_matches']):
+                    # error, these should match
+                    QMessageBox.critical(
+                        None,
+                        "Data Sections and the extracted number of data \n",
+                        "lists do not match. \n",
+                        "Unable to proceed at the moment. \n",
+                        "Tell William to stop being lazy and correct this."
+                    )
+                    # TODO
+                    # make this more robust, it really should match, but at
+                    # least do some error checking on the data itself.
+                    return
 
                 # now we have all the data in dataReturned of type dict
                 # use this and VZPlotRns to create Veusz plots
+
+                # all_items = [(k, v) for subdict in parent_dict.values() for
+                #               k, v in subdict.items()]
+                #
+                # using operator itemgetter for better performance
+                # being 0 based index, but all data matches the index of the
+                # dict data_Sections for date info
+                # line numbers will be used to ensure we are using the
+                # correct data.
+                data_y_values = list(map(itemgetter('extracted_value'),
+                                         dataReturned['data_matches'].values())
+                                     )
+                data_line_numbers = list(map(itemgetter('line_number'),
+                                             dataReturned['data_matches'].values())
+                                         )
+                data_Section_line_numbers = list(map(itemgetter('line_number'),
+                                                     data_Sections.values()))
+                data_Section_conent = list(map(itemgetter('content'),
+                                               data_Sections.values()))
+
+                # so now we have to make the X axis. For each file this
+                # remains the same.
+                # use pattern_matches for this
+
+                # step through line data to create header notes to be
+                # put in each graph.
 
                 for item in dataReturned:
                     dataSetName = 'test'
@@ -384,6 +432,10 @@ class VZPlotRnS:
 
             # used for data set name and label
             base_name = os.path.splitext(os.path.basename(fileName))[0]
+
+            # Will need to update from above
+            # TODO
+            # just make it turn into a list of length 1
 
             # now we have all the data in dataReturned of type dict
             # use this and VZPlotRns to create Veusz plots
@@ -414,9 +466,16 @@ class VZPlotRnS:
 
         """
         # import os
-        filename = askopenfilenames(filetypes=[("R&S SFT Files",
-                                                ".SFT")])
+        # Create a root window
+        root = tk.Tk()
 
+        # Hide the root window
+        root.withdraw()
+        # root.iconify()
+
+        filename = askopenfilenames(filetypes=[("Rhode & Schwarz SFT Files",
+                                                ".SFT")])
+        root.destroy()
         # start the main loop for processing the selected files
         fileParts = [None] * len(filename)
         for mainLooper in range(len(filename)):
@@ -439,8 +498,15 @@ if __name__ == '__main__':
     execution of main function
     """
     vz = VZPlotRnS()
-    vz.RnS_sft_plot()
-    pass
+    vz.rns_sft_parser()
+
+    gui = qtGUI()
+    if save_path := gui.get_save_filename():
+        vz.save(save_path)
+        if gui.ask_open_veusz():
+            VZPlotRnS.open_veusz_gui(save_path)
+
+    sys.exit(gui.app.exec_())
 
 
 # if __name__ == "__main__":
