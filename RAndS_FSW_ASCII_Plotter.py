@@ -330,18 +330,30 @@ class VZPlotRnS:
         None.
 
         """
+        # check is a fileName was passed and if it is a list or tuple, then
+        # process accordingly.
         if fileName is None:
             fileName, fileParts = self._select_sft_file()
-        elif isinstance(fileName, list):
+        elif isinstance(fileName, list) and os.path.splitext(fileName[0])[1] == '.sft':
+            fileParts = [None]*len(fileName)
             for mainLooper in range(len(fileName)):
                 # this loop processes the files passed one at a time,
                 # while combining
                 # the data as it progresses
 
                 # get the file parts for further use of the current file.
-                fileParts = os.path.split(fileName[mainLooper])
-        elif fileName.isascii():
+                fileParts[mainLooper] = os.path.split(fileName[mainLooper])
+        elif fileName.isascii() and os.path.splitext(fileName[0])[1] == '.sft':
             fileParts = os.path.split(fileName)
+        else:
+            # add a prompt gui to user and exit
+            QMessageBox.critical(
+                None,
+                "File Selected or Passed is not the correct file type. \n",
+                "Ensure the extension .sft is included and \n",
+                "that you are using the ASCII type of that file."
+            )
+            return
 
         # parse all the data through a general parser
         if isinstance(fileName, list):
@@ -367,7 +379,7 @@ class VZPlotRnS:
                     self.doc.SetDataLabel(dataSetName,
                                           f"{description} [{base_name}]")
         else:
-            dataReturned = fparser(fineName, line_targets=self.sft_lines,
+            dataReturned = fparser(fileName, line_targets=self.sft_lines,
                                    string_patterns=self.searchData_strings)
 
             # used for data set name and label
