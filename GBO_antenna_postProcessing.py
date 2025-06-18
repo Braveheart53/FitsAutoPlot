@@ -55,6 +55,9 @@ import skrf as rf
 import mpmath as mpm
 import scipy.constants as cons
 from astropy.time import Time as tme
+# look up how to use data classes, this is how one can create a matlab type
+# structure, in addition to my own codes for such
+import dataclasses as dataclass
 
 # %%% Unit Conversion
 # import pint as pint
@@ -580,12 +583,13 @@ class GBOutDoor:
                                                 ".ATR")])
 
         # start the main loop for processing the selected files
+        fileParts = [None] * len(filenmame)
         for mainLooper in range(len(filename)):
             # this loop processes the files selected one at a time, while combining
             # the data as it progresses
 
             # get the file parts for further use of the current file.
-            fileParts = os.path.split(filename[mainLooper])
+            fileParts[mainLooper] = os.path.split(filename[mainLooper])
 
         # After the mainloop, I need to combine all the data into a multi-dimensional
         # array. Then call Veusz and parse the data into that gui.
