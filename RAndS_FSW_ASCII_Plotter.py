@@ -120,6 +120,97 @@ from pprint import pprint
 # %% Class and Function Definitons
 
 
+class qtGUI:
+    """Handles all Qt-based user interactions."""
+
+    def __init__(self):
+        self.app = QApplication(sys.argv)
+
+    def get_fits_file_and_method(self):
+        """Display dialog for FITS file selection and import method choice."""
+        # TODO
+        # remove or alter this for sft file use
+# =============================================================================
+#         dialog = QDialog()
+#         dialog.setWindowTitle("Open FITS File and Select Import Method")
+#         layout = QVBoxLayout()
+#
+#         # File selection components
+#         file_layout = QHBoxLayout()
+#         self.file_label = QLabel("No file selected")
+#         file_btn = QPushButton("Select FITS File")
+#         file_layout.addWidget(self.file_label)
+#         file_layout.addWidget(file_btn)
+#         layout.addLayout(file_layout)
+#
+#         # Import method selection
+#         method_layout = QHBoxLayout()
+#         method_label = QLabel("Import Method:")
+#         self.veusz_radio = QRadioButton("Veusz Native")
+#         self.astropy_radio = QRadioButton("AstroPy")
+#         self.veusz_radio.setChecked(True)
+#         method_group = QButtonGroup(dialog)
+#         method_group.addButton(self.veusz_radio)
+#         method_group.addButton(self.astropy_radio)
+#         method_layout.addWidget(method_label)
+#         method_layout.addWidget(self.veusz_radio)
+#         method_layout.addWidget(self.astropy_radio)
+#         layout.addLayout(method_layout)
+#
+#         # Dialog buttons
+#         btn_layout = QHBoxLayout()
+#         ok_btn = QPushButton("OK")
+#         cancel_btn = QPushButton("Cancel")
+#         btn_layout.addWidget(ok_btn)
+#         btn_layout.addWidget(cancel_btn)
+#         layout.addLayout(btn_layout)
+#
+#         dialog.setLayout(layout)
+#         self.selected_file = None
+#
+#         # Connect signals
+#         file_btn.clicked.connect(lambda: self._select_file(dialog))
+#         ok_btn.clicked.connect(lambda: self._validate_selection(dialog))
+#         cancel_btn.clicked.connect(dialog.reject)
+#
+#         result = dialog.exec_()
+#         if result == QDialog.Accepted:
+#             method = 'astropy' if self.astropy_radio.isChecked() else 'veusz'
+#             return self.selected_file, method
+#         return None, None
+# =============================================================================
+
+    def _select_file(self, dialog):
+        """Handle file selection button click."""
+        fname, _ = QFileDialog.getOpenFileName(
+            dialog, "Open SFT File", "", "R&S SFT Files (*.sft)"
+        )
+        if fname:
+            self.selected_file = fname
+            self.file_label.setText(fname)
+
+    def _validate_selection(self, dialog):
+        """Validate file selection before accepting dialog."""
+        if not self.selected_file:
+            self.file_label.setText("Please select a file!")
+            return
+        dialog.accept()
+
+    def get_save_filename(self):
+        """Display file save dialog for Veusz project."""
+        return QFileDialog.getSaveFileName(
+            None, "Save Veusz Project", "",
+            "Veusz Files (*.vsz)")[0]
+
+    def ask_open_veusz(self):
+        """Display dialog to open created file in Veusz GUI."""
+        msg = QMessageBox()
+        msg.setWindowTitle("Open in Veusz")
+        msg.setText("Would you like to open the file in Veusz?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        return msg.exec_() == QMessageBox.Yes
+
+
 class switch:
     """"Creates a case or switch style statement."""
     """
