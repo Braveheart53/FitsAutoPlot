@@ -1,4 +1,68 @@
-import os
+# -*- coding: utf-8 -*-
+"""
+=============================================================================
+# %% Header Info
+--------
+
+Created on 2025-06-16
+
+# %%% Author Information
+@author: William W. Wallace
+Author Email: wwallace@nrao.edu
+Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
+
+
+# %%% Revisions
+--------
+Utilizing Semantic Schema as External Release.Internal Release.Working version
+
+# %%%% 0.0.1: Script to run in consol description
+Date: 2025-06-16
+# %%%%% Function Descriptions
+        fastest_file_parser: parse any ASCII file per the commands passed
+        
+
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        file_path: path(s) to selected files for processing
+
+# %%%%% More Info
+# %%%%%% Usage example
+# =============================================================================
+# result = fastest_file_parser(
+#     'data.txt',
+#     line_targets=[1, 5, 10],
+#     string_patterns={'header': 'HEADER:', 'data': 'DATA:', 'config': 'CONFIG:'}
+# )
+#
+# # Example 1: Process only specific lines with pattern matching
+# result = fastest_file_parser(
+#     'data.txt',
+#     line_targets=[1, 5, 10],
+#     string_patterns={'header': 'HEADER:', 'data': 'DATA:', 'config': 'CONFIG:'}
+# )
+#
+# print("Specific lines processing:")
+# print(f"Lines extracted: {list(result['line_data'].keys())}")
+# print(f"Pattern matches found: {len(result['pattern_matches'])}")
+#
+# # Example 2: Process ALL lines with pattern matching (line_targets=None)
+# result = fastest_file_parser(
+#     'data.txt',
+#     line_targets=None,  # Explicitly passing None to process all lines
+#     string_patterns={'header': 'HEADER:', 'data': 'DATA:', 'config': 'CONFIG:'}
+# )
+#
+# print("\nAll lines processing:")
+# print(f"Total lines processed: {result['metadata']['total_lines']}")
+# print(f"All lines extracted: {len(result['line_data'])}")
+# print(
+#     f"Pattern matches found: {sum(len(matches) for matches in result['pattern_matches'].values())}")
+=============================================================================
+"""
+
+# %% Function Definitions
 
 
 def fastest_file_parser(filename, line_targets=None, string_patterns=None):
@@ -13,6 +77,8 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
     Returns:
         Dictionary containing extracted data
     """
+    import os
+
     extracted_data = {
         'metadata': {'total_lines': 0, 'file_size': 0},
         'line_data': {},
@@ -56,35 +122,3 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
                     }
 
     return extracted_data
-
-
-# Usage example
-result = fastest_file_parser(
-    'data.txt',
-    line_targets=[1, 5, 10],
-    string_patterns={'header': 'HEADER:', 'data': 'DATA:', 'config': 'CONFIG:'}
-)
-
-# Example 1: Process only specific lines with pattern matching
-result = fastest_file_parser(
-    'data.txt',
-    line_targets=[1, 5, 10],
-    string_patterns={'header': 'HEADER:', 'data': 'DATA:', 'config': 'CONFIG:'}
-)
-
-print("Specific lines processing:")
-print(f"Lines extracted: {list(result['line_data'].keys())}")
-print(f"Pattern matches found: {len(result['pattern_matches'])}")
-
-# Example 2: Process ALL lines with pattern matching (line_targets=None)
-result = fastest_file_parser(
-    'data.txt',
-    line_targets=None,  # Explicitly passing None to process all lines
-    string_patterns={'header': 'HEADER:', 'data': 'DATA:', 'config': 'CONFIG:'}
-)
-
-print("\nAll lines processing:")
-print(f"Total lines processed: {result['metadata']['total_lines']}")
-print(f"All lines extracted: {len(result['line_data'])}")
-print(
-    f"Pattern matches found: {sum(len(matches) for matches in result['pattern_matches'].values())}")
