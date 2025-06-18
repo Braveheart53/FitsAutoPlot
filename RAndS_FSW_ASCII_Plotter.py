@@ -150,7 +150,7 @@ class VZPlotRnS:
     """
 
     def __init__(self):
-        self.doc = embed.Embedded('R&S SFT File Plotter')
+        self.doc = embed.Embedded('Rhode & Schwarz SFT File Plotter')
         # self.page = self.doc.Root.Add('page')
         # self.grid = self.page.Add('grid', columns=2)
         self.first_1d = True
@@ -315,7 +315,7 @@ class VZPlotRnS:
                 f"Failed to start Veusz: {str(e)}"
             )
 
-    def RnS_sft_plot(self):
+    def RnS_sft_plot(self, fileName: str = None):
         """
         Used to import all data into the Vuesz environment. Then pass to
         create_plots to plot based on data within the veusz environment.
@@ -330,39 +330,89 @@ class VZPlotRnS:
         None.
 
         """
-        [fileName, fileParts] = self._select_sft_file
+        if fileName is None:
+            fileName, fileParts = self._select_sft_file()
+        elif isinstance(fileName, list):
+            for mainLooper in range(len(fileName)):
+                # this loop processes the files passed one at a time,
+                # while combining
+                # the data as it progresses
+
+                # get the file parts for further use of the current file.
+                fileParts = os.path.split(fileName[mainLooper])
+        elif fileName.isascii():
+            fileParts = os.path.split(fileName)
 
         # parse all the data through a general parser
-        dataReturned = fparser(fileName, line_targets=self.sft_lines,
-                               string_patterns=self.searchData_strings)
+        if isinstance(fileName, list):
+            for currentFile in fileName:
+                dataReturned = fparser(currentFile, line_targets=self.sft_lines,
+                                       string_patterns=self.searchData_strings)
 
-        # used for data set name and label
-        base_name = os.path.splitext(os.path.basename(fileName))[0]
+                # used for data set name and label
+                base_name = os.path.splitext(os.path.basename(fileName))[0]
 
-        # now we have all the data in dataReturned of type dict
-        # use this and VZPlotRns to create Veusz plots
+                # now we have all the data in dataReturned of type dict
+                # use this and VZPlotRns to create Veusz plots
 
-        for item in dataReturned:
+                for item in dataReturned:
+                    dataSetName = 'test'
+                    data = [1, 2, 3]
+                    description = 'testing  this'
+                    # Put all of the header information in the notes of the plot
+                    self.doc.SetNote()
 
-            # Put all of the header information in the notes of the plot
-            self.doc.SetNote()
+                    # Put all data into a dataset with a name and label
+                    self.doc.SetData(dataSetName, data)
+                    self.doc.SetDataLabel(dataSetName,
+                                          f"{description} [{base_name}]")
+        else:
+            dataReturned = fparser(fineName, line_targets=self.sft_lines,
+                                   string_patterns=self.searchData_strings)
 
-            # Put all data into a dataset with a name and label
-            self.doc.SetData(dataSetName, data)
-            self.doc.SetDataLabel(dataSetName, f"{description} [{base_name}]")
+            # used for data set name and label
+            base_name = os.path.splitext(os.path.basename(fileName))[0]
+
+            # now we have all the data in dataReturned of type dict
+            # use this and VZPlotRns to create Veusz plots
+
+            for item in dataReturned:
+                dataSetName = 'test'
+                data = [1, 2, 3]
+                description = 'testing  this'
+                # Put all of the header information in the notes of the plot
+                self.doc.SetNote()
+
+                # Put all data into a dataset with a name and label
+                self.doc.SetData(dataSetName, data)
+                self.doc.SetDataLabel(dataSetName,
+                                      f"{description} [{base_name}]")
 
     def _select_sft_file(self):
+        """
+        GUI using tkiner for sft file selection. Does work with
+        multiple files.
+
+        Returns
+        -------
+        filename : TYPE
+            DESCRIPTION.
+        fileParts : TYPE
+            DESCRIPTION.
+
+        """
         # import os
         filename = askopenfilenames(filetypes=[("R&S SFT Files",
                                                 ".SFT")])
 
         # start the main loop for processing the selected files
+        fileParts = [None] * len(filename)
         for mainLooper in range(len(filename)):
             # this loop processes the files selected one at a time, while combining
             # the data as it progresses
 
             # get the file parts for further use of the current file.
-            fileParts = os.path.split(filename[mainLooper])
+            fileParts[mainLooper] = os.path.split(filename[mainLooper])
 
         return filename, fileParts
 
@@ -370,16 +420,16 @@ class VZPlotRnS:
         #     file_entry.delete(0, tk.END)
         #     file_entry.insert(0, file_path)
 
+
 # %% Main Execution
-
-
-def main():
+if __name__ == '__main__':
     """
     execution of main function
     """
+    vz = VZPlotRnS()
+    vz.RnS_sft_plot()
+    pass
 
-    vz = VZPlotRns()
 
-
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
