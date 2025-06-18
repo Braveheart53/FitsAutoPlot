@@ -333,25 +333,41 @@ class VZPlotRnS:
         [fileName, fileParts] = self._select_sft_file
 
         # parse all the data through a general parser
-        dataReturned = fparser(fileName, line_targets=self.sft_lines,
-                               string_patterns=self.searchData_strings)
+        for currentFile in fileName:
+            dataReturned = fparser(currentFile, line_targets=self.sft_lines,
+                                   string_patterns=self.searchData_strings)
 
-        # used for data set name and label
-        base_name = os.path.splitext(os.path.basename(fileName))[0]
+            # used for data set name and label
+            base_name = os.path.splitext(os.path.basename(fileName))[0]
 
-        # now we have all the data in dataReturned of type dict
-        # use this and VZPlotRns to create Veusz plots
+            # now we have all the data in dataReturned of type dict
+            # use this and VZPlotRns to create Veusz plots
 
-        for item in dataReturned:
+            for item in dataReturned:
+                dataSetName = 'test'
+                data = [1, 2, 3]
+                description = 'testing  this'
+                # Put all of the header information in the notes of the plot
+                self.doc.SetNote()
 
-            # Put all of the header information in the notes of the plot
-            self.doc.SetNote()
-
-            # Put all data into a dataset with a name and label
-            self.doc.SetData(dataSetName, data)
-            self.doc.SetDataLabel(dataSetName, f"{description} [{base_name}]")
+                # Put all data into a dataset with a name and label
+                self.doc.SetData(dataSetName, data)
+                self.doc.SetDataLabel(dataSetName,
+                                      f"{description} [{base_name}]")
 
     def _select_sft_file(self):
+        """
+        GUI using tkiner for sft file selection. Does work with
+        multiple files.
+
+        Returns
+        -------
+        filename : TYPE
+            DESCRIPTION.
+        fileParts : TYPE
+            DESCRIPTION.
+
+        """
         # import os
         filename = askopenfilenames(filetypes=[("R&S SFT Files",
                                                 ".SFT")])
@@ -370,16 +386,14 @@ class VZPlotRnS:
         #     file_entry.delete(0, tk.END)
         #     file_entry.insert(0, file_path)
 
+
 # %% Main Execution
-
-
-def main():
+if __name__ == '__main__':
     """
     execution of main function
     """
-
     vz = VZPlotRns()
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
