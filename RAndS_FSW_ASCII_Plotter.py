@@ -80,6 +80,7 @@ import numpy as np
 # import skrf as rf
 from operator import itemgetter
 import re
+from dataclasses import dataclass
 # %%% System Interface Modules
 import os
 # import time as time
@@ -118,6 +119,17 @@ from pprint import pprint
 # =============================================================================
 
 # %% Class and Function Definitons
+
+
+@dataclass
+class plotDescInfo:
+    """
+    Setting up general plot info class to update as needed
+    """
+    xAxis_label: str
+    yAxis_label: str
+    graph_notes: str
+    graph_title: str
 
 
 class qtGUI:
@@ -288,11 +300,22 @@ class VZPlotRnS:
         # grab the entire heading lines
         self.sft_lines = [1, 2, 3] + list(range(5, 58, 2))
 
+        # setup the shared plot info are that to be changed and passed
+        # with self
+        self.plotInfo = plotDescInfo(
+            xAxis_label='Frequency [Hz]',
+            yAxis_label='Uncalibrated (dBm)',
+            graph_notes=None,
+            graph_title='Title'
+        )
+
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
         self.page = self.doc.Root.Add('page', name=dataset)
         self.grid = self.page.Add('grid', columns=2)
 
+# TODO
+# look at removing this function as it may not be needed her
     def create_plots(self):
         """Generate automated plots based on dataset dimensions.
             Only after all data sets are created in veusz"""
@@ -331,13 +354,13 @@ class VZPlotRnS:
                     print('An ND case was found in ' + ds)
                     break
 
-    def _plot_1d(self, dataset: str, xAxisLabel: str = "x",
-                 yAxisLabel: str = "y", notes: str = None):
+    def _plot_1d(self, dataset: str):
         """Create line plot for 1D datasets with red initial trace."""
         try:
             graph = self.grid.Add('graph')
             xy = graph.Add('xy')
             xy.yData.val = dataset
+            xy.xData.val = dataset + '_freq'
             # if 'date' in dataset:
             #     # get the dataset from Veusz and change it to a datetime list
             #     # need to figure out exactly the time string format utilized
@@ -452,157 +475,149 @@ class VZPlotRnS:
 
         # parse all the data through a general parser
         if isinstance(fileName, list) or isinstance(fileName, tuple):
-            for currentFile in fileName:
-                dataReturned = fparser(currentFile, line_targets=self.sft_lines,
-                                       string_patterns=self.searchData_strings)
+            pass
+        else:
+            # just make it a list so the following applies without issue
+            fileName = [fileName]
 
-                # used for data set name and label
-                base_name = os.path.splitext(os.path.basename(currentFile))[0]
+        for currentFile in fileName:
+            dataReturned = fparser(currentFile, line_targets=self.sft_lines,
+                                   string_patterns=self.searchData_strings)
 
-                # based on section string in the sft file, extract on the
-                # section data defintions
-                data_Sections = dict(filter(
-                    lambda item: 'section' in item[0],
-                    dataReturned['pattern_matches'].items()
-                ))
+            # used for data set name and label
+            base_name = os.path.splitext(os.path.basename(currentFile))[0]
 
-                # test length of data sections and data_located
-                if len(data_Sections) != len(dataReturned['data_matches']):
-                    # error, these should match
-                    QMessageBox.critical(
-                        None,
-                        "Data Sections and the extracted number of data \n",
-                        "lists do not match. \n",
-                        "Unable to proceed at the moment. \n",
-                        "Tell William to stop being lazy and correct this."
-                    )
-                    # TODO
-                    # make this more robust, it really should match, but at
-                    # least do some error checking on the data itself.
-                    return
+            # based on section string in the sft file, extract on the
+            # section data defintions
+            data_Sections = dict(filter(
+                lambda item: 'section' in item[0],
+                dataReturned['pattern_matches'].items()
+            ))
 
-                # now we have all the data in dataReturned of type dict
-                # use this and VZPlotRns to create Veusz plots
+            # test length of data sections and data_located
+            if len(data_Sections) != len(dataReturned['data_matches']):
+                # error, these should match
+                QMessageBox.critical(
+                    None,
+                    "Data Sections and the extracted number of data \n",
+                    "lists do not match. \n",
+                    "Unable to proceed at the moment. \n",
+                    "Tell William to stop being lazy and correct this."
+                )
+                # TODO
+                # make this more robust, it really should match, but at
+                # least do some error checking on the data itself.
+                return
 
-                # all_items = [(k, v) for subdict in parent_dict.values() for
-                #               k, v in subdict.items()]
-                #
-                # using operator itemgetter for better performance
-                # being 0 based index, but all data matches the index of the
-                # dict data_Sections for date info
-                # line numbers will be used to ensure we are using the
-                # correct data.
-                data_y_values = list(map(itemgetter('extracted_value'),
+            # now we have all the data in dataReturned of type dict
+            # use this and VZPlotRns to create Veusz plots
+
+            # all_items = [(k, v) for subdict in parent_dict.values() for
+            #               k, v in subdict.items()]
+            #
+            # using operator itemgetter for better performance
+            # being 0 based index, but all data matches the index of the
+            # dict data_Sections for date info
+            # line numbers will be used to ensure we are using the
+            # correct data.
+            data_y_values = list(map(itemgetter('extracted_value'),
+                                     dataReturned['data_matches'].values())
+                                 )
+            data_line_numbers = list(map(itemgetter('line_number'),
                                          dataReturned['data_matches'].values())
                                      )
-                data_line_numbers = list(map(itemgetter('line_number'),
-                                             dataReturned['data_matches'].values())
-                                         )
-                data_Section_line_numbers = list(map(itemgetter('line_number'),
-                                                     data_Sections.values()))
-                data_Section_content = list(map(itemgetter('content'),
-                                                data_Sections.values()))
-                # breakpoint
-                # so now we have to make the X axis. For each file this
-                # remains the same.
-                # use pattern_matches for this
-                data_fields = dataReturned['pattern_matches']
+            data_Section_line_numbers = list(map(itemgetter('line_number'),
+                                                 data_Sections.values()))
+            data_Section_content = list(map(itemgetter('content'),
+                                            data_Sections.values()))
+            # breakpoint
+            # so now we have to make the X axis. For each file this
+            # remains the same.
+            # use pattern_matches for this
+            data_fields = dataReturned['pattern_matches']
 
-                # get number of points
-                numPts = extract_with_regex(
-                    data_fields['values']['extracted_value'])
+            # get number of points
+            numPts = extract_with_regex(
+                data_fields['values']['extracted_value'])
 
-                if len(numPts) != 1:
+            if len(numPts) != 1:
+                QMessageBox.critical(
+                    None,
+                    "Values Line of SFT File Incorrect. \n",
+                    "Check file " + str(currentFile)
+                )
+                # TODO
+                # make this more robust, it really should match, but at
+                # least do some error checking on the data itself.
+                return
+            else:
+                numPts = int(numPts[0])
+
+            # get span
+            freqStart = extract_with_regex(
+                data_fields['start']['extracted_value'])
+            freqStop = extract_with_regex(
+                data_fields['stop_2']['extracted_value'])
+            freqCenter = extract_with_regex(
+                data_fields['center freq']['extracted_value'])
+            freqSpan = extract_with_regex(
+                data_fields['span']['extracted_value'])
+            freqStart = float(freqStart[0])
+            freqStop = float(freqStop[0])
+            freqCenter = float(freqCenter[0])
+            freqSpan = float(freqSpan[0])
+            freqRange = np.linspace(freqStart, freqStop, num=numPts,
+                                    endpoint=True)
+            data_x_value = freqRange.tolist()
+            # step through line data to create header notes to be
+            # put in each graph.
+            data_header = dataReturned['line_data']
+            data_notes = '\n'.join(data_header.values())
+
+            for index, label in enumerate(data_Section_content):
+                dataSetName = label
+                if index == 0:
+                    x_data = data_x_value
+                    x_data_name = dataSetName + '_freq'
+                    self.doc.SetData(x_data_name, x_data)
+                    # self.doc.SetDataLabel(dataSetName,
+                    #                       f"Frequency [{base_name}]")
+                    self.doc.TagDatasets(base_name, [x_data_name])
+                description = label
+                # Put all of the header information in the notes of the plot
+                # self.doc.SetNote()
+
+                # Put all data into a dataset with a name and label and tag
+                if (data_line_numbers[index]-1
+                        != data_Section_line_numbers[index]):
                     QMessageBox.critical(
                         None,
-                        "Values Line of SFT File Incorrect. \n",
+                        "The data and its labels are not aligned. \n",
                         "Check file " + str(currentFile)
                     )
                     # TODO
                     # make this more robust, it really should match, but at
                     # least do some error checking on the data itself.
                     return
-                else:
-                    numPts = int(numPts[0])
 
-                # get span
-                freqStart = extract_with_regex(
-                    data_fields['start']['extracted_value'])
-                freqStop = extract_with_regex(
-                    data_fields['stop_2']['extracted_value'])
-                freqCenter = extract_with_regex(
-                    data_fields['center freq']['extracted_value'])
-                freqSpan = extract_with_regex(
-                    data_fields['span']['extracted_value'])
-                freqStart = float(freqStart[0])
-                freqStop = float(freqStop[0])
-                freqCenter = float(freqCenter[0])
-                freqSpan = float(freqSpan[0])
-                freqRange = np.linspace(freqStart, freqStop, num=numPts,
-                                        endpoint=True)
-                data_x_value = freqRange.tolist()
-                # step through line data to create header notes to be
-                # put in each graph.
-                data_header = dataReturned['line_data']
-                data_notes = '\n'.join(data_header.values())
+                self.doc.SetData(dataSetName, data_y_values[index])
+                # setDataText?!
+                # self.doc.SetDataLabel(dataSetName,
+                #                       f"{description} [{base_name}]")
+                self.doc.TagDatasets(base_name, [dataSetName])
+                # self.doc.TagDatasets(label, [dataSetName])
 
-                for index, label in enumerate(data_Section_content):
-                    dataSetName = label
-                    if index == 0:
-                        x_data = data_x_value
-                        x_data_name = dataSetName + '_freq'
-                        self.doc.SetData(x_data_name, x_data)
-                        # self.doc.SetDataLabel(dataSetName,
-                        #                       f"Frequency [{base_name}]")
-                        self.doc.TagDatasets(base_name, [x_data_name])
-                    description = label
-                    # Put all of the header information in the notes of the plot
-                    # self.doc.SetNote()
+                # ok, all the data is now in Veusz, so we need to create
+                # the pages, grids and graphs. I would like to embed
+                # the header information is each graph.
+                # best to do per file and data section so information
+                # is not lost and exterion indexing is not needed
+                self.plotInfo.graph_notes = data_notes
+                self.plotInfo.graph_title = base_name + '::' + dataSetName
 
-                    # Put all data into a dataset with a name and label and tag
-                    if (data_line_numbers[index]-1
-                            != data_Section_line_numbers[index]):
-                        QMessageBox.critical(
-                            None,
-                            "The data and its labels are not aligned. \n",
-                            "Check file " + str(currentFile)
-                        )
-                        # TODO
-                        # make this more robust, it really should match, but at
-                        # least do some error checking on the data itself.
-                        return
-
-                    self.doc.SetData(dataSetName, data_y_values[index])
-                    # setDataText?!
-                    # self.doc.SetDataLabel(dataSetName,
-                    #                       f"{description} [{base_name}]")
-                    self.doc.TagDatasets(base_name, [dataSetName])
-                    # self.doc.TagDatasets(label, [dataSetName])
-        else:
-            dataReturned = fparser(fileName, line_targets=self.sft_lines,
-                                   string_patterns=self.searchData_strings)
-
-            # used for data set name and label
-            base_name = os.path.splitext(os.path.basename(fileName))[0]
-
-            # Will need to update from above
-            # TODO
-            # just make it turn into a list of length 1
-
-            # now we have all the data in dataReturned of type dict
-            # use this and VZPlotRns to create Veusz plots
-
-            for item in dataReturned:
-                dataSetName = 'test'
-                data = [1, 2, 3]
-                description = 'testing  this'
-                # Put all of the header information in the notes of the plot
-                # self.doc.Set()
-
-                # Put all data into a dataset with a name and label
-                self.doc.SetData(dataSetName, data)
-                self.doc.SetDataLabel(dataSetName,
-                                      f"{description} [{base_name}]")
+                # plotting directly instead of using self.create_plots(self)
+                self._plot_1d(dataSetName)
+                breakpoint
 
     def _select_sft_file(self):
         """
@@ -684,6 +699,10 @@ if __name__ == '__main__':
     """
     vz = VZPlotRnS()
     vz.rns_sft_parser()
+
+    # this is done in the data parsing to ensure multiple traces are labeled
+    # correctly
+    # vz.create_plots()
 
     gui = qtGUI()
     if save_path := gui.get_save_filename():
