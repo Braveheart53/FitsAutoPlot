@@ -361,43 +361,23 @@ class VZPlotRnS:
         try:
             self._create_page(dataset)
             graph = self.grid.Add('graph')
-            breakpoint
+
             # add graph title
             graph.Add('label')
+
+            # add xy scatter plot
             xy = graph.Add('xy')
+
+            # set the datasets being used for the plot
             xy.yData.val = dataset
             xy.xData.val = dataset + '_freq'
-            # if 'date' in dataset:
-            #     # get the dataset from Veusz and change it to a datetime list
-            #     # need to figure out exactly the time string format utilized
-            #     # self.doc.SetDataDateTime, likely will overwrite or need to
-            #     # use this earlier in the script
-            #     pass
+
+            # set scatter plot axis labels
+            breakpoint
+
+            # set marker and colors
             xy.marker.val = 'none'
             xy.PlotLine.color.val = 'red'
-
-            # make the dataset and the x axis are of the same length
-            # if dataset.size == xAxis.size:
-            #     # xy.xData.val = set x axis data
-            #     currentYDataTuple = self.doc.GetData(xy.yData.val)
-            #     if isinstance(currentYDataTuple[0], np.ndarray):
-            #         if currentYDataTuple[0].ndim == 1:
-            #             length = currentYDataTuple[0].size
-            #             xy.xData.val = range(length)
-            #         else:
-            #             QMessageBox.critical(
-            #                 None,
-            #                 "Length of Data Array is non-integer",
-            #                 "This should not happen. \n"
-            #                 "Contact the Author and inform him of this error."
-            #             )
-            #             return
-            # else:
-            #     QMessageBox.warning(
-            #         None,
-            #         "The Data array is non-numeric \n",
-            #         "X axis value not defined."
-            #     )
 
             if self.first_1d:
                 self.first_1d = False
