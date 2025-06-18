@@ -314,7 +314,8 @@ class VZPlotFITS:
         for colname in qt.colnames:
             description = hdu.header.get(f'TCOMM{colname}', colname)
             self.doc.SetData(colname, qt[colname])
-            self.doc.SetDataLabel(colname, f"{description} [{base_name}]")
+            # self.doc.SetDataLabel(colname, f"{description} [{base_name}]")
+            self.doc.TagDatasets(base_name, [original_label])
 
     def _import_astropy_image(self, hdu, index, base_name):
         """Process image HDUs with filename tagging."""
@@ -323,7 +324,8 @@ class VZPlotFITS:
         label = header.get('EXTNAME', f'HDU {index} Data')
 
         self.doc.SetData(ds_name, hdu.data)
-        self.doc.SetDataLabel(ds_name, f"{label} [{base_name}]")
+        # self.doc.SetDataLabel(ds_name, f"{label} [{base_name}]")
+        self.doc.TagDatasets(base_name, [ds_name])
 
     def create_plots(self):
         """Generate automated plots based on dataset dimensions."""

@@ -409,8 +409,8 @@ class VZPlotRnS:
                                          )
                 data_Section_line_numbers = list(map(itemgetter('line_number'),
                                                      data_Sections.values()))
-                data_Section_conent = list(map(itemgetter('content'),
-                                               data_Sections.values()))
+                data_Section_content = list(map(itemgetter('content'),
+                                                data_Sections.values()))
                 # breakpoint
                 # so now we have to make the X axis. For each file this
                 # remains the same.
@@ -438,7 +438,7 @@ class VZPlotRnS:
                 freqStart = extract_with_regex(
                     data_fields['start']['extracted_value'])
                 freqStop = extract_with_regex(
-                    data_fields['stop']['extracted_value'])
+                    data_fields['stop_2']['extracted_value'])
                 freqCenter = extract_with_regex(
                     data_fields['center freq']['extracted_value'])
                 freqSpan = extract_with_regex(
@@ -455,17 +455,38 @@ class VZPlotRnS:
                 data_header = dataReturned['line_data']
                 data_notes = '\n'.join(data_header.values())
 
-                for item in dataReturned:
-                    dataSetName = 'test'
-                    data = [1, 2, 3]
-                    description = 'testing  this'
+                for index, label in enumerate(data_Section_content):
+                    dataSetName = label
+                    if index == 0:
+                        x_data = data_x_value
+                        x_data_name = dataSetName + '_freq'
+                        self.doc.SetData(x_data_name, x_data)
+                        # self.doc.SetDataLabel(dataSetName,
+                        #                       f"Frequency [{base_name}]")
+                        self.doc.TagDatasets(base_name, [x_data_name])
+                    description = label
                     # Put all of the header information in the notes of the plot
-                    self.doc.SetNote()
+                    # self.doc.SetNote()
 
-                    # Put all data into a dataset with a name and label
-                    self.doc.SetData(dataSetName, data)
-                    self.doc.SetDataLabel(dataSetName,
-                                          f"{description} [{base_name}]")
+                    # Put all data into a dataset with a name and label and tag
+                    if (data_line_numbers[index]-1
+                            != data_Section_line_numbers[index]):
+                        QMessageBox.critical(
+                            None,
+                            "The data and its labels are not aligned. \n",
+                            "Check file " + str(currentFile)
+                        )
+                        # TODO
+                        # make this more robust, it really should match, but at
+                        # least do some error checking on the data itself.
+                        return
+
+                    self.doc.SetData(dataSetName, data_y_values[index])
+                    # setDataText?!
+                    # self.doc.SetDataLabel(dataSetName,
+                    #                       f"{description} [{base_name}]")
+                    self.doc.TagDatasets(base_name, [dataSetName])
+                    # self.doc.TagDatasets(label, [dataSetName])
         else:
             dataReturned = fparser(fileName, line_targets=self.sft_lines,
                                    string_patterns=self.searchData_strings)
@@ -485,7 +506,7 @@ class VZPlotRnS:
                 data = [1, 2, 3]
                 description = 'testing  this'
                 # Put all of the header information in the notes of the plot
-                self.doc.SetNote()
+                # self.doc.Set()
 
                 # Put all data into a dataset with a name and label
                 self.doc.SetData(dataSetName, data)
