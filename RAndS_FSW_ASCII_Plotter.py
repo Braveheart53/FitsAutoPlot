@@ -79,6 +79,7 @@ from tkinter.filedialog import askopenfilenames
 import numpy as np
 # import skrf as rf
 from operator import itemgetter
+import re
 # %%% System Interface Modules
 import os
 # import time as time
@@ -168,7 +169,7 @@ class VZPlotRnS:
             'span': 'SPAN',
             'x-axis': 'X-AXIS',
             'start': 'START',
-            'stop': 'START',
+            'stop': 'STOP',
             'ref level': 'REF LEVEL',
             'level offset': 'LEVEL OFFSET',
             'ref psotion': 'REF POSITION',
@@ -239,7 +240,8 @@ class VZPlotRnS:
                     print('An ND case was found in ' + ds)
                     break
 
-    def _plot_1d(self, dataset: str):
+    def _plot_1d(self, dataset: str, xAxisLabel: str = "x",
+                 yAxisLabel: str = "y", notes: str = None):
         """Create line plot for 1D datasets with red initial trace."""
         try:
             graph = self.grid.Add('graph')
@@ -368,8 +370,10 @@ class VZPlotRnS:
 
                 # based on section string in the sft file, extract on the
                 # section data defintions
-                data_Sections = dict(filter(lambda item: 'section' in item[0],
-                                            dataReturned['pattern_matches'].items()))
+                data_Sections = dict(filter(
+                    lambda item: 'section' in item[0],
+                    dataReturned['pattern_matches'].items()
+                ))
 
                 # test length of data sections and data_located
                 if len(data_Sections) != len(dataReturned['data_matches']):
@@ -407,13 +411,49 @@ class VZPlotRnS:
                                                      data_Sections.values()))
                 data_Section_conent = list(map(itemgetter('content'),
                                                data_Sections.values()))
-
+                # breakpoint
                 # so now we have to make the X axis. For each file this
                 # remains the same.
                 # use pattern_matches for this
+                data_fields = dataReturned['pattern_matches']
 
+                # get number of points
+                numPts = extract_with_regex(
+                    data_fields['values']['extracted_value'])
+
+                if len(numPts) != 1:
+                    QMessageBox.critical(
+                        None,
+                        "Values Line of SFT File Incorrect. \n",
+                        "Check file " + str(currentFile)
+                    )
+                    # TODO
+                    # make this more robust, it really should match, but at
+                    # least do some error checking on the data itself.
+                    return
+                else:
+                    numPts = int(numPts[0])
+
+                # get span
+                freqStart = extract_with_regex(
+                    data_fields['start']['extracted_value'])
+                freqStop = extract_with_regex(
+                    data_fields['stop']['extracted_value'])
+                freqCenter = extract_with_regex(
+                    data_fields['center freq']['extracted_value'])
+                freqSpan = extract_with_regex(
+                    data_fields['span']['extracted_value'])
+                freqStart = float(freqStart[0])
+                freqStop = float(freqStop[0])
+                freqCenter = float(freqCenter[0])
+                freqSpan = float(freqSpan[0])
+                freqRange = np.linspace(freqStart, freqStop, num=numPts,
+                                        endpoint=True)
+                data_x_value = freqRange.tolist()
                 # step through line data to create header notes to be
                 # put in each graph.
+                data_header = dataReturned['line_data']
+                data_notes = '\n'.join(data_header.values())
 
                 for item in dataReturned:
                     dataSetName = 'test'
@@ -490,6 +530,39 @@ class VZPlotRnS:
         # if file_path:
         #     file_entry.delete(0, tk.END)
         #     file_entry.insert(0, file_path)
+
+
+def extract_between(inputText: str, start_char: str, end_char: str):
+    """
+    Extract a string between two characters and return a list of found.
+
+    Parameters
+    ----------
+    text : TYPE
+        DESCRIPTION.
+    start_char : TYPE
+        DESCRIPTION.
+    end_char : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+
+    """
+    pattern = re.escape(start_char) + r"(.*?)" + re.escape(end_char)
+    return re.findall(pattern, text)
+
+
+def extract_with_regex(inputText: str, delim: str = ';'):
+    """
+    Extract all substrings enclosed by the same delimiter using regex.
+    """
+    # Escape delim if it’s a regex special character
+    esc = re.escape(delim)
+    pattern = rf"{esc}(.*?){esc}"        # Non-greedy capture between delim
+    return re.findall(pattern, inputText)     # List of all matches
 
 
 # %% Main Execution
