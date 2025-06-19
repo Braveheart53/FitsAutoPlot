@@ -28,6 +28,27 @@ Date: 2025-06-17
         file_path: path(s) to selected files for processing
 
 # %%%%% More Info
+
+Utilizing Semantic Schema as External Release.Internal Release.Working version
+
+# %%%% 0.0.2: Script to run in consol description
+Date: 2025-06-19
+# %%%%% Function Descriptions
+        main: main script body
+        select_file: utilzing module os, select multiple files for processing
+
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        file_path: path(s) to selected files for processing
+
+# %%%%% More Info
+Version 0.0.1 works as expected, but the pages are not nested under the file
+of origin and this makes it hard to explore. This version will correct that 
+issue by creating a parent page and nesting all plots from that file under that
+parent.
+
+So yeah, thats not how pages work. Not possible. But still using this version
+to clean up the code and putting in markers with transparency.
 =============================================================================
 """
 
@@ -311,6 +332,7 @@ class VZPlotRnS:
     def _plot_1d(self, dataset: str):
         """Create line plot for 1D datasets with red initial trace."""
         try:
+            # create the plot for the data set
             self._create_page(dataset)
             graph = self.grid.Add('graph')
 
@@ -336,6 +358,7 @@ class VZPlotRnS:
             # then just linking those files instead of using local datasets
             xy.yData.val = dataset
             xy.xData.val = self.plotInfo.base_name + '_freq'
+            xy.nanHandling = 'break-on'
 
             # set graph axis labels
             graph.x.label.val = self.plotInfo.xAxis_label
@@ -343,7 +366,18 @@ class VZPlotRnS:
             # breakpoint
 
             # set marker and colors
-            xy.marker.val = 'none'
+            xy.marker.val = 'circle'
+            xy.markerSize.val = '2pt'
+            # xy.MarkerLine.transparency.val =
+            xy.MarkerLine.color.val = 'transparent'
+            xy.MarkerFill.color.val = 'foreground'
+            xy.MarkerFill.transparency.val = 80
+            xy.MarkerFill.style.val = 'solid'
+            xy.FillBelow.transparency.val = 90
+            xy.FillBelow.style.val = 'solid'
+            xy.FillBelow.fileto.val = 'bottom'
+            xy.FillBelow.color.val = 'darkgreen'
+            xy.FillBelow.hide = False
             xy.PlotLine.color.val = 'red'
 
             if self.first_1d:
@@ -584,17 +618,8 @@ class VZPlotRnS:
                     # least do some error checking on the data itself.
                     return
 
-                # TODO
-                # may want to look into crating separate files for high precision
-                # such as np.save('high_precision_data.npy', x_data)
-                # then just linking those files instead of using local datasets
-                # by using the keywork linked=True
                 self.doc.SetData(name=dataSetName, val=data_y_values[index])
-                # setDataText?!
-                # self.doc.SetDataLabel(dataSetName,
-                #                       f"{description} [{base_name}]")
                 self.doc.TagDatasets(base_name, [dataSetName])
-                # self.doc.TagDatasets(label, [dataSetName])
 
                 # ok, all the data is now in Veusz, so we need to create
                 # the pages, grids and graphs. I would like to embed
