@@ -139,61 +139,11 @@ class qtGUI:
     def __init__(self):
         self.app = QApplication(sys.argv)
 
-    def get_fits_file_and_method(self):
-        """Display dialog for FITS file selection and import method choice."""
-        # TODO
-        # remove or alter this for sft file use
-# =============================================================================
-#         dialog = QDialog()
-#         dialog.setWindowTitle("Open FITS File and Select Import Method")
-#         layout = QVBoxLayout()
-#
-#         # File selection components
-#         file_layout = QHBoxLayout()
-#         self.file_label = QLabel("No file selected")
-#         file_btn = QPushButton("Select FITS File")
-#         file_layout.addWidget(self.file_label)
-#         file_layout.addWidget(file_btn)
-#         layout.addLayout(file_layout)
-#
-#         # Import method selection
-#         method_layout = QHBoxLayout()
-#         method_label = QLabel("Import Method:")
-#         self.veusz_radio = QRadioButton("Veusz Native")
-#         self.astropy_radio = QRadioButton("AstroPy")
-#         self.veusz_radio.setChecked(True)
-#         method_group = QButtonGroup(dialog)
-#         method_group.addButton(self.veusz_radio)
-#         method_group.addButton(self.astropy_radio)
-#         method_layout.addWidget(method_label)
-#         method_layout.addWidget(self.veusz_radio)
-#         method_layout.addWidget(self.astropy_radio)
-#         layout.addLayout(method_layout)
-#
-#         # Dialog buttons
-#         btn_layout = QHBoxLayout()
-#         ok_btn = QPushButton("OK")
-#         cancel_btn = QPushButton("Cancel")
-#         btn_layout.addWidget(ok_btn)
-#         btn_layout.addWidget(cancel_btn)
-#         layout.addLayout(btn_layout)
-#
-#         dialog.setLayout(layout)
-#         self.selected_file = None
-#
-#         # Connect signals
-#         file_btn.clicked.connect(lambda: self._select_file(dialog))
-#         ok_btn.clicked.connect(lambda: self._validate_selection(dialog))
-#         cancel_btn.clicked.connect(dialog.reject)
-#
-#         result = dialog.exec_()
-#         if result == QDialog.Accepted:
-#             method = 'astropy' if self.astropy_radio.isChecked() else 'veusz'
-#             return self.selected_file, method
-#         return None, None
-# =============================================================================
+    def closeEvent(self, event):
+        QApplication.closeAllWindows()
+        event.accept()
 
-    def _select_file(self, dialog):
+    def _select_sft_file(self, dialog):
         """Handle file selection button click."""
         fname, _ = QFileDialog.getOpenFileName(
             dialog, "Open SFT File", "", "R&S SFT Files (*.sft)"
@@ -213,7 +163,7 @@ class qtGUI:
         """Display file save dialog for Veusz project."""
         return QFileDialog.getSaveFileName(
             None, "Save Veusz Project", "",
-            "Veusz Files (*.vsz)")[0]
+            "Veusz High Precision Files (*.vszh5)")[0]
 
     def ask_open_veusz(self):
         """Display dialog to open created file in Veusz GUI."""
@@ -414,11 +364,16 @@ class VZPlotRnS:
         # a work around would be to save all data to np.float64 arrays
         # in files and link them in the veusz document, I would really prefer
         # not do it this way.
-        self.doc.Save(filename, 'vsz')
-        filename2 = os.path.splitext(filename)[0]
-        filename3 = filename2 + '_highPrecision.vsz'
-        filename2 = filename2 + '_hdf5.hdf5'
-        self.doc.Save(filename2, 'hdf5')
+        # self.doc.Save(filename, 'vsz')
+        filename_root = os.path.splitext(filename)[0]
+        filenameHP = filename_root + '.vszh5'
+        fileSplit = os.path.split(filename)
+        filenameVSZ = (fileSplit[0] + '/Beware_oldVersion/' +
+                       os.path.splitext(fileSplit[1])[0] + '_BEWARE.vsz')
+        # filename3 = filename_root + '_hdf5.hdf5'
+        self.doc.Save(filenameHP, mode='hdf5')
+        os.makedirs(fileSplit[0] + '/Beware_oldVersion/', exist_ok=True)
+        self.doc.Save(filenameVSZ, mode='vsz')
 
     def open_veusz_gui(filename: str):
         """Launch Veusz GUI with generated project file."""
@@ -463,7 +418,7 @@ class VZPlotRnS:
         # check is a fileName was passed and if it is a list or tuple, then
         # process accordingly.
         if fileName is None:
-            fileName, fileParts = self._select_sft_file()
+            fileName, fileParts = self._select_sft_files()
         elif ((isinstance(fileName, list) or isinstance(fileName, tuple)) and
               os.path.splitext(fileName[0])[1] == '.sft'):
             fileParts = [None]*len(fileName)
@@ -656,7 +611,7 @@ class VZPlotRnS:
                 self._plot_1d(dataSetName)
                 # breakpoint
 
-    def _select_sft_file(self):
+    def _select_sft_files(self):
         """
         GUI using tkiner for sft file selection. Does work with
         multiple files.
@@ -748,6 +703,8 @@ if __name__ == '__main__':
             VZPlotRnS.open_veusz_gui(save_path)
 
     sys.exit(gui.app.exec_())
+    # QApplication.closeAllWindows()
+    gui.closeEvent()
 
 
 # if __name__ == "__main__":

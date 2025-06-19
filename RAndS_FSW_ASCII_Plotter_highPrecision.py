@@ -4,7 +4,7 @@
 # %% Header Info
 --------
 
-Created on 2025-06-17
+Created on 2025-06-18
 
 # %%% Author Information
 @author: William W. Wallace
@@ -18,7 +18,7 @@ Author Business Phone: +1 (304) 456-2216
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
 # %%%% 0.0.1: Script to run in consol description
-Date: 2025-06-17
+Date: 2025-06-18
 # %%%%% Function Descriptions
         main: main script body
         select_file: utilzing module os, select multiple files for processing
@@ -28,6 +28,13 @@ Date: 2025-06-17
         file_path: path(s) to selected files for processing
 
 # %%%%% More Info
+The idea of the high precision version of this script is to save all data
+to an external file or files. I would prefer to use the numpy npz dict
+compressed file, but as of the date of the version or git branch or commit 
+I have yet to figure out a way to import an npz file and link it in veusz.
+
+Put on the back burner as it was solved by saving in hdf5, see:
+    https://github.com/veusz/veusz/issues/756
 =============================================================================
 """
 
