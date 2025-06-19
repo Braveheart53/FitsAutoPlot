@@ -130,6 +130,7 @@ class plotDescInfo:
     yAxis_label: str
     graph_notes: str
     graph_title: str
+    base_name: str
 
 
 class qtGUI:
@@ -306,7 +307,8 @@ class VZPlotRnS:
             xAxis_label='Frequency [Hz]',
             yAxis_label='Uncalibrated (dBm)',
             graph_notes=None,
-            graph_title='Title'
+            graph_title='Title',
+            base_name=None
         )
 
     def _create_page(self, dataset: str):
@@ -363,17 +365,28 @@ class VZPlotRnS:
             graph = self.grid.Add('graph')
 
             # add graph title
-            graph.Add('label')
+            graph.Add('label', name='plotTitle')
+            graph.topMargin.val = '1cm'
+            graph.plotTitle.Text.size.val = '10pt'
+            graph.plotTitle.label.val = self.plotInfo.graph_title
+            graph.plotTitle.alignHorz.val = 'left'
+            graph.plotTitle.yPos.val = 1.05
+            graph.plotTitle.xPos.val = -0.3
+
+            # add notes to graph
+            graph.notes.val = self.plotInfo.graph_notes
 
             # add xy scatter plot
             xy = graph.Add('xy')
 
             # set the datasets being used for the plot
             xy.yData.val = dataset
-            xy.xData.val = dataset + '_freq'
+            xy.xData.val = self.plotInfo.base_name + '_freq'
 
-            # set scatter plot axis labels
-            breakpoint
+            # set graph axis labels
+            graph.x.label.val = self.plotInfo.xAxis_label
+            graph.y.label.val = self.plotInfo.yAxis_label
+            # breakpoint
 
             # set marker and colors
             xy.marker.val = 'none'
@@ -391,7 +404,10 @@ class VZPlotRnS:
 
     def save(self, filename: str):
         """Save Veusz document to specified file."""
-        self.doc.Save(filename)
+        self.doc.Save(filename, 'vsz')
+        filename2 = os.path.splitext(filename)[0]
+        filename2 = filename2 + '_hdf5'
+        self.doc.Save(filename2, 'hdf5')
 
     def open_veusz_gui(filename: str):
         """Launch Veusz GUI with generated project file."""
@@ -472,7 +488,7 @@ class VZPlotRnS:
 
             # used for data set name and label
             base_name = os.path.splitext(os.path.basename(currentFile))[0]
-
+            self.plotInfo.base_name = base_name
             # based on section string in the sft file, extract on the
             # section data defintions
             data_Sections = dict(filter(
@@ -552,9 +568,21 @@ class VZPlotRnS:
             freqStop = float(freqStop[0])
             freqCenter = float(freqCenter[0])
             freqSpan = float(freqSpan[0])
+            # TODO
+            # look at these values and ensure they are not trucated here
             freqRange = np.linspace(freqStart, freqStop, num=numPts,
                                     endpoint=True)
-            data_x_value = freqRange.tolist()
+            # data_x_value = freqRange.tolist()
+            data_x_value = freqRange
+
+            if len(data_x_value) != len(set(data_x_value)):
+                QMessageBox.critical(
+                    None,
+                    "Something happened with frequency list \n",
+                    "Generation from file  ", str(currentFile), ".\n",
+                    "See ", "data_fields in the script."
+                )
+
             # step through line data to create header notes to be
             # put in each graph.
             data_header = dataReturned['line_data']
@@ -564,7 +592,7 @@ class VZPlotRnS:
                 dataSetName = label
                 if index == 0:
                     x_data = data_x_value
-                    x_data_name = dataSetName + '_freq'
+                    x_data_name = base_name + '_freq'
                     self.doc.SetData(x_data_name, x_data)
                     # self.doc.SetDataLabel(dataSetName,
                     #                       f"Frequency [{base_name}]")
@@ -600,6 +628,9 @@ class VZPlotRnS:
                 # is not lost and exterion indexing is not needed
                 self.plotInfo.graph_notes = data_notes
                 self.plotInfo.graph_title = base_name + '::' + dataSetName
+                self.plotInfo.graph_title = (
+                    self.plotInfo.graph_title.replace('_', ' ')
+                )
 
                 # plotting directly instead of using self.create_plots(self)
                 self._plot_1d(dataSetName)
