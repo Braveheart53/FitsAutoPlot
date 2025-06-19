@@ -375,9 +375,9 @@ class VZPlotRnS:
             xy.MarkerFill.style.val = 'solid'
             xy.FillBelow.transparency.val = 90
             xy.FillBelow.style.val = 'solid'
-            xy.FillBelow.fileto.val = 'bottom'
+            xy.FillBelow.fillto.val = 'bottom'
             xy.FillBelow.color.val = 'darkgreen'
-            xy.FillBelow.hide = False
+            xy.FillBelow.hide.val = False
             xy.PlotLine.color.val = 'red'
 
             if self.first_1d:

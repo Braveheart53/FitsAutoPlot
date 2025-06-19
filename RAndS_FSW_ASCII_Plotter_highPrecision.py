@@ -219,8 +219,8 @@ class qtGUI:
     def get_save_filename(self):
         """Display file save dialog for Veusz project."""
         return QFileDialog.getSaveFileName(
-            None, "Save Veusz Project and Associated Files", "",
-            "Veusz Files (*.vsz)")[0]
+            None, "Save Veusz Project to High Precision File", "",
+            "Veusz Files (*.vszh5)")[0]
 
     def ask_open_veusz(self):
         """Display dialog to open created file in Veusz GUI."""
