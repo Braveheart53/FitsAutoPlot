@@ -380,6 +380,10 @@ class VZPlotRnS:
             xy = graph.Add('xy')
 
             # set the datasets being used for the plot
+            # TODO
+            # may want to look into crating separate files for high precision
+            # such as np.save('high_precision_data.npy', x_data)
+            # then just linking those files instead of using local datasets
             xy.yData.val = dataset
             xy.xData.val = self.plotInfo.base_name + '_freq'
 
@@ -404,9 +408,16 @@ class VZPlotRnS:
 
     def save(self, filename: str):
         """Save Veusz document to specified file."""
+        # there might be a precision argument or format string
+        # TODO
+        # MUST find a way to save higher precision!!!!
+        # a work around would be to save all data to np.float64 arrays
+        # in files and link them in the veusz document, I would really prefer
+        # not do it this way.
         self.doc.Save(filename, 'vsz')
         filename2 = os.path.splitext(filename)[0]
-        filename2 = filename2 + '_hdf5'
+        filename3 = filename2 + '_highPrecision.vsz'
+        filename2 = filename2 + '_hdf5.hdf5'
         self.doc.Save(filename2, 'hdf5')
 
     def open_veusz_gui(filename: str):
@@ -571,7 +582,7 @@ class VZPlotRnS:
             # TODO
             # look at these values and ensure they are not trucated here
             freqRange = np.linspace(freqStart, freqStop, num=numPts,
-                                    endpoint=True)
+                                    endpoint=True, dtype=np.float64)
             # data_x_value = freqRange.tolist()
             data_x_value = freqRange
 
@@ -593,7 +604,11 @@ class VZPlotRnS:
                 if index == 0:
                     x_data = data_x_value
                     x_data_name = base_name + '_freq'
-                    self.doc.SetData(x_data_name, x_data)
+                    # TODO
+                    # may want to look into crating separate files for high precision
+                    # such as np.save('high_precision_data.npy', x_data)
+                    # then just linking those files instead of using local datasets
+                    self.doc.SetData(name=x_data_name, val=x_data)
                     # self.doc.SetDataLabel(dataSetName,
                     #                       f"Frequency [{base_name}]")
                     self.doc.TagDatasets(base_name, [x_data_name])
@@ -614,7 +629,12 @@ class VZPlotRnS:
                     # least do some error checking on the data itself.
                     return
 
-                self.doc.SetData(dataSetName, data_y_values[index])
+                # TODO
+                # may want to look into crating separate files for high precision
+                # such as np.save('high_precision_data.npy', x_data)
+                # then just linking those files instead of using local datasets
+                # by using the keywork linked=True
+                self.doc.SetData(name=dataSetName, val=data_y_values[index])
                 # setDataText?!
                 # self.doc.SetDataLabel(dataSetName,
                 #                       f"{description} [{base_name}]")
@@ -634,7 +654,7 @@ class VZPlotRnS:
 
                 # plotting directly instead of using self.create_plots(self)
                 self._plot_1d(dataSetName)
-                breakpoint
+                # breakpoint
 
     def _select_sft_file(self):
         """
