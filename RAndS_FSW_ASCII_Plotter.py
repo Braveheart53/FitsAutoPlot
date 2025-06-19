@@ -275,7 +275,7 @@ class VZPlotRnS:
         # setup the shared plot info are that to be changed and passed
         # with self
         self.plotInfo = plotDescInfo(
-            xAxis_label='Frequency [Hz]',
+            xAxis_label='Frequency (Hz)',
             yAxis_label='Uncalibrated (dBm)',
             graph_notes=None,
             graph_title='Title',
@@ -333,8 +333,9 @@ class VZPlotRnS:
         """Create line plot for 1D datasets with red initial trace."""
         try:
             # create the plot for the data set
-            self._create_page(dataset)
-            graph = self.grid.Add('graph')
+            self._create_page(self.plotInfo.graph_title)
+            self.page.notes.val = self.plotInfo.graph_notes
+            graph = self.grid.Add('graph', name=dataset)
 
             # add graph title
             graph.Add('label', name='plotTitle')
@@ -501,10 +502,10 @@ class VZPlotRnS:
                 # error, these should match
                 QMessageBox.critical(
                     None,
-                    "Data Sections and the extracted number of data \n",
-                    "lists do not match. \n",
-                    "Unable to proceed at the moment. \n",
-                    "Tell William to stop being lazy and correct this."
+                    ("Data Sections and the extracted number of data \n",
+                     "lists do not match. \n",
+                     "Unable to proceed at the moment. \n",
+                     "Tell William to stop being lazy and correct this.")
                 )
                 # TODO
                 # make this more robust, it really should match, but at
@@ -587,6 +588,7 @@ class VZPlotRnS:
             # put in each graph.
             data_header = dataReturned['line_data']
             data_notes = '\n'.join(data_header.values())
+            data_notes = os.path.split(currentFile)[1] + '\n\n' + data_notes
 
             for index, label in enumerate(data_Section_content):
                 dataSetName = label
