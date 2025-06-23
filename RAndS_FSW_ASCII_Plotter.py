@@ -49,6 +49,25 @@ parent.
 
 So yeah, thats not how pages work. Not possible. But still using this version
 to clean up the code and putting in markers with transparency.
+
+# %%%% 0.1.0: Script to run in consol description
+Date: 2025-06-23
+# %%%%% Function Descriptions
+        main: main script body
+        select_file: utilzing module os, select multiple files for processing
+
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        file_path: path(s) to selected files for processing
+
+# %%%%% More Info
+Works to import as many files as the user can select in windows,
+in linux, only one file can be selected by the gui (need to see
+                                                    if I can fix this)
+This version also creates a single plot with all scatter plots overlaid in it.
+
+TODO
+1. Make file selection in linux work with multiple files
 =============================================================================
 """
 
@@ -152,6 +171,7 @@ class plotDescInfo:
     graph_notes: str
     graph_title: str
     base_name: str
+    first_plot: bool
 
 
 class qtGUI:
@@ -279,7 +299,8 @@ class VZPlotRnS:
             yAxis_label='Uncalibrated (dBm)',
             graph_notes=None,
             graph_title='Title',
-            base_name=None
+            base_name=None,
+            first_plot=True
         )
 
     def _create_page(self, dataset: str):
@@ -287,52 +308,62 @@ class VZPlotRnS:
         self.page = self.doc.Root.Add('page', name=dataset)
         self.grid = self.page.Add('grid', columns=2)
 
-# TODO
-# look at removing this function as it may not be needed her
-# =============================================================================
-#     def create_plots(self):
-#         """Generate automated plots based on dataset dimensions.
-#             Only after all data sets are created in veusz"""
-#         for ds in self.doc.GetDatasets():
-#             ds_type = self.doc.GetDataType(ds)
-#             # create a new page for each plot and name it by ds
-#             self._create_page(ds)
-#
-#             # use a case or switch statement to plot according to dataset
-#             # veusz documentation does not address nd dataset
-#             # if ds == 'data':
-#             #     print('Found the nd Array Data')
-#
-#             for case in switch(ds_type):
-#                 if case('1d'):
-#                     # somehow nd datatype  is not being passed
-#                     currentDataDims = self.doc.GetData(ds)[0].ndim
-#                     if currentDataDims == 1:
-#                         self._plot_1d(ds)
-#                     else:
-#                         # This means it is ndimensional data...
-#                         ds_type = 'nD'
-#                         self._plot_nd(ds)
-#                     del currentDataDims
-#                     break
-#                 if case('2d'):
-#                     self._plot_2d(ds)
-#                     break
-#                 if case('text'):
-#                     pass
-#                     break
-#                 if case('datetime'):
-#                     pass
-#                     break
-#                 if case('nD'):
-#                     print('An ND case was found in ' + ds)
-#                     break
-# =============================================================================
-
     def _plot_1d(self, dataset: str):
         """Create line plot for 1D datasets with red initial trace."""
         try:
             # create the plot for the data set
+            # if self.plotInfo.first_plot:
+            # create a single plot to put all scatters in
+            if 'AllImported' not in self.doc.Root.childnames:
+                self._create_page('AllImported')
+                self.page.notes.val = ("All Imported " +
+                                       "and Plottable Data Overlay")
+                graphAll = self.grid.Add('graph', name='Imported_Overlay')
+                graphAll.Add('label', name='plotTitle')
+                graphAll.topMargin.val = '1cm'
+                graphAll.plotTitle.Text.size.val = '10pt'
+                graphAll.plotTitle.label.val = 'Overlay of All Imported'
+                graphAll.plotTitle.alignHorz.val = 'centre'
+                graphAll.plotTitle.yPos.val = 1.05
+                graphAll.plotTitle.xPos.val = 0.5
+                graphAll.notes.val = ('All imported overlay, ' +
+                                      'see scatters for specifics.')
+                # set graph axis labels
+                graphAll.x.label.val = self.plotInfo.xAxis_label
+                graphAll.y.label.val = self.plotInfo.yAxis_label
+                self.doc.Root.colorTheme.val = 'max128'
+            else:
+                self.page = self.doc.Root.AllImported
+                graphAll = self.doc.Root.AllImported.grid1.Imported_Overlay
+
+                # add graph title
+                # Seems like this should be able to be completed with a with
+                # statement, but does not work
+
+            allOverlayXY = graphAll.Add('xy', name=dataset)
+
+            allOverlayXY.yData.val = dataset
+            allOverlayXY.xData.val = self.plotInfo.base_name + '_freq'
+            allOverlayXY.nanHandling = 'break-on'
+
+            # set marker and colors for overlay plot
+            allOverlayXY.marker.val = 'circle'
+            allOverlayXY.markerSize.val = '2pt'
+            # allOverlayXY.MarkerLine.transparency.val =
+            allOverlayXY.MarkerLine.color.val = 'transparent'
+            allOverlayXY.MarkerFill.color.val = 'auto'
+            allOverlayXY.MarkerFill.transparency.val = 80
+            allOverlayXY.MarkerFill.style.val = 'solid'
+            allOverlayXY.FillBelow.transparency.val = 90
+            allOverlayXY.FillBelow.style.val = 'solid'
+            allOverlayXY.FillBelow.fillto.val = 'bottom'
+            allOverlayXY.FillBelow.color.val = 'darkgreen'
+            allOverlayXY.FillBelow.hide.val = True
+            allOverlayXY.PlotLine.color.val = 'auto'
+
+            # for overlays only
+            self.plotInfo.first_plot = False
+
             self._create_page(self.plotInfo.graph_title)
             self.page.notes.val = self.plotInfo.graph_notes
             graph = self.grid.Add('graph', name=dataset)
@@ -350,7 +381,7 @@ class VZPlotRnS:
             graph.notes.val = self.plotInfo.graph_notes
 
             # add xy scatter plot
-            xy = graph.Add('xy')
+            xy = graph.Add('xy', name=dataset)
 
             # set the datasets being used for the plot
             # TODO
