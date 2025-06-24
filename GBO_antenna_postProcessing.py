@@ -23,6 +23,11 @@
 # them here for examples.... leaning towards parsing them out...
 # 2025-06-17, working on plotting data from R&S FSW spectrum analyzer
 # automatically, will be completed in another script
+#
+# TODO
+# update the ATR script to plot multiple files at once, and remove it from here
+# and plaec it is own file to import / call
+# atr NOT working, need to corect
 # =============================================================================
 
 # event loop QApplication.exec_()
@@ -576,9 +581,18 @@ class GBOutDoor:
         """
         pass
 
-    def select_atr_files():
+    def _select_atr_files():
+
         # file selection dialog, need to update for any files other than current
         # outdoor range files
+        # import os
+        # Create a root window
+        root = tk.Tk()
+
+        # Hide the root window
+        root.withdraw()
+        # root.iconify()
+
         filename = askopenfilenames(filetypes=[("Antenna Range Files",
                                                 ".ATR")])
 
@@ -603,23 +617,25 @@ class GBOutDoor:
             # File selection
             self.file_label = tk.Label(self.root, text="Select ATR file:")
             self.file_label.pack()
-            self.file_entry = tk.Entry(self.root, width=50)
+            self.file_entry = tk.Entry(self.root, width=150)
             self.file_entry.pack()
             self.file_button = tk.Button(self.root, text="Browse",
-                                         command=GBOutDoor.ATR_Plot_App.select_atr_file(self))
+                                         command=GBOutDoor.ATR_Plot_App._select_atr_file(self))
             self.file_button.pack()
 
             # Plot name input
             self.plot_name_label = tk.Label(self.root, text="Enter plot name:")
             self.plot_name_label.pack()
-            self.plot_name_entry = tk.Entry(self.root, width=50)
+            self.plot_name_entry = tk.Entry(self.root, width=150)
+            self.plot_name_entry.config(state='normal')
             self.plot_name_entry.pack()
 
             # Dataset name input
             self.dataset_name_label = tk.Label(
                 self.root, text="Enter dataset name:")
             self.dataset_name_label.pack()
-            self.dataset_name_entry = tk.Entry(self.root, width=50)
+            self.dataset_name_entry = tk.Entry(self.root, width=150)
+            self.dataset_name_entry.config(state='normal')
             self.dataset_name_entry.pack()
 
             # Create plot button
@@ -631,7 +647,7 @@ class GBOutDoor:
             self.status_label = tk.Label(self.root, text="")
             self.status_label.pack()
 
-        def select_atr_file(self):
+        def _select_atr_file(self):
             """
             Select A single ATR file for processing
 
@@ -649,6 +665,34 @@ class GBOutDoor:
                 self.file_entry.delete(0, tk.END)
                 self.file_entry.insert(0, file_path)
             # return file_path, file_entry
+
+        def _select_atr_files():
+
+            # file selection dialog, need to update for any files other than current
+            # outdoor range files
+            # import os
+            # Create a root window
+            root2 = tk.Tk()
+
+            # Hide the root window
+            root2.withdraw()
+            # root.iconify()
+
+            filename = askopenfilenames(filetypes=[("Antenna Range Files",
+                                                    ".ATR")])
+            root2.destroy()
+            # start the main loop for processing the selected files
+            fileParts = [None] * len(filenmame)
+            for mainLooper in range(len(filename)):
+                # this loop processes the files selected one at a time, while combining
+                # the data as it progresses
+
+                # get the file parts for further use of the current file.
+                fileParts[mainLooper] = os.path.split(filename[mainLooper])
+
+            # After the mainloop, I need to combine all the data into a multi-dimensional
+            # array. Then call Veusz and parse the data into that gui.
+            return filename, fileParts
 
         def create_plot(self):
             file_path = self.file_entry.get()
@@ -836,6 +880,7 @@ class GBOutDoor:
 
             # run the GUI!
             self.root.mainloop()
+            # root.destroy()
 
 
 class GBOAnechoic:
