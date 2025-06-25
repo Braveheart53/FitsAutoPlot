@@ -289,7 +289,28 @@ class PlotATR:
 
                 # Create a new page
                 page = self.doc.Root.Add('page', name=dataset_name)
-
+                breakpoint
+                # TODO
+                if 'Overlay All' not in self.doc.Root.childnames:
+                    pageAll = self.doc.Root.Add('page', name='Overlay_All')
+                    graphAll = page.Add(
+                        'graph', name='Overlay_All', autoadd=False
+                    )
+                    x_axis_All = graph.Add('axis', name='frequency')
+                    y_axis_All = graph.Add('axis', name='counts')
+                    x_axis_All.label.val = 'frequency (MHz)'
+                    y_axis_All.label.val = 'Counts'
+                    y_axis_All.direction.val = 'vertical'
+                    # x_axis_All.childnames gives you all the settable parameters
+                    x_axis_All.autoRange.val = 'Auto'
+                    xy_All.xaxis_All.val = 'frequency'
+                    xy_All.yaxis_All.val = 'counts'
+                    xy_All.marker.val = 'none'
+                    xy_All.PlotLine.color.val = 'red'
+                    xy_All.PlotLine.width.val = '1pt'
+                else:
+                    pageAll = self.doc.Root.Overlay_All
+                    graphAll = self.doc.root.Overlay_All.Overlay_All
                 # Create a new graph
                 graph = page.Add('graph', name=dataset_name, autoadd=False)
 
@@ -355,6 +376,10 @@ class PlotATR:
                 xy.xData.val = dataset_name + '_x'
                 xy.yData.val = dataset_name + '_y'
                 xy.notes.val = header_lines
+
+                # TODO
+                # Update the Overlay All Plot
+                breakpoint
 
                 # Create a new Axis
                 # note that in xy.xAxis, this can be changed to match the give name
@@ -451,7 +476,7 @@ class PlotATR:
 
         # run the GUI!
         self.root.mainloop()
-        # root.destroy()
+        root.destroy()
 
 
 class Astronomy:
