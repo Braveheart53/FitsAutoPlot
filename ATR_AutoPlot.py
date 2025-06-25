@@ -95,7 +95,7 @@ pi = mpm.pi  # using mpmath versus numpy, there is a reason for this, just
 # Begin Class definitions based upon use cases for range and data
 
 
-class ATR_Plot_App:
+class PlotATR:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("ATR Plotter")
@@ -105,8 +105,10 @@ class ATR_Plot_App:
         self.file_label.pack()
         self.file_entry = tk.Entry(self.root, width=150)
         self.file_entry.pack()
-        self.file_button = tk.Button(self.root, text="Browse",
-                                     command=GBOutDoor.ATR_Plot_App._select_atr_file(self))
+        self.file_button = tk.Button(
+            self.root, text="Browse",
+            command=PlotATR._select_atr_files(self)
+        )
         self.file_button.pack()
 
         # Plot name input
@@ -126,33 +128,56 @@ class ATR_Plot_App:
 
         # Create plot button
         create_button = tk.Button(
-            self.root, text="Create Plot", command=self.create_plot)
+            self.root, text="Create Plot", command=self.create_plot
+        )
         create_button.pack()
 
         # Status label
         self.status_label = tk.Label(self.root, text="")
         self.status_label.pack()
 
-    def _select_atr_file(self):
-        """
-        Select A single ATR file for processing
+        # File Info
+        self.fileParts = None
+        self.fileNames = None
 
-        Returns
-        -------
-        file_path : TYPE
-            DESCRIPTION.
-        file_entry : TYPE
-            DESCRIPTION.
+        # Veusz Object
+        self.doc = vz.Embedded('GBO ATR Autoplotter', hidden=False)
+        self.doc.EnableToolbar()
 
-        """
-        file_path = filedialog.askopenfilename(
-            filetypes=[("GBO Outdoor Test Range files", "*.atr")])
-        if file_path:
-            self.file_entry.delete(0, tk.END)
-            self.file_entry.insert(0, file_path)
-        # return file_path, file_entry
+        # Plot Info
 
-    def _select_atr_files():
+        # requireds @dataclass defintion
+        # self.plotInfo = plotDescInfo(
+        #     xAxis_label='Frequency (Hz)',
+        #     yAxis_label='Uncalibrated (dBm)',
+        #     graph_notes=None,
+        #     graph_title='Title',
+        #     base_name=None,
+        #     first_plot=True
+        # )
+
+# =============================================================================
+#     def _select_atr_file(self):
+#         """
+#         Select A single ATR file for processing
+#
+#         Returns
+#         -------
+#         file_path : TYPE
+#             DESCRIPTION.
+#         file_entry : TYPE
+#             DESCRIPTION.
+#
+#         """
+#         file_path = filedialog.askopenfilename(
+#             filetypes=[("GBO Outdoor Test Range files", "*.atr")])
+#         if file_path:
+#             self.file_entry.delete(0, tk.END)
+#             self.file_entry.insert(0, file_path)
+#         # return file_path, file_entry
+# =============================================================================
+
+    def _select_atr_files(self):
 
         # file selection dialog, need to update for any files other than current
         # outdoor range files
@@ -164,179 +189,220 @@ class ATR_Plot_App:
         root2.withdraw()
         # root.iconify()
 
-        filename = askopenfilenames(filetypes=[("Antenna Range Files",
-                                                ".ATR")])
+        self.filenames = askopenfilenames(filetypes=[("Antenna Range Files",
+                                                      ".ATR")])
         root2.destroy()
         # start the main loop for processing the selected files
-        fileParts = [None] * len(filenmame)
-        for mainLooper in range(len(filename)):
+        self.fileParts = [None] * len(self.filenmames)
+        for mainLooper in range(len(self.filenames)):
             # this loop processes the files selected one at a time, while combining
             # the data as it progresses
 
             # get the file parts for further use of the current file.
-            fileParts[mainLooper] = os.path.split(filename[mainLooper])
+            self.fileParts[mainLooper] = os.path.split(
+                self.filenames[mainLooper]
+            )
 
         # After the mainloop, I need to combine all the data into a multi-dimensional
         # array. Then call Veusz and parse the data into that gui.
-        return filename, fileParts
+        if fileParts[0][0]:
+            self.file_entry.delete(0, tk.END)
+            self.file_entry.insert(0, self.filenames)
+
+        return filenames, fileParts
 
     def create_plot(self):
-        file_path = self.file_entry.get()
-        plot_name = self.plot_name_entry.get()
-        dataset_name = self.dataset_name_entry.get()
+        for index in enumerate(range(len(self.filenames))):
+            breakpoint
 
-        if not file_path or not plot_name or not dataset_name:
-            self.status_label.config(text="Please fill in all fields")
-            return
-
-        try:
-            # Read ATR file
-            line_number = 13  # remeber it is zero indexed
-            header_info, selected_data = (
-                GBOutDoor.ATR_Plot_App.process_data(file_path,
-                                                    line_number, self))
-
-            # take the numpy and call it df
-            df = selected_data
-
-            # partse header info for future use, remember if the ATR
-            # format changes this MUST be changed
-            header_lines = header_info.splitlines()
-            # freqs are ion MHz in the ATR file
-            freq_max = float(header_lines[8].split(":")[-1].strip())
-            freq_min = float(header_lines[9].split(":")[-1].strip())
-            freq_step = float(header_lines[10].split(":")[-1].strip())
-
-            if freq_min != freq_max:
-                print("This script is not yet capable of reducing " +
-                      "data that consists of multiple frequencies. " +
-                      "Contact William Wallace at x2216 and ask him " +
-                      "to implement this feature.")
-                return
+            file_path = self.filenames[index]
+            if self.plot_name_entry.get():
+                plot_name = self.plot_name_entry.get()
             else:
-                # once plotting of multiple files at once is made, this
-                # array will have to index with the various data sets
-                # by length
-                freq_array = [freq_max]
+                plot_name = self.fileParts[index][1]
 
-            Polarization_plane = float(
-                header_lines[5].split(":")[-1].split()[0])  # in deg
+            if self.dataset_name_entry.get():
+                dataset_name = self.dataset_name_entry.get()
+            else:
+                dataset_name = self.fileParts[index][1]
 
-            # As of 2025-02-21 The outdoor range is only capable of single
-            # elevation scans (at 0 el)
-            Az_min = float(header_lines[6].split(":")[-1].strip())
-            Az_max = float(header_lines[7].split(":")[-1].strip())
-            # All steps in az for the GBO outdoor range are by default
-            # 1 degrees in a continual scan
-            Az_angles = np.arange(Az_min, Az_max + 1, 1, dtype=float)
-
-            # Create Veusz embedded window
-            embed = vz.Embedded('Veusz', hidden=False)
-            embed.EnableToolbar()
-
-            # Create a new document
-            # doc = embed.Root.AddDocument()
-
-            # Create a new page
-            page = embed.Root.Add('page')
-
-            # Create a new graph
-            graph = page.Add('graph', name='graph1', autoadd=False)
-
-            # Set plot title
-            # incorrect graph.title.val = plot_name
-
-            # First add an dimension to the 2D array in the first axis
-            # then parse out the data
-            # df = np.expand_dims(df, axis=3)
-
-            # add frequency to the matrix
-            data_freq = freq_array
-            data_mag = df[:, 0]
-            data_phase = df[:, 1]
-            data_Az_angle = Az_angles
-
-            # iloc is a pandas function....
-            # freq_data = df.iloc[:, 0].tolist()
-            # mag_data = df.iloc[:, 1].tolist()
-            # phase_data = df.iloc[:, 3].tolist()
-
-            data_col_stack = np.column_stack(
-                (data_Az_angle, data_mag, data_phase)
-            )
-
-            # trying xr.dataarray
-            data_full_2 = xr.DataArray(data_col_stack,
-                                       coords=[data_Az_angle, data_freq],
-                                       dims=["Azimuth", "frequnecy"],
-                                       attrs=dict(description=(
-                                           "Full Dataset for " +
-                                           "the associated " +
-                                           "outdoor " +
-                                           "range measurement.")
-                                       )
-                                       )
-
-            # Use Xarray to create a dataset
-            # a dataset in xarray may not be needed here, a dataarray
-            # may be best, but also astropy tables may work better here
-            # looking into this, leaving any items in work
-            data_full = xr.Dataset(
-                data_vars=dict(magnitude=(["freq", "Az"], data_mag),
-                               phase=(["freq", "Az"], data_phase)
-                               ),
-                coords=dict(
-                    frequency=("freq", data_freq),
-                    Azimuth=("Az", data_Az_angle)
-                ),
-                attrs=dict(description=(
-                    "Full Dataset for the associated " + "outdoor " +
-                    "range measurement.")
+            if not file_path or not plot_name or not dataset_name:
+                # self.status_label.config(text="Please fill in all fields")
+                self.status_label.config(
+                    text="Blank Fields Will Be Autogenerated."
                 )
-            )
 
-            # Create datasets
-            embed.SetData(dataset_name + '_freq', data_freq)
-            embed.SetData(dataset_name + '_mag', data_mag)
-            embed.SetData(dataset_name + '_phase', data_phase)
+            if not file_path:
+                # self.status_label.config(text="Please fill in all fields")
+                self.status_label.config(
+                    text="User MUST select at least one file."
+                )
+                return
 
-            # Create xy plot
-            xy = graph.Add('xy', name=dataset_name)
-            xy.xData.val = dataset_name + '_x'
-            xy.yData.val = dataset_name + '_y'
+            try:
+                # Read ATR file
+                line_number = 13  # remeber it is zero indexed
+                header_info, selected_data = (
+                    PlotATR.process_data(file_path,
+                                         line_number, self))
 
-            # Create a new Axis
-            # note that in xy.xAxis, this can be changed to match the give name
-            x_axis = graph.Add('axis', name='frequency')
-            y_axis = graph.Add('axis', name='counts')
-            x_axis.label.val = 'frequency (MHz)'
-            y_axis.label.val = 'Counts'
-            y_axis.direction.val = 'vertical'
-            # x_axis.childnames gives you all the settable parameters
-            x_axis.autoRange.val = 'Auto'
-            xy.xAxis.val = 'frequency'
-            xy.yAxis.val = 'counts'
-            xy.marker.val = 'none'
-            xy.PlotLine.color.val = 'red'
-            xy.PlotLine.width.val = '1pt'
+                # take the numpy and call it df
+                df = selected_data
 
-            # Add Page or Graph Title
+                # partse header info for future use, remember if the ATR
+                # format changes this MUST be changed
+                header_lines = header_info.splitlines()
+                # freqs are ion MHz in the ATR file
+                freq_max = float(header_lines[8].split(":")[-1].strip())
+                freq_min = float(header_lines[9].split(":")[-1].strip())
+                freq_step = float(header_lines[10].split(":")[-1].strip())
 
-            # Save The Veusz file
-            saveDir = os.path.dirname(file_path)
-            embed.Save(saveDir + '/' + dataset_name + '.vsz')
+                if freq_min != freq_max:
+                    print("This script is not yet capable of reducing " +
+                          "data that consists of multiple frequencies. " +
+                          "Contact William Wallace at x2216 and ask him " +
+                          "to implement this feature.")
+                    return
+                else:
+                    # once plotting of multiple files at once is made, this
+                    # array will have to index with the various data sets
+                    # by length
+                    freq_array = [freq_max]
 
-            # Show the plot
-            embed.WaitForClose()
+                Polarization_plane = float(
+                    header_lines[5].split(":")[-1].split()[0])  # in deg
 
-            self.status_label.config(text="Plot created successfully")
-        except Exception as e:
-            self.status_label.config(text=f"Error: {str(e)}")
+                # As of 2025-02-21 The outdoor range is only capable of single
+                # elevation scans (at 0 el)
+                Az_min = float(header_lines[6].split(":")[-1].strip())
+                Az_max = float(header_lines[7].split(":")[-1].strip())
+                # All steps in az for the GBO outdoor range are by default
+                # 1 degrees in a continual scan
+                Az_angles = np.arange(Az_min, Az_max + 1, 1, dtype=float)
+
+                # Create Veusz embedded window
+                # embed = vz.Embedded('Veusz', hidden=False)
+                # self.doc.EnableToolbar()
+
+                # Create a new document
+                # doc = self.doc.Root.AddDocument()
+
+                # Create a new page
+                page = self.doc.Root.Add('page', name=dataset_name)
+
+                # Create a new graph
+                graph = page.Add('graph', name=dataset_name, autoadd=False)
+
+                # Set plot title
+                # incorrect graph.title.val = plot_name
+
+                # First add an dimension to the 2D array in the first axis
+                # then parse out the data
+                # df = np.expand_dims(df, axis=3)
+
+                # add frequency to the matrix
+                data_freq = freq_array
+                data_mag = df[:, 0]
+                data_phase = df[:, 1]
+                data_Az_angle = Az_angles
+
+                # iloc is a pandas function....
+                # freq_data = df.iloc[:, 0].tolist()
+                # mag_data = df.iloc[:, 1].tolist()
+                # phase_data = df.iloc[:, 3].tolist()
+
+                data_col_stack = np.column_stack(
+                    (data_Az_angle, data_mag, data_phase)
+                )
+
+                # trying xr.dataarray
+                data_full_2 = xr.DataArray(data_col_stack,
+                                           coords=[data_Az_angle, data_freq],
+                                           dims=["Azimuth", "frequnecy"],
+                                           attrs=dict(description=(
+                                               "Full Dataset for " +
+                                               "the associated " +
+                                               "outdoor " +
+                                               "range measurement.")
+                                           )
+                                           )
+
+                # Use Xarray to create a dataset
+                # a dataset in xarray may not be needed here, a dataarray
+                # may be best, but also astropy tables may work better here
+                # looking into this, leaving any items in work
+                data_full = xr.Dataset(
+                    data_vars=dict(magnitude=(["freq", "Az"], data_mag),
+                                   phase=(["freq", "Az"], data_phase)
+                                   ),
+                    coords=dict(
+                        frequency=("freq", data_freq),
+                        Azimuth=("Az", data_Az_angle)
+                    ),
+                    attrs=dict(description=(
+                        "Full Dataset for the associated " + "outdoor " +
+                        "range measurement.")
+                    )
+                )
+
+                # Create datasets
+                self.doc.SetData(dataset_name + '_freq', data_freq)
+                self.doc.SetData(dataset_name + '_mag', data_mag)
+                self.doc.SetData(dataset_name + '_phase', data_phase)
+
+                # Create xy plot
+                xy = graph.Add('xy', name=dataset_name)
+                xy.xData.val = dataset_name + '_x'
+                xy.yData.val = dataset_name + '_y'
+                xy.notes.val = header_lines
+
+                # Create a new Axis
+                # note that in xy.xAxis, this can be changed to match the give name
+                x_axis = graph.Add('axis', name='frequency')
+                y_axis = graph.Add('axis', name='counts')
+                x_axis.label.val = 'frequency (MHz)'
+                y_axis.label.val = 'Counts'
+                y_axis.direction.val = 'vertical'
+                # x_axis.childnames gives you all the settable parameters
+                x_axis.autoRange.val = 'Auto'
+                xy.xAxis.val = 'frequency'
+                xy.yAxis.val = 'counts'
+                xy.marker.val = 'none'
+                xy.PlotLine.color.val = 'red'
+                xy.PlotLine.width.val = '1pt'
+
+                # Add Page or Graph Title
+
+                # Save The Veusz file
+                saveDir = os.path.dirname(file_path)
+                # self.doc.Save(saveDir + '/' + dataset_name + '.vsz')
+                filenameSave = saveDir + '/' + dataset_name + '.vszh5'
+                self.save(self, filenameSave)
+
+                # Show the plot
+                self.doc.WaitForClose()
+
+                self.status_label.config(text="Plot created successfully")
+            except Exception as e:
+                self.status_label.config(text=f"Error: {str(e)}")
 
     def process_data(file_path, line_number, self):
-        # Read the entire file into a list of lines
-        with open(file_path, 'r') as file:
-            lines = file.readlines()
+        """Read the entire file into a list of lines."""
+        filesize = os.path.getsize(file_path)
+
+        # Use appropriate method based on file size
+        if filesize < 10**7:  # < 10MB
+            # Use fast binary reading
+            with open(file_path, 'rb') as file:
+                content = file.read().decode('ascii')
+                lines = content.splitlines()
+        else:
+            # Use memory-efficient line iteration
+            with open(file_path, 'r', encoding='ascii') as file:
+                lines = file.readlines()
+
+        # with open(file_path, 'r') as file:
+        #     lines = file.readlines()
 
         # Extract header information
         header_lines = lines[:line_number]
@@ -361,6 +427,25 @@ class ATR_Plot_App:
                                  selected_phase_data])
         selected_data_transpose = selected_data.transpose()
         return header_info, selected_data_transpose
+
+    def save(self, filename: str):
+        """Save Veusz document to specified file."""
+        # there might be a precision argument or format string
+        # TODO
+        # MUST find a way to save higher precision!!!!
+        # a work around would be to save all data to np.float64 arrays
+        # in files and link them in the veusz document, I would really prefer
+        # not do it this way.
+        # self.doc.Save(filename, 'vsz')
+        filename_root = os.path.splitext(filename)[0]
+        filenameHP = filename_root + '.vszh5'
+        fileSplit = os.path.split(filename)
+        filenameVSZ = (fileSplit[0] + '/Beware_oldVersion/' +
+                       os.path.splitext(fileSplit[1])[0] + '_BEWARE.vsz')
+        # filename3 = filename_root + '_hdf5.hdf5'
+        self.doc.Save(filenameHP, mode='hdf5')
+        os.makedirs(fileSplit[0] + '/Beware_oldVersion/', exist_ok=True)
+        self.doc.Save(filenameVSZ, mode='vsz')
 
     def run(self):
 
@@ -586,7 +671,7 @@ def main():
     # newTime = Astronomy.mjdconvert_time(mjd)
     print(newTime)
 
-    ATR_Example = ATR_Plot_App()
+    ATR_Example = PlotATR()
     ATR_Example.run()
 
     # sys.path.append(
