@@ -4,13 +4,11 @@
 # Author: William W. Wallace
 #
 #
-# TODO
-# update the ATR script to plot multiple files at once, and remove it from here
+# TODO: update the ATR script to plot multiple files at once, and remove it from here
 # and plaec it is own file to import / call
 # atr NOT working, need to correct immediately!!
 #
-# TODO
-# Update CSV to auto plot multiple files, extract it to its own file
+# TODO: Update CSV to auto plot multiple files, extract it to its own file
 # =============================================================================
 
 # event loop QApplication.exec_()
@@ -31,21 +29,31 @@ from tkinter import messagebox
 # from PySide6.QtCore import Qt, QSize
 # %%%% qtpy imports
 from qtpy.QtGui import *
-from qtpy.QtWidgets import (QApplication, QPushButton, QMainWindow, QLabel,
-                            QWidget)
 from qtpy.QtCore import Qt, QSize
+from qtpy.QtWidgets import (
+    QApplication,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QFileDialog,
+    QLabel,
+    QRadioButton,
+    QButtonGroup,
+    QMessageBox
+)
 
 # %%% Math Modules
 # import pandas as pd
 import xarray as xr
 import numpy as np
-import skrf as rf
+# import skrf as rf
 import mpmath as mpm
 import scipy.constants as cons
 from astropy.time import Time as tme
 # look up how to use data classes, this is how one can create a matlab type
 # structure, in addition to my own codes for such
-import dataclasses as dataclass
+# import dataclasses as dataclass
 
 # %%% Unit Conversion
 # import pint as pint
@@ -54,20 +62,21 @@ import dataclasses as dataclass
 # %%% System Interface Modules
 import os
 import os.path as pathCheck
-import time as time
+# import time as time
 import sys
 # add something to the python sys path
 # sys.path.append(os.path.abspath("something"))
+from operator import itemgetter
 
 
 # %%% Plotting Environment
 import veusz.embed as vz
-import pprint
+# import pprint
 
 # %%% File type Export/Import
-import h5py as h5
-from scipy.io import savemat
-from fastest_ascii_import import fastest_file_parser as fparser
+# import h5py as h5
+# from scipy.io import savemat
+# from fastest_ascii_import import fastest_file_parser as fparser
 
 # %%% Parallelization
 # from multiprocessing import Pool  # udpate when you learn it!
@@ -75,6 +84,9 @@ from fastest_ascii_import import fastest_file_parser as fparser
 # from multiprocess import Process
 # from multiprocess import Pool
 
+# %%% Debugging Help
+from rich import inspect as richinspect
+import pdir
 # %%% GPU Implementation
 # %%%% Cuda
 # import cupy as cp
@@ -93,6 +105,95 @@ pi = mpm.pi  # using mpmath versus numpy, there is a reason for this, just
 
 # %% Class Definitions
 # Begin Class definitions based upon use cases for range and data
+
+
+class switch:
+    """"Creates a case or switch style statement."""
+    """
+    This is utilized as follows:
+
+        for case in switch('b'):
+            if case('a'):
+                # print or do whatever one wants
+                print("Case A")
+                break
+            if case('b'):
+                print("Case B")  # Output: "Case B"
+                break
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def __iter__(self):
+        """interate and find the match."""
+        yield self.match
+
+    def match(self, *args):
+        return self.value in args
+
+
+class qtGUI:
+    """Handles all Qt-based user interactions."""
+
+    def __init__(self):
+        self.app = QApplication(sys.argv)
+
+    def closeEvent(self, event):
+        QApplication.closeAllWindows()
+        event.accept()
+
+    def _select_sft_file(self, dialog):
+        """Handle file selection button click."""
+        fname, _ = QFileDialog.getOpenFileName(
+            dialog, "Open SFT File", "", "R&S SFT Files (*.sft)"
+        )
+        if fname:
+            self.selected_file = fname
+            self.file_label.setText(fname)
+
+    def _validate_selection(self, dialog):
+        """Validate file selection before accepting dialog."""
+        if not self.selected_file:
+            self.file_label.setText("Please select a file!")
+            return
+        dialog.accept()
+
+    def get_save_filename(self):
+        """Display file save dialog for Veusz project."""
+        return QFileDialog.getSaveFileName(
+            None, "Save Veusz Project", "",
+            "Veusz High Precision Files (*.vszh5)")[0]
+
+    def ask_open_veusz(self):
+        """Display dialog to open created file in Veusz GUI."""
+        msg = QMessageBox()
+        msg.setWindowTitle("Open in Veusz")
+        msg.setText("Would you like to open the file in Veusz?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        return msg.exec_() == QMessageBox.Yes
+
+
+class Wrap4With:
+    """Used to add context management to a given object."""
+
+    def __init__(self, resource):
+        self._resource = resource
+
+    def __enter__(self):
+        """Return the wrapped resource upon entering the context."""
+        return self._resource
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Clean up the resource upon exiting the context.
+
+        If the resource has a .close() method, it will be called.
+        """
+        if hasattr(self._resource, 'close'):
+            self._resource.close()
+        # Optionally, add other cleanup logic here.
+        # Return None to propagate exceptions, or True to suppress them.
+        return None
 
 
 class PlotATR:
@@ -137,8 +238,19 @@ class PlotATR:
         self.status_label.pack()
 
         # File Info
-        self.fileParts = None
-        self.fileNames = None
+        if not self.fileParts:
+            self.fileParts = None
+
+        if not self.filenames:
+            self.filenames = None
+
+        # Plot Info
+        # if not self.plotTitle:
+        self.plotTitle = 'GBO Outdoor Antenna Range Pattern'
+        self.freq_label = 'Frequency (MHz)'
+        self.az_label = 'Azimuth (degrees)'
+        self.phase_label = 'Phase (degrees)'
+        self.mag_label = 'Magnitude (dBm)'
 
         # Veusz Object
         self.doc = vz.Embedded('GBO ATR Autoplotter', hidden=False)
@@ -177,6 +289,12 @@ class PlotATR:
 #         # return file_path, file_entry
 # =============================================================================
 
+    def _create_page(self, dataset: str):
+        """Create a new page and grid."""
+        self.page = self.doc.Root.Add('page', name=dataset)
+        self.grid = self.page.Add('grid', columns=2)
+        return self.page
+
     def _select_atr_files(self):
 
         # file selection dialog, need to update for any files other than current
@@ -193,7 +311,7 @@ class PlotATR:
                                                       ".ATR")])
         root2.destroy()
         # start the main loop for processing the selected files
-        self.fileParts = [None] * len(self.filenmames)
+        self.fileParts = [None] * len(self.filenames)
         for mainLooper in range(len(self.filenames)):
             # this loop processes the files selected one at a time, while combining
             # the data as it progresses
@@ -205,17 +323,25 @@ class PlotATR:
 
         # After the mainloop, I need to combine all the data into a multi-dimensional
         # array. Then call Veusz and parse the data into that gui.
-        if fileParts[0][0]:
+        if self.fileParts[0][0]:
             self.file_entry.delete(0, tk.END)
-            self.file_entry.insert(0, self.filenames)
+            filenames_only = list(map(itemgetter(1), self.fileParts))
+            self.file_entry.insert(0, ' ; '.join(filenames_only))
 
-        return filenames, fileParts
+        return self.filenames, self.fileParts
 
     def create_plot(self):
-        for index in enumerate(range(len(self.filenames))):
-            breakpoint
+        """Create the 2D plots for all data."""
+        data_freq_all = np.empty(len(self.filenames), dtype=object)
+        data_mag_all = np.empty(len(self.filenames), dtype=object)
+        data_phase_all = np.empty(len(self.filenames), dtype=object)
+        data_Az_angle_all = np.empty(len(self.filenames), dtype=object)
+        data_Polarization_all = np.array(['H', 'V', str(45), str(-45)])
+        measurement_Types = ['Mag', 'Phase']
 
-            file_path = self.filenames[index]
+        for index, file_path in enumerate(self.filenames):
+
+            # file_path = element
             if self.plot_name_entry.get():
                 plot_name = self.plot_name_entry.get()
             else:
@@ -226,7 +352,10 @@ class PlotATR:
             else:
                 dataset_name = self.fileParts[index][1]
 
-            if not file_path or not plot_name or not dataset_name:
+            if (
+                    not self.plot_name_entry.get() or not
+                    self.dataset_name_entry.get()
+            ):
                 # self.status_label.config(text="Please fill in all fields")
                 self.status_label.config(
                     text="Blank Fields Will Be Autogenerated."
@@ -242,7 +371,7 @@ class PlotATR:
             try:
                 # Read ATR file
                 line_number = 13  # remeber it is zero indexed
-                header_info, selected_data = (
+                header_info, selected_data, header_lines = (
                     PlotATR.process_data(file_path,
                                          line_number, self))
 
@@ -251,7 +380,7 @@ class PlotATR:
 
                 # partse header info for future use, remember if the ATR
                 # format changes this MUST be changed
-                header_lines = header_info.splitlines()
+                # header_lines = header_info.splitlines()
                 # freqs are ion MHz in the ATR file
                 freq_max = float(header_lines[8].split(":")[-1].strip())
                 freq_min = float(header_lines[9].split(":")[-1].strip())
@@ -269,8 +398,37 @@ class PlotATR:
                     # by length
                     freq_array = [freq_max]
 
-                Polarization_plane = float(
-                    header_lines[5].split(":")[-1].split()[0])  # in deg
+                Polarization_plane = (
+                    header_lines[5].split(":")[-1].split()[0]
+                )  # string
+
+                # Make and index for placing the data in the correct area
+                # for a combined data structure based on the read in
+                # polarization
+                try:
+                    for case in switch(Polarization_plane):
+                        if case('H'):
+                            # print or do whatever one wants
+                            print("H")
+                            Polarization_index = 0
+                            break
+                        if case('V'):
+                            print("V")
+                            Polarization_index = 1
+                            break
+                        if case(str(45)):
+                            print("45")
+                            Polarization_index = 2
+                            break
+                        if case(str(-45)):
+                            print("-45")
+                            Polarization_index = 3
+                            break
+                        raise ValueError('Polarization String is ' +
+                                         'incorrect. See file: ' +
+                                         dataset_name)
+                except ValueError as e:
+                    print(f"Error Raised: {e}")
 
                 # As of 2025-02-21 The outdoor range is only capable of single
                 # elevation scans (at 0 el)
@@ -279,43 +437,6 @@ class PlotATR:
                 # All steps in az for the GBO outdoor range are by default
                 # 1 degrees in a continual scan
                 Az_angles = np.arange(Az_min, Az_max + 1, 1, dtype=float)
-
-                # Create Veusz embedded window
-                # embed = vz.Embedded('Veusz', hidden=False)
-                # self.doc.EnableToolbar()
-
-                # Create a new document
-                # doc = self.doc.Root.AddDocument()
-
-                # Create a new page
-                page = self.doc.Root.Add('page', name=dataset_name)
-                breakpoint
-                # TODO
-                if 'Overlay All' not in self.doc.Root.childnames:
-                    pageAll = self.doc.Root.Add('page', name='Overlay_All')
-                    graphAll = page.Add(
-                        'graph', name='Overlay_All', autoadd=False
-                    )
-                    x_axis_All = graph.Add('axis', name='frequency')
-                    y_axis_All = graph.Add('axis', name='counts')
-                    x_axis_All.label.val = 'frequency (MHz)'
-                    y_axis_All.label.val = 'Counts'
-                    y_axis_All.direction.val = 'vertical'
-                    # x_axis_All.childnames gives you all the settable parameters
-                    x_axis_All.autoRange.val = 'Auto'
-                    xy_All.xaxis_All.val = 'frequency'
-                    xy_All.yaxis_All.val = 'counts'
-                    xy_All.marker.val = 'none'
-                    xy_All.PlotLine.color.val = 'red'
-                    xy_All.PlotLine.width.val = '1pt'
-                else:
-                    pageAll = self.doc.Root.Overlay_All
-                    graphAll = self.doc.root.Overlay_All.Overlay_All
-                # Create a new graph
-                graph = page.Add('graph', name=dataset_name, autoadd=False)
-
-                # Set plot title
-                # incorrect graph.title.val = plot_name
 
                 # First add an dimension to the 2D array in the first axis
                 # then parse out the data
@@ -327,89 +448,297 @@ class PlotATR:
                 data_phase = df[:, 1]
                 data_Az_angle = Az_angles
 
-                # iloc is a pandas function....
-                # freq_data = df.iloc[:, 0].tolist()
-                # mag_data = df.iloc[:, 1].tolist()
-                # phase_data = df.iloc[:, 3].tolist()
+                # TODO: Make a data structure that contains all phase, mag
+                # and polarization
+                # this is a little inefficient as it written over each pass
+                #
+
+                # TODO: When upgrading to multi-frequency files
+                # this will need to be changed
+                data_freq_all[index] = data_freq[0]
+                # TODO: Finish the 4D data matrix creation in xarray
+                if Polarization_index:
+                    # combine all in a 4D matrix such as:
+                    # (4D: Az × Freq × Pol × Var)
+                    # Row follows Az
+                    # Column follows freq
+                    # internal item list follows pol
+                    #       Mag = ([
+                    #                    ---  magnitude at freq and angle             magnitude at freq and angle ---
+                    # Az angle 1    [[mag@pol0, mag@pol1, mag@pol2, mag@pol3], [mag@pol0, mag@pol1, mag@pol2, mag@pol3]],
+                    # Az angle 2    [[mag@pol0, mag@pol1, mag@pol2, mag@pol3], [mag@pol0, mag@pol1, mag@pol2, mag@pol3]]
+                    #               ])
+                    pass
+
+                data_mag_all[index] = data_mag
+                data_phase_all[index] = data_phase
+                data_Az_angle_all[index] = data_Az_angle
 
                 data_col_stack = np.column_stack(
                     (data_Az_angle, data_mag, data_phase)
                 )
 
-                # trying xr.dataarray
-                data_full_2 = xr.DataArray(data_col_stack,
-                                           coords=[data_Az_angle, data_freq],
-                                           dims=["Azimuth", "frequnecy"],
-                                           attrs=dict(description=(
-                                               "Full Dataset for " +
-                                               "the associated " +
-                                               "outdoor " +
-                                               "range measurement.")
-                                           )
-                                           )
+                # All Data is now parsed into various variables
+                # Data array example
+# =============================================================================
+#                 # Define coordinates
+#                 azimuth = np.array([0, 10, 20, 30])          # Azimuth points
+#                 frequency = np.array([100, 200, 300])         # Frequency points
+#                 polarization = np.array(['H', 'V'])           # Polarization states
+#                 variables = ['Mag', 'Phase']                  # Measurement types
+#
+#                 # Generate synthetic data (4D: Az × Freq × Pol × Var)
+#                 mag_data = np.array([
+#                     [[1.2, 1.1], [1.5, 1.4], [1.7, 1.6]],   # Az=0°
+#                     [[2.3, 2.2], [2.5, 2.4], [2.7, 2.6]],   # Az=10°
+#                     [[1.8, 1.7], [2.0, 1.9], [2.2, 2.1]],   # Az=20°
+#                     [[3.0, 2.9], [3.2, 3.1], [3.4, 3.3]]    # Az=30°
+#                 ])
+#
+#                 phase_data = np.array([
+#                     [[0.1, 0.11], [0.12, 0.13], [0.14, 0.15]],
+#                     [[0.2, 0.21], [0.22, 0.23], [0.24, 0.25]],
+#                     [[0.15, 0.16], [0.17, 0.18], [0.19, 0.20]],
+#                     [[0.3, 0.31], [0.32, 0.33], [0.34, 0.35]]
+#                 ])
+#
+#                 # Combine into single 4D array (Az, Freq, Pol, Var)
+#                 combined_data = np.stack([mag_data, phase_data], axis=3)
+#
+#                 # Create DataArray
+#                 da = xr.DataArray(
+#                     data=combined_data,
+#                     dims=['Az', 'Frequency', 'Polarization', 'Variable'],
+#                     coords={
+#                         'Az': azimuth,
+#                         'Frequency': frequency,
+#                         'Polarization': polarization,
+#                         'Variable': variables,
+#                         'Magnitude': (['Az', 'Frequency', 'Polarization'], mag_data),
+#                         'Phase': (['Az', 'Frequency', 'Polarization'], phase_data)
+#                     },
+#                     name='Antenna_Measurements',
+#                     attrs={
+#                         'description': 'Full antenna measurements',
+#                         'units': 'Mag(dB), Phase(radians)'
+#                     }
+#                 )
+# =============================================================================
 
-                # Use Xarray to create a dataset
-                # a dataset in xarray may not be needed here, a dataarray
-                # may be best, but also astropy tables may work better here
-                # looking into this, leaving any items in work
-                data_full = xr.Dataset(
-                    data_vars=dict(magnitude=(["freq", "Az"], data_mag),
-                                   phase=(["freq", "Az"], data_phase)
-                                   ),
-                    coords=dict(
-                        frequency=("freq", data_freq),
-                        Azimuth=("Az", data_Az_angle)
-                    ),
-                    attrs=dict(description=(
-                        "Full Dataset for the associated " + "outdoor " +
-                        "range measurement.")
-                    )
-                )
+                # TODO: Combine All Data
+                # TODO: Save all combined data in a numpy or xarray file
+                # for future use.
+
+# =============================================================================
+#                 data_full_DA = xr.DataArray(data_col_stack,
+#                                             dims=["Azimuth",
+#                                                   "Magnitude", 'Phase'],
+#                                             coords=dict(
+#                                                 Az=data_Az_angle,
+#                                                 Magnitude=(['Azimuth',
+#                                                            'Magnitdue'],
+#                                                            data_mag),
+#                                                 Phase=(['Azimuth',
+#                                                        'Phase'],
+#                                                        data_phase)
+#                                             ),
+#                                             attrs=dict(
+#                                                 description=(
+#                                                     "Full Dataset for " +
+#                                                     "the associated " +
+#                                                     "outdoor " +
+#                                                     "range measurement."
+#                                                 ),
+#                                                 name='Data Array All'
+#                                             )
+#                                             )
+#
+#                 # Use Xarray to create a dataset
+#                 # a dataset in xarray may not be needed here, a dataarray
+#                 # may be best, but also astropy tables may work better here
+#                 # looking into this, leaving any items in work
+#                 data_full_DS = xr.Dataset(
+#                     data_vars=dict(magnitude=(["freq", "Az"], data_mag),
+#                                    phase=(["freq", "Az"], data_phase)
+#                                    ),
+#                     coords=dict(
+#                         frequency=("freq", data_freq),
+#                         Azimuth=("Az", data_Az_angle)
+#                     ),
+#                     attrs=dict(description=(
+#                         "Full Dataset for the associated " + "outdoor " +
+#                         "range measurement.")
+#                     ),
+#                     name='Data Set All'
+#                 )
+# =============================================================================
 
                 # Create datasets
-                self.doc.SetData(dataset_name + '_freq', data_freq)
-                self.doc.SetData(dataset_name + '_mag', data_mag)
-                self.doc.SetData(dataset_name + '_phase', data_phase)
+                freqName = (os.path.splitext(dataset_name)[0] +
+                            '_freq')
+                magName = (os.path.splitext(dataset_name)[0] +
+                           '_mag')
+                phaseName = (os.path.splitext(dataset_name)[0] +
+                             '_phase')
+                azName = (os.path.splitext(dataset_name)[0] +
+                          '_Az')
+                self.doc.SetData(freqName, data_freq)
+                self.doc.SetData(magName, data_mag)
+                self.doc.SetData(phaseName, data_phase)
+                self.doc.SetData(azName, data_Az_angle)
+                self.doc.TagDatasets(dataset_name, [freqName, magName,
+                                                    phaseName, azName])
+
+                # TODO: Overlay all plot
+                if 'Overlay_All_mag' not in self.doc.Root.childnames:
+                    # magnitude
+                    pageAll_mag = self._create_page('Overlay_All_mag')
+                    graphAll_mag = self.grid.Add('graph',
+                                                 name='Overlay_All_mag')
+
+                    pageAll_mag.notes.val = ("All Imported " +
+                                             "and Plottable Data Overlay")
+                    with Wrap4With(graphAll_mag) as graph:
+                        graph.Add('label', name='plotTitle')
+                        graph.topMargin.val = '1cm'
+                        graph.plotTitle.Text.size.val = '10pt'
+                        graph.plotTitle.label.val = 'Overlay of All Imported'
+                        graph.plotTitle.alignHorz.val = 'centre'
+                        graph.plotTitle.yPos.val = 1.05
+                        graph.plotTitle.xPos.val = 0.5
+                        graph.notes.val = 'All Imported Data Overlayed'
+                        # set graph axis labels
+                        graph.x.label.val = self.az_label
+                        graph.y.label.val = self.mag_label
+
+                        # grid lines
+                        graph.x.GridLines.hide.val = False
+                        graph.y.GridLines.hide.val = False
+                        graph.x.MinorGridLines.hide.val = False
+                        graph.y.MinorGridLines.hide.val = False
+
+                    # set auto color theme for the files
+                    self.doc.Root.colorTheme.val = 'max128'
+
+                    # Create xy plot for magnitude on page, graph, and grid ALL
+                    xy_All_mag = graphAll_mag.Add(
+                        'xy', name=magName)
+                    with Wrap4With(xy_All_mag) as xy:
+                        # xy.notes.val = '\n'.join(header_lines)
+                        xy.xData.val = azName
+                        xy.yData.val = magName
+                        # xy.notes.val = header_lines
+
+                        # x_axis_All = graphAll_mag.Add('axis', name='frequency')
+                        # y_axis_All = graphAll_mag.Add('axis', name='counts')
+                        # x_axis_All.label.val = 'Frequency (MHz)'
+                        # y_axis_All.label.val = 'Uncalibrated Gain (dB)'
+                        # y_axis_All.direction.val = 'vertical'
+                        # x_axis_All.childnames gives you all the settable parameters
+                        # x_axis_All.autoRange.val = 'Auto'
+                        # x_axis_All.val = 'frequency'
+                        # y_axis_All.val = 'Uncalibrated Gain (dB)'
+                        # xy.marker.val = 'none'
+                        # xy.PlotLine.color.val = 'red'
+                        # xy.PlotLine.width.val = '1pt'
+                        # x_axis_All.MinorGridLines.hide.val = False
+                        # y_axis_All.MinorGridLines.hide.val = False
+                        # x_axis_All.GridLines.hide.val = False
+                        # y_axis_All.GridLines.hide.val = False
+
+                        xy.nanHandling = 'break-on'
+                        # xy.yData.val = dataset
+                        # xy.xData.val = self.plotInfo.base_name + '_freq'
+
+                        # set marker and colors for overlay plot
+                        xy.marker.val = 'circle'
+                        xy.markerSize.val = '2pt'
+                        # xy.MarkerLine.transparency.val =
+                        xy.MarkerLine.color.val = 'transparent'
+                        xy.MarkerFill.color.val = 'auto'
+                        xy.MarkerFill.transparency.val = 80
+                        xy.MarkerFill.style.val = 'solid'
+                        xy.FillBelow.transparency.val = 90
+                        xy.FillBelow.style.val = 'solid'
+                        xy.FillBelow.fillto.val = 'bottom'
+                        xy.FillBelow.color.val = 'darkgreen'
+                        xy.FillBelow.hide.val = True
+                        xy.PlotLine.color.val = 'auto'
+
+                    # TODO: Create new phase plot on a new page
+
+                    # TODO: Create Polar Plots (Mag and Phase)
+                    # pageAll_Polar_mag = self._create_page(
+                    #     'Overlay_All_Polar_mag')
+
+                else:
+                    # TODO: mach sure the indexing works here
+                    pageAll_mag = self.doc.Root.Overlay_All_mag
+                    graphAll_mag = (
+                        self.doc.Root.Overlay_All_mag.grid1.Overlay_All_mag
+                    )
+
+                # Create a new single plot for magnitude, repeat for phase
+                # Create a new page
+                page_mag = self._create_page(dataset_name)
+                graph_mag = self.grid.Add('graph', name=dataset_name,
+                                          autoadd=False)
+                graph_mag.notes.val = '\n'.join(header_lines)
 
                 # Create xy plot
-                xy = graph.Add('xy', name=dataset_name)
-                xy.xData.val = dataset_name + '_x'
-                xy.yData.val = dataset_name + '_y'
-                xy.notes.val = header_lines
+                xy_mag = graph_mag.Add('xy', name=dataset_name)
 
-                # TODO
-                # Update the Overlay All Plot
-                breakpoint
+                with Wrap4With(xy_mag) as xy:
+                    xy.xData.val = dataset_name + '_AZ'
+                    xy.yData.val = dataset_name + '_mag'
+                    # xy.notes.val = '\n'.join(header_lines)
 
-                # Create a new Axis
-                # note that in xy.xAxis, this can be changed to match the give name
-                x_axis = graph.Add('axis', name='frequency')
-                y_axis = graph.Add('axis', name='counts')
-                x_axis.label.val = 'frequency (MHz)'
-                y_axis.label.val = 'Counts'
-                y_axis.direction.val = 'vertical'
-                # x_axis.childnames gives you all the settable parameters
-                x_axis.autoRange.val = 'Auto'
-                xy.xAxis.val = 'frequency'
-                xy.yAxis.val = 'counts'
-                xy.marker.val = 'none'
-                xy.PlotLine.color.val = 'red'
-                xy.PlotLine.width.val = '1pt'
+                    # Create a new Axis
+                    # note that in xy.xAxis, this can be changed to match the give name
+                    # x_axis = graph.Add('axis', name='frequency')
+                    # y_axis = graph.Add('axis', name='counts')
+                    # x_axis.label.val = 'Frequency (MHz)'
+                    # y_axis.label.val = 'Uncalibrated Gain (dB)'
+                    # y_axis.direction.val = 'vertical'
+                    # # x_axis.childnames gives you all the settable parameters
+                    # x_axis.autoRange.val = 'Auto'
+                    # xy.xAxis.val = 'frequency'
+                    # xy.yAxis.val = 'Uncalibrated Gain'
+                    # xy.marker.val = 'none'
+                    # xy.PlotLine.color.val = 'red'
+                    # xy.PlotLine.width.val = '1pt'
+                    xy.nanHandling = 'break-on'
+
+                    # set marker and colors for overlay plot
+                    xy.marker.val = 'circle'
+                    xy.markerSize.val = '2pt'
+                    # xy.MarkerLine.transparency.val =
+                    xy.MarkerLine.color.val = 'transparent'
+                    xy.MarkerFill.color.val = 'auto'
+                    xy.MarkerFill.transparency.val = 80
+                    xy.MarkerFill.style.val = 'solid'
+                    xy.FillBelow.transparency.val = 90
+                    xy.FillBelow.style.val = 'solid'
+                    xy.FillBelow.fillto.val = 'bottom'
+                    xy.FillBelow.color.val = 'darkgreen'
+                    xy.FillBelow.hide.val = True
+                    xy.PlotLine.color.val = 'red'
 
                 # Add Page or Graph Title
 
-                # Save The Veusz file
-                saveDir = os.path.dirname(file_path)
-                # self.doc.Save(saveDir + '/' + dataset_name + '.vsz')
-                filenameSave = saveDir + '/' + dataset_name + '.vszh5'
-                self.save(self, filenameSave)
-
-                # Show the plot
-                self.doc.WaitForClose()
-
-                self.status_label.config(text="Plot created successfully")
             except Exception as e:
                 self.status_label.config(text=f"Error: {str(e)}")
+
+            # Save The Veusz file after loop completed
+            # saveDir = os.path.dirname(file_path)
+            # # self.doc.Save(saveDir + '/' + dataset_name + '.vsz')
+            # filenameSave = saveDir + '/' + os.path.splitext(
+            #     dataset_name)[0] + '.vszh5'
+            # self._save(filenameSave)
+
+            # # Show the plot
+            # self.doc.WaitForClose()
+            # self.status_label.config(text="Plot created successfully")
 
     def process_data(file_path, line_number, self):
         """Read the entire file into a list of lines."""
@@ -451,12 +780,12 @@ class PlotATR:
         selected_data = np.array([selected_magnitude_data,
                                  selected_phase_data])
         selected_data_transpose = selected_data.transpose()
-        return header_info, selected_data_transpose
+        return header_info, selected_data_transpose, header_lines
 
     def save(self, filename: str):
         """Save Veusz document to specified file."""
         # there might be a precision argument or format string
-        # TODO
+        # Found, just save in hdf veusz format, vszh5
         # MUST find a way to save higher precision!!!!
         # a work around would be to save all data to np.float64 arrays
         # in files and link them in the veusz document, I would really prefer
@@ -476,13 +805,14 @@ class PlotATR:
 
         # run the GUI!
         self.root.mainloop()
-        root.destroy()
+        self.root.destroy()
 
 
 class Astronomy:
     """
     Used at the moment to create various functions from the AstroPy module.
     """
+    # TODO: Break out into own module
 
     def __init__(self):
         pass
@@ -628,7 +958,7 @@ class Astronomy:
             DESCRIPTION.
 
         References
-        -------
+        ----------
         https://docs.astropy.org/en/stable/time/index.html
         """
         timeList = []
@@ -661,19 +991,18 @@ class Astronomy:
 
 
 class CSVFun:
-    """
-    Used for processing CSV Data
-    """
+    # TODO: Make this multi file and put in own module
+    """ Used for processing CSV Data."""
 
     def __init__(self):
         pass
 
-    def select_file():
-        file_path = filedialog.askopenfilename(
+    def select_file(self):
+        self.file_path = filedialog.askopenfilename(
             filetypes=[("CSV files", "*.csv")])
-        if file_path:
-            file_entry.delete(0, tk.END)
-            file_entry.insert(0, file_path)
+        if self.file_path:
+            self.file_entry.delete(0, tk.END)
+            self.file_entry.insert(0, self.file_path)
 
 
 def add_subdirs_to_path(root_dir):
@@ -698,6 +1027,26 @@ def main():
 
     ATR_Example = PlotATR()
     ATR_Example.run()
+
+    gui = qtGUI()
+    if save_path := gui.get_save_filename():
+        ATR_Example.save(save_path)
+        if gui.ask_open_veusz():
+            VZPlotRnS.open_veusz_gui(save_path)
+
+    sys.exit(gui.app.exec_())
+    # QApplication.closeAllWindows()
+    gui.closeEvent()
+
+    # saveDir = os.path.dirname(file_path)
+    # # self.doc.Save(saveDir + '/' + dataset_name + '.vsz')
+    # filenameSave = saveDir + '/' + os.path.splitext(
+    #     dataset_name)[0] + '.vszh5'
+    # self._save(filenameSave)
+
+    # # Show the plot
+    # self.doc.WaitForClose()
+    # self.status_label.config(text="Plot created successfully")
 
     # sys.path.append(
     #     os.path.abspath("C:\\Users\\wwallace\\OneDrive - National Radio Astronomy Observatory" +

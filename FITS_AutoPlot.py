@@ -400,7 +400,6 @@ class VZPlotFITS:
             #     # use this earlier in the script
             #     pass
             xy.marker.val = 'none'
-            xy.PlotLine.color.val = 'red'
             if createArbitraryXaxis:
                 # xy.xData.val = set x axis data
                 currentYDataTuple = self.doc.GetData(xy.yData.val)
