@@ -507,6 +507,9 @@ class PlotATR:
                 )
 
                 # All Data is now parsed into various variables
+                # TODO: Combine All Data in 5D array
+                # TODO: Save all combined data in a numpy or xarray file
+                # for future use.
                 # Data array example
 # =============================================================================
 #                 # Define coordinates
@@ -553,9 +556,6 @@ class PlotATR:
 #                 )
 # =============================================================================
 
-                # TODO: Combine All Data
-                # TODO: Save all combined data in a numpy or xarray file
-                # for future use.
 
 # =============================================================================
 #                 data_full_DA = xr.DataArray(data_col_stack,
@@ -614,8 +614,8 @@ class PlotATR:
                 self.doc.SetData(magName, data_mag)
                 self.doc.SetData(phaseName, data_phase)
                 self.doc.SetData(azName, data_Az_angle)
-                self.doc.TagDatasets(dataset_name, [freqName, magName,
-                                                    phaseName, azName])
+                self.doc.TagDatasets(os.path.splitext(dataset_name)[0],
+                                     [freqName, magName, phaseName, azName])
 
                 # % Overlay Plot
                 if 'Overlay_All_mag' not in self.doc.Root.childnames:
@@ -710,14 +710,33 @@ class PlotATR:
                 page_mag = self._create_page(dataset_name)
                 graph_mag = self.grid.Add('graph', name=dataset_name,
                                           autoadd=False)
-                graph_mag.notes.val = '\n'.join(header_lines)
+
+                with Warp4With(graph_mag) as graph:
+                    graph.notes.val = '\n'.join(header_lines)
+
+                    # set graph axis labels
+                    graph.x.label.val = self.az_label
+                    graph.y.label.val = self.mag_label
+
+                    # grid lines
+                    graph.x.GridLines.hide.val = False
+                    graph.y.GridLines.hide.val = False
+                    graph.x.MinorGridLines.hide.val = False
+                    graph.y.MinorGridLines.hide.val = False
+
+                    # Extents
+                    graph.y.min.val = -60
+                    graph.y.max.val = 20
+                    graph.x.min.val = -180
+                    graph.x.max.val = 180
 
                 # Create xy plot
-                xy_mag = graph_mag.Add('xy', name=dataset_name)
+                xy_mag = graph_mag.Add('xy',
+                                       name=os.path.splitext(dataset_name)[0])
 
                 with Wrap4With(xy_mag) as xy:
-                    xy.xData.val = dataset_name + '_AZ'
-                    xy.yData.val = dataset_name + '_mag'
+                    xy.xData.val = azName
+                    xy.yData.val = magName
                     # xy.notes.val = '\n'.join(header_lines)
 
                     # Create a new Axis
