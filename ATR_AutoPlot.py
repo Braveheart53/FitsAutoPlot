@@ -555,7 +555,80 @@ class PlotATR:
 #                     }
 #                 )
 # =============================================================================
-
+# =============================================================================
+# import numpy as np
+# import xarray as xr
+#
+# # Define measurement coordinates
+# azimuth = np.array([0, 10, 20, 30])          # Azimuth points (degrees)
+# elevation = np.array([0, 15, 30])             # Elevation points (degrees)
+# frequency = np.array([100, 200, 300])         # Frequency points (MHz)
+# polarization = np.array(['H', 'V'])           # Polarization states
+# variables = ['Mag', 'Phase']                  # Measurement types
+#
+# # Initialize empty 5D arrays (Az, El, Freq, Pol)
+# mag_data = np.empty((len(azimuth), len(elevation), len(frequency), len(polarization)))
+# phase_data = np.empty((len(azimuth), len(elevation), len(frequency), len(polarization)))
+#
+# # Generate synthetic 5D antenna pattern data
+# for i, az in enumerate(azimuth):
+#     for j, el in enumerate(elevation):
+#         for k, freq in enumerate(frequency):
+#             for l, pol in enumerate(polarization):
+#                 # Realistic antenna pattern calculations
+#                 # Magnitude: combines azimuth, elevation, frequency, and polarization effects
+#                 base_mag = 1.0 + 0.5 * (freq/100 - 1)  # Frequency scaling
+#                 az_pattern = 1 + 0.1 * np.sin(np.radians(az))  # Azimuth variation
+#                 el_pattern = 1 + 0.05 * np.cos(np.radians(el))  # Elevation variation
+#                 pol_factor = 1.0 if pol == 'H' else 0.9  # Polarization difference
+#
+#                 mag_data[i, j, k, l] = base_mag * az_pattern * el_pattern * pol_factor
+#
+#                 # Phase: realistic phase progression
+#                 phase_base = 0.1 + 0.02 * (freq/100 - 1)  # Frequency dependence
+#                 phase_az = 0.01 * az  # Azimuth contribution
+#                 phase_el = 0.005 * el  # Elevation contribution
+#                 phase_pol = 0.02 if pol == 'V' else 0.0  # Polarization offset
+#
+#                 phase_data[i, j, k, l] = phase_base + phase_az + phase_el + phase_pol
+#
+# # Combine into single 5D array (Az, El, Freq, Pol, Var)
+# combined_data = np.stack([mag_data, phase_data], axis=4)
+#
+# # Create 5D DataArray
+# da = xr.DataArray(
+#     data=combined_data,
+#     dims=['Az', 'El', 'Frequency', 'Polarization', 'Variable'],
+#     coords={
+#         'Az': azimuth,
+#         'El': elevation,
+#         'Frequency': frequency,
+#         'Polarization': polarization,
+#         'Variable': variables
+#     },
+#     name='Antenna_Measurements',
+#     attrs={
+#         'description': '5D antenna measurements with elevation dimension',
+#         'units': 'Magnitude (linear), Phase (radians)',
+#         'generation_method': 'Synthetic antenna pattern model'
+#     }
+# )
+#
+# # Add magnitude and phase as non-dimensional coordinates
+# da = da.assign_coords({
+#     'Magnitude': (['Az', 'El', 'Frequency', 'Polarization'], mag_data),
+#     'Phase': (['Az', 'El', 'Frequency', 'Polarization'], phase_data)
+# })
+#
+# print("Created 5D DataArray with dimensions:", da.dims)
+# print("Data shape:", da.shape)
+#
+# # Example data access
+# print("\nSample values:")
+# print(f"Mag @ Az=0°, El=0°, Freq=100MHz, H: {da.sel(Az=0, El=0, Frequency=100, Polarization='H', Variable='Mag').item():.3f}")
+# print(f"Phase @ Az=30°, El=30°, Freq=300MHz, V: {da.sel(Az=30, El=30, Frequency=300, Polarization='V', Variable='Phase').item():.3f}")
+#
+# =============================================================================
 
 # =============================================================================
 #                 data_full_DA = xr.DataArray(data_col_stack,
@@ -610,6 +683,7 @@ class PlotATR:
                              '_phase')
                 azName = (os.path.splitext(dataset_name)[0] +
                           '_Az')
+                self.plotTitle = os.path.splitext(dataset_name)[0]
                 self.doc.SetData(freqName, data_freq)
                 self.doc.SetData(magName, data_mag)
                 self.doc.SetData(phaseName, data_phase)
@@ -707,13 +781,21 @@ class PlotATR:
 
                 # Create a new single plot for magnitude
                 # Create a new page
-                page_mag = self._create_page(dataset_name)
-                graph_mag = self.grid.Add('graph', name=dataset_name,
-                                          autoadd=False)
+                page_mag = self._create_page(os.path.splitext(dataset_name)[0])
+                graph_mag = self.grid.Add(
+                    'graph',
+                    name=os.path.splitext(dataset_name)[0])
 
-                with Warp4With(graph_mag) as graph:
+                with Wrap4With(graph_mag) as graph:
+                    graph.Add('label', name='plotTitle')
+                    graph.topMargin.val = '1cm'
+                    graph.plotTitle.Text.size.val = '10pt'
+                    graph.plotTitle.label.val = self.plotTitle.replace(
+                        '_', " ")
+                    graph.plotTitle.alignHorz.val = 'centre'
+                    graph.plotTitle.yPos.val = 1.05
+                    graph.plotTitle.xPos.val = 0.5
                     graph.notes.val = '\n'.join(header_lines)
-
                     # set graph axis labels
                     graph.x.label.val = self.az_label
                     graph.y.label.val = self.mag_label
@@ -730,14 +812,15 @@ class PlotATR:
                     graph.x.min.val = -180
                     graph.x.max.val = 180
 
-                # Create xy plot
-                xy_mag = graph_mag.Add('xy',
-                                       name=os.path.splitext(dataset_name)[0])
+                    # Create xy plot
+                    xy_mag = graph.Add(
+                        'xy', name=os.path.splitext(dataset_name)[0]
+                    )
 
                 with Wrap4With(xy_mag) as xy:
+                    # Assign Data
                     xy.xData.val = azName
                     xy.yData.val = magName
-                    # xy.notes.val = '\n'.join(header_lines)
 
                     # Create a new Axis
                     # note that in xy.xAxis, this can be changed to match the give name
@@ -767,7 +850,7 @@ class PlotATR:
                     xy.FillBelow.style.val = 'solid'
                     xy.FillBelow.fillto.val = 'bottom'
                     xy.FillBelow.color.val = 'darkgreen'
-                    xy.FillBelow.hide.val = True
+                    xy.FillBelow.hide.val = False
                     xy.PlotLine.color.val = 'red'
 
                 # TODO: Add Page and graph for Phase
