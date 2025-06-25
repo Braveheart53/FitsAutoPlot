@@ -67,7 +67,7 @@ import sys
 # add something to the python sys path
 # sys.path.append(os.path.abspath("something"))
 from operator import itemgetter
-
+import subprocess
 
 # %%% Plotting Environment
 import veusz.embed as vz
@@ -233,6 +233,12 @@ class PlotATR:
         )
         create_button.pack()
 
+        # Close and save
+        create_button = tk.Button(
+            self.root, text="Close and Save", command=self._save_Veusz
+        )
+        create_button.pack()
+
         # Status label
         self.status_label = tk.Label(self.root, text="")
         self.status_label.pack()
@@ -288,6 +294,18 @@ class PlotATR:
 #             self.file_entry.insert(0, file_path)
 #         # return file_path, file_entry
 # =============================================================================
+    def _save_Veusz(self):
+        """Save the generated file. """
+        gui = qtGUI()
+        if save_path := gui.get_save_filename():
+            self.save(save_path)
+            if gui.ask_open_veusz():
+                self.open_veusz_gui(save_path)
+
+        sys.exit(gui.app.exec_())
+        # QApplication.closeAllWindows()
+        gui.closeEvent()
+        self.root.destroy()
 
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
@@ -406,6 +424,9 @@ class PlotATR:
                 # for a combined data structure based on the read in
                 # polarization
                 try:
+                    # note it cannot differentiate between H plane (mag field)
+                    # and Hpol, horizontal to ground....
+                    # Treats E plane and Vpol as the same thing
                     for case in switch(Polarization_plane):
                         if case('H'):
                             # print or do whatever one wants
@@ -424,11 +445,18 @@ class PlotATR:
                             print("-45")
                             Polarization_index = 3
                             break
+                        if case('E'):
+                            # print or do whatever one wants
+                            print("E")
+                            Polarization_index = 1
+                            break
                         raise ValueError('Polarization String is ' +
                                          'incorrect. See file: ' +
                                          dataset_name)
+
                 except ValueError as e:
                     print(f"Error Raised: {e}")
+                    break
 
                 # As of 2025-02-21 The outdoor range is only capable of single
                 # elevation scans (at 0 el)
@@ -624,36 +652,11 @@ class PlotATR:
                     xy_All_mag = graphAll_mag.Add(
                         'xy', name=magName)
                     with Wrap4With(xy_All_mag) as xy:
-                        # xy.notes.val = '\n'.join(header_lines)
                         xy.xData.val = azName
                         xy.yData.val = magName
-                        # xy.notes.val = header_lines
-
-                        # x_axis_All = graphAll_mag.Add('axis', name='frequency')
-                        # y_axis_All = graphAll_mag.Add('axis', name='counts')
-                        # x_axis_All.label.val = 'Frequency (MHz)'
-                        # y_axis_All.label.val = 'Uncalibrated Gain (dB)'
-                        # y_axis_All.direction.val = 'vertical'
-                        # x_axis_All.childnames gives you all the settable parameters
-                        # x_axis_All.autoRange.val = 'Auto'
-                        # x_axis_All.val = 'frequency'
-                        # y_axis_All.val = 'Uncalibrated Gain (dB)'
-                        # xy.marker.val = 'none'
-                        # xy.PlotLine.color.val = 'red'
-                        # xy.PlotLine.width.val = '1pt'
-                        # x_axis_All.MinorGridLines.hide.val = False
-                        # y_axis_All.MinorGridLines.hide.val = False
-                        # x_axis_All.GridLines.hide.val = False
-                        # y_axis_All.GridLines.hide.val = False
-
                         xy.nanHandling = 'break-on'
-                        # xy.yData.val = dataset
-                        # xy.xData.val = self.plotInfo.base_name + '_freq'
-
-                        # set marker and colors for overlay plot
                         xy.marker.val = 'circle'
                         xy.markerSize.val = '2pt'
-                        # xy.MarkerLine.transparency.val =
                         xy.MarkerLine.color.val = 'transparent'
                         xy.MarkerFill.color.val = 'auto'
                         xy.MarkerFill.transparency.val = 80
@@ -677,8 +680,26 @@ class PlotATR:
                     graphAll_mag = (
                         self.doc.Root.Overlay_All_mag.grid1.Overlay_All_mag
                     )
+                    xy_All_mag = graphAll_mag.Add(
+                        'xy', name=magName)
+                    with Wrap4With(xy_All_mag) as xy:
+                        xy.xData.val = azName
+                        xy.yData.val = magName
+                        xy.nanHandling = 'break-on'
+                        xy.marker.val = 'circle'
+                        xy.markerSize.val = '2pt'
+                        xy.MarkerLine.color.val = 'transparent'
+                        xy.MarkerFill.color.val = 'auto'
+                        xy.MarkerFill.transparency.val = 80
+                        xy.MarkerFill.style.val = 'solid'
+                        xy.FillBelow.transparency.val = 90
+                        xy.FillBelow.style.val = 'solid'
+                        xy.FillBelow.fillto.val = 'bottom'
+                        xy.FillBelow.color.val = 'darkgreen'
+                        xy.FillBelow.hide.val = True
+                        xy.PlotLine.color.val = 'auto'
 
-                # Create a new single plot for magnitude, repeat for phase
+                # Create a new single plot for magnitude
                 # Create a new page
                 page_mag = self._create_page(dataset_name)
                 graph_mag = self.grid.Add('graph', name=dataset_name,
@@ -724,7 +745,11 @@ class PlotATR:
                     xy.FillBelow.hide.val = True
                     xy.PlotLine.color.val = 'red'
 
-                # Add Page or Graph Title
+                # TODO: Add Page and graph for Phase
+
+                # TODO: Add a page for Magnitude Polar
+
+                # TODO: Add a page for Phase Polar
 
             except Exception as e:
                 self.status_label.config(text=f"Error: {str(e)}")
@@ -739,6 +764,7 @@ class PlotATR:
             # # Show the plot
             # self.doc.WaitForClose()
             # self.status_label.config(text="Plot created successfully")
+            # self.root.destroy()
 
     def process_data(file_path, line_number, self):
         """Read the entire file into a list of lines."""
@@ -801,11 +827,37 @@ class PlotATR:
         os.makedirs(fileSplit[0] + '/Beware_oldVersion/', exist_ok=True)
         self.doc.Save(filenameVSZ, mode='vsz')
 
+    def open_veusz_gui(self, filename: str):
+        """Launch Veusz GUI with generated project file."""
+        if sys.platform.startswith('win'):
+            veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
+        else:
+            veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
+
+        if not os.path.exists(veusz_exe):
+            QMessageBox.critical(
+                None,
+                "Veusz Not Found",
+                "Veusz not found in Python environment.\n",
+                "Install with: [pip OR conda OR mamba] install veusz"
+            )
+            return
+
+        try:
+            subprocess.Popen([veusz_exe, filename])
+        except Exception as e:
+            QMessageBox.critical(
+                None,
+                "Launch Error",
+                f"Failed to start Veusz: {str(e)}"
+            )
+
     def run(self):
 
         # run the GUI!
         self.root.mainloop()
-        self.root.destroy()
+        # self.root.destroy()
+        pass
 
 
 class Astronomy:
@@ -1020,23 +1072,23 @@ def main():
     # =============================================================================
 
     # Just showing use of the mjd conversion function.
-    mjd = 60686.3539
-    newTime = Astronomy.mjdconvert_time(mjd, "iso", "ymdhms", "fits")
-    # newTime = Astronomy.mjdconvert_time(mjd)
-    print(newTime)
+    # mjd = 60686.3539
+    # newTime = Astronomy.mjdconvert_time(mjd, "iso", "ymdhms", "fits")
+    # # newTime = Astronomy.mjdconvert_time(mjd)
+    # print(newTime)
 
     ATR_Example = PlotATR()
     ATR_Example.run()
 
-    gui = qtGUI()
-    if save_path := gui.get_save_filename():
-        ATR_Example.save(save_path)
-        if gui.ask_open_veusz():
-            VZPlotRnS.open_veusz_gui(save_path)
+    # gui = qtGUI()
+    # if save_path := gui.get_save_filename():
+    #     ATR_Example.save(save_path)
+    #     if gui.ask_open_veusz():
+    #         PlotATR.open_veusz_gui(save_path)
 
-    sys.exit(gui.app.exec_())
-    # QApplication.closeAllWindows()
-    gui.closeEvent()
+    # sys.exit(gui.app.exec_())
+    # # QApplication.closeAllWindows()
+    # gui.closeEvent()
 
     # saveDir = os.path.dirname(file_path)
     # # self.doc.Save(saveDir + '/' + dataset_name + '.vsz')
