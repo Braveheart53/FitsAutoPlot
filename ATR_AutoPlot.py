@@ -295,7 +295,8 @@ class PlotATR:
 #         # return file_path, file_entry
 # =============================================================================
     def _save_Veusz(self):
-        """Save the generated file. """
+        """Save the generated file and ask to open Veusz Interface. """
+        self.root.destroy()
         gui = qtGUI()
         if save_path := gui.get_save_filename():
             self.save(save_path)
@@ -305,7 +306,6 @@ class PlotATR:
         sys.exit(gui.app.exec_())
         # QApplication.closeAllWindows()
         gui.closeEvent()
-        self.root.destroy()
 
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
@@ -617,7 +617,7 @@ class PlotATR:
                 self.doc.TagDatasets(dataset_name, [freqName, magName,
                                                     phaseName, azName])
 
-                # TODO: Overlay all plot
+                # % Overlay Plot
                 if 'Overlay_All_mag' not in self.doc.Root.childnames:
                     # magnitude
                     pageAll_mag = self._create_page('Overlay_All_mag')
@@ -644,6 +644,12 @@ class PlotATR:
                         graph.y.GridLines.hide.val = False
                         graph.x.MinorGridLines.hide.val = False
                         graph.y.MinorGridLines.hide.val = False
+
+                        # Extents
+                        graph.y.min.val = -60
+                        graph.y.max.val = 20
+                        graph.x.min.val = -180
+                        graph.x.max.val = 180
 
                     # set auto color theme for the files
                     self.doc.Root.colorTheme.val = 'max128'
@@ -1079,7 +1085,7 @@ def main():
 
     ATR_Example = PlotATR()
     ATR_Example.run()
-
+    pass
     # gui = qtGUI()
     # if save_path := gui.get_save_filename():
     #     ATR_Example.save(save_path)
