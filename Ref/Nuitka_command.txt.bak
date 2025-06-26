@@ -1,0 +1,3 @@
+nuitka --mingw64 --onefile --standalone --plugin-enable=pyqt5 --output-dir=../Nuitka/ ATR_AutoPlot.py
+
+nuitka --mingw64 --clang --mode=onefile --follow-imports --mode=standalone --plugin-enable=pyqt5 --include-qt-plugins=qml --output-dir=../Nuitka/ ATR_AutoPlot.py
