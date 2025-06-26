@@ -809,6 +809,7 @@ class PlotATR:
                         xy.FillBelow.transparency.val = 90
                         xy.FillBelow.style.val = 'solid'
                         xy.FillBelow.fillto.val = 'bottom'
+
                         xy.FillBelow.color.val = 'darkgreen'
                         xy.FillBelow.hide.val = True
                         xy.PlotLine.color.val = 'auto'
