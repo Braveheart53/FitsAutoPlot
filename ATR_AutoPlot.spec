@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-
+import sys 
+sys.setrecursionlimit(sys.getrecursionlimit() * 15)
 
 a = Analysis(
     ['ATR_AutoPlot.py'],
@@ -10,7 +11,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['pyqt6','pyside6'],
     noarchive=False,
     optimize=0,
 )

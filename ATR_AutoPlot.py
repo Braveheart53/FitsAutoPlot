@@ -48,7 +48,7 @@ import xarray as xr
 import numpy as np
 # import skrf as rf
 import mpmath as mpm
-import scipy.constants as cons
+# import scipy.constants as cons
 from astropy.time import Time as tme
 # look up how to use data classes, this is how one can create a matlab type
 # structure, in addition to my own codes for such
@@ -60,7 +60,7 @@ from astropy.time import Time as tme
 
 # %%% System Interface Modules
 import os
-import os.path as pathCheck
+# import os.path as pathCheck
 # import time as time
 import sys
 # add something to the python sys path
@@ -84,8 +84,8 @@ import veusz.embed as vz
 # from multiprocess import Pool
 
 # %%% Debugging Help
-from rich import inspect as richinspect
-import pdir
+# from rich import inspect as richinspect
+# import pdir
 # %%% GPU Implementation
 # %%%% Cuda
 # import cupy as cp
@@ -98,8 +98,8 @@ import pdir
 # add_subdirs_to_path("somedir")
 
 # %% Locally Global constants
-c_0 = cons.speed_of_light  # in meters
-pi = mpm.pi  # using mpmath versus numpy, there is a reason for this, just
+# c_0 = cons.speed_of_light  # in meters
+# pi = mpm.pi  # using mpmath versus numpy, there is a reason for this, just
 # not sure what that reason is at the moment
 
 # %% Class Definitions
