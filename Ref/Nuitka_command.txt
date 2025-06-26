@@ -1,0 +1,1 @@
+nuitka --mingw64 --onefile --standalone --output-dir=../Nuitka/ ATR_AutoPlot.py

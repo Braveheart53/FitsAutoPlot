@@ -18,14 +18,7 @@ import tkinter as tk
 from tkinter.filedialog import askopenfilenames
 from tkinter import filedialog
 from tkinter import messagebox
-# %%%% Py Qt imports
-# from PyQt6.QtGui import *
-# from PyQt6.QtWidgets import QApplication, QPushButton, QMainWindow, QLabel
-# from PyQt6.QtCore import Qt, QSize
-# %%%% PySide6 Imports
-# from PySide6.QtGui import *
-# from PySide6.QtWidgets import QApplication, QPushButton, QMainWindow, QLabel
-# from PySide6.QtCore import Qt, QSize
+
 # %%%% qtpy imports
 from qtpy.QtGui import *
 from qtpy.QtCore import Qt, QSize
@@ -43,64 +36,27 @@ from qtpy.QtWidgets import (
 )
 
 # %%% Math Modules
-# import pandas as pd
 import xarray as xr
 import numpy as np
 # import skrf as rf
 import mpmath as mpm
 # import scipy.constants as cons
 from astropy.time import Time as tme
-# look up how to use data classes, this is how one can create a matlab type
-# structure, in addition to my own codes for such
-# import dataclasses as dataclass
 
-# %%% Unit Conversion
-# import pint as pint
-# ureg = pint.UnitRegistry()
 
 # %%% System Interface Modules
 import os
-# import os.path as pathCheck
-# import time as time
 import sys
-# add something to the python sys path
-# sys.path.append(os.path.abspath("something"))
 from operator import itemgetter
 import subprocess
 
 # %%% Plotting Environment
 import veusz.embed as vz
-# import pprint
 
-# %%% File type Export/Import
-# import h5py as h5
-# from scipy.io import savemat
-# from fastest_ascii_import import fastest_file_parser as fparser
-
-# %%% Parallelization
-# from multiprocessing import Pool  # udpate when you learn it!
-# from multiprocessing import Process
-# from multiprocess import Process
-# from multiprocess import Pool
-
-# %%% Debugging Help
-# from rich import inspect as richinspect
-# import pdir
-# %%% GPU Implementation
-# %%%% Cuda
-# import cupy as cp
-# from cuda import cuda, nvrtc  # need to learn this as well, see class below
-# %%%% Rocm Hips
-# from hip import hip
-# from hip import hiprtc
 
 # %% Add to Python Sysytem Path for calling in scripts
 # add_subdirs_to_path("somedir")
 
-# %% Locally Global constants
-# c_0 = cons.speed_of_light  # in meters
-# pi = mpm.pi  # using mpmath versus numpy, there is a reason for this, just
-# not sure what that reason is at the moment
 
 # %% Class Definitions
 # Begin Class definitions based upon use cases for range and data

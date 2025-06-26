@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='utf8'?>
+<nuitka-compilation-report nuitka_version="2.4.8" nuitka_commercial_version="not installed" completion="error exit message (1)" exit_message="Failed unexpectedly in Scons C backend compilation.">
+  <module name="__main__" kind="PythonMainModule" usage="root_module" reason="Root module" source_path="${cwd}\ATR_AutoPlot.py">
+    <optimization-time pass="1" time="1.27" micro_passes="5" max_branch_merge="237" merged_total="9588" />
+    <optimization-time pass="2" time="0.22" micro_passes="1" max_branch_merge="234" merged_total="1851" />
+    <module_usages>
+      <module_usage name="site" finding="excluded" line="1" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="tkinter" finding="excluded" line="17" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="tkinter.filedialog" finding="absolute" line="18" />
+      <module_usage name="tkinter" finding="excluded" line="19" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="tkinter.filedialog" finding="relative" line="19" />
+      <module_usage name="tkinter" finding="excluded" line="20" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="tkinter.messagebox" finding="relative" line="20" />
+      <module_usage name="qtpy.QtGui" finding="absolute" line="23" />
+      <module_usage name="qtpy.QtCore" finding="absolute" line="24" />
+      <module_usage name="qtpy.QtWidgets" finding="absolute" line="25" />
+      <module_usage name="xarray" finding="absolute" line="39" />
+      <module_usage name="numpy" finding="absolute" line="40" />
+      <module_usage name="mpmath" finding="not-found" line="42" />
+      <module_usage name="astropy.time" finding="absolute" line="44" />
+      <module_usage name="astropy.time.Time" finding="not-found" line="44" />
+      <module_usage name="os" finding="excluded" line="48" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="sys" finding="absolute" line="49" />
+      <module_usage name="operator" finding="excluded" line="50" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="subprocess" finding="excluded" line="51" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="veusz.embed" finding="absolute" line="54" />
+      <module_usage name="ntpath" finding="excluded" line="293" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="ntpath" finding="excluded" line="634" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="ntpath" finding="excluded" line="1102" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="ntpath" finding="excluded" line="1151" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="ntpath" finding="excluded" line="1153" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="ntpath" finding="excluded" line="1155" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+      <module_usage name="ntpath" finding="excluded" line="1164" exclusion_reason="Not following into stdlib unless standalone or requested to follow into stdlib." />
+    </module_usages>
+  </module>
+  <performance>
+    <memory_usage name="after_launch" value="40771584" />
+    <memory_usage name="before_c_code_generation" value="45359104" />
+    <memory_usage name="before_running_scons" value="49188864" />
+  </performance>
+  <data_composer blob_size="10240" total="577">
+    <module_data filename="__bytecode.const" input_size="0" blob_name=".bytecode" blob_size="3" />
+    <module_data filename="__constants.const" input_size="2116" blob_name="" blob_size="909" />
+    <module_data filename="module.__main__.const" input_size="15111" blob_name="__main__" blob_size="9288" />
+  </data_composer>
+  <command_line>
+    <option value="--mingw64" />
+    <option value="ATR_AutoPlot.py" />
+  </command_line>
+  <plugins>
+    <plugin name="anti-bloat" user_enabled="no" />
+    <plugin name="eventlet" user_enabled="no" />
+    <plugin name="gi" user_enabled="no" />
+    <plugin name="implicit-imports" user_enabled="no" />
+    <plugin name="multiprocessing" user_enabled="no" />
+    <plugin name="options-nanny" user_enabled="no" />
+    <plugin name="pkg-resources" user_enabled="no" />
+    <plugin name="transformers" user_enabled="no" />
+  </plugins>
+  <distributions />
+  <python python_exe="${sys.prefix}\python.exe" python_flavor="Anaconda Python" python_version="3.8.20" os_name="Windows" os_release="10" arch_name="x86_64" filesystem_encoding="utf-8">
+    <search_path>
+      <path value="${cwd}" />
+      <path value="${sys.prefix}\Scripts" />
+      <path value="${sys.prefix}\DLLs" />
+      <path value="${sys.prefix}\lib" />
+      <path value="${sys.prefix}" />
+      <path value="${sys.prefix}\lib\site-packages" />
+      <path value="${sys.prefix}\lib\site-packages\win32" />
+      <path value="${sys.prefix}\lib\site-packages\win32\lib" />
+      <path value="${sys.prefix}\lib\site-packages\Pythonwin" />
+      <path value="${sys.prefix}\lib\site-packages\setuptools\_vendor" />
+    </search_path>
+  </python>
+  <output run_filename="${cwd}\ATR_AutoPlot.cmd" />
+</nuitka-compilation-report>
