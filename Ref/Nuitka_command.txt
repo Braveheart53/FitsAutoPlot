@@ -8,3 +8,8 @@ may need to create a config yaml file and explicitly tell it to import all of Ve
 
 
 nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=../Nuitka/ ATR_AutoPlot.py 
+
+nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=../Nuitka/ ATR_AutoPlot.py 
+
+# may need to remove pyside6 from the environment before running the following
+nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=../Nuitka/ ATR_AutoPlot.py 

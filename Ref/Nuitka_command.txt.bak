@@ -5,3 +5,10 @@ nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable
 nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --output-dir=../Nuitka/ ATR_AutoPlot.py
 
 may need to create a config yaml file and explicitly tell it to import all of Veusz, see https://nuitka.net/user-documentation/nuitka-package-config.html
+
+
+nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=../Nuitka/ ATR_AutoPlot.py 
+
+nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=../Nuitka/ ATR_AutoPlot.py 
+
+nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=../Nuitka/ ATR_AutoPlot.py 
