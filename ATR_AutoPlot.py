@@ -675,36 +675,57 @@ class PlotATR:
 # =============================================================================
 
                 # Create datasets
-                freqName = (os.path.splitext(dataset_name)[0] +
+                dataset = os.path.splitext(dataset_name)[0]
+                freqName = (dataset +
                             '_freq')
-                magName = (os.path.splitext(dataset_name)[0] +
+                magName = (dataset +
                            '_mag')
-                phaseName = (os.path.splitext(dataset_name)[0] +
+                phaseName = (dataset +
                              '_phase')
-                azName = (os.path.splitext(dataset_name)[0] +
+                azName = (dataset +
                           '_Az')
-                self.plotTitle = os.path.splitext(dataset_name)[0]
+                self.plotTitle = dataset
                 self.doc.SetData(freqName, data_freq)
                 self.doc.SetData(magName, data_mag)
                 self.doc.SetData(phaseName, data_phase)
                 self.doc.SetData(azName, data_Az_angle)
-                self.doc.TagDatasets(os.path.splitext(dataset_name)[0],
+                self.doc.TagDatasets(dataset,
                                      [freqName, magName, phaseName, azName])
 
                 # % Overlay Plot
                 if 'Overlay_All_mag' not in self.doc.Root.childnames:
-                    # magnitude
-                    pageAll_mag = self._create_page('Overlay_All_mag')
-                    graphAll_mag = self.grid.Add('graph',
-                                                 name='Overlay_All_mag')
+                    # Create Pages and Graphs for Overlays
+                    pageAll_mag = self.doc.Root.Add('page',
+                                                    name='Overlay_All_mag')
+                    gridAll_mag = pageAll_mag.Add('grid', columns=2)
+                    graphAll_mag = gridAll.Add('graph',
+                                               name='Overlay_All_mag')
 
+                    pageAll_phase = self.doc.Root.Add('page',
+                                                      name='Overlay_All_phase')
+                    gridAll_phase = pageAll_phase.Add('grid', columns=2)
+                    graphAll_phase = gridAll_phase.Add('graph',
+                                                       name='Overlay_All_phase')
+
+                    # pageAll_Polar_mag = self._create_page('Overlay_All_mag')
+                    # graphAll_Polar_mag = self.grid.Add('graph',
+                    #                              name='Overlay_All_mag')
+
+                    # pageAll_Polar_phase = self._create_page('Overlay_All_phase')
+                    # graphAll_Polar_phase = self.grid.Add('polar',
+                    #                              name='Overlay_All_phase')
+
+                    # Add notes to the overlay pages
                     pageAll_mag.notes.val = ("All Imported " +
                                              "and Plottable Data Overlay")
+                    pageAll_phase.notes.val = ("All Imported " +
+                                               "and Plottable Data Overlay")
+
                     with Wrap4With(graphAll_mag) as graph:
                         graph.Add('label', name='plotTitle')
                         graph.topMargin.val = '1cm'
                         graph.plotTitle.Text.size.val = '10pt'
-                        graph.plotTitle.label.val = 'Overlay of All Imported'
+                        graph.plotTitle.label.val = 'Overlay of Imported Magnitude'
                         graph.plotTitle.alignHorz.val = 'centre'
                         graph.plotTitle.yPos.val = 1.05
                         graph.plotTitle.xPos.val = 0.5
@@ -722,6 +743,31 @@ class PlotATR:
                         # Extents
                         graph.y.min.val = -60
                         graph.y.max.val = 20
+                        graph.x.min.val = -180
+                        graph.x.max.val = 180
+
+                    with Wrap4With(graphAll_phase) as graph:
+                        graph.Add('label', name='plotTitle')
+                        graph.topMargin.val = '1cm'
+                        graph.plotTitle.Text.size.val = '10pt'
+                        graph.plotTitle.label.val = 'Overlay of Imported Phase'
+                        graph.plotTitle.alignHorz.val = 'centre'
+                        graph.plotTitle.yPos.val = 1.05
+                        graph.plotTitle.xPos.val = 0.5
+                        graph.notes.val = 'All Imported Data Overlayed'
+                        # set graph axis labels
+                        graph.x.label.val = self.az_label
+                        graph.y.label.val = self.phase_label
+
+                        # grid lines
+                        graph.x.GridLines.hide.val = False
+                        graph.y.GridLines.hide.val = False
+                        graph.x.MinorGridLines.hide.val = False
+                        graph.y.MinorGridLines.hide.val = False
+
+                        # Extents
+                        graph.y.min.val = -180
+                        graph.y.max.val = 180
                         graph.x.min.val = -180
                         graph.x.max.val = 180
 
@@ -748,6 +794,25 @@ class PlotATR:
                         xy.FillBelow.hide.val = True
                         xy.PlotLine.color.val = 'auto'
 
+                    xy_All_phase = graphAll_phase.Add(
+                        'xy', name=phaseName)
+                    with Wrap4With(xy_All_phase) as xy:
+                        xy.xData.val = azName
+                        xy.yData.val = phaseName
+                        xy.nanHandling = 'break-on'
+                        xy.marker.val = 'circle'
+                        xy.markerSize.val = '2pt'
+                        xy.MarkerLine.color.val = 'transparent'
+                        xy.MarkerFill.color.val = 'auto'
+                        xy.MarkerFill.transparency.val = 80
+                        xy.MarkerFill.style.val = 'solid'
+                        xy.FillBelow.transparency.val = 90
+                        xy.FillBelow.style.val = 'solid'
+                        xy.FillBelow.fillto.val = 'bottom'
+                        xy.FillBelow.color.val = 'darkgreen'
+                        xy.FillBelow.hide.val = True
+                        xy.PlotLine.color.val = 'auto'
+
                     # TODO: Create new phase plot on a new page
 
                     # TODO: Create Polar Plots (Mag and Phase)
@@ -755,11 +820,18 @@ class PlotATR:
                     #     'Overlay_All_Polar_mag')
 
                 else:
-                    # TODO: mach sure the indexing works here
+                    # TODO: repat all overlays as needed
                     pageAll_mag = self.doc.Root.Overlay_All_mag
                     graphAll_mag = (
+
                         self.doc.Root.Overlay_All_mag.grid1.Overlay_All_mag
                     )
+
+                    pageAll_phase = self.doc.Root.Overlay_All_phase
+                    graphAll_phase = (
+                        self.doc.Root.Overlay_All_mag.grid1.Overlay_All_phase
+                    )
+
                     xy_All_mag = graphAll_mag.Add(
                         'xy', name=magName)
                     with Wrap4With(xy_All_mag) as xy:
@@ -779,12 +851,45 @@ class PlotATR:
                         xy.FillBelow.hide.val = True
                         xy.PlotLine.color.val = 'auto'
 
+                    xy_All_phase = graphAll_phase.Add(
+                        'xy', name=phaseName)
+                    with Wrap4With(xy_All_phase) as xy:
+                        xy.xData.val = azName
+                        xy.yData.val = phaseName
+                        xy.nanHandling = 'break-on'
+                        xy.marker.val = 'circle'
+                        xy.markerSize.val = '2pt'
+                        xy.MarkerLine.color.val = 'transparent'
+                        xy.MarkerFill.color.val = 'auto'
+                        xy.MarkerFill.transparency.val = 80
+                        xy.MarkerFill.style.val = 'solid'
+                        xy.FillBelow.transparency.val = 90
+                        xy.FillBelow.style.val = 'solid'
+                        xy.FillBelow.fillto.val = 'bottom'
+                        xy.FillBelow.color.val = 'darkgreen'
+                        xy.FillBelow.hide.val = True
+                        xy.PlotLine.color.val = 'auto'
+
                 # Create a new single plot for magnitude
-                # Create a new page
-                page_mag = self._create_page(os.path.splitext(dataset_name)[0])
-                graph_mag = self.grid.Add(
+                # TODO: All pages and graph creation
+                # Magnitude
+                page_mag = self.doc.Root.Add('page', name=magName)
+                grid_mag = page_mag.Add('grid', columns=2)
+                graph_mag = grid_mag.Add(
                     'graph',
-                    name=os.path.splitext(dataset_name)[0])
+                    name=dataset + ' Mag')
+                page_mag.notes.val = '\n'.join(header_lines)
+
+                # Phase
+                page_phase = self.doc.Root.Add('page', name=phaseName)
+                grid_phase = page_phase.Add('grid', columns=2)
+                graph_phase = grid_phase.Add(
+                    'graph',
+                    name=dataset + ' Phase')
+                page_phase.notes.val = '\n'.join(header_lines)
+
+                # # Magnitude Polar
+                # # Phase Polar
 
                 with Wrap4With(graph_mag) as graph:
                     graph.Add('label', name='plotTitle')
@@ -814,7 +919,7 @@ class PlotATR:
 
                     # Create xy plot
                     xy_mag = graph.Add(
-                        'xy', name=os.path.splitext(dataset_name)[0]
+                        'xy', name=dataset
                     )
 
                 with Wrap4With(xy_mag) as xy:
@@ -854,6 +959,59 @@ class PlotATR:
                     xy.PlotLine.color.val = 'red'
 
                 # TODO: Add Page and graph for Phase
+                with Wrap4With(graph_phase) as graph:
+                    graph.Add('label', name='plotTitle')
+                    graph.topMargin.val = '1cm'
+                    graph.plotTitle.Text.size.val = '10pt'
+                    graph.plotTitle.label.val = self.plotTitle.replace(
+                        '_', " ")
+                    graph.plotTitle.alignHorz.val = 'centre'
+                    graph.plotTitle.yPos.val = 1.05
+                    graph.plotTitle.xPos.val = 0.5
+                    graph.notes.val = '\n'.join(header_lines)
+                    # set graph axis labels
+                    graph.x.label.val = self.az_label
+                    graph.y.label.val = self.phase_label
+
+                    # grid lines
+                    graph.x.GridLines.hide.val = False
+                    graph.y.GridLines.hide.val = False
+                    graph.x.MinorGridLines.hide.val = False
+                    graph.y.MinorGridLines.hide.val = False
+
+                    # Extents
+                    graph.y.min.val = -180
+                    graph.y.max.val = 180
+                    graph.x.min.val = -180
+                    graph.x.max.val = 180
+
+                    # Create xy plot
+                    xy_phase = graph.Add(
+                        'xy', name=dataset
+                    )
+
+                with Wrap4With(xy_phase) as xy:
+                    # Assign Data
+                    xy.xData.val = azName
+                    xy.yData.val = phaseName
+
+                    # Axis control
+                    xy.nanHandling = 'break-on'
+
+                    # set marker and colors for overlay plot
+                    xy.marker.val = 'circle'
+                    xy.markerSize.val = '2pt'
+                    # xy.MarkerLine.transparency.val =
+                    xy.MarkerLine.color.val = 'transparent'
+                    xy.MarkerFill.color.val = 'auto'
+                    xy.MarkerFill.transparency.val = 80
+                    xy.MarkerFill.style.val = 'solid'
+                    xy.FillBelow.transparency.val = 90
+                    xy.FillBelow.style.val = 'solid'
+                    xy.FillBelow.fillto.val = 'bottom'
+                    xy.FillBelow.color.val = 'darkgreen'
+                    xy.FillBelow.hide.val = False
+                    xy.PlotLine.color.val = 'red'
 
                 # TODO: Add a page for Magnitude Polar
 
