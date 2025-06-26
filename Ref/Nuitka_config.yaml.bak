@@ -8,6 +8,9 @@
         - 'numpy'
         - 'xarray'
         - 'astropy'
+        - 'veusz'
+        - 'veusz.plugins'  # Include plugins if used
+        - 'veusz.helpers'
 
 # Additional configuration for PySide6/Qt
 - module-name: 'PySide6'
@@ -43,3 +46,20 @@
     - patterns:
         - '*.cfg'
         - '*.yaml'
+        
+
+# veusz.nuitka-package.config.yml       
+- module-name: 'veusz'
+  data-files:
+    - dirs:
+        - 'data'  # Relative to veusz package
+    - patterns:
+        - '*.json'
+        - '*.ui'
+        - '*.icns'
+
+# Custom Imports
+# - module-name: 'your_module'
+  # implicit-imports:
+    # - depends:
+        # - 'dynamically_loaded.module'
