@@ -4,11 +4,10 @@
 # Author: William W. Wallace
 #
 #
-# TODO: update the ATR script to plot multiple files at once, and remove it from here
-# and plaec it is own file to import / call
-# atr NOT working, need to correct immediately!!
+#
 #
 # TODO: Update CSV to auto plot multiple files, extract it to its own file
+# TODO: Checkout PyAntenna and stats calcs for the data
 # =============================================================================
 
 # event loop QApplication.exec_()
@@ -484,10 +483,11 @@ class PlotATR:
                 # TODO: When upgrading to multi-frequency files
                 # this will need to be changed
                 data_freq_all[index] = data_freq[0]
-                # TODO: Finish the 4D data matrix creation in xarray
+                # TODO: Finish the 5D data matrix creation in xarray
                 if Polarization_index:
                     # combine all in a 4D matrix such as:
                     # (4D: Az × Freq × Pol × Var)
+                    # (5D: Az × El x Freq × Pol × Var)
                     # Row follows Az
                     # Column follows freq
                     # internal item list follows pol
@@ -680,8 +680,16 @@ class PlotATR:
                             '_freq')
                 magName = (dataset +
                            '_mag')
+                polarMagName = (dataset + '_polar'
+                                '_mag')
+                radName = (dataset +
+                           '_r')
+                thetaName = (dataset +
+                             '_theta')
                 phaseName = (dataset +
                              '_phase')
+                polarPhaseName = (dataset + '_polar'
+                                  '_phase')
                 azName = (dataset +
                           '_Az')
                 self.plotTitle = dataset
@@ -693,13 +701,14 @@ class PlotATR:
                                      [freqName, magName, phaseName, azName])
 
                 # % Overlay Plot
+                # TODO: Create a mag pattern overlay plot
                 if 'Overlay_All_mag' not in self.doc.Root.childnames:
                     # Create Pages and Graphs for Overlays
                     pageAll_mag = self.doc.Root.Add('page',
                                                     name='Overlay_All_mag')
                     gridAll_mag = pageAll_mag.Add('grid', columns=2)
-                    graphAll_mag = gridAll.Add('graph',
-                                               name='Overlay_All_mag')
+                    graphAll_mag = gridAll_mag.Add('graph',
+                                                   name='Overlay_All_mag')
 
                     pageAll_phase = self.doc.Root.Add('page',
                                                       name='Overlay_All_phase')
@@ -830,7 +839,7 @@ class PlotATR:
 
                     pageAll_phase = self.doc.Root.Overlay_All_phase
                     graphAll_phase = (
-                        self.doc.Root.Overlay_All_mag.grid1.Overlay_All_phase
+                        self.doc.Root.Overlay_All_phase.grid1.Overlay_All_phase
                     )
 
                     xy_All_mag = graphAll_mag.Add(
@@ -878,7 +887,7 @@ class PlotATR:
                 grid_mag = page_mag.Add('grid', columns=2)
                 graph_mag = grid_mag.Add(
                     'graph',
-                    name=dataset + ' Mag')
+                    name=dataset + '_Mag')
                 page_mag.notes.val = '\n'.join(header_lines)
 
                 # Phase
@@ -886,11 +895,47 @@ class PlotATR:
                 grid_phase = page_phase.Add('grid', columns=2)
                 graph_phase = grid_phase.Add(
                     'graph',
-                    name=dataset + ' Phase')
+                    name=dataset + '_Phase')
                 page_phase.notes.val = '\n'.join(header_lines)
 
-                # # Magnitude Polar
-                # # Phase Polar
+                # TODO: Polar 1
+                # Magnitude Polar
+                page_Polar_mag = self.doc.Root.Add('page',
+                                                   name=polarMagName)
+                with Wrap4With(page_Polar_mag) as page:
+                    page.Add('label', name='plotTitle')
+                    page.plotTitle.Text.size.val = '10pt'
+                    page.plotTitle.label.val = self.plotTitle.replace(
+                        '_', " ")
+                    page.plotTitle.alignHorz.val = 'centre'
+                    page.plotTitle.yPos.val = 0.95
+                    page.plotTitle.xPos.val = 0.5
+
+                grid_Polar_mag = page_Polar_mag.Add('grid', columns=2)
+                graph_Polar_mag = grid_Polar_mag.Add(
+                    'polar',
+                    name=dataset + '_Polar_mag')
+                page_Polar_mag.notes.val = '\n'.join(header_lines)
+
+                # Phase Polar
+                page_Polar_phase = self.doc.Root.Add('page',
+                                                     name=polarPhaseName)
+
+                with Wrap4With(page_Polar_phase) as page:
+                    page.Add('label', name='plotTitle')
+                    page.plotTitle.Text.size.val = '10pt'
+                    page.plotTitle.label.val = self.plotTitle.replace(
+                        '_', " ")
+                    page.plotTitle.alignHorz.val = 'centre'
+                    page.plotTitle.yPos.val = 0.95
+                    page.plotTitle.xPos.val = 0.5
+
+                grid_Polar_phase = page_Polar_phase.Add('grid', columns=2)
+
+                graph_Polar_phase = grid_Polar_phase.Add(
+                    'polar',
+                    name=dataset + '_Polar_Phase')
+                page_Polar_phase.notes.val = '\n'.join(header_lines)
 
                 with Wrap4With(graph_mag) as graph:
                     graph.Add('label', name='plotTitle')
@@ -959,7 +1004,6 @@ class PlotATR:
                     xy.FillBelow.hide.val = False
                     xy.PlotLine.color.val = 'red'
 
-                # TODO: Add Page and graph for Phase
                 with Wrap4With(graph_phase) as graph:
                     graph.Add('label', name='plotTitle')
                     graph.topMargin.val = '1cm'
@@ -1014,9 +1058,73 @@ class PlotATR:
                     xy.FillBelow.hide.val = False
                     xy.PlotLine.color.val = 'red'
 
-                # TODO: Add a page for Magnitude Polar
+                # TODO: Polar 2 - Add a page for Magnitude Polar
+                with Wrap4With(graph_Polar_mag) as pGraph:
 
-                # TODO: Add a page for Phase Polar
+                    pGraph.topMargin.val = '1cm'
+                    # pGraph.notes.val = '\n'.join(header_lines)
+                    # set graph axis labels
+                    # pGraph.x.label.val = self.az_label
+                    # pGraph.y.label.val = self.mag_label
+                    pGraph.units.val = 'degrees'
+                    pGraph.direction.val = 'clockwise'
+                    pGraph.position0.val = 'top'
+
+                    # Extents
+                    pGraph.minradius.val = -60
+                    pGraph.maxradius.val = 20
+
+                    # Create nonorthogonal point plot
+                    rtheta_mag = pGraph.Add(
+                        'nonorthpoint', name=dataset
+                    )
+
+                with Wrap4With(rtheta_mag) as nonortho:
+                    # Assign Data
+                    nonortho.data1.val = magName
+                    nonortho.data2.val = azName
+
+                    # set marker and colors for overlay plot
+                    nonortho.PlotLine.color.val = 'red'
+                    nonortho.PlotLine.width.val = '2pt'
+                    nonortho.MarkerLine.transparency.val = 75
+                    nonortho.MarkerFill.transparency.val = 75
+                    nonortho.Fill1.transparency.val = 65
+                    nonortho.Fill1.color.val = 'green'
+                    nonortho.Fill1.filltype.val = 'center'
+                    nonortho.Fill1.hide.val = False
+
+                # TODO: Polar 3 - Add a page for Phase Polar
+                with Wrap4With(graph_Polar_phase) as pGraph:
+
+                    pGraph.topMargin.val = '1cm'
+                    pGraph.units.val = 'degrees'
+                    pGraph.direction.val = 'clockwise'
+                    pGraph.position0.val = 'top'
+
+                    # Extents
+                    pGraph.minradius.val = -180
+                    pGraph.maxradius.val = 180
+
+                    # Create nonorthogonal point plot
+                    rtheta_phase = pGraph.Add(
+                        'nonorthpoint', name=dataset
+                    )
+
+                with Wrap4With(rtheta_phase) as nonortho:
+                    # Assign Data
+                    nonortho.data1.val = phaseName
+                    nonortho.data2.val = azName
+
+                    # set marker and colors for overlay plot
+                    nonortho.PlotLine.color.val = 'red'
+                    nonortho.PlotLine.width.val = '2pt'
+                    nonortho.MarkerLine.transparency.val = 75
+                    nonortho.MarkerFill.transparency.val = 75
+                    nonortho.Fill1.transparency.val = 65
+                    nonortho.Fill1.color.val = 'green'
+                    nonortho.Fill1.filltype.val = 'center'
+                    nonortho.Fill1.hide.val = False
 
             except Exception as e:
                 self.status_label.config(text=f"Error: {str(e)}")
@@ -1327,6 +1435,29 @@ class CSVFun:
 def add_subdirs_to_path(root_dir):
     for dirpath, dirnames, filenames in os.walk(root_dir):
         sys.path.append(dirpath)
+
+
+def cartesian_to_polar(x, y):
+    """
+    Convert Cartesian coordinates to polar coordinates.
+
+    Parameters
+    ----------
+    x : array_like
+        x-coordinate(s).
+    y : array_like
+        y-coordinate(s).
+
+    Returns
+    -------
+    r : ndarray
+        Radial coordinate(s).
+    theta : ndarray
+        Angular coordinate(s) in radians.
+    """
+    r = np.hypot(x, y)
+    theta = np.arctan2(y, x)
+    return r, theta
 
 
 def main():

@@ -1,0 +1,129 @@
+# Veusz saved document (version 3.6.2)
+# Saved at 2025-06-26T03:06:01.543359
+
+SetCompatLevel(0)
+AddImportPath('C:\\Users\\wwallace\\Documents\\GitHub\\FitsAutoPlot\\Example_Data_Files')
+ImportString('r(numeric)','''
+2.029732e+00
+2.688856e+00
+2.708923e+00
+2.711315e+00
+2.640299e+00
+2.735022e+00
+2.407293e+00
+2.130543e+00
+2.007767e+00
+2.792255e+00
+2.070002e+00
+2.555355e+00
+2.644494e+00
+2.639505e+00
+2.372546e+00
+2.595538e+00
+2.646493e+00
+2.698109e+00
+''')
+ImportString('theta(numeric)','''
+0.000000e+00
+2.000000e+01
+4.000000e+01
+6.000000e+01
+8.000000e+01
+1.000000e+02
+1.200000e+02
+1.400000e+02
+1.600000e+02
+1.800000e+02
+2.000000e+02
+2.200000e+02
+2.400000e+02
+2.600000e+02
+2.800000e+02
+3.000000e+02
+3.200000e+02
+3.400000e+02
+''')
+Set('colorTheme', 'colorbrewer1')
+Set('StyleSheet/Font/font', 'Arial')
+Set('StyleSheet/axis-function/autoRange', 'next-tick')
+Add('page', name='page1', autoadd=False)
+To('page1')
+Add('label', name='label1', autoadd=False)
+To('label1')
+Set('label', 'Test')
+To('..')
+Add('polar', name='polar2', autoadd=False)
+To('polar2')
+Set('rightMargin', '7.8cm')
+Set('topMargin', '0.5cm')
+Set('bottomMargin', '8.3cm')
+Set('minradius', 0.1)
+Set('maxradius', 10.0)
+Set('direction', 'clockwise')
+Set('position0', 'top')
+Set('log', True)
+Set('TickLabels/bold', True)
+Add('nonorthpoint', name='nonorthpoint1', autoadd=False)
+To('nonorthpoint1')
+Set('data1', 'r')
+Set('data2', 'theta')
+Set('PlotLine/color', 'blue')
+Set('PlotLine/hide', False)
+Set('MarkerLine/color', 'blue')
+Set('MarkerFill/color', 'blue')
+To('..')
+Add('nonorthfunc', name='nonorthfunc2', autoadd=False)
+To('nonorthfunc2')
+Set('steps', 100)
+Set('function', 'sin(b / 10)*10')
+Set('variable', 'b')
+Set('PlotLine/color', '#00ff00')
+Set('PlotLine/width', '1pt')
+Set('Fill1/color', '#00ff00')
+Set('Fill1/hide', False)
+Set('Fill1/transparency', 80)
+To('..')
+Add('nonorthpoint', name='nonorthpoint2', autoadd=False)
+To('..')
+Add('polar', name='polar1', autoadd=False)
+To('polar1')
+Set('maxradius', 3.0)
+Add('nonorthfunc', name='nonorthfunc1', autoadd=False)
+To('nonorthfunc1')
+Set('function', '1+cos(b/180*pi)')
+Set('variable', 'b')
+Set('PlotLine/width', '1pt')
+Set('Fill1/color', 'auto')
+Set('Fill1/hide', False)
+Set('Fill1/transparency', 80)
+To('..')
+Add('nonorthfunc', name='nonorthfunc2', autoadd=False)
+To('nonorthfunc2')
+Set('function', '2+sin(b/180*pi)*cos(b/180*pi)')
+Set('variable', 'b')
+Set('PlotLine/width', '1pt')
+Set('Fill1/color', 'auto')
+Set('Fill1/hide', False)
+Set('Fill1/transparency', 80)
+To('..')
+Add('nonorthpoint', name='nonorthpoint1', autoadd=False)
+To('nonorthpoint1')
+Set('marker', 'cross')
+Set('data1', 'r')
+Set('data2', 'theta')
+Set('PlotLine/hide', False)
+To('..')
+To('..')
+To('..')
+Add('page', name='page2', autoadd=False)
+To('page2')
+Add('grid', name='grid1', autoadd=False)
+To('grid1')
+Add('polar', name='polar1', autoadd=False)
+To('polar1')
+Set('direction', 'clockwise')
+Set('position0', 'top')
+Add('nonorthpoint', name='nonorthpoint1', autoadd=False)
+To('..')
+To('..')
+To('..')
