@@ -23,7 +23,14 @@ from qtpy.QtGui import *
 from qtpy.QtWidgets import (
     QApplication,
     QFileDialog,
-    QMessageBox
+    QMessageBox,
+    Qwidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLineEdit,
+    QLabel,
+    QPushButton
+
 )
 
 # %%% Math Modules
@@ -73,11 +80,11 @@ class switch:
         return self.value in args
 
 
-class qtGUI:
+class qtGUI_Save:
     """Handles all Qt-based user interactions."""
 
     def __init__(self):
-        self.app = QApplication(sys.argv)
+        self.appSave = QApplication(sys.argv)
 
     def closeEvent(self, event):
         """Close the Event."""
@@ -87,7 +94,7 @@ class qtGUI:
     def _select_sft_file(self, dialog):
         """Handle file selection button click."""
         fname, _ = QFileDialog.getOpenFileName(
-            dialog, "Open SFT File", "", "R&S SFT Files (*.sft)"
+            dialog, "Open ATR File", "", "GBO ATR Files (*.atr)"
         )
         if fname:
             self.selected_file = fname
@@ -113,6 +120,71 @@ class qtGUI:
         msg.setText("Would you like to open the file in Veusz?")
         msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         return msg.exec_() == QMessageBox.Yes
+
+
+def create_qtpy_plotting_GUI():
+    """Create a Qt GUI for getting files and control of plotting."""
+    """
+    Creates a Qt user interface with:
+    - Three text fields: Filename(s), Plot Title, Data Set Name
+    - Three buttons:
+        * Browse (at end of filename field)
+        * Create Plots (beneath all fields)
+        * Save and Close (beneath Create Plots)
+    """
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = QWidget()
+    window.setWindowTitle('ATR Plot Interface')
+    window.resize(500, 300)  # Set initial window size
+
+    # Create labels
+    label_filename = QLabel('Filename(s):')
+    label_plot_title = QLabel('Plot Title:')
+    label_data_set = QLabel('Data Set Name:')
+
+    # Create input fields
+    lineedit_filename = QLineEdit()
+    lineedit_plot_title = QLineEdit()
+    lineedit_data_set = QLineEdit()
+
+    # Create buttons
+    button_browse = QPushButton('Browse')
+    button_create_plots = QPushButton('Create Plots')
+    button_save_close = QPushButton('Save and Close')
+
+    # Filename field with Browse button
+    filename_layout = QHBoxLayout()
+    filename_layout.addWidget(lineedit_filename)
+    filename_layout.addWidget(button_browse)
+
+    # Main layout
+    main_layout = QVBoxLayout()
+
+    # Add filename section
+    main_layout.addWidget(label_filename)
+    main_layout.addLayout(filename_layout)
+
+    # Add plot title field
+    main_layout.addWidget(label_plot_title)
+    main_layout.addWidget(lineedit_plot_title)
+
+    # Add dataset name field
+    main_layout.addWidget(label_data_set)
+    main_layout.addWidget(lineedit_data_set)
+
+    # Add action buttons
+    main_layout.addSpacing(20)  # Add space before buttons
+    main_layout.addWidget(button_create_plots)
+    main_layout.addWidget(button_save_close)
+
+    # Set main layout
+    window.setLayout(main_layout)
+
+    # Connect buttons to functionality
+    button_create_plots.clicked.connect(PlotATR.create_plot)
+    button_save_close.clicked.connect(PlotATR.save_Veusz)
+
+    return app, window
 
 
 class Wrap4With:
@@ -141,50 +213,53 @@ class PlotATR:
     """Class Utilized to import, parse, and plot GBO Outdoor Range Data."""
 
     def __init__(self):
-        self.root = tk.Tk()
-        self.root.title("ATR Plotter")
 
-        # File selection
-        self.file_label = tk.Label(self.root, text="Select ATR file:")
-        self.file_label.pack()
-        self.file_entry = tk.Entry(self.root, width=150)
-        self.file_entry.pack()
-        self.file_button = tk.Button(
-            self.root, text="Browse",
-            command=PlotATR._select_atr_files(self)
-        )
-        self.file_button.pack()
-
-        # Plot name input
-        self.plot_name_label = tk.Label(self.root, text="Enter plot name:")
-        self.plot_name_label.pack()
-        self.plot_name_entry = tk.Entry(self.root, width=150)
-        self.plot_name_entry.config(state='normal')
-        self.plot_name_entry.pack()
-
-        # Dataset name input
-        self.dataset_name_label = tk.Label(
-            self.root, text="Enter dataset name:")
-        self.dataset_name_label.pack()
-        self.dataset_name_entry = tk.Entry(self.root, width=150)
-        self.dataset_name_entry.config(state='normal')
-        self.dataset_name_entry.pack()
-
-        # Create plot button
-        create_button = tk.Button(
-            self.root, text="Create Plot", command=self.create_plot
-        )
-        create_button.pack()
-
-        # Close and save
-        create_button = tk.Button(
-            self.root, text="Close and Save", command=self._save_Veusz
-        )
-        create_button.pack()
-
-        # Status label
-        self.status_label = tk.Label(self.root, text="")
-        self.status_label.pack()
+        # =============================================================================
+        #         self.root = tk.Tk()
+        #         self.root.title("ATR Plotter")
+        #
+        #         # File selection
+        #         self.file_label = tk.Label(self.root, text="Select ATR file:")
+        #         self.file_label.pack()
+        #         self.file_entry = tk.Entry(self.root, width=150)
+        #         self.file_entry.pack()
+        #         self.file_button = tk.Button(
+        #             self.root, text="Browse",
+        #             command=PlotATR._select_atr_files(self)
+        #         )
+        #         self.file_button.pack()
+        #
+        #         # Plot name input
+        #         self.plot_name_label = tk.Label(self.root, text="Enter plot name:")
+        #         self.plot_name_label.pack()
+        #         self.plot_name_entry = tk.Entry(self.root, width=150)
+        #         self.plot_name_entry.config(state='normal')
+        #         self.plot_name_entry.pack()
+        #
+        #         # Dataset name input
+        #         self.dataset_name_label = tk.Label(
+        #             self.root, text="Enter dataset name:")
+        #         self.dataset_name_label.pack()
+        #         self.dataset_name_entry = tk.Entry(self.root, width=150)
+        #         self.dataset_name_entry.config(state='normal')
+        #         self.dataset_name_entry.pack()
+        #
+        #         # Create plot button
+        #         create_button = tk.Button(
+        #             self.root, text="Create Plot", command=self.create_plot
+        #         )
+        #         create_button.pack()
+        #
+        #         # Close and save
+        #         create_button = tk.Button(
+        #             self.root, text="Close and Save", command=self._save_Veusz
+        #         )
+        #         create_button.pack()
+        #
+        #         # Status label
+        #         self.status_label = tk.Label(self.root, text="")
+        #         self.status_label.pack()
+        # =============================================================================
 
         # File Info
         if not self.fileParts:
@@ -208,7 +283,7 @@ class PlotATR:
     def _save_Veusz(self):
         """Save the generated file and ask to open Veusz Interface."""
         self.root.destroy()
-        gui = qtGUI()
+        gui = qtGUI_Save()
         if save_path := gui.get_save_filename():
             self.save(save_path)
             if gui.ask_open_veusz():
