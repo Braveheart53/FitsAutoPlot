@@ -278,11 +278,11 @@ class PlotATR:
         list of str
             List of selected file paths. Empty if cancelled.
         """
-        breakpoint
+
         if parent is None or not parent:
             parent = QWidget()
 
-        self.self.filenames, _ = QFileDialog.getOpenFileNames(
+        self.filenames, _ = QFileDialog.getOpenFileNames(
             parent, caption, directory, filter)
 
         # start the main loop for processing the selected files
@@ -303,6 +303,9 @@ class PlotATR:
         if self.fileParts[0][0]:
             filenames_only = list(map(itemgetter(1), self.fileParts))
             # update the file listing
+            self.lineedit_filename.setText(' ; '.join(filenames_only))
+            # self.lineedit_plot_title = self.plotTitle
+            # self.lineedit_data_set = 'Auto Generated Per File'
 
         return self.filenames, self.fileParts
 
