@@ -13,10 +13,10 @@
 
 # event loop QApplication.exec_()
 # %% Import all required modules
-# %%% Math Modules
-from rich import inspect as richinspect
-import pdir
-import veusz.embed as vz
+import subprocess
+from operator import itemgetter
+import sys
+from qtpy.QtGui import *
 from qtpy.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -28,20 +28,17 @@ from qtpy.QtWidgets import (
     QLabel,
     QPushButton
 )
-from qtpy.QtGui import *
+from rich import inspect as richinspect
+import pdir
+import veusz.embed as vz
 import numpy as np
-# import skrf as rf
-
 
 # %%% System Interface Modules
 import os
-import sys
-from operator import itemgetter
-import subprocess
+os.environ['QT_API'] = 'pyside6'
 
 # %%% GUI Uses
 # %%%% qtpy imports
-os.environ['QT_API'] = 'pyside6'
 
 
 # %%% Plotting Environment
@@ -209,8 +206,9 @@ class PlotATR:
             self.plotwindow.setLayout(self.main_layout)
 
             # Connect buttons to functionality
-            self.button_create_plots.clicked.connect(PlotATR.create_plot)
-            self.button_save_close.clicked.connect(PlotATR.save_Veusz)
+            self.button_create_plots.clicked.connect(self.create_plot)
+            self.button_save_close.clicked.connect(self.save_Veusz)
+            self.button_browse.clicked.connect(self._select_atr_files)
 
         # File Info
         if not hasattr(self, 'fileParts'):
@@ -228,8 +226,9 @@ class PlotATR:
         self.mag_label = 'Magnitude (dB)'
 
         # Veusz Object
-        self.doc = vz.Embedded('GBO ATR Autoplotter', hidden=False)
-        self.doc.EnableToolbar()
+        if not hasattr(self, 'doc'):
+            self.doc = vz.Embedded('GBO ATR Autoplotter', hidden=False)
+            self.doc.EnableToolbar()
 
     def save_Veusz(self):
         """Save the generated file and ask to open Veusz Interface."""
@@ -279,19 +278,13 @@ class PlotATR:
         list of str
             List of selected file paths. Empty if cancelled.
         """
-        filenames, _ = QFileDialog.getOpenFileNames(
+        breakpoint
+        if parent is None or not parent:
+            parent = QWidget()
+
+        self.self.filenames, _ = QFileDialog.getOpenFileNames(
             parent, caption, directory, filter)
-        # return files
-        # Create a root window
-        # root2 = tk.Tk()
 
-        # # Hide the root window
-        # root2.withdraw()
-        # # root.iconify()
-
-        # self.filenames = askopenfilenames(filetypes=[("Antenna Range Files",
-        #                                               ".ATR")])
-        # root2.destroy()
         # start the main loop for processing the selected files
         self.fileParts = [None] * len(self.filenames)
         for mainLooper in range(len(self.filenames)):
@@ -308,9 +301,8 @@ class PlotATR:
         # multi-dimensional
         # array. Then call Veusz and parse the data into that gui.
         if self.fileParts[0][0]:
-            self.file_entry.delete(0, tk.END)
             filenames_only = list(map(itemgetter(1), self.fileParts))
-            self.file_entry.insert(0, ' ; '.join(filenames_only))
+            # update the file listing
 
         return self.filenames, self.fileParts
 
