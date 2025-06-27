@@ -13,27 +13,22 @@
 
 # event loop QApplication.exec_()
 # %% Import all required modules
-# %%% GUI Uses
-# %%%% Tkinter
-import tkinter as tk
-from tkinter.filedialog import askopenfilenames
-
-# %%%% qtpy imports
-from qtpy.QtGui import *
+# %%% Math Modules
+from rich import inspect as richinspect
+import pdir
+import veusz.embed as vz
 from qtpy.QtWidgets import (
     QApplication,
     QFileDialog,
     QMessageBox,
-    Qwidget,
+    QWidget,
     QHBoxLayout,
     QVBoxLayout,
     QLineEdit,
     QLabel,
     QPushButton
-
 )
-
-# %%% Math Modules
+from qtpy.QtGui import *
 import numpy as np
 # import skrf as rf
 
@@ -44,9 +39,14 @@ import sys
 from operator import itemgetter
 import subprocess
 
-# %%% Plotting Environment
-import veusz.embed as vz
+# %%% GUI Uses
+# %%%% qtpy imports
+os.environ['QT_API'] = 'pyside6'
 
+
+# %%% Plotting Environment
+
+# %%% Debug help
 
 # %% Class Definitions
 # Begin Class definitions based upon use cases for range and data
@@ -122,71 +122,6 @@ class qtGUI_Save:
         return msg.exec_() == QMessageBox.Yes
 
 
-def create_qtpy_plotting_GUI():
-    """Create a Qt GUI for getting files and control of plotting."""
-    """
-    Creates a Qt user interface with:
-    - Three text fields: Filename(s), Plot Title, Data Set Name
-    - Three buttons:
-        * Browse (at end of filename field)
-        * Create Plots (beneath all fields)
-        * Save and Close (beneath Create Plots)
-    """
-    app = QApplication.instance() or QApplication(sys.argv)
-    window = QWidget()
-    window.setWindowTitle('ATR Plot Interface')
-    window.resize(500, 300)  # Set initial window size
-
-    # Create labels
-    label_filename = QLabel('Filename(s):')
-    label_plot_title = QLabel('Plot Title:')
-    label_data_set = QLabel('Data Set Name:')
-
-    # Create input fields
-    lineedit_filename = QLineEdit()
-    lineedit_plot_title = QLineEdit()
-    lineedit_data_set = QLineEdit()
-
-    # Create buttons
-    button_browse = QPushButton('Browse')
-    button_create_plots = QPushButton('Create Plots')
-    button_save_close = QPushButton('Save and Close')
-
-    # Filename field with Browse button
-    filename_layout = QHBoxLayout()
-    filename_layout.addWidget(lineedit_filename)
-    filename_layout.addWidget(button_browse)
-
-    # Main layout
-    main_layout = QVBoxLayout()
-
-    # Add filename section
-    main_layout.addWidget(label_filename)
-    main_layout.addLayout(filename_layout)
-
-    # Add plot title field
-    main_layout.addWidget(label_plot_title)
-    main_layout.addWidget(lineedit_plot_title)
-
-    # Add dataset name field
-    main_layout.addWidget(label_data_set)
-    main_layout.addWidget(lineedit_data_set)
-
-    # Add action buttons
-    main_layout.addSpacing(20)  # Add space before buttons
-    main_layout.addWidget(button_create_plots)
-    main_layout.addWidget(button_save_close)
-
-    # Set main layout
-    window.setLayout(main_layout)
-
-    # Connect buttons to functionality
-    button_create_plots.clicked.connect(PlotATR.create_plot)
-    button_save_close.clicked.connect(PlotATR.save_Veusz)
-
-    return app, window
-
-
 class Wrap4With:
     """Used to add context management to a given object."""
 
@@ -213,59 +148,75 @@ class PlotATR:
     """Class Utilized to import, parse, and plot GBO Outdoor Range Data."""
 
     def __init__(self):
+        """Initialize the PlotATR Class."""
+        """
 
-        # =============================================================================
-        #         self.root = tk.Tk()
-        #         self.root.title("ATR Plotter")
-        #
-        #         # File selection
-        #         self.file_label = tk.Label(self.root, text="Select ATR file:")
-        #         self.file_label.pack()
-        #         self.file_entry = tk.Entry(self.root, width=150)
-        #         self.file_entry.pack()
-        #         self.file_button = tk.Button(
-        #             self.root, text="Browse",
-        #             command=PlotATR._select_atr_files(self)
-        #         )
-        #         self.file_button.pack()
-        #
-        #         # Plot name input
-        #         self.plot_name_label = tk.Label(self.root, text="Enter plot name:")
-        #         self.plot_name_label.pack()
-        #         self.plot_name_entry = tk.Entry(self.root, width=150)
-        #         self.plot_name_entry.config(state='normal')
-        #         self.plot_name_entry.pack()
-        #
-        #         # Dataset name input
-        #         self.dataset_name_label = tk.Label(
-        #             self.root, text="Enter dataset name:")
-        #         self.dataset_name_label.pack()
-        #         self.dataset_name_entry = tk.Entry(self.root, width=150)
-        #         self.dataset_name_entry.config(state='normal')
-        #         self.dataset_name_entry.pack()
-        #
-        #         # Create plot button
-        #         create_button = tk.Button(
-        #             self.root, text="Create Plot", command=self.create_plot
-        #         )
-        #         create_button.pack()
-        #
-        #         # Close and save
-        #         create_button = tk.Button(
-        #             self.root, text="Close and Save", command=self._save_Veusz
-        #         )
-        #         create_button.pack()
-        #
-        #         # Status label
-        #         self.status_label = tk.Label(self.root, text="")
-        #         self.status_label.pack()
-        # =============================================================================
+        Returns
+        -------
+        None.
+
+        """
+        if not hasattr(self, 'plotApp'):
+            self.plotapp = (
+                QApplication.instance() or QApplication(sys.argv)
+            )
+            self.plotwindow = QWidget()
+            self.plotwindow.setWindowTitle('ATR Plot Interface')
+            # Set initial self.plotwindow size
+            self.plotwindow.resize(500, 300)
+
+            # Create labels
+            self.label_filename = QLabel('Filename(s):')
+            self.label_plot_title = QLabel('Plot Title:')
+            self.label_data_set = QLabel('Data Set Name:')
+
+            # Create input fields
+            self.lineedit_filename = QLineEdit()
+            self.lineedit_plot_title = QLineEdit()
+            self.lineedit_data_set = QLineEdit()
+
+            # Create buttons
+            self.button_browse = QPushButton('Browse')
+            self.button_create_plots = QPushButton('Create Plots')
+            self.button_save_close = QPushButton('Save and Close')
+
+            # Filename field with Browse button
+            self.filename_layout = QHBoxLayout()
+            self.filename_layout.addWidget(self.lineedit_filename)
+            self.filename_layout.addWidget(self.button_browse)
+
+            # Main layout
+            self.main_layout = QVBoxLayout()
+
+            # Add filename section
+            self.main_layout.addWidget(self.label_filename)
+            self.main_layout.addLayout(self.filename_layout)
+
+            # Add plot title field
+            self.main_layout.addWidget(self.label_plot_title)
+            self.main_layout.addWidget(self.lineedit_plot_title)
+
+            # Add dataset name field
+            self.main_layout.addWidget(self.label_data_set)
+            self.main_layout.addWidget(self.lineedit_data_set)
+
+            # Add action buttons
+            self.main_layout.addSpacing(20)  # Add space before buttons
+            self.main_layout.addWidget(self.button_create_plots)
+            self.main_layout.addWidget(self.button_save_close)
+
+            # Set main layout
+            self.plotwindow.setLayout(self.main_layout)
+
+            # Connect buttons to functionality
+            self.button_create_plots.clicked.connect(PlotATR.create_plot)
+            self.button_save_close.clicked.connect(PlotATR.save_Veusz)
 
         # File Info
-        if not self.fileParts:
+        if not hasattr(self, 'fileParts'):
             self.fileParts = None
 
-        if not self.filenames:
+        if not hasattr(self, 'filenames'):
             self.filenames = None
 
         # Plot Info
@@ -274,15 +225,15 @@ class PlotATR:
         self.freq_label = 'Frequency (MHz)'
         self.az_label = 'Azimuth (degrees)'
         self.phase_label = 'Phase (degrees)'
-        self.mag_label = 'Magnitude (dBm)'
+        self.mag_label = 'Magnitude (dB)'
 
         # Veusz Object
         self.doc = vz.Embedded('GBO ATR Autoplotter', hidden=False)
         self.doc.EnableToolbar()
 
-    def _save_Veusz(self):
+    def save_Veusz(self):
         """Save the generated file and ask to open Veusz Interface."""
-        self.root.destroy()
+        sys.exit(self.plotApp.exec_())
         gui = qtGUI_Save()
         if save_path := gui.get_save_filename():
             self.save(save_path)
@@ -299,18 +250,48 @@ class PlotATR:
         self.grid = self.page.Add('grid', columns=2)
         return self.page
 
-    def _select_atr_files(self):
-        """Tkinter GUI for File Select, Multi File for ATRs."""
+    def _select_atr_files(self, parent: QWidget = None,
+                          caption: str = "Select Files",
+                          directory: str = "",
+                          filter: str = "GBO ATR Files (*.atr)"
+                          ):
+        """QtPy or Pyside6 GUI for File Select, Multi File for ATRs."""
+        """Open a file dialog for multiple file selection using qtpy.
+        select_multiple_files(
+            parent: QWidget = None, 
+            caption: str = "Select Files", 
+            directory: str = "", 
+            filter: str = "All Files (*)"):
+
+        Parameters
+        ----------
+        parent : QWidget, optional
+            The parent widget for the dialog.
+        caption : str, optional
+            The dialog window title.
+        directory : str, optional
+            The initial directory shown in the dialog.
+        filter : str, optional
+            File type filter string, e.g. "Images (*.png *.jpg);;Text files (*.txt)".
+    
+        Returns
+        -------
+        list of str
+            List of selected file paths. Empty if cancelled.
+        """
+        filenames, _ = QFileDialog.getOpenFileNames(
+            parent, caption, directory, filter)
+        # return files
         # Create a root window
-        root2 = tk.Tk()
+        # root2 = tk.Tk()
 
-        # Hide the root window
-        root2.withdraw()
-        # root.iconify()
+        # # Hide the root window
+        # root2.withdraw()
+        # # root.iconify()
 
-        self.filenames = askopenfilenames(filetypes=[("Antenna Range Files",
-                                                      ".ATR")])
-        root2.destroy()
+        # self.filenames = askopenfilenames(filetypes=[("Antenna Range Files",
+        #                                               ".ATR")])
+        # root2.destroy()
         # start the main loop for processing the selected files
         self.fileParts = [None] * len(self.filenames)
         for mainLooper in range(len(self.filenames)):
@@ -942,8 +923,12 @@ class PlotATR:
 
         """
         # run the GUI!
-        self.root.mainloop()
-        # self.root.destroy()
+        # Show the window
+        self.plotwindow.show()
+
+        # Start the application event loop
+        if QApplication.instance():
+            self.plotapp.exec_()
 
 
 def cartesian_to_polar(x, y):
