@@ -1,19 +1,39 @@
-nuitka --mingw64 --onefile --standalone --plugin-enable=pyqt5 --output-dir=../Nuitka/ ATR_AutoPlot.py
+# nuitka --mingw64 --onefile --standalone --plugin-enable=pyqt5 --output-dir=../Nuitka/ ATR_AutoPlot.py
 
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
 
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
 
-may need to create a config yaml file and explicitly tell it to import all of Veusz, see https://nuitka.net/user-documentation/nuitka-package-config.html
+# may need to create a config yaml file and explicitly tell it to import all of Veusz, see https://nuitka.net/user-documentation/nuitka-package-config.html
 
 
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
-nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --enable-plugin=tk-inter --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+# nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --enable-plugin=tk-inter --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
-nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+# nuitka --mingw64 --onefile --follow-imports --standalone --enable-plugin=pyside6 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --nofollow-import-to=pyqt5 --nofollow-import-to=pyqt6 --output-dir=./Nuitka/ ATR_AutoPlot.py 
+nuitka --mingw64 --onefile --follow-imports --standalone --enable-plugin=pyside6 --include-package=veusz --include-qt-plugins=qml --include-data-files=veusz.exe=veusz.exe  --nofollow-import-to=pyqt5 --nofollow-import-to=pyqt6 --nofollow-import-to=tk-inter --nofollow-import-to=tkinter --nofollow-import-to=pyqt6 --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
 # may need to remove pyside6 from the environment before running the following
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
-nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-qt-plugins=qml --include-package=veusz --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/qt5 ATR_AutoPlot.py 
+# nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-qt-plugins=qml --include-package=veusz  --nofollow-import-to=pyside6 --output-dir=./Nuitka/qt5/ ATR_AutoPlot.py 
+
+
+Failed message after running on laptop:
+"ocal\Temp\ONEFIL~1\astropy\time\formats.py", line 13, in <module astropy.time.formats>
+  File "<frozen importlib._bootstrap>", line 991, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 975, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 671, in _load_unlocked
+  File "C:\Users\wwallace\AppData\Local\Temp\ONEFIL~1\astropy\units\__init__.py", line 25, in <module astropy.units>
+  File "<frozen importlib._bootstrap>", line 991, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 975, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 671, in _load_unlocked
+  File "C:\Users\wwallace\AppData\Local\Temp\ONEFIL~1\astropy\units\astrophys.py", line 66, in <module astropy.units.astrophys>
+  File "C:\Users\wwallace\AppData\Local\Temp\ONEFIL~1\astropy\constants\constant.py", line 42, in wrapper
+  File "C:\Users\wwallace\AppData\Local\Temp\ONEFIL~1\astropy\units\quantity.py", line 992, in unit
+  File "C:\Users\wwallace\AppData\Local\Temp\ONEFIL~1\astropy\utils\decorators.py", line 841, in __get__
+  File "C:\Users\wwallace\AppData\Local\Temp\ONEFIL~1\astropy\constants\constant.py", line 211, in _unit
+  File "C:\Users\wwallace\AppData\Local\Temp\ONEFIL~1\astropy\units\core.py", line 2095, in __call__
+ValueError: 'm / (s)' did not parse as unit: Unable to build parser If this is meant to be a custom unit, define it with 'u.def_unit'. To have it recognized inside a file reader or other code, enable it with 'u.add_enabled_units'. For details, see https://docs.astropy.org/en/latest/units/combining_and_defining.html
+"
