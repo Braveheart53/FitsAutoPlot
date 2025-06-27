@@ -1,19 +1,19 @@
-nuitka --mingw64 --onefile --standalone --plugin-enable=pyqt5 --output-dir=../Nuitka/ ATR_AutoPlot.py
+# nuitka --mingw64 --onefile --standalone --plugin-enable=pyqt5 --output-dir=../Nuitka/ ATR_AutoPlot.py
 
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
 
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py
 
-may need to create a config yaml file and explicitly tell it to import all of Veusz, see https://nuitka.net/user-documentation/nuitka-package-config.html
+# may need to create a config yaml file and explicitly tell it to import all of Veusz, see https://nuitka.net/user-documentation/nuitka-package-config.html
 
 
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyside6 --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
-nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --enable-plugin=tk-inter --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+# nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --enable-plugin=tk-inter --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
-nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyside6 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+nuitka --mingw64 --onefile --follow-imports --standalone --enable-plugin=pyside6 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --nofollow-import-to=pyqt5 --nofollow-import-to=pyqt6 --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
 # may need to remove pyside6 from the environment before running the following
-nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
+# nuitka --mingw64 --clang --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-package=veusz --include-qt-plugins=qml --user-package-configuration-file=Nuitka_config.yaml --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
-nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-qt-plugins=qml --include-package=veusz  --output-dir=./Nuitka/qt5/ ATR_AutoPlot.py 
+# nuitka --mingw64 --onefile --follow-imports --standalone --plugin-enable=pyqt5 --enable-plugin=tk-inter --include-qt-plugins=qml --include-package=veusz  --nofollow-import-to=pyside6 --output-dir=./Nuitka/qt5/ ATR_AutoPlot.py 
