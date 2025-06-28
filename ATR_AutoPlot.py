@@ -1,11 +1,7 @@
-"""Enhanced ATR AutoPlot with Multiprocessing and GPU Acceleration - FIXED.
+"""Enhanced ATR AutoPlot with Modern Qt GUI Interface.
 
-# %% Heading Info
-
-This version combines:
-• the multiprocessing/GPU fixes (magnitude data no longer re-converted to dB),
-• the RandS-style modern Qt interface, and  
-• the original ATR plotting logic.
+This version integrates the modern Qt GUI interface from the R&S plotter
+with the ATR processing capabilities, including multiprocessing and GPU acceleration.
 
 Author: William W. Wallace
 Last updated: 2025-06-28
@@ -21,8 +17,8 @@ import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from operator import itemgetter
-# FIX 1: Add comprehensive typing imports for Python < 3.9 compatibility
 from typing import List, Dict, Tuple, Optional, Union, Any
+from dataclasses import dataclass
 
 # %%% Import Math and Plotting Modules
 import numpy as np
@@ -30,25 +26,20 @@ import veusz.embed as vz
 
 # %%% Import GUI Modules
 from qtpy.QtGui import *
+from qtpy.QtCore import Qt, QSize, QThread, Signal
 from qtpy.QtWidgets import (
-    QApplication,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+    QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+    QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+    QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
 )
 
 # %%% Debugging Modules
 from rich import inspect as richinspect
 import pdir
 
-# %% Class Definitions
+# %% GPU Computing imports with fallback support
 
-# GPU Computing imports with fallback support
 try:
     import cupy as cp
     GPU_AVAILABLE = "cupy"
@@ -71,6 +62,21 @@ except ImportError:
 # System Interface Modules
 os.environ['QT_API'] = 'pyside6'
 
+# %% Configuration Classes
+
+
+@dataclass
+class ProcessingConfig:
+    """Configuration class for processing settings."""
+    enable_multiprocessing: bool = True
+    enable_gpu_processing: bool = True
+    use_opencl: bool = True
+    num_processes: int = multiprocessing.cpu_count()
+    max_workers: int = multiprocessing.cpu_count()
+    chunk_size: int = 1000
+
+# %% GPU Acceleration Classes
+
 
 class GPUAccelerator:
     """Handles GPU-accelerated computations with cross-platform support."""
@@ -92,7 +98,6 @@ class GPUAccelerator:
     def _initialize_gpu(self):
         """Initialize the appropriate GPU backend."""
         if self.backend == "cupy":
-            # CuPy initialization
             try:
                 cp.cuda.Device(0).use()
                 print(f"CuPy initialized on device: {cp.cuda.Device()}")
@@ -101,7 +106,6 @@ class GPUAccelerator:
                 self.gpu_enabled = False
 
         elif self.backend == "opencl":
-            # PyOpenCL initialization
             try:
                 self.cl_context = cl.create_some_context()
                 self.cl_queue = cl.CommandQueue(self.cl_context)
@@ -111,7 +115,6 @@ class GPUAccelerator:
                 self.gpu_enabled = False
 
         elif self.backend == "taichi":
-            # Taichi initialization
             try:
                 ti.init(arch=ti.gpu)
                 print("Taichi GPU backend initialized")
@@ -137,7 +140,6 @@ class GPUAccelerator:
             Processed data array.
         """
         if not self.gpu_enabled or not apply_db_conversion:
-            # For ATR magnitude data, return unchanged since it's already in dB format
             return self._cpu_passthrough(data)
 
         try:
@@ -155,15 +157,7 @@ class GPUAccelerator:
 
     def _cpu_passthrough(self, data: np.ndarray) -> np.ndarray:
         """CPU-based passthrough - no transformation for ATR magnitude data."""
-        # ATR magnitude data is already in dB format, so return unchanged
         return np.copy(data)
-
-    def _cpu_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
-        """CPU-based array operations with optional dB conversion."""
-        result = np.copy(data)
-        if apply_db_conversion:
-            result = np.where(result != 0, 20 * np.log10(np.abs(result)), -60)
-        return result
 
     def _cupy_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
         """CuPy-based GPU operations with optional dB conversion."""
@@ -183,15 +177,13 @@ class GPUAccelerator:
         if not apply_db_conversion:
             return np.copy(data)
 
-        # Create OpenCL buffers
         data_gpu = cl_array.to_device(self.cl_queue, data.astype(np.float32))
         result_gpu = cl_array.empty_like(data_gpu)
 
-        # Define OpenCL kernel for log operations
         kernel_code = """
         __kernel void log_transform(__global float* input,
-                                  __global float* output,
-                                  int n) {
+                                   __global float* output,
+                                   int n) {
             int i = get_global_id(0);
             if (i < n) {
                 if (input[i] != 0.0f) {
@@ -229,49 +221,18 @@ class GPUAccelerator:
                 else:
                     output_field[i] = -60.0
 
-        # Create Taichi fields
         input_field = ti.field(dtype=ti.f32, shape=data.shape)
         output_field = ti.field(dtype=ti.f32, shape=data.shape)
 
-        # Copy data to Taichi field
         input_field.from_numpy(data.astype(np.float32))
-
-        # Execute kernel
         log_transform(input_field, output_field)
 
-        # Return result
         return output_field.to_numpy()
-
-
-class MultiprocessingConfig:
-    """Configuration class for multiprocessing settings."""
-
-    def __init__(self, enable_multiprocessing: bool = True,
-                 max_workers: Optional[int] = None):
-        """Initialize multiprocessing configuration.
-
-        Parameters
-        ----------
-        enable_multiprocessing : bool, optional
-            Whether to enable multiprocessing. Default is True.
-        max_workers : int, optional
-            Maximum number of worker processes. If None, uses CPU count.
-        """
-        self.enable_multiprocessing = enable_multiprocessing
-        self.max_workers = max_workers or multiprocessing.cpu_count()
-
-        # Ensure we don't exceed system capabilities
-        self.max_workers = min(self.max_workers, multiprocessing.cpu_count())
-
-        print(f"Multiprocessing configured: "
-              f"enabled={self.enable_multiprocessing}, "
-              f"workers={self.max_workers}")
-
 
 # %% Worker Functions
 
-# FIX 2: Updated function signature to use typing.Tuple instead of tuple
-def process_single_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[str, Any]]:
+
+def process_single_atr_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[str, Any]]:
     """Process a single ATR file with multiprocessing support.
 
     This function is designed to be used with multiprocessing pools.
@@ -279,7 +240,7 @@ def process_single_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[s
     Parameters
     ----------
     file_info : Tuple[str, int, object]
-        Tuple containing (file_path, line_number, plot_instance).
+        Tuple containing (file_path, line_number, gpu_accelerator).
 
     Returns
     -------
@@ -291,7 +252,6 @@ def process_single_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[s
     try:
         # Read file with optimized approach based on size
         filesize = os.path.getsize(file_path)
-
         if filesize < 10**7:  # < 10MB
             with open(file_path, 'rb') as file:
                 content = file.read().decode('ascii')
@@ -317,11 +277,6 @@ def process_single_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[s
         # Create numpy array - magnitude data is already in dB format in ATR files
         selected_data = np.array(
             [selected_magnitude_data, selected_phase_data])
-
-        # FIXED: Do NOT apply GPU operations to magnitude data since it's already in dB format
-        # The original script didn't apply any transformations to magnitude data
-        # selected_data[0] = gpu_accelerator.array_operations(selected_data[0], apply_db_conversion=False)
-
         selected_data_transpose = selected_data.transpose()
 
         # Parse header for frequency and azimuth info
@@ -348,21 +303,94 @@ def process_single_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[s
         print(f"Error processing file {file_path}: {str(e)}")
         return os.path.basename(file_path), {}
 
+# %% Threading Classes
+
+
+class ATRProcessingThread(QThread):
+    """Thread for handling ATR file processing without blocking the GUI."""
+
+    progress_updated = Signal(int)
+    processing_finished = Signal(object)
+    error_occurred = Signal(str)
+
+    def __init__(self, file_list, config):
+        """Initialize ATR processing thread.
+
+        Parameters
+        ----------
+        file_list : list
+            List of ATR files to process.
+        config : ProcessingConfig
+            Processing configuration.
+        """
+        super().__init__()
+        self.file_list = file_list
+        self.config = config
+        self.gpu_accelerator = GPUAccelerator(config.enable_gpu_processing)
+
+    def run(self):
+        """Execute ATR file processing in separate thread."""
+        try:
+            if self.config.enable_multiprocessing and len(self.file_list) > 1:
+                results = self._process_files_parallel()
+            else:
+                results = self._process_files_sequential()
+            self.processing_finished.emit(results)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def _process_files_parallel(self):
+        """Process files using multiprocessing."""
+        line_number = 13  # Zero-indexed line number for data
+
+        file_info_list = [
+            (file_path, line_number, self.gpu_accelerator)
+            for file_path in self.file_list
+        ]
+
+        results = {}
+
+        with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
+            future_to_file = {
+                executor.submit(process_single_atr_file, file_info): file_info[0]
+                for file_info in file_info_list
+            }
+
+            completed = 0
+            for future in as_completed(future_to_file):
+                filename, data = future.result()
+                if data:
+                    results[filename] = data
+
+                completed += 1
+                progress = int((completed / len(self.file_list)) * 100)
+                self.progress_updated.emit(progress)
+
+        return results
+
+    def _process_files_sequential(self):
+        """Process files sequentially."""
+        line_number = 13
+        results = {}
+
+        for i, file_path in enumerate(self.file_list):
+            filename, data = process_single_atr_file(
+                (file_path, line_number, self.gpu_accelerator)
+            )
+
+            if data:
+                results[filename] = data
+
+            progress = int(((i + 1) / len(self.file_list)) * 100)
+            self.progress_updated.emit(progress)
+
+        return results
 
 # %% Utility Classes
 
-class switch:
-    """Creates a case or switch style statement.
 
-    This is utilized as follows:
-    for case in switch('b'):
-        if case('a'):
-            print("Case A")
-            break
-        if case('b'):
-            print("Case B")  # Output: "Case B"
-            break
-    """
+class switch:
+    """Creates a case or switch style statement."""
 
     def __init__(self, value):
         """Initialize switch with value."""
@@ -377,51 +405,6 @@ class switch:
         return self.value in args
 
 
-class qtSave:
-    """Handles all Qt-based user interactions."""
-
-    def __init__(self):
-        """Initialize Qt save handler."""
-        self.appSave = QApplication(sys.argv)
-
-    def closeEvent(self, event):
-        """Close the Event."""
-        QApplication.closeAllWindows()
-        event.accept()
-
-    def _select_sft_file(self, dialog):
-        """Handle file selection button click."""
-        fname, _ = QFileDialog.getOpenFileName(
-            dialog, "Open ATR File", "", "GBO ATR Files (*.atr)"
-        )
-
-        if fname:
-            self.selected_file = fname
-            self.file_label.setText(fname)
-
-    def _validate_selection(self, dialog):
-        """Validate file selection before accepting dialog."""
-        if not self.selected_file:
-            self.file_label.setText("Please select a file!")
-            return
-
-        dialog.accept()
-
-    def get_save_filename(self):
-        """Display file save dialog for Veusz project."""
-        return QFileDialog.getSaveFileName(
-            None, "Save Veusz Project", "",
-            "Veusz High Precision Files (*.vszh5)")[0]
-
-    def ask_open_veusz(self):
-        """Display dialog to open created file in Veusz GUI."""
-        msg = QMessageBox()
-        msg.setWindowTitle("Open in Veusz")
-        msg.setText("Would you like to open the file in Veusz?")
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        return msg.exec_() == QMessageBox.Yes
-
-
 class Wrap4With:
     """Used to add context management to a given object."""
 
@@ -434,65 +417,371 @@ class Wrap4With:
         return self._resource
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Clean up the resource upon exiting the context.
-
-        If the resource has a .close() method, it will be called.
-        """
+        """Clean up the resource upon exiting the context."""
         if hasattr(self._resource, 'close'):
             self._resource.close()
         return None
 
+# %% Enhanced Main Window Class
 
-# %% Main PlotATR Class
 
-# FIX 3: Updated remaining method signatures to use typing module
-class PlotATR:
-    """Class for importing, parsing, and plotting GBO Outdoor Range Data.
+class EnhancedATRMainWindow(QMainWindow):
+    """Enhanced main window with modern Qt interface for ATR plotting."""
 
-    Enhanced with multiprocessing and GPU acceleration capabilities.
-    """
+    def __init__(self):
+        """Initialize the enhanced ATR main window."""
+        super().__init__()
+        self.setWindowTitle("Enhanced ATR AutoPlot with Modern GUI")
+        self.setGeometry(100, 100, 900, 700)
 
-    def __init__(self, enable_multiprocessing: bool = True,
-                 enable_gpu: bool = True,
-                 max_workers: Optional[int] = None):
-        """Initialize the PlotATR Class.
+        # Initialize configuration
+        self.config = ProcessingConfig()
+
+        # Initialize ATR plotter
+        self.atr_plotter = None
+
+        # Setup UI
+        self._setup_ui()
+
+        # File list
+        self.selected_files = []
+
+        # Processing results
+        self.processed_data = {}
+
+    def _setup_ui(self):
+        """Set up the user interface."""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
+
+        # File selection section
+        file_group = QGroupBox("ATR File Selection")
+        file_layout = QVBoxLayout(file_group)
+
+        # File list widget
+        self.file_list_widget = QListWidget()
+        self.file_list_widget.setMinimumHeight(150)
+        file_layout.addWidget(self.file_list_widget)
+
+        # Browse button
+        browse_layout = QHBoxLayout()
+        self.browse_button = QPushButton("Browse ATR Files")
+        self.browse_button.clicked.connect(self._browse_files)
+        browse_layout.addWidget(self.browse_button)
+
+        self.clear_button = QPushButton("Clear Files")
+        self.clear_button.clicked.connect(self._clear_files)
+        browse_layout.addWidget(self.clear_button)
+
+        file_layout.addLayout(browse_layout)
+        main_layout.addWidget(file_group)
+
+        # Processing options section
+        options_group = QGroupBox("Processing Options")
+        options_layout = QVBoxLayout(options_group)
+
+        # Multiprocessing options
+        self.enable_mp_checkbox = QCheckBox("Enable Multiprocessing")
+        self.enable_mp_checkbox.setChecked(self.config.enable_multiprocessing)
+        self.enable_mp_checkbox.stateChanged.connect(self._update_mp_config)
+        options_layout.addWidget(self.enable_mp_checkbox)
+
+        # CPU cores selection
+        cpu_layout = QHBoxLayout()
+        cpu_layout.addWidget(QLabel("CPU Cores:"))
+        self.cpu_spinbox = QSpinBox()
+        self.cpu_spinbox.setMinimum(1)
+        self.cpu_spinbox.setMaximum(multiprocessing.cpu_count())
+        self.cpu_spinbox.setValue(self.config.num_processes)
+        self.cpu_spinbox.valueChanged.connect(self._update_cpu_config)
+        cpu_layout.addWidget(self.cpu_spinbox)
+        cpu_layout.addStretch()
+        options_layout.addLayout(cpu_layout)
+
+        # GPU options
+        self.enable_gpu_checkbox = QCheckBox("Enable GPU Processing")
+        self.enable_gpu_checkbox.setChecked(self.config.enable_gpu_processing)
+        self.enable_gpu_checkbox.stateChanged.connect(self._update_gpu_config)
+        options_layout.addWidget(self.enable_gpu_checkbox)
+
+        # OpenCL preference
+        self.use_opencl_checkbox = QCheckBox("Prefer OpenCL (Cross-platform)")
+        self.use_opencl_checkbox.setChecked(self.config.use_opencl)
+        self.use_opencl_checkbox.stateChanged.connect(
+            self._update_opencl_config)
+        options_layout.addWidget(self.use_opencl_checkbox)
+
+        main_layout.addWidget(options_group)
+
+        # Plot configuration section
+        plot_group = QGroupBox("Plot Configuration")
+        plot_layout = QVBoxLayout(plot_group)
+
+        # Plot title
+        plot_title_layout = QHBoxLayout()
+        plot_title_layout.addWidget(QLabel("Plot Title:"))
+        self.plot_title_edit = QLineEdit("GBO Outdoor Antenna Range Pattern")
+        plot_title_layout.addWidget(self.plot_title_edit)
+        plot_layout.addLayout(plot_title_layout)
+
+        # Dataset name
+        dataset_layout = QHBoxLayout()
+        dataset_layout.addWidget(QLabel("Dataset Name:"))
+        self.dataset_name_edit = QLineEdit("ATR_Dataset")
+        dataset_layout.addWidget(self.dataset_name_edit)
+        plot_layout.addLayout(dataset_layout)
+
+        main_layout.addWidget(plot_group)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
+        # Status text
+        self.status_text = QTextEdit()
+        self.status_text.setMaximumHeight(120)
+        self.status_text.setReadOnly(True)
+        main_layout.addWidget(self.status_text)
+
+        # Control buttons
+        button_layout = QHBoxLayout()
+
+        self.process_button = QPushButton("Process and Plot ATR Files")
+        self.process_button.clicked.connect(self._process_and_plot)
+        button_layout.addWidget(self.process_button)
+
+        self.save_button = QPushButton("Save Veusz Project")
+        self.save_button.clicked.connect(self._save_project)
+        self.save_button.setEnabled(False)
+        button_layout.addWidget(self.save_button)
+
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.close)
+        button_layout.addWidget(self.close_button)
+
+        main_layout.addLayout(button_layout)
+
+        # Initialize status
+        self._log_message("Enhanced ATR AutoPlot initialized")
+        self._log_message(f"GPU Support: {GPU_AVAILABLE or 'None'}")
+        self._log_message(
+            f"CPU Cores Available: {multiprocessing.cpu_count()}")
+
+    def _browse_files(self):
+        """Open file dialog to select multiple ATR files."""
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.ExistingFiles)
+        file_dialog.setNameFilter("GBO ATR Files (*.atr)")
+        file_dialog.setWindowTitle("Select ATR Files")
+
+        if file_dialog.exec_() == QFileDialog.Accepted:
+            selected_files = file_dialog.selectedFiles()
+            self.selected_files.extend(selected_files)
+            self._update_file_list()
+            self._log_message(f"Selected {len(selected_files)} ATR files")
+
+    def _clear_files(self):
+        """Clear the selected files list."""
+        self.selected_files.clear()
+        self._update_file_list()
+        self._log_message("File list cleared")
+
+    def _update_file_list(self):
+        """Update the file list widget."""
+        self.file_list_widget.clear()
+        for file_path in self.selected_files:
+            self.file_list_widget.addItem(os.path.basename(file_path))
+
+    def _update_mp_config(self, state):
+        """Update multiprocessing configuration."""
+        self.config.enable_multiprocessing = state == Qt.Checked
+        self._log_message(
+            f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}"
+        )
+
+    def _update_cpu_config(self, value):
+        """Update CPU cores configuration."""
+        self.config.num_processes = value
+        self.config.max_workers = value
+        self._log_message(f"CPU cores set to: {value}")
+
+    def _update_gpu_config(self, state):
+        """Update GPU processing configuration."""
+        self.config.enable_gpu_processing = state == Qt.Checked
+        self._log_message(
+            f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}"
+        )
+
+    def _update_opencl_config(self, state):
+        """Update OpenCL preference configuration."""
+        self.config.use_opencl = state == Qt.Checked
+        self._log_message(
+            f"OpenCL preference: {'Enabled' if self.config.use_opencl else 'Disabled'}"
+        )
+
+    def _log_message(self, message):
+        """Add message to status text."""
+        self.status_text.append(f"[{self._get_timestamp()}] {message}")
+
+    def _get_timestamp(self):
+        """Get current timestamp string."""
+        import datetime
+        return datetime.datetime.now().strftime("%H:%M:%S")
+
+    def _process_and_plot(self):
+        """Process selected ATR files and create plots."""
+        if not self.selected_files:
+            QMessageBox.warning(
+                self, "Warning", "Please select ATR files first.")
+            return
+
+        self.process_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+
+        # Initialize ATR plotter
+        self.atr_plotter = ATRPlotter(
+            plot_title=self.plot_title_edit.text(),
+            dataset_name=self.dataset_name_edit.text()
+        )
+
+        # Start processing thread
+        self.processing_thread = ATRProcessingThread(
+            self.selected_files,
+            self.config
+        )
+
+        self.processing_thread.progress_updated.connect(
+            self.progress_bar.setValue)
+        self.processing_thread.processing_finished.connect(
+            self._on_processing_finished)
+        self.processing_thread.error_occurred.connect(
+            self._on_processing_error)
+
+        self.processing_thread.start()
+        self._log_message("ATR processing started...")
+
+    def _on_processing_finished(self, results):
+        """Handle processing completion."""
+        self.progress_bar.setVisible(False)
+        self.process_button.setEnabled(True)
+
+        successful_files = len([r for r in results.values() if r])
+        failed_files = len(results) - successful_files
+
+        self._log_message(
+            f"Processing completed: {successful_files} successful, {failed_files} failed"
+        )
+
+        if successful_files > 0:
+            self.processed_data = results
+            self._create_plots(results)
+            self.save_button.setEnabled(True)
+
+        if failed_files > 0:
+            QMessageBox.warning(
+                self, "Processing Warnings",
+                f"{failed_files} files failed to process. Check status log for details."
+            )
+
+    def _on_processing_error(self, error_message):
+        """Handle processing error."""
+        self.progress_bar.setVisible(False)
+        self.process_button.setEnabled(True)
+        self._log_message(f"Processing error: {error_message}")
+        QMessageBox.critical(self, "Processing Error", error_message)
+
+    def _create_plots(self, results):
+        """Create Veusz plots from processed results."""
+        self._log_message("Creating ATR plots...")
+
+        try:
+            for filename, data in results.items():
+                if data:
+                    self.atr_plotter.create_plots_from_data(filename, data)
+
+            self._log_message("ATR plot creation completed")
+
+        except Exception as e:
+            self._log_message(f"Plot creation error: {e}")
+            QMessageBox.critical(self, "Plot Creation Error", str(e))
+
+    def _save_project(self):
+        """Save Veusz project."""
+        file_dialog = QFileDialog()
+        save_path, _ = file_dialog.getSaveFileName(
+            self, "Save ATR Veusz Project", "",
+            "Veusz High Precision Files (*.vszh5)"
+        )
+
+        if save_path and self.atr_plotter:
+            try:
+                self.atr_plotter.save(save_path)
+                self._log_message(f"Project saved: {save_path}")
+
+                # Ask to open in Veusz
+                reply = QMessageBox.question(
+                    self, "Open in Veusz",
+                    "Would you like to open the file in Veusz?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+
+                if reply == QMessageBox.Yes:
+                    self._open_veusz_gui(save_path)
+
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error",
+                                     f"Failed to save project: {e}")
+
+    def _open_veusz_gui(self, filename: str):
+        """Launch Veusz GUI with generated project file."""
+        if sys.platform.startswith('win'):
+            veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
+        else:
+            veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
+
+        if not os.path.exists(veusz_exe):
+            QMessageBox.critical(
+                self, "Veusz Not Found",
+                "Veusz not found in Python environment.\n"
+                "Install with: [pip OR conda OR mamba] install veusz"
+            )
+            return
+
+        try:
+            subprocess.Popen([veusz_exe, filename])
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Launch Error", f"Failed to start Veusz: {str(e)}"
+            )
+
+# %% ATR Plotter Class
+
+
+class ATRPlotter:
+    """Enhanced ATR plotting class with Veusz integration."""
+
+    def __init__(self, plot_title: str = "GBO Outdoor Antenna Range Pattern",
+                 dataset_name: str = "ATR_Dataset"):
+        """Initialize ATR plotter.
 
         Parameters
         ----------
-        enable_multiprocessing : bool, optional
-            Enable multiprocessing for file operations. Default is True.
-        enable_gpu : bool, optional
-            Enable GPU acceleration for computations. Default is True.
-        max_workers : int, optional
-            Maximum number of worker processes. If None, uses CPU count.
+        plot_title : str
+            Title for plots.
+        dataset_name : str
+            Base name for datasets.
         """
-        # Initialize multiprocessing configuration
-        self.mp_config = MultiprocessingConfig(
-            enable_multiprocessing, max_workers
-        )
+        self.plot_title = plot_title
+        self.dataset_name = dataset_name
 
-        # Initialize GPU accelerator
-        self.gpu_accelerator = GPUAccelerator(enable_gpu)
-
-        # Initialize Qt application
-        if not hasattr(self, 'plotApp'):
-            self.plotapp = (
-                QApplication.instance() or QApplication(sys.argv)
-            )
-
-        self.plotwindow = QWidget()
-        self.plotwindow.setWindowTitle('Enhanced ATR Plot Interface')
-        self.plotwindow.resize(600, 400)
-
-        # Create UI elements
-        self._create_ui_elements()
-        self._setup_layout()
-        self._connect_signals()
-
-        # Initialize file and plot information
-        self.fileParts = None
-        self.filenames = None
-        self.plotTitle = 'GBO Outdoor Antenna Range Pattern'
+        # Initialize Veusz
+        self.doc = vz.Embedded('Enhanced ATR AutoPlotter', hidden=False)
+        self.doc.EnableToolbar()
 
         # Labels for plots
         self.freq_label = 'Frequency (MHz)'
@@ -500,297 +789,65 @@ class PlotATR:
         self.phase_label = 'Phase (degrees)'
         self.mag_label = 'Magnitude (dB)'
 
-        # Initialize Veusz object
-        if not hasattr(self, 'doc'):
-            self.doc = vz.Embedded(
-                'Enhanced GBO ATR Autoplotter', hidden=False)
-            self.doc.EnableToolbar()
+        # Track whether overlay pages exist
+        self.overlay_created = False
 
-    # %%% UI Setup Methods (FIXED - These were missing!)
-
-    def _create_ui_elements(self):
-        """Create UI elements for the interface."""
-        # Labels
-        self.label_filename = QLabel('Filename(s):')
-        self.label_plot_title = QLabel('Plot Title:')
-        self.label_data_set = QLabel('Data Set Name:')
-        self.label_status = QLabel('Status Messages')
-        self.label_mp_status = QLabel(
-            f'Multiprocessing: {"Enabled" if self.mp_config.enable_multiprocessing else "Disabled"} '
-            f'({self.mp_config.max_workers} workers)'
-        )
-        self.label_gpu_status = QLabel(
-            f'GPU Acceleration: {"Enabled" if self.gpu_accelerator.gpu_enabled else "Disabled"} '
-            f'({self.gpu_accelerator.backend or "None"})'
-        )
-
-        # Input fields
-        self.lineedit_filename = QLineEdit()
-        self.lineedit_plot_title = QLineEdit()
-        self.lineedit_data_set = QLineEdit()
-
-        # Buttons
-        self.button_browse = QPushButton('Browse')
-        self.button_create_plots = QPushButton('Create Plots')
-        self.button_save_close = QPushButton('Save and Close')
-
-    def _setup_layout(self):
-        """Setup the layout for the UI."""
-        # Filename field with Browse button
-        self.filename_layout = QHBoxLayout()
-        self.filename_layout.addWidget(self.lineedit_filename)
-        self.filename_layout.addWidget(self.button_browse)
-
-        # Main layout
-        self.main_layout = QVBoxLayout()
-
-        # Add filename section
-        self.main_layout.addWidget(self.label_filename)
-        self.main_layout.addLayout(self.filename_layout)
-
-        # Add plot title field
-        self.main_layout.addWidget(self.label_plot_title)
-        self.main_layout.addWidget(self.lineedit_plot_title)
-
-        # Add dataset name field
-        self.main_layout.addWidget(self.label_data_set)
-        self.main_layout.addWidget(self.lineedit_data_set)
-
-        # Add status labels
-        self.main_layout.addSpacing(20)
-        self.main_layout.addWidget(self.label_mp_status)
-        self.main_layout.addWidget(self.label_gpu_status)
-        self.main_layout.addWidget(self.label_status)
-
-        # Add action buttons
-        self.main_layout.addWidget(self.button_create_plots)
-        self.main_layout.addWidget(self.button_save_close)
-
-        # Set main layout
-        self.plotwindow.setLayout(self.main_layout)
-
-    def _connect_signals(self):
-        """Connect button signals to their respective methods."""
-        self.button_create_plots.clicked.connect(self.create_plot)
-        self.button_save_close.clicked.connect(self.save_Veusz)
-        self.button_browse.clicked.connect(self._select_atr_files)
-
-    # %%% File Operations
-
-    # FIX 4: Updated return type annotation to use typing.Tuple
-    def _select_atr_files(self, parent: Optional[QWidget] = None,
-                          caption: str = "Select Files",
-                          directory: str = "",
-                          filter: str = "GBO ATR Files (*.atr)") -> Tuple[List[str], List[Tuple[str, str]]]:
-        """Open a file dialog for multiple file selection using qtpy.
+    def create_plots_from_data(self, filename: str, data: Dict[str, Any]):
+        """Create Veusz plots from processed ATR data.
 
         Parameters
         ----------
-        parent : QWidget, optional
-            The parent widget for the dialog.
-        caption : str, optional
-            The dialog window title.
-        directory : str, optional
-            The initial directory shown in the dialog.
-        filter : str, optional
-            File type filter string.
-
-        Returns
-        -------
-        Tuple[List[str], List[Tuple[str, str]]]
-            Tuple containing (filenames, file_parts).
+        filename : str
+            Name of the processed file.
+        data : Dict[str, Any]
+            Processed ATR data dictionary.
         """
-        self.label_status.setText('Selecting Input Files...')
-
-        if parent is None or not parent:
-            parent = QWidget()
-
-        self.filenames, _ = QFileDialog.getOpenFileNames(
-            parent, caption, directory, filter
-        )
-
-        if not self.filenames:
-            self.label_status.setText('No files selected.')
-            return [], []
-
-        # Process file parts
-        self.fileParts = [None] * len(self.filenames)
-        for i, filename in enumerate(self.filenames):
-            self.fileParts[i] = os.path.split(filename)
-
-        if self.fileParts[0][0]:
-            filenames_only = list(map(itemgetter(1), self.fileParts))
-            self.lineedit_filename.setText(' ; '.join(filenames_only))
-            self.label_status.setText(
-                f'Selected {len(self.filenames)} files for processing.'
-            )
-
-        return self.filenames, self.fileParts
-
-    # %%% Main Processing Methods
-
-    def create_plot(self):
-        """Create the 2D plots for all data with optional multiprocessing."""
-        if not self.filenames:
-            self.label_status.setText("Please select at least one file.")
+        if not data:
             return
 
-        self.label_status.setText('Processing files and creating plots...')
-
-        # Process files with or without multiprocessing
-        if (self.mp_config.enable_multiprocessing and
-                len(self.filenames) > 1):
-            processed_data = self._process_files_multiprocessing()
-        else:
-            processed_data = self._process_files_sequential()
-
-        # Create plots using processed data
-        self._create_plots_from_data(processed_data)
-
-        self.label_status.setText(
-            'All Selected Data Has Been Processed and Plotted.'
-        )
-
-    # FIX 5: Updated return type annotation
-    def _process_files_multiprocessing(self) -> Dict[str, Any]:
-        """Process files using multiprocessing.
-
-        Returns
-        -------
-        Dict[str, Any]
-            Dictionary containing processed data for each file.
-        """
-        print(f"Processing {len(self.filenames)} files using "
-              f"{self.mp_config.max_workers} workers")
-
-        processed_data = {}
-        line_number = 13  # Zero-indexed line number for data
-
-        # Prepare file information for multiprocessing
-        file_info_list = [
-            (file_path, line_number, self.gpu_accelerator)
-            for file_path in self.filenames
-        ]
-
-        # Use ProcessPoolExecutor for better control and error handling
-        with ProcessPoolExecutor(max_workers=self.mp_config.max_workers) as executor:
-            # Submit all tasks
-            future_to_file = {
-                executor.submit(process_single_file, file_info): file_info[0]
-                for file_info in file_info_list
-            }
-
-            # Collect results as they complete
-            for future in as_completed(future_to_file):
-                file_path = future_to_file[future]
-                try:
-                    filename, data = future.result()
-                    if data is not None:
-                        processed_data[filename] = data
-                        print(f"Successfully processed: {filename}")
-                    else:
-                        print(f"Failed to process: {filename}")
-                except Exception as e:
-                    print(f"Error processing {file_path}: {str(e)}")
-
-        return processed_data
-
-    # FIX 6: Updated return type annotation
-    def _process_files_sequential(self) -> Dict[str, Any]:
-        """Process files sequentially (fallback method).
-
-        Returns
-        -------
-        Dict[str, Any]
-            Dictionary containing processed data for each file.
-        """
-        print(f"Processing {len(self.filenames)} files sequentially")
-
-        processed_data = {}
-        line_number = 13
-
-        for file_path in self.filenames:
-            filename, data = process_single_file(
-                (file_path, line_number, self.gpu_accelerator)
-            )
-            if data is not None:
-                processed_data[filename] = data
-                print(f"Successfully processed: {filename}")
-            else:
-                print(f"Failed to process: {filename}")
-
-        return processed_data
-
-    # %%% Plotting Methods
-
-    # FIX 7: Updated parameter type annotation
-    def _create_plots_from_data(self, processed_data: Dict[str, Any]):
-        """Create Veusz plots from processed data.
-
-        Parameters
-        ----------
-        processed_data : Dict[str, Any]
-            Dictionary containing processed data for each file.
-        """
         # Create overlay pages if they don't exist
-        self._create_overlay_pages()
+        if not self.overlay_created:
+            self._create_overlay_pages()
+            self.overlay_created = True
 
-        for filename, data in processed_data.items():
-            if data is None:
-                continue
+        dataset_name = os.path.splitext(filename)[0]
 
-            dataset_name = os.path.splitext(filename)[0]
-            self._create_individual_plots(dataset_name, data)
-            self._add_to_overlay_plots(dataset_name, data)
+        # Create individual plots
+        self._create_individual_plots(dataset_name, data)
+
+        # Add to overlay plots
+        self._add_to_overlay_plots(dataset_name, data)
 
     def _create_overlay_pages(self):
         """Create overlay pages for magnitude and phase plots."""
-        if 'Overlay_All_mag' not in self.doc.Root.childnames:
-            # Create Pages and Graphs for Overlays
-            pageAll_mag = self.doc.Root.Add('page', name='Overlay_All_mag')
-            gridAll_mag = pageAll_mag.Add('grid', columns=2)
-            graphAll_mag = gridAll_mag.Add('graph', name='Overlay_All_mag')
+        # Create Pages and Graphs for Overlays
+        page_all_mag = self.doc.Root.Add('page', name='Overlay_All_mag')
+        grid_all_mag = page_all_mag.Add('grid', columns=2)
+        graph_all_mag = grid_all_mag.Add('graph', name='Overlay_All_mag')
 
-            pageAll_phase = self.doc.Root.Add('page', name='Overlay_All_phase')
-            gridAll_phase = pageAll_phase.Add('grid', columns=2)
-            graphAll_phase = gridAll_phase.Add(
-                'graph', name='Overlay_All_phase')
+        page_all_phase = self.doc.Root.Add('page', name='Overlay_All_phase')
+        grid_all_phase = page_all_phase.Add('grid', columns=2)
+        graph_all_phase = grid_all_phase.Add('graph', name='Overlay_All_phase')
 
-            # Configure magnitude overlay graph
-            self._configure_overlay_graph(
-                graphAll_mag, 'Overlay of Imported Magnitude',
-                self.az_label, self.mag_label, -60, 20, -180, 180
-            )
+        # Configure magnitude overlay graph
+        self._configure_overlay_graph(
+            graph_all_mag, 'Overlay of Imported Magnitude',
+            self.az_label, self.mag_label, -60, 20, -180, 180
+        )
 
-            # Configure phase overlay graph
-            self._configure_overlay_graph(
-                graphAll_phase, 'Overlay of Imported Phase',
-                self.az_label, self.phase_label, -180, 180, -180, 180
-            )
+        # Configure phase overlay graph
+        self._configure_overlay_graph(
+            graph_all_phase, 'Overlay of Imported Phase',
+            self.az_label, self.phase_label, -180, 180, -180, 180
+        )
 
-            # Set auto color theme
-            self.doc.Root.colorTheme.val = 'max128'
+        # Set auto color theme
+        self.doc.Root.colorTheme.val = 'max128'
 
     def _configure_overlay_graph(self, graph, title: str, x_label: str,
                                  y_label: str, y_min: float, y_max: float,
                                  x_min: float, x_max: float):
-        """Configure an overlay graph with standard settings.
-
-        Parameters
-        ----------
-        graph : Veusz graph object
-            The graph to configure.
-        title : str
-            Graph title.
-        x_label : str
-            X-axis label.
-        y_label : str
-            Y-axis label.
-        y_min, y_max : float
-            Y-axis range.
-        x_min, x_max : float
-            X-axis range.
-        """
+        """Configure an overlay graph with standard settings."""
         with Wrap4With(graph) as g:
             g.Add('label', name='plotTitle')
             g.topMargin.val = '1cm'
@@ -816,17 +873,8 @@ class PlotATR:
             g.x.min.val = x_min
             g.x.max.val = x_max
 
-    # FIX 8: Updated parameter type annotation
     def _create_individual_plots(self, dataset_name: str, data: Dict[str, Any]):
-        """Create individual plots for a dataset.
-
-        Parameters
-        ----------
-        dataset_name : str
-            Name of the dataset.
-        data : Dict[str, Any]
-            Processed data dictionary.
-        """
+        """Create individual plots for a dataset."""
         # Create dataset names
         freq_name = f"{dataset_name}_freq"
         mag_name = f"{dataset_name}_mag"
@@ -850,7 +898,6 @@ class PlotATR:
         self._create_phase_page(dataset_name, data)
         self._create_polar_pages(dataset_name, data)
 
-    # FIX 9: Updated parameter type annotation
     def _create_magnitude_page(self, dataset_name: str, data: Dict[str, Any]):
         """Create magnitude plot page."""
         mag_name = f"{dataset_name}_mag"
@@ -871,7 +918,6 @@ class PlotATR:
         xy_mag = graph_mag.Add('xy', name=dataset_name)
         self._configure_xy_plot(xy_mag, az_name, mag_name, 'red')
 
-    # FIX 10: Updated parameter type annotation
     def _create_phase_page(self, dataset_name: str, data: Dict[str, Any]):
         """Create phase plot page."""
         phase_name = f"{dataset_name}_phase"
@@ -892,7 +938,6 @@ class PlotATR:
         xy_phase = graph_phase.Add('xy', name=dataset_name)
         self._configure_xy_plot(xy_phase, az_name, phase_name, 'red')
 
-    # FIX 11: Updated parameter type annotation
     def _create_polar_pages(self, dataset_name: str, data: Dict[str, Any]):
         """Create polar plot pages for magnitude and phase."""
         mag_name = f"{dataset_name}_mag"
@@ -1009,7 +1054,6 @@ class PlotATR:
             p.plotTitle.yPos.val = 0.95
             p.plotTitle.xPos.val = 0.5
 
-    # FIX 12: Updated parameter type annotation
     def _add_to_overlay_plots(self, dataset_name: str, data: Dict[str, Any]):
         """Add dataset to overlay plots."""
         mag_name = f"{dataset_name}_mag"
@@ -1017,17 +1061,18 @@ class PlotATR:
         az_name = f"{dataset_name}_Az"
 
         # Get overlay graphs
-        pageAll_mag = self.doc.Root.Overlay_All_mag
-        graphAll_mag = pageAll_mag.grid1.Overlay_All_mag
-        pageAll_phase = self.doc.Root.Overlay_All_phase
-        graphAll_phase = pageAll_phase.grid1.Overlay_All_phase
+        page_all_mag = self.doc.Root.Overlay_All_mag
+        graph_all_mag = page_all_mag.grid1.Overlay_All_mag
+
+        page_all_phase = self.doc.Root.Overlay_All_phase
+        graph_all_phase = page_all_phase.grid1.Overlay_All_phase
 
         # Add to magnitude overlay
-        xy_all_mag = graphAll_mag.Add('xy', name=mag_name)
+        xy_all_mag = graph_all_mag.Add('xy', name=mag_name)
         self._configure_overlay_xy_plot(xy_all_mag, az_name, mag_name)
 
         # Add to phase overlay
-        xy_all_phase = graphAll_phase.Add('xy', name=phase_name)
+        xy_all_phase = graph_all_phase.Add('xy', name=phase_name)
         self._configure_overlay_xy_plot(xy_all_phase, az_name, phase_name)
 
     def _configure_overlay_xy_plot(self, xy, x_data: str, y_data: str):
@@ -1049,29 +1094,8 @@ class PlotATR:
             plot.FillBelow.hide.val = True
             plot.PlotLine.color.val = 'auto'
 
-    # %%% Save and Export Methods
-
-    def save_Veusz(self):
-        """Save the generated file and ask to open Veusz Interface."""
-        self.label_status.setText('Saving the Plots to a Veusz File...')
-        gui = qtSave()
-
-        if save_path := gui.get_save_filename():
-            self.save(save_path)
-            if gui.ask_open_veusz():
-                self.open_veusz_gui(save_path)
-
-        self.plotwindow.close()
-        QApplication.closeAllWindows()
-
     def save(self, filename: str):
-        """Save Veusz document to specified file.
-
-        Parameters
-        ----------
-        filename : str
-            Path to save the file.
-        """
+        """Save Veusz document to specified file."""
         filename_root = os.path.splitext(filename)[0]
         filename_hp = filename_root + '.vszh5'
         file_split = os.path.split(filename)
@@ -1087,47 +1111,9 @@ class PlotATR:
         os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
         self.doc.Save(filename_vsz, mode='vsz')
 
-    def open_veusz_gui(self, filename: str):
-        """Launch Veusz GUI with generated project file.
-
-        Parameters
-        ----------
-        filename : str
-            Path to the Veusz file to open.
-        """
-        if sys.platform.startswith('win'):
-            veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
-        else:
-            veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
-
-        if not os.path.exists(veusz_exe):
-            QMessageBox.critical(
-                None,
-                "Veusz Not Found",
-                "Veusz not found in Python environment.\n"
-                "Install with: [pip OR conda OR mamba] install veusz"
-            )
-            return
-
-        try:
-            subprocess.Popen([veusz_exe, filename])
-        except Exception as e:
-            QMessageBox.critical(
-                None,
-                "Launch Error",
-                f"Failed to start Veusz: {str(e)}"
-            )
-
-    def run(self):
-        """Run the ATR Plotting Routines."""
-        self.plotwindow.show()
-        if QApplication.instance():
-            self.plotapp.exec_()
-
-
 # %% Utility Functions
 
-# FIX 13: Updated function signature
+
 def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Convert Cartesian coordinates to polar coordinates.
 
@@ -1148,18 +1134,23 @@ def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.nda
     theta = np.arctan2(y, x)
     return r, theta
 
-
 # %% Main Execution
+
 
 def main():
     """Execute main function."""
-    # Create enhanced PlotATR instance with multiprocessing and GPU support
-    atr_plotter = PlotATR(
-        enable_multiprocessing=True,  # Enable multiprocessing
-        enable_gpu=True,              # Enable GPU acceleration
-        max_workers=None              # Use all available CPU cores
-    )
-    atr_plotter.run()
+    # Set multiprocessing start method for cross-platform compatibility
+    if __name__ == '__main__':
+        multiprocessing.set_start_method('spawn', force=True)
+
+    app = QApplication(sys.argv)
+
+    # Create and show main window
+    window = EnhancedATRMainWindow()
+    window.show()
+
+    # Run application
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
