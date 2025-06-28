@@ -254,7 +254,8 @@ class MainWindow(QMainWindow):
     def _setup_window(self):
         """Configure basic window properties."""
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
-        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        # self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(WINDOW_WIDTH, WINDOW_HEIGHT)
 
         # Center window on screen
         self._center_window()
@@ -352,13 +353,13 @@ class MainWindow(QMainWindow):
         buttons_frame.setStyleSheet("""
             QFrame {
                 background-color: rgba(255, 255, 255, 180);
-                border-radius: 15px;
+                border-radius: 10px;
                 padding: 0px;
             }
         """)
 
         buttons_layout = QVBoxLayout(buttons_frame)
-        buttons_layout.setSpacing(30)
+        buttons_layout.setSpacing(10)
 
         # Button configurations: (text, tooltip, script_key, icon_path)
         button_configs = [
@@ -421,8 +422,8 @@ class MainWindow(QMainWindow):
         """
         button = QPushButton(text)
         button.setToolTip(tooltip)
-        button.setMinimumHeight(80)
-        button.setMaximumHeight(100)
+        button.setMinimumHeight(50)
+        button.setMaximumHeight(70)
 
         # Set icon if available
         if os.path.exists(icon_path):
@@ -440,7 +441,7 @@ class MainWindow(QMainWindow):
                 color: white;
                 font-size: 16px;
                 font-weight: bold;
-                padding: 15px 25px;
+                padding: 5px 5px;
                 text-align: left;
             }
             QPushButton:hover {
@@ -477,12 +478,12 @@ class MainWindow(QMainWindow):
         parent_layout.addItem(spacer)
 
         footer_label = QLabel(
-            f"Version {APP_VERSION} | Scientific Computing Suite")
+            f"Version {APP_VERSION} | Scientific Computing Suite \n Author: William W. Wallace")
         footer_label.setAlignment(Qt.AlignCenter)
         footer_label.setStyleSheet("""
             QLabel {
                 font-size: 12px;
-                color: #7f8c8d;
+                color: #072911;
                 background-color: rgba(255, 255, 255, 100);
                 border-radius: 5px;
                 padding: 8px;

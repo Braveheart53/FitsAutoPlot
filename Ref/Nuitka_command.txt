@@ -43,7 +43,11 @@ nuitka ^
     --windows-console-mode=force ^
     --windows-icon-from-ico=GBT_2.ico ^
     --output-filename=ATR_AutoPlot.exe ^
-    --remove-output ^
+    --optimize=3 \
+	--remove-output \
+	--show-progress \
+	--show-memory \
+	--show-modules \
 	--lto=yes ^
     ATR_AutoPlot.py
 
@@ -80,7 +84,7 @@ python -m nuitka \
   --include-data-files="RAndS_FSW_ASCII_Plotter.py=./" \
   --include-data-files="*.py=./" \
   --lto=yes \
-  --optimize=2 \
+  --optimize=3 \
   --remove-output \
   --show-progress \
   --show-memory \
