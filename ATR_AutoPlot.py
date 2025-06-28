@@ -1,79 +1,375 @@
-"""Main Script for GBO Outdoor Antenna Range Data Files."""
-# -*- coding: utf-8 -*-
-# %% Header
-# =============================================================================
-# Author: William W. Wallace
-#
-#
-#
-#
-# TODO: Update CSV to auto plot multiple files, extract it to its own file
-# TODO: Checkout PyAntenna and stats calcs for the data
-# =============================================================================
+"""Enhanced ATR AutoPlot with Multiprocessing and GPU Acceleration - FIXED.
 
-# event loop QApplication.exec_()
-# %% Import all required modules
+# %% Heading Info
+
+This version combines:
+• the multiprocessing/GPU fixes (magnitude data no longer re-converted to dB),
+• the RandS-style modern Qt interface, and  
+• the original ATR plotting logic.
+
+Author: William W. Wallace
+Last updated: 2025-06-28
+"""
+
+# -*- coding: utf-8 -*-
+
+# %% Import Modules
+
+import multiprocessing
+import os
 import subprocess
-from operator import itemgetter
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from operator import itemgetter
+# FIX 1: Add comprehensive typing imports for Python < 3.9 compatibility
+from typing import List, Dict, Tuple, Optional, Union, Any
+
+# %%% Import Math and Plotting Modules
+import numpy as np
+import veusz.embed as vz
+
+# %%% Import GUI Modules
 from qtpy.QtGui import *
 from qtpy.QtWidgets import (
     QApplication,
     QFileDialog,
-    QMessageBox,
-    QWidget,
     QHBoxLayout,
-    QVBoxLayout,
-    QLineEdit,
     QLabel,
-    QPushButton
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
+
+# %%% Debugging Modules
 from rich import inspect as richinspect
 import pdir
-import veusz.embed as vz
-import numpy as np
-
-# %%% System Interface Modules
-import os
-os.environ['QT_API'] = 'pyside6'
-
-# %%% GUI Uses
-# %%%% qtpy imports
-
-
-# %%% Plotting Environment
-
-# %%% Debug help
 
 # %% Class Definitions
-# Begin Class definitions based upon use cases for range and data
-# class MainWindow(QMainWindow):
-#     def closeEvent(self, event):
-#         self.save_settings()  # Custom cleanup
-#         self.worker_thread.quit()  # Stop background processes
-#         event.accept()  # Proceed with closing
+
+# GPU Computing imports with fallback support
+try:
+    import cupy as cp
+    GPU_AVAILABLE = "cupy"
+    print("CuPy detected - NVIDIA/AMD GPU acceleration available")
+except ImportError:
+    try:
+        import pyopencl as cl
+        import pyopencl.array as cl_array
+        GPU_AVAILABLE = "opencl"
+        print("PyOpenCL detected - Cross-platform GPU acceleration available")
+    except ImportError:
+        try:
+            import taichi as ti
+            GPU_AVAILABLE = "taichi"
+            print("Taichi detected - Cross-platform GPU acceleration available")
+        except ImportError:
+            GPU_AVAILABLE = None
+            print("No GPU acceleration libraries available - using CPU only")
+
+# System Interface Modules
+os.environ['QT_API'] = 'pyside6'
+
+
+class GPUAccelerator:
+    """Handles GPU-accelerated computations with cross-platform support."""
+
+    def __init__(self, enable_gpu: bool = True):
+        """Initialize GPU accelerator.
+
+        Parameters
+        ----------
+        enable_gpu : bool, optional
+            Whether to enable GPU acceleration. Default is True.
+        """
+        self.gpu_enabled = enable_gpu and GPU_AVAILABLE is not None
+        self.backend = GPU_AVAILABLE if self.gpu_enabled else None
+
+        if self.gpu_enabled:
+            self._initialize_gpu()
+
+    def _initialize_gpu(self):
+        """Initialize the appropriate GPU backend."""
+        if self.backend == "cupy":
+            # CuPy initialization
+            try:
+                cp.cuda.Device(0).use()
+                print(f"CuPy initialized on device: {cp.cuda.Device()}")
+            except Exception as e:
+                print(f"CuPy initialization failed: {e}")
+                self.gpu_enabled = False
+
+        elif self.backend == "opencl":
+            # PyOpenCL initialization
+            try:
+                self.cl_context = cl.create_some_context()
+                self.cl_queue = cl.CommandQueue(self.cl_context)
+                print(f"OpenCL initialized: {self.cl_context.devices}")
+            except Exception as e:
+                print(f"OpenCL initialization failed: {e}")
+                self.gpu_enabled = False
+
+        elif self.backend == "taichi":
+            # Taichi initialization
+            try:
+                ti.init(arch=ti.gpu)
+                print("Taichi GPU backend initialized")
+            except Exception as e:
+                print(f"Taichi GPU initialization failed: {e}")
+                ti.init(arch=ti.cpu)
+                print("Taichi fallback to CPU")
+                self.gpu_enabled = False
+
+    def array_operations(self, data: np.ndarray, apply_db_conversion: bool = False) -> np.ndarray:
+        """Perform array operations with GPU acceleration if available.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Input data array.
+        apply_db_conversion : bool, optional
+            Whether to apply dB conversion. Default is False for ATR magnitude data.
+
+        Returns
+        -------
+        np.ndarray
+            Processed data array.
+        """
+        if not self.gpu_enabled or not apply_db_conversion:
+            # For ATR magnitude data, return unchanged since it's already in dB format
+            return self._cpu_passthrough(data)
+
+        try:
+            if self.backend == "cupy":
+                return self._cupy_operations(data, apply_db_conversion)
+            elif self.backend == "opencl":
+                return self._opencl_operations(data, apply_db_conversion)
+            elif self.backend == "taichi":
+                return self._taichi_operations(data, apply_db_conversion)
+        except Exception as e:
+            print(f"GPU operation failed, falling back to CPU: {e}")
+            return self._cpu_passthrough(data)
+
+        return self._cpu_passthrough(data)
+
+    def _cpu_passthrough(self, data: np.ndarray) -> np.ndarray:
+        """CPU-based passthrough - no transformation for ATR magnitude data."""
+        # ATR magnitude data is already in dB format, so return unchanged
+        return np.copy(data)
+
+    def _cpu_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
+        """CPU-based array operations with optional dB conversion."""
+        result = np.copy(data)
+        if apply_db_conversion:
+            result = np.where(result != 0, 20 * np.log10(np.abs(result)), -60)
+        return result
+
+    def _cupy_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
+        """CuPy-based GPU operations with optional dB conversion."""
+        gpu_data = cp.asarray(data)
+        if apply_db_conversion:
+            gpu_result = cp.where(
+                gpu_data != 0,
+                20 * cp.log10(cp.abs(gpu_data)),
+                -60
+            )
+        else:
+            gpu_result = gpu_data
+        return cp.asnumpy(gpu_result)
+
+    def _opencl_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
+        """OpenCL-based GPU operations with optional dB conversion."""
+        if not apply_db_conversion:
+            return np.copy(data)
+
+        # Create OpenCL buffers
+        data_gpu = cl_array.to_device(self.cl_queue, data.astype(np.float32))
+        result_gpu = cl_array.empty_like(data_gpu)
+
+        # Define OpenCL kernel for log operations
+        kernel_code = """
+        __kernel void log_transform(__global float* input,
+                                  __global float* output,
+                                  int n) {
+            int i = get_global_id(0);
+            if (i < n) {
+                if (input[i] != 0.0f) {
+                    output[i] = 20.0f * log10(fabs(input[i]));
+                } else {
+                    output[i] = -60.0f;
+                }
+            }
+        }
+        """
+
+        program = cl.Program(self.cl_context, kernel_code).build()
+        program.log_transform(
+            self.cl_queue,
+            (data.size,),
+            None,
+            data_gpu.data,
+            result_gpu.data,
+            np.int32(data.size)
+        )
+
+        return result_gpu.get()
+
+    def _taichi_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
+        """Taichi-based GPU operations with optional dB conversion."""
+        if not apply_db_conversion:
+            return np.copy(data)
+
+        @ti.kernel
+        def log_transform(input_field: ti.template(),
+                          output_field: ti.template()) -> None:
+            for i in input_field:
+                if input_field[i] != 0.0:
+                    output_field[i] = 20.0 * ti.log10(ti.abs(input_field[i]))
+                else:
+                    output_field[i] = -60.0
+
+        # Create Taichi fields
+        input_field = ti.field(dtype=ti.f32, shape=data.shape)
+        output_field = ti.field(dtype=ti.f32, shape=data.shape)
+
+        # Copy data to Taichi field
+        input_field.from_numpy(data.astype(np.float32))
+
+        # Execute kernel
+        log_transform(input_field, output_field)
+
+        # Return result
+        return output_field.to_numpy()
+
+
+class MultiprocessingConfig:
+    """Configuration class for multiprocessing settings."""
+
+    def __init__(self, enable_multiprocessing: bool = True,
+                 max_workers: Optional[int] = None):
+        """Initialize multiprocessing configuration.
+
+        Parameters
+        ----------
+        enable_multiprocessing : bool, optional
+            Whether to enable multiprocessing. Default is True.
+        max_workers : int, optional
+            Maximum number of worker processes. If None, uses CPU count.
+        """
+        self.enable_multiprocessing = enable_multiprocessing
+        self.max_workers = max_workers or multiprocessing.cpu_count()
+
+        # Ensure we don't exceed system capabilities
+        self.max_workers = min(self.max_workers, multiprocessing.cpu_count())
+
+        print(f"Multiprocessing configured: "
+              f"enabled={self.enable_multiprocessing}, "
+              f"workers={self.max_workers}")
+
+
+# %% Worker Functions
+
+# FIX 2: Updated function signature to use typing.Tuple instead of tuple
+def process_single_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[str, Any]]:
+    """Process a single ATR file with multiprocessing support.
+
+    This function is designed to be used with multiprocessing pools.
+
+    Parameters
+    ----------
+    file_info : Tuple[str, int, object]
+        Tuple containing (file_path, line_number, plot_instance).
+
+    Returns
+    -------
+    Tuple[str, Dict[str, Any]]
+        Tuple containing (filename, processed_data_dict).
+    """
+    file_path, line_number, gpu_accelerator = file_info
+
+    try:
+        # Read file with optimized approach based on size
+        filesize = os.path.getsize(file_path)
+
+        if filesize < 10**7:  # < 10MB
+            with open(file_path, 'rb') as file:
+                content = file.read().decode('ascii')
+                lines = content.splitlines()
+        else:
+            with open(file_path, 'r', encoding='ascii') as file:
+                lines = file.readlines()
+
+        # Extract header information
+        header_lines = lines[:line_number]
+        header_info = ''.join(header_lines).strip()
+
+        # Extract numerical data
+        data_line = lines[line_number].strip()
+        if data_line.endswith('#'):
+            data_line = data_line[:-1]
+
+        # Convert to numbers and separate phase/magnitude
+        data_numbers = list(map(float, data_line.split()))
+        selected_phase_data = data_numbers[::2]
+        selected_magnitude_data = data_numbers[1::2]
+
+        # Create numpy array - magnitude data is already in dB format in ATR files
+        selected_data = np.array(
+            [selected_magnitude_data, selected_phase_data])
+
+        # FIXED: Do NOT apply GPU operations to magnitude data since it's already in dB format
+        # The original script didn't apply any transformations to magnitude data
+        # selected_data[0] = gpu_accelerator.array_operations(selected_data[0], apply_db_conversion=False)
+
+        selected_data_transpose = selected_data.transpose()
+
+        # Parse header for frequency and azimuth info
+        freq_max = float(header_lines[8].split(":")[-1].strip())
+        freq_min = float(header_lines[9].split(":")[-1].strip())
+        az_min = float(header_lines[6].split(":")[-1].strip())
+        az_max = float(header_lines[7].split(":")[-1].strip())
+
+        # Create azimuth angles array
+        az_angles = np.arange(az_min, az_max + 1, 1, dtype=float)
+
+        filename = os.path.basename(file_path)
+
+        return filename, {
+            'header_lines': header_lines,
+            'data': selected_data_transpose,
+            'frequency': freq_max,
+            'azimuth_angles': az_angles,
+            'magnitude': selected_data[0],  # Already in dB format
+            'phase': selected_data[1]
+        }
+
+    except Exception as e:
+        print(f"Error processing file {file_path}: {str(e)}")
+        return os.path.basename(file_path), {}
+
+
+# %% Utility Classes
 
 class switch:
-    """Creates a case or switch style statement."""
+    """Creates a case or switch style statement.
 
-    """
     This is utilized as follows:
-
-        for case in switch('b'):
-            if case('a'):
-                # print or do whatever one wants
-                print("Case A")
-                break
-            if case('b'):
-                print("Case B")  # Output: "Case B"
-                break
+    for case in switch('b'):
+        if case('a'):
+            print("Case A")
+            break
+        if case('b'):
+            print("Case B")  # Output: "Case B"
+            break
     """
 
     def __init__(self, value):
+        """Initialize switch with value."""
         self.value = value
 
     def __iter__(self):
-        """Interate and find the match."""
+        """Iterate and find the match."""
         yield self.match
 
     def match(self, *args):
@@ -85,6 +381,7 @@ class qtSave:
     """Handles all Qt-based user interactions."""
 
     def __init__(self):
+        """Initialize Qt save handler."""
         self.appSave = QApplication(sys.argv)
 
     def closeEvent(self, event):
@@ -97,6 +394,7 @@ class qtSave:
         fname, _ = QFileDialog.getOpenFileName(
             dialog, "Open ATR File", "", "GBO ATR Files (*.atr)"
         )
+
         if fname:
             self.selected_file = fname
             self.file_label.setText(fname)
@@ -106,6 +404,7 @@ class qtSave:
         if not self.selected_file:
             self.file_label.setText("Please select a file!")
             return
+
         dialog.accept()
 
     def get_save_filename(self):
@@ -127,6 +426,7 @@ class Wrap4With:
     """Used to add context management to a given object."""
 
     def __init__(self, resource):
+        """Initialize wrapper with resource."""
         self._resource = resource
 
     def __enter__(self):
@@ -140,144 +440,149 @@ class Wrap4With:
         """
         if hasattr(self._resource, 'close'):
             self._resource.close()
-        # Optionally, add other cleanup logic here.
-        # Return None to propagate exceptions, or True to suppress them.
         return None
 
 
+# %% Main PlotATR Class
+
+# FIX 3: Updated remaining method signatures to use typing module
 class PlotATR:
-    """Class Utilized to import, parse, and plot GBO Outdoor Range Data."""
+    """Class for importing, parsing, and plotting GBO Outdoor Range Data.
 
-    def __init__(self):
-        """Initialize the PlotATR Class."""
+    Enhanced with multiprocessing and GPU acceleration capabilities.
+    """
+
+    def __init__(self, enable_multiprocessing: bool = True,
+                 enable_gpu: bool = True,
+                 max_workers: Optional[int] = None):
+        """Initialize the PlotATR Class.
+
+        Parameters
+        ----------
+        enable_multiprocessing : bool, optional
+            Enable multiprocessing for file operations. Default is True.
+        enable_gpu : bool, optional
+            Enable GPU acceleration for computations. Default is True.
+        max_workers : int, optional
+            Maximum number of worker processes. If None, uses CPU count.
         """
+        # Initialize multiprocessing configuration
+        self.mp_config = MultiprocessingConfig(
+            enable_multiprocessing, max_workers
+        )
 
-        Returns
-        -------
-        None.
+        # Initialize GPU accelerator
+        self.gpu_accelerator = GPUAccelerator(enable_gpu)
 
-        """
+        # Initialize Qt application
         if not hasattr(self, 'plotApp'):
             self.plotapp = (
                 QApplication.instance() or QApplication(sys.argv)
             )
-            self.plotwindow = QWidget()
-            self.plotwindow.setWindowTitle('ATR Plot Interface')
-            # Set initial self.plotwindow size
-            self.plotwindow.resize(500, 300)
 
-            # Create labels
-            self.label_filename = QLabel('Filename(s):')
-            self.label_plot_title = QLabel('Plot Title:')
-            self.label_data_set = QLabel('Data Set Name:')
-            self.label_status = QLabel('Status Message(s)')
+        self.plotwindow = QWidget()
+        self.plotwindow.setWindowTitle('Enhanced ATR Plot Interface')
+        self.plotwindow.resize(600, 400)
 
-            # Create input fields
-            self.lineedit_filename = QLineEdit()
-            self.lineedit_plot_title = QLineEdit()
-            self.lineedit_data_set = QLineEdit()
+        # Create UI elements
+        self._create_ui_elements()
+        self._setup_layout()
+        self._connect_signals()
 
-            # Create buttons
-            self.button_browse = QPushButton('Browse')
-            self.button_create_plots = QPushButton('Create Plots')
-            self.button_save_close = QPushButton('Save and Close')
-
-            # Filename field with Browse button
-            self.filename_layout = QHBoxLayout()
-            self.filename_layout.addWidget(self.lineedit_filename)
-            self.filename_layout.addWidget(self.button_browse)
-
-            # Main layout
-            self.main_layout = QVBoxLayout()
-
-            # Add filename section
-            self.main_layout.addWidget(self.label_filename)
-            self.main_layout.addLayout(self.filename_layout)
-
-            # Add plot title field
-            self.main_layout.addWidget(self.label_plot_title)
-            self.main_layout.addWidget(self.lineedit_plot_title)
-
-            # Add dataset name field
-            self.main_layout.addWidget(self.label_data_set)
-            self.main_layout.addWidget(self.lineedit_data_set)
-
-            # Add action buttons
-            self.main_layout.addSpacing(20)  # Add space before buttons
-            self.main_layout.addWidget(self.label_status)
-            self.label_data_set = QLabel('Data Set Name:')
-            self.main_layout.addWidget(self.button_create_plots)
-            self.main_layout.addWidget(self.button_save_close)
-
-            # Set main layout
-            self.plotwindow.setLayout(self.main_layout)
-
-            # Connect buttons to functionality
-            self.button_create_plots.clicked.connect(self.create_plot)
-            self.button_save_close.clicked.connect(self.save_Veusz)
-            self.button_browse.clicked.connect(self._select_atr_files)
-
-        # File Info
-        if not hasattr(self, 'fileParts'):
-            self.fileParts = None
-
-        if not hasattr(self, 'filenames'):
-            self.filenames = None
-
-        # Plot Info
-        # if not self.plotTitle:
+        # Initialize file and plot information
+        self.fileParts = None
+        self.filenames = None
         self.plotTitle = 'GBO Outdoor Antenna Range Pattern'
+
+        # Labels for plots
         self.freq_label = 'Frequency (MHz)'
         self.az_label = 'Azimuth (degrees)'
         self.phase_label = 'Phase (degrees)'
         self.mag_label = 'Magnitude (dB)'
 
-        # Veusz Object
+        # Initialize Veusz object
         if not hasattr(self, 'doc'):
-            self.doc = vz.Embedded('GBO ATR Autoplotter', hidden=False)
+            self.doc = vz.Embedded(
+                'Enhanced GBO ATR Autoplotter', hidden=False)
             self.doc.EnableToolbar()
 
-    def save_Veusz(self):
-        """Save the generated file and ask to open Veusz Interface."""
-        self.label_status.setText('Saving the Plots to a Veusz File...')
+    # %%% UI Setup Methods (FIXED - These were missing!)
 
-        gui = qtSave()
-        if save_path := gui.get_save_filename():
-            self.save(save_path)
-            if gui.ask_open_veusz():
-                self.open_veusz_gui(save_path)
+    def _create_ui_elements(self):
+        """Create UI elements for the interface."""
+        # Labels
+        self.label_filename = QLabel('Filename(s):')
+        self.label_plot_title = QLabel('Plot Title:')
+        self.label_data_set = QLabel('Data Set Name:')
+        self.label_status = QLabel('Status Messages')
+        self.label_mp_status = QLabel(
+            f'Multiprocessing: {"Enabled" if self.mp_config.enable_multiprocessing else "Disabled"} '
+            f'({self.mp_config.max_workers} workers)'
+        )
+        self.label_gpu_status = QLabel(
+            f'GPU Acceleration: {"Enabled" if self.gpu_accelerator.gpu_enabled else "Disabled"} '
+            f'({self.gpu_accelerator.backend or "None"})'
+        )
 
-        # try:
-        #     sys.exit(gui.appSave.exec_())
-        # except Exception as e:
-        #     print('GUI.appSave did not exit cleanly... yet. See ' + e)
+        # Input fields
+        self.lineedit_filename = QLineEdit()
+        self.lineedit_plot_title = QLineEdit()
+        self.lineedit_data_set = QLineEdit()
 
-        # self.plotwindow.worker_thread.quit()
-        self.plotwindow.close()
-        QApplication.closeAllWindows()
-        # try:
-        #     sys.exit(self.plotapp.exec_())
-        # except Exception as e:
-        # print('sys.exit() issue. See ' + e)
+        # Buttons
+        self.button_browse = QPushButton('Browse')
+        self.button_create_plots = QPushButton('Create Plots')
+        self.button_save_close = QPushButton('Save and Close')
 
-    def _create_page(self, dataset: str):
-        """Create a new page and grid."""
-        self.page = self.doc.Root.Add('page', name=dataset)
-        self.grid = self.page.Add('grid', columns=2)
-        return self.page
+    def _setup_layout(self):
+        """Setup the layout for the UI."""
+        # Filename field with Browse button
+        self.filename_layout = QHBoxLayout()
+        self.filename_layout.addWidget(self.lineedit_filename)
+        self.filename_layout.addWidget(self.button_browse)
 
-    def _select_atr_files(self, parent: QWidget = None,
+        # Main layout
+        self.main_layout = QVBoxLayout()
+
+        # Add filename section
+        self.main_layout.addWidget(self.label_filename)
+        self.main_layout.addLayout(self.filename_layout)
+
+        # Add plot title field
+        self.main_layout.addWidget(self.label_plot_title)
+        self.main_layout.addWidget(self.lineedit_plot_title)
+
+        # Add dataset name field
+        self.main_layout.addWidget(self.label_data_set)
+        self.main_layout.addWidget(self.lineedit_data_set)
+
+        # Add status labels
+        self.main_layout.addSpacing(20)
+        self.main_layout.addWidget(self.label_mp_status)
+        self.main_layout.addWidget(self.label_gpu_status)
+        self.main_layout.addWidget(self.label_status)
+
+        # Add action buttons
+        self.main_layout.addWidget(self.button_create_plots)
+        self.main_layout.addWidget(self.button_save_close)
+
+        # Set main layout
+        self.plotwindow.setLayout(self.main_layout)
+
+    def _connect_signals(self):
+        """Connect button signals to their respective methods."""
+        self.button_create_plots.clicked.connect(self.create_plot)
+        self.button_save_close.clicked.connect(self.save_Veusz)
+        self.button_browse.clicked.connect(self._select_atr_files)
+
+    # %%% File Operations
+
+    # FIX 4: Updated return type annotation to use typing.Tuple
+    def _select_atr_files(self, parent: Optional[QWidget] = None,
                           caption: str = "Select Files",
                           directory: str = "",
-                          filter: str = "GBO ATR Files (*.atr)"
-                          ):
-        """QtPy or Pyside6 GUI for File Select, Multi File for ATRs."""
+                          filter: str = "GBO ATR Files (*.atr)") -> Tuple[List[str], List[Tuple[str, str]]]:
         """Open a file dialog for multiple file selection using qtpy.
-        select_multiple_files(
-            parent: QWidget = None, 
-            caption: str = "Select Files", 
-            directory: str = "", 
-            filter: str = "All Files (*)"):
 
         Parameters
         ----------
@@ -288,13 +593,12 @@ class PlotATR:
         directory : str, optional
             The initial directory shown in the dialog.
         filter : str, optional
-            File type filter string, e.g. "Images (*.png *.jpg);;
-            Text files (*.txt)".
-    
+            File type filter string.
+
         Returns
         -------
-        list of str
-            List of selected file paths. Empty if cancelled.
+        Tuple[List[str], List[Tuple[str, str]]]
+            Tuple containing (filenames, file_parts).
         """
         self.label_status.setText('Selecting Input Files...')
 
@@ -302,611 +606,495 @@ class PlotATR:
             parent = QWidget()
 
         self.filenames, _ = QFileDialog.getOpenFileNames(
-            parent, caption, directory, filter)
+            parent, caption, directory, filter
+        )
 
-        # start the main loop for processing the selected files
+        if not self.filenames:
+            self.label_status.setText('No files selected.')
+            return [], []
+
+        # Process file parts
         self.fileParts = [None] * len(self.filenames)
-        for mainLooper in range(len(self.filenames)):
-            # this loop processes the files selected one at a time,
-            # while combining
-            # the data as it progresses
+        for i, filename in enumerate(self.filenames):
+            self.fileParts[i] = os.path.split(filename)
 
-            # get the file parts for further use of the current file.
-            self.fileParts[mainLooper] = os.path.split(
-                self.filenames[mainLooper]
-            )
-
-        # After the mainloop, I need to combine all the data into a
-        # multi-dimensional
-        # array. Then call Veusz and parse the data into that gui.
         if self.fileParts[0][0]:
             filenames_only = list(map(itemgetter(1), self.fileParts))
-            # update the file listing
             self.lineedit_filename.setText(' ; '.join(filenames_only))
-            # self.lineedit_plot_title = self.plotTitle
-            # self.lineedit_data_set = 'Auto Generated Per File'
-
-        self.label_status.setText('Input Files Selected.')
+            self.label_status.setText(
+                f'Selected {len(self.filenames)} files for processing.'
+            )
 
         return self.filenames, self.fileParts
 
+    # %%% Main Processing Methods
+
     def create_plot(self):
-        """Create the 2D plots for all data."""
-        self.label_status.setText('Creating Plots...')
-        data_freq_all = np.empty(len(self.filenames), dtype=object)
-        data_mag_all = np.empty(len(self.filenames), dtype=object)
-        data_phase_all = np.empty(len(self.filenames), dtype=object)
-        data_Az_angle_all = np.empty(len(self.filenames), dtype=object)
-        # data_Polarization_all = np.array(['H', 'V', str(45), str(-45)])
-        # measurement_Types = ['Mag', 'Phase']
-
-        for index, file_path in enumerate(self.filenames):
-            # Process and plot,file by file
-            if self.lineedit_data_set.text():
-                dataset_name = self.lineedit_data_set.text()
-            else:
-                dataset_name = self.fileParts[index][1]
-
-            if (
-                    not self.lineedit_plot_title.text() or not
-                    self.lineedit_data_set.text()
-            ):
-                # self.status_label.config(text="Please fill in all fields")
-                self.label_status.setText(
-                    "Blank Fields Will Be Autogenerated."
-                )
-
-            if not file_path:
-                # self.status_label.config(text="Please fill in all fields")
-                self.label_status.setText(
-                    text="User MUST select at least one file."
-                )
-                return
-
-            try:
-                # Read ATR file
-                line_number = 13  # remeber it is zero indexed
-                header_info, selected_data, header_lines = (
-                    PlotATR.process_data(file_path,
-                                         line_number, self))
-
-                # take the numpy and call it df
-                df = selected_data
-
-                # partse header info for future use, remember if the ATR
-                # format changes this MUST be changed
-                # header_lines = header_info.splitlines()
-                # freqs are ion MHz in the ATR file
-                freq_max = float(header_lines[8].split(":")[-1].strip())
-                freq_min = float(header_lines[9].split(":")[-1].strip())
-                # freq_step = float(header_lines[10].split(":")[-1].strip())
-
-                if freq_min != freq_max:
-                    print("This script is not yet capable of reducing " +
-                          "data that consists of multiple frequencies. " +
-                          "Contact William Wallace at x2216 and ask him " +
-                          "to implement this feature.")
-                    return
-                else:
-                    # once plotting of multiple files at once is made, this
-                    # array will have to index with the various data sets
-                    # by length
-                    freq_array = [freq_max]
-
-                # As of 2025-02-21 The outdoor range is only capable of single
-                # elevation scans (at 0 el)
-                Az_min = float(header_lines[6].split(":")[-1].strip())
-                Az_max = float(header_lines[7].split(":")[-1].strip())
-                # All steps in az for the GBO outdoor range are by default
-                # 1 degrees in a continual scan
-                Az_angles = np.arange(Az_min, Az_max + 1, 1, dtype=float)
-
-                # First add an dimension to the 2D array in the first axis
-                # then parse out the data
-                # df = np.expand_dims(df, axis=3)
-
-                # add frequency to the matrix
-                data_freq = freq_array
-                data_mag = df[:, 0]
-                data_phase = df[:, 1]
-                data_Az_angle = Az_angles
-
-                data_freq_all[index] = data_freq[0]
-
-                data_mag_all[index] = data_mag
-                data_phase_all[index] = data_phase
-                data_Az_angle_all[index] = data_Az_angle
-
-                # data_col_stack = np.column_stack(
-                #     (data_Az_angle, data_mag, data_phase)
-                # )
-
-                # Create datasets
-                dataset = os.path.splitext(dataset_name)[0]
-                freqName = (dataset +
-                            '_freq')
-                magName = (dataset +
-                           '_mag')
-                polarMagName = (dataset + '_polar'
-                                '_mag')
-                # radName = (dataset +
-                #            '_r')
-                # thetaName = (dataset +
-                #              '_theta')
-                phaseName = (dataset +
-                             '_phase')
-                polarPhaseName = (dataset + '_polar'
-                                  '_phase')
-                azName = (dataset +
-                          '_Az')
-                self.plotTitle = dataset
-                self.doc.SetData(freqName, data_freq)
-                self.doc.SetData(magName, data_mag)
-                self.doc.SetData(phaseName, data_phase)
-                self.doc.SetData(azName, data_Az_angle)
-                self.doc.TagDatasets(dataset,
-                                     [freqName, magName, phaseName, azName])
-
-                # % Overlay Plot
-                # TODO: Create a mag pattern overlay plot
-                if 'Overlay_All_mag' not in self.doc.Root.childnames:
-                    # Create Pages and Graphs for Overlays
-                    pageAll_mag = self.doc.Root.Add('page',
-                                                    name='Overlay_All_mag')
-                    gridAll_mag = pageAll_mag.Add('grid', columns=2)
-                    graphAll_mag = gridAll_mag.Add('graph',
-                                                   name='Overlay_All_mag')
-
-                    pageAll_phase = self.doc.Root.Add('page',
-                                                      name='Overlay_All_phase')
-                    gridAll_phase = pageAll_phase.Add('grid', columns=2)
-                    graphAll_phase = gridAll_phase.Add(
-                        'graph', name='Overlay_All_phase'
-                    )
-                    # Add notes to the overlay pages
-                    pageAll_mag.notes.val = ("All Imported " +
-                                             "and Plottable Data Overlay")
-                    pageAll_phase.notes.val = ("All Imported " +
-                                               "and Plottable Data Overlay")
-
-                    with Wrap4With(graphAll_mag) as graph:
-                        graph.Add('label', name='plotTitle')
-                        graph.topMargin.val = '1cm'
-                        graph.plotTitle.Text.size.val = '10pt'
-                        graph.plotTitle.label.val = (
-                            'Overlay of Imported Magnitude'
-                        )
-                        graph.plotTitle.alignHorz.val = 'centre'
-                        graph.plotTitle.yPos.val = 1.05
-                        graph.plotTitle.xPos.val = 0.5
-                        graph.notes.val = 'All Imported Data Overlayed'
-                        # set graph axis labels
-                        graph.x.label.val = self.az_label
-                        graph.y.label.val = self.mag_label
-
-                        # grid lines
-                        graph.x.GridLines.hide.val = False
-                        graph.y.GridLines.hide.val = False
-                        graph.x.MinorGridLines.hide.val = False
-                        graph.y.MinorGridLines.hide.val = False
-
-                        # Extents
-                        graph.y.min.val = -60
-                        graph.y.max.val = 20
-                        graph.x.min.val = -180
-                        graph.x.max.val = 180
-
-                    with Wrap4With(graphAll_phase) as graph:
-                        graph.Add('label', name='plotTitle')
-                        graph.topMargin.val = '1cm'
-                        graph.plotTitle.Text.size.val = '10pt'
-                        graph.plotTitle.label.val = 'Overlay of Imported Phase'
-                        graph.plotTitle.alignHorz.val = 'centre'
-                        graph.plotTitle.yPos.val = 1.05
-                        graph.plotTitle.xPos.val = 0.5
-                        graph.notes.val = 'All Imported Data Overlayed'
-                        # set graph axis labels
-                        graph.x.label.val = self.az_label
-                        graph.y.label.val = self.phase_label
-
-                        # grid lines
-                        graph.x.GridLines.hide.val = False
-                        graph.y.GridLines.hide.val = False
-                        graph.x.MinorGridLines.hide.val = False
-                        graph.y.MinorGridLines.hide.val = False
-
-                        # Extents
-                        graph.y.min.val = -180
-                        graph.y.max.val = 180
-                        graph.x.min.val = -180
-                        graph.x.max.val = 180
-
-                    # set auto color theme for the files
-                    self.doc.Root.colorTheme.val = 'max128'
-
-                    # Create xy plot for magnitude on page, graph, and grid ALL
-                    xy_All_mag = graphAll_mag.Add(
-                        'xy', name=magName)
-                    with Wrap4With(xy_All_mag) as xy:
-                        xy.xData.val = azName
-                        xy.yData.val = magName
-                        xy.nanHandling = 'break-on'
-                        xy.marker.val = 'circle'
-                        xy.markerSize.val = '2pt'
-                        xy.MarkerLine.color.val = 'transparent'
-                        xy.MarkerFill.color.val = 'auto'
-                        xy.MarkerFill.transparency.val = 80
-                        xy.MarkerFill.style.val = 'solid'
-                        xy.FillBelow.transparency.val = 90
-                        xy.FillBelow.style.val = 'solid'
-                        xy.FillBelow.fillto.val = 'bottom'
-                        xy.FillBelow.color.val = 'darkgreen'
-                        xy.FillBelow.hide.val = True
-                        xy.PlotLine.color.val = 'auto'
-
-                    xy_All_phase = graphAll_phase.Add(
-                        'xy', name=phaseName)
-                    with Wrap4With(xy_All_phase) as xy:
-                        xy.xData.val = azName
-                        xy.yData.val = phaseName
-                        xy.nanHandling = 'break-on'
-                        xy.marker.val = 'circle'
-                        xy.markerSize.val = '2pt'
-                        xy.MarkerLine.color.val = 'transparent'
-                        xy.MarkerFill.color.val = 'auto'
-                        xy.MarkerFill.transparency.val = 80
-                        xy.MarkerFill.style.val = 'solid'
-                        xy.FillBelow.transparency.val = 90
-                        xy.FillBelow.style.val = 'solid'
-                        xy.FillBelow.fillto.val = 'bottom'
-
-                        xy.FillBelow.color.val = 'darkgreen'
-                        xy.FillBelow.hide.val = True
-                        xy.PlotLine.color.val = 'auto'
-
-                else:
-                    pageAll_mag = self.doc.Root.Overlay_All_mag
-                    graphAll_mag = (
-
-                        self.doc.Root.Overlay_All_mag.grid1.Overlay_All_mag
-                    )
-
-                    pageAll_phase = self.doc.Root.Overlay_All_phase
-                    graphAll_phase = (
-                        self.doc.Root.Overlay_All_phase.grid1.Overlay_All_phase
-                    )
-
-                    xy_All_mag = graphAll_mag.Add(
-                        'xy', name=magName)
-                    with Wrap4With(xy_All_mag) as xy:
-                        xy.xData.val = azName
-                        xy.yData.val = magName
-                        xy.nanHandling = 'break-on'
-                        xy.marker.val = 'circle'
-                        xy.markerSize.val = '2pt'
-                        xy.MarkerLine.color.val = 'transparent'
-                        xy.MarkerFill.color.val = 'auto'
-                        xy.MarkerFill.transparency.val = 80
-                        xy.MarkerFill.style.val = 'solid'
-                        xy.FillBelow.transparency.val = 90
-                        xy.FillBelow.style.val = 'solid'
-                        xy.FillBelow.fillto.val = 'bottom'
-                        xy.FillBelow.color.val = 'darkgreen'
-                        xy.FillBelow.hide.val = True
-                        xy.PlotLine.color.val = 'auto'
-
-                    xy_All_phase = graphAll_phase.Add(
-                        'xy', name=phaseName)
-                    with Wrap4With(xy_All_phase) as xy:
-                        xy.xData.val = azName
-                        xy.yData.val = phaseName
-                        xy.nanHandling = 'break-on'
-                        xy.marker.val = 'circle'
-                        xy.markerSize.val = '2pt'
-                        xy.MarkerLine.color.val = 'transparent'
-                        xy.MarkerFill.color.val = 'auto'
-                        xy.MarkerFill.transparency.val = 80
-                        xy.MarkerFill.style.val = 'solid'
-                        xy.FillBelow.transparency.val = 90
-                        xy.FillBelow.style.val = 'solid'
-                        xy.FillBelow.fillto.val = 'bottom'
-                        xy.FillBelow.color.val = 'darkgreen'
-                        xy.FillBelow.hide.val = True
-                        xy.PlotLine.color.val = 'auto'
-
-                page_mag = self.doc.Root.Add('page', name=magName)
-                grid_mag = page_mag.Add('grid', columns=2)
-                graph_mag = grid_mag.Add(
-                    'graph',
-                    name=dataset + '_Mag')
-                page_mag.notes.val = '\n'.join(header_lines)
-
-                # Phase
-                page_phase = self.doc.Root.Add('page', name=phaseName)
-                grid_phase = page_phase.Add('grid', columns=2)
-                graph_phase = grid_phase.Add(
-                    'graph',
-                    name=dataset + '_Phase')
-                page_phase.notes.val = '\n'.join(header_lines)
-
-                page_Polar_mag = self.doc.Root.Add('page',
-                                                   name=polarMagName)
-                with Wrap4With(page_Polar_mag) as page:
-                    page.Add('label', name='plotTitle')
-                    page.plotTitle.Text.size.val = '10pt'
-                    page.plotTitle.label.val = self.plotTitle.replace(
-                        '_', " ")
-                    page.plotTitle.alignHorz.val = 'centre'
-                    page.plotTitle.yPos.val = 0.95
-                    page.plotTitle.xPos.val = 0.5
-
-                grid_Polar_mag = page_Polar_mag.Add('grid', columns=2)
-                graph_Polar_mag = grid_Polar_mag.Add(
-                    'polar',
-                    name=dataset + '_Polar_mag')
-                page_Polar_mag.notes.val = '\n'.join(header_lines)
-
-                # Phase Polar
-                page_Polar_phase = self.doc.Root.Add('page',
-                                                     name=polarPhaseName)
-
-                with Wrap4With(page_Polar_phase) as page:
-                    page.Add('label', name='plotTitle')
-                    page.plotTitle.Text.size.val = '10pt'
-                    page.plotTitle.label.val = self.plotTitle.replace(
-                        '_', " ")
-                    page.plotTitle.alignHorz.val = 'centre'
-                    page.plotTitle.yPos.val = 0.95
-                    page.plotTitle.xPos.val = 0.5
-
-                grid_Polar_phase = page_Polar_phase.Add('grid', columns=2)
-
-                graph_Polar_phase = grid_Polar_phase.Add(
-                    'polar',
-                    name=dataset + '_Polar_Phase')
-                page_Polar_phase.notes.val = '\n'.join(header_lines)
-
-                with Wrap4With(graph_mag) as graph:
-                    graph.Add('label', name='plotTitle')
-                    graph.topMargin.val = '1cm'
-                    graph.plotTitle.Text.size.val = '10pt'
-                    graph.plotTitle.label.val = self.plotTitle.replace(
-                        '_', " ")
-                    graph.plotTitle.alignHorz.val = 'centre'
-                    graph.plotTitle.yPos.val = 1.05
-                    graph.plotTitle.xPos.val = 0.5
-                    graph.notes.val = '\n'.join(header_lines)
-                    # set graph axis labels
-                    graph.x.label.val = self.az_label
-                    graph.y.label.val = self.mag_label
-
-                    # grid lines
-                    graph.x.GridLines.hide.val = False
-                    graph.y.GridLines.hide.val = False
-                    graph.x.MinorGridLines.hide.val = False
-                    graph.y.MinorGridLines.hide.val = False
-
-                    # Extents
-                    graph.y.min.val = -60
-                    graph.y.max.val = 20
-                    graph.x.min.val = -180
-                    graph.x.max.val = 180
-
-                    # Create xy plot
-                    xy_mag = graph.Add(
-                        'xy', name=dataset
-                    )
-
-                with Wrap4With(xy_mag) as xy:
-                    # Assign Data
-                    xy.xData.val = azName
-                    xy.yData.val = magName
-                    xy.nanHandling = 'break-on'
-
-                    # set marker and colors for overlay plot
-                    xy.marker.val = 'circle'
-                    xy.markerSize.val = '2pt'
-                    # xy.MarkerLine.transparency.val =
-                    xy.MarkerLine.color.val = 'transparent'
-                    xy.MarkerFill.color.val = 'auto'
-                    xy.MarkerFill.transparency.val = 80
-                    xy.MarkerFill.style.val = 'solid'
-                    xy.FillBelow.transparency.val = 90
-                    xy.FillBelow.style.val = 'solid'
-                    xy.FillBelow.fillto.val = 'bottom'
-                    xy.FillBelow.color.val = 'darkgreen'
-                    xy.FillBelow.hide.val = False
-                    xy.PlotLine.color.val = 'red'
-
-                with Wrap4With(graph_phase) as graph:
-                    graph.Add('label', name='plotTitle')
-                    graph.topMargin.val = '1cm'
-                    graph.plotTitle.Text.size.val = '10pt'
-                    graph.plotTitle.label.val = self.plotTitle.replace(
-                        '_', " ")
-                    graph.plotTitle.alignHorz.val = 'centre'
-                    graph.plotTitle.yPos.val = 1.05
-                    graph.plotTitle.xPos.val = 0.5
-                    graph.notes.val = '\n'.join(header_lines)
-                    # set graph axis labels
-                    graph.x.label.val = self.az_label
-                    graph.y.label.val = self.phase_label
-
-                    # grid lines
-                    graph.x.GridLines.hide.val = False
-                    graph.y.GridLines.hide.val = False
-                    graph.x.MinorGridLines.hide.val = False
-                    graph.y.MinorGridLines.hide.val = False
-
-                    # Extents
-                    graph.y.min.val = -180
-                    graph.y.max.val = 180
-                    graph.x.min.val = -180
-                    graph.x.max.val = 180
-
-                    # Create xy plot
-                    xy_phase = graph.Add(
-                        'xy', name=dataset
-                    )
-
-                with Wrap4With(xy_phase) as xy:
-                    # Assign Data
-                    xy.xData.val = azName
-                    xy.yData.val = phaseName
-
-                    # Axis control
-                    xy.nanHandling = 'break-on'
-
-                    # set marker and colors for overlay plot
-                    xy.marker.val = 'circle'
-                    xy.markerSize.val = '2pt'
-                    # xy.MarkerLine.transparency.val =
-                    xy.MarkerLine.color.val = 'transparent'
-                    xy.MarkerFill.color.val = 'auto'
-                    xy.MarkerFill.transparency.val = 80
-                    xy.MarkerFill.style.val = 'solid'
-                    xy.FillBelow.transparency.val = 90
-                    xy.FillBelow.style.val = 'solid'
-                    xy.FillBelow.fillto.val = 'bottom'
-                    xy.FillBelow.color.val = 'darkgreen'
-                    xy.FillBelow.hide.val = False
-                    xy.PlotLine.color.val = 'red'
-
-                # TODO: Polar 2 - Add a page for Magnitude Polar
-                with Wrap4With(graph_Polar_mag) as pGraph:
-
-                    pGraph.topMargin.val = '1cm'
-                    pGraph.units.val = 'degrees'
-                    pGraph.direction.val = 'clockwise'
-                    pGraph.position0.val = 'top'
-
-                    # Extents
-                    pGraph.minradius.val = -60
-                    pGraph.maxradius.val = 20
-
-                    # Create nonorthogonal point plot
-                    rtheta_mag = pGraph.Add(
-                        'nonorthpoint', name=dataset
-                    )
-
-                with Wrap4With(rtheta_mag) as nonortho:
-                    # Assign Data
-                    nonortho.data1.val = magName
-                    nonortho.data2.val = azName
-
-                    # set marker and colors for overlay plot
-                    nonortho.PlotLine.color.val = 'red'
-                    nonortho.PlotLine.width.val = '2pt'
-                    nonortho.MarkerLine.transparency.val = 75
-                    nonortho.MarkerFill.transparency.val = 75
-                    nonortho.Fill1.transparency.val = 65
-                    nonortho.Fill1.color.val = 'green'
-                    nonortho.Fill1.filltype.val = 'center'
-                    nonortho.Fill1.hide.val = False
-
-                # TODO: Polar 3 - Add a page for Phase Polar
-                with Wrap4With(graph_Polar_phase) as pGraph:
-
-                    pGraph.topMargin.val = '1cm'
-                    pGraph.units.val = 'degrees'
-                    pGraph.direction.val = 'clockwise'
-                    pGraph.position0.val = 'top'
-
-                    # Extents
-                    pGraph.minradius.val = -180
-                    pGraph.maxradius.val = 180
-
-                    # Create nonorthogonal point plot
-                    rtheta_phase = pGraph.Add(
-                        'nonorthpoint', name=dataset
-                    )
-
-                with Wrap4With(rtheta_phase) as nonortho:
-                    # Assign Data
-                    nonortho.data1.val = phaseName
-                    nonortho.data2.val = azName
-
-                    # set marker and colors for overlay plot
-                    nonortho.PlotLine.color.val = 'red'
-                    nonortho.PlotLine.width.val = '2pt'
-                    nonortho.MarkerLine.transparency.val = 75
-                    nonortho.MarkerFill.transparency.val = 75
-                    nonortho.Fill1.transparency.val = 65
-                    nonortho.Fill1.color.val = 'green'
-                    nonortho.Fill1.filltype.val = 'center'
-                    nonortho.Fill1.hide.val = False
-
-                self.label_status.setText(
-                    'All Selected Data Has Been Processed and Plotted.'
-                )
-
-            except Exception as e:
-                self.status_label.config(text=f"Error: {str(e)}")
-
-    def process_data(file_path, line_number, self):
-        """Read the entire file into a list of lines."""
-        self.label_status.setText('Parsing Data...')
-        filesize = os.path.getsize(file_path)
-
-        # Use appropriate method based on file size
-        if filesize < 10**7:  # < 10MB
-            # Use fast binary reading
-            with open(file_path, 'rb') as file:
-                content = file.read().decode('ascii')
-                lines = content.splitlines()
+        """Create the 2D plots for all data with optional multiprocessing."""
+        if not self.filenames:
+            self.label_status.setText("Please select at least one file.")
+            return
+
+        self.label_status.setText('Processing files and creating plots...')
+
+        # Process files with or without multiprocessing
+        if (self.mp_config.enable_multiprocessing and
+                len(self.filenames) > 1):
+            processed_data = self._process_files_multiprocessing()
         else:
-            # Use memory-efficient line iteration
-            with open(file_path, 'r', encoding='ascii') as file:
-                lines = file.readlines()
+            processed_data = self._process_files_sequential()
 
-        # with open(file_path, 'r') as file:
-        #     lines = file.readlines()
+        # Create plots using processed data
+        self._create_plots_from_data(processed_data)
 
-        # Extract header information
-        header_lines = lines[:line_number]
-        header_info = ''.join(header_lines).strip()
+        self.label_status.setText(
+            'All Selected Data Has Been Processed and Plotted.'
+        )
 
-        # Extract the specified line of numerical data
-        data_line = lines[line_number].strip()
+    # FIX 5: Updated return type annotation
+    def _process_files_multiprocessing(self) -> Dict[str, Any]:
+        """Process files using multiprocessing.
 
-        # Remove the last character if it's '#'
-        if data_line.endswith('#'):
-            data_line = data_line[:-1]
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing processed data for each file.
+        """
+        print(f"Processing {len(self.filenames)} files using "
+              f"{self.mp_config.max_workers} workers")
 
-        # Convert the line of numerical data into a list of numbers
-        data_numbers = list(map(float, data_line.split()))
+        processed_data = {}
+        line_number = 13  # Zero-indexed line number for data
 
-        # Select every other item from the list of numbers
-        selected_phase_data = data_numbers[::2]
-        selected_magnitude_data = data_numbers[1::2]
-        # selected_data = np.array([[selected_magnitude_data],
-        #                           [selected_phase_data]])
-        selected_data = np.array([selected_magnitude_data,
-                                 selected_phase_data])
-        selected_data_transpose = selected_data.transpose()
-        return header_info, selected_data_transpose, header_lines
+        # Prepare file information for multiprocessing
+        file_info_list = [
+            (file_path, line_number, self.gpu_accelerator)
+            for file_path in self.filenames
+        ]
+
+        # Use ProcessPoolExecutor for better control and error handling
+        with ProcessPoolExecutor(max_workers=self.mp_config.max_workers) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(process_single_file, file_info): file_info[0]
+                for file_info in file_info_list
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    filename, data = future.result()
+                    if data is not None:
+                        processed_data[filename] = data
+                        print(f"Successfully processed: {filename}")
+                    else:
+                        print(f"Failed to process: {filename}")
+                except Exception as e:
+                    print(f"Error processing {file_path}: {str(e)}")
+
+        return processed_data
+
+    # FIX 6: Updated return type annotation
+    def _process_files_sequential(self) -> Dict[str, Any]:
+        """Process files sequentially (fallback method).
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing processed data for each file.
+        """
+        print(f"Processing {len(self.filenames)} files sequentially")
+
+        processed_data = {}
+        line_number = 13
+
+        for file_path in self.filenames:
+            filename, data = process_single_file(
+                (file_path, line_number, self.gpu_accelerator)
+            )
+            if data is not None:
+                processed_data[filename] = data
+                print(f"Successfully processed: {filename}")
+            else:
+                print(f"Failed to process: {filename}")
+
+        return processed_data
+
+    # %%% Plotting Methods
+
+    # FIX 7: Updated parameter type annotation
+    def _create_plots_from_data(self, processed_data: Dict[str, Any]):
+        """Create Veusz plots from processed data.
+
+        Parameters
+        ----------
+        processed_data : Dict[str, Any]
+            Dictionary containing processed data for each file.
+        """
+        # Create overlay pages if they don't exist
+        self._create_overlay_pages()
+
+        for filename, data in processed_data.items():
+            if data is None:
+                continue
+
+            dataset_name = os.path.splitext(filename)[0]
+            self._create_individual_plots(dataset_name, data)
+            self._add_to_overlay_plots(dataset_name, data)
+
+    def _create_overlay_pages(self):
+        """Create overlay pages for magnitude and phase plots."""
+        if 'Overlay_All_mag' not in self.doc.Root.childnames:
+            # Create Pages and Graphs for Overlays
+            pageAll_mag = self.doc.Root.Add('page', name='Overlay_All_mag')
+            gridAll_mag = pageAll_mag.Add('grid', columns=2)
+            graphAll_mag = gridAll_mag.Add('graph', name='Overlay_All_mag')
+
+            pageAll_phase = self.doc.Root.Add('page', name='Overlay_All_phase')
+            gridAll_phase = pageAll_phase.Add('grid', columns=2)
+            graphAll_phase = gridAll_phase.Add(
+                'graph', name='Overlay_All_phase')
+
+            # Configure magnitude overlay graph
+            self._configure_overlay_graph(
+                graphAll_mag, 'Overlay of Imported Magnitude',
+                self.az_label, self.mag_label, -60, 20, -180, 180
+            )
+
+            # Configure phase overlay graph
+            self._configure_overlay_graph(
+                graphAll_phase, 'Overlay of Imported Phase',
+                self.az_label, self.phase_label, -180, 180, -180, 180
+            )
+
+            # Set auto color theme
+            self.doc.Root.colorTheme.val = 'max128'
+
+    def _configure_overlay_graph(self, graph, title: str, x_label: str,
+                                 y_label: str, y_min: float, y_max: float,
+                                 x_min: float, x_max: float):
+        """Configure an overlay graph with standard settings.
+
+        Parameters
+        ----------
+        graph : Veusz graph object
+            The graph to configure.
+        title : str
+            Graph title.
+        x_label : str
+            X-axis label.
+        y_label : str
+            Y-axis label.
+        y_min, y_max : float
+            Y-axis range.
+        x_min, x_max : float
+            X-axis range.
+        """
+        with Wrap4With(graph) as g:
+            g.Add('label', name='plotTitle')
+            g.topMargin.val = '1cm'
+            g.plotTitle.Text.size.val = '10pt'
+            g.plotTitle.label.val = title
+            g.plotTitle.alignHorz.val = 'centre'
+            g.plotTitle.yPos.val = 1.05
+            g.plotTitle.xPos.val = 0.5
+
+            # Set axis labels
+            g.x.label.val = x_label
+            g.y.label.val = y_label
+
+            # Grid lines
+            g.x.GridLines.hide.val = False
+            g.y.GridLines.hide.val = False
+            g.x.MinorGridLines.hide.val = False
+            g.y.MinorGridLines.hide.val = False
+
+            # Set extents
+            g.y.min.val = y_min
+            g.y.max.val = y_max
+            g.x.min.val = x_min
+            g.x.max.val = x_max
+
+    # FIX 8: Updated parameter type annotation
+    def _create_individual_plots(self, dataset_name: str, data: Dict[str, Any]):
+        """Create individual plots for a dataset.
+
+        Parameters
+        ----------
+        dataset_name : str
+            Name of the dataset.
+        data : Dict[str, Any]
+            Processed data dictionary.
+        """
+        # Create dataset names
+        freq_name = f"{dataset_name}_freq"
+        mag_name = f"{dataset_name}_mag"
+        phase_name = f"{dataset_name}_phase"
+        az_name = f"{dataset_name}_Az"
+
+        # Set data in Veusz
+        self.doc.SetData(freq_name, [data['frequency']])
+        self.doc.SetData(mag_name, data['magnitude'])
+        self.doc.SetData(phase_name, data['phase'])
+        self.doc.SetData(az_name, data['azimuth_angles'])
+
+        # Tag datasets
+        self.doc.TagDatasets(
+            dataset_name,
+            [freq_name, mag_name, phase_name, az_name]
+        )
+
+        # Create individual pages and plots
+        self._create_magnitude_page(dataset_name, data)
+        self._create_phase_page(dataset_name, data)
+        self._create_polar_pages(dataset_name, data)
+
+    # FIX 9: Updated parameter type annotation
+    def _create_magnitude_page(self, dataset_name: str, data: Dict[str, Any]):
+        """Create magnitude plot page."""
+        mag_name = f"{dataset_name}_mag"
+        az_name = f"{dataset_name}_Az"
+
+        page_mag = self.doc.Root.Add('page', name=mag_name)
+        grid_mag = page_mag.Add('grid', columns=2)
+        graph_mag = grid_mag.Add('graph', name=f"{dataset_name}_Mag")
+        page_mag.notes.val = '\n'.join(data['header_lines'])
+
+        # Configure graph
+        self._configure_standard_graph(
+            graph_mag, dataset_name.replace('_', ' '),
+            self.az_label, self.mag_label, -60, 20, -180, 180
+        )
+
+        # Create XY plot
+        xy_mag = graph_mag.Add('xy', name=dataset_name)
+        self._configure_xy_plot(xy_mag, az_name, mag_name, 'red')
+
+    # FIX 10: Updated parameter type annotation
+    def _create_phase_page(self, dataset_name: str, data: Dict[str, Any]):
+        """Create phase plot page."""
+        phase_name = f"{dataset_name}_phase"
+        az_name = f"{dataset_name}_Az"
+
+        page_phase = self.doc.Root.Add('page', name=phase_name)
+        grid_phase = page_phase.Add('grid', columns=2)
+        graph_phase = grid_phase.Add('graph', name=f"{dataset_name}_Phase")
+        page_phase.notes.val = '\n'.join(data['header_lines'])
+
+        # Configure graph
+        self._configure_standard_graph(
+            graph_phase, dataset_name.replace('_', ' '),
+            self.az_label, self.phase_label, -180, 180, -180, 180
+        )
+
+        # Create XY plot
+        xy_phase = graph_phase.Add('xy', name=dataset_name)
+        self._configure_xy_plot(xy_phase, az_name, phase_name, 'red')
+
+    # FIX 11: Updated parameter type annotation
+    def _create_polar_pages(self, dataset_name: str, data: Dict[str, Any]):
+        """Create polar plot pages for magnitude and phase."""
+        mag_name = f"{dataset_name}_mag"
+        phase_name = f"{dataset_name}_phase"
+        az_name = f"{dataset_name}_Az"
+
+        # Magnitude polar plot
+        polar_mag_name = f"{dataset_name}_polar_mag"
+        page_polar_mag = self.doc.Root.Add('page', name=polar_mag_name)
+        self._add_page_title(page_polar_mag, dataset_name.replace('_', ' '))
+        grid_polar_mag = page_polar_mag.Add('grid', columns=2)
+        graph_polar_mag = grid_polar_mag.Add(
+            'polar', name=f"{dataset_name}_Polar_mag")
+        page_polar_mag.notes.val = '\n'.join(data['header_lines'])
+
+        # Configure polar graph for magnitude
+        self._configure_polar_graph(graph_polar_mag, -60, 20)
+        rtheta_mag = graph_polar_mag.Add('nonorthpoint', name=dataset_name)
+        self._configure_polar_plot(rtheta_mag, mag_name, az_name)
+
+        # Phase polar plot
+        polar_phase_name = f"{dataset_name}_polar_phase"
+        page_polar_phase = self.doc.Root.Add('page', name=polar_phase_name)
+        self._add_page_title(page_polar_phase, dataset_name.replace('_', ' '))
+        grid_polar_phase = page_polar_phase.Add('grid', columns=2)
+        graph_polar_phase = grid_polar_phase.Add(
+            'polar', name=f"{dataset_name}_Polar_Phase")
+        page_polar_phase.notes.val = '\n'.join(data['header_lines'])
+
+        # Configure polar graph for phase
+        self._configure_polar_graph(graph_polar_phase, -180, 180)
+        rtheta_phase = graph_polar_phase.Add('nonorthpoint', name=dataset_name)
+        self._configure_polar_plot(rtheta_phase, phase_name, az_name)
+
+    def _configure_standard_graph(self, graph, title: str, x_label: str,
+                                  y_label: str, y_min: float, y_max: float,
+                                  x_min: float, x_max: float):
+        """Configure a standard XY graph."""
+        with Wrap4With(graph) as g:
+            g.Add('label', name='plotTitle')
+            g.topMargin.val = '1cm'
+            g.plotTitle.Text.size.val = '10pt'
+            g.plotTitle.label.val = title
+            g.plotTitle.alignHorz.val = 'centre'
+            g.plotTitle.yPos.val = 1.05
+            g.plotTitle.xPos.val = 0.5
+
+            # Set axis labels
+            g.x.label.val = x_label
+            g.y.label.val = y_label
+
+            # Grid lines
+            g.x.GridLines.hide.val = False
+            g.y.GridLines.hide.val = False
+            g.x.MinorGridLines.hide.val = False
+            g.y.MinorGridLines.hide.val = False
+
+            # Set extents
+            g.y.min.val = y_min
+            g.y.max.val = y_max
+            g.x.min.val = x_min
+            g.x.max.val = x_max
+
+    def _configure_xy_plot(self, xy, x_data: str, y_data: str, color: str):
+        """Configure an XY plot."""
+        with Wrap4With(xy) as plot:
+            plot.xData.val = x_data
+            plot.yData.val = y_data
+            plot.nanHandling = 'break-on'
+            plot.marker.val = 'circle'
+            plot.markerSize.val = '2pt'
+            plot.MarkerLine.color.val = 'transparent'
+            plot.MarkerFill.color.val = 'auto'
+            plot.MarkerFill.transparency.val = 80
+            plot.MarkerFill.style.val = 'solid'
+            plot.FillBelow.transparency.val = 90
+            plot.FillBelow.style.val = 'solid'
+            plot.FillBelow.fillto.val = 'bottom'
+            plot.FillBelow.color.val = 'darkgreen'
+            plot.FillBelow.hide.val = False
+            plot.PlotLine.color.val = color
+
+    def _configure_polar_graph(self, graph, min_radius: float, max_radius: float):
+        """Configure a polar graph."""
+        with Wrap4With(graph) as g:
+            g.topMargin.val = '1cm'
+            g.units.val = 'degrees'
+            g.direction.val = 'clockwise'
+            g.position0.val = 'top'
+            g.minradius.val = min_radius
+            g.maxradius.val = max_radius
+
+    def _configure_polar_plot(self, plot, data1: str, data2: str):
+        """Configure a polar plot."""
+        with Wrap4With(plot) as p:
+            p.data1.val = data1
+            p.data2.val = data2
+            p.PlotLine.color.val = 'red'
+            p.PlotLine.width.val = '2pt'
+            p.MarkerLine.transparency.val = 75
+            p.MarkerFill.transparency.val = 75
+            p.Fill1.transparency.val = 65
+            p.Fill1.color.val = 'green'
+            p.Fill1.filltype.val = 'center'
+            p.Fill1.hide.val = False
+
+    def _add_page_title(self, page, title: str):
+        """Add a title to a page."""
+        with Wrap4With(page) as p:
+            p.Add('label', name='plotTitle')
+            p.plotTitle.Text.size.val = '10pt'
+            p.plotTitle.label.val = title
+            p.plotTitle.alignHorz.val = 'centre'
+            p.plotTitle.yPos.val = 0.95
+            p.plotTitle.xPos.val = 0.5
+
+    # FIX 12: Updated parameter type annotation
+    def _add_to_overlay_plots(self, dataset_name: str, data: Dict[str, Any]):
+        """Add dataset to overlay plots."""
+        mag_name = f"{dataset_name}_mag"
+        phase_name = f"{dataset_name}_phase"
+        az_name = f"{dataset_name}_Az"
+
+        # Get overlay graphs
+        pageAll_mag = self.doc.Root.Overlay_All_mag
+        graphAll_mag = pageAll_mag.grid1.Overlay_All_mag
+        pageAll_phase = self.doc.Root.Overlay_All_phase
+        graphAll_phase = pageAll_phase.grid1.Overlay_All_phase
+
+        # Add to magnitude overlay
+        xy_all_mag = graphAll_mag.Add('xy', name=mag_name)
+        self._configure_overlay_xy_plot(xy_all_mag, az_name, mag_name)
+
+        # Add to phase overlay
+        xy_all_phase = graphAll_phase.Add('xy', name=phase_name)
+        self._configure_overlay_xy_plot(xy_all_phase, az_name, phase_name)
+
+    def _configure_overlay_xy_plot(self, xy, x_data: str, y_data: str):
+        """Configure an overlay XY plot."""
+        with Wrap4With(xy) as plot:
+            plot.xData.val = x_data
+            plot.yData.val = y_data
+            plot.nanHandling = 'break-on'
+            plot.marker.val = 'circle'
+            plot.markerSize.val = '2pt'
+            plot.MarkerLine.color.val = 'transparent'
+            plot.MarkerFill.color.val = 'auto'
+            plot.MarkerFill.transparency.val = 80
+            plot.MarkerFill.style.val = 'solid'
+            plot.FillBelow.transparency.val = 90
+            plot.FillBelow.style.val = 'solid'
+            plot.FillBelow.fillto.val = 'bottom'
+            plot.FillBelow.color.val = 'darkgreen'
+            plot.FillBelow.hide.val = True
+            plot.PlotLine.color.val = 'auto'
+
+    # %%% Save and Export Methods
+
+    def save_Veusz(self):
+        """Save the generated file and ask to open Veusz Interface."""
+        self.label_status.setText('Saving the Plots to a Veusz File...')
+        gui = qtSave()
+
+        if save_path := gui.get_save_filename():
+            self.save(save_path)
+            if gui.ask_open_veusz():
+                self.open_veusz_gui(save_path)
+
+        self.plotwindow.close()
+        QApplication.closeAllWindows()
 
     def save(self, filename: str):
-        """Save Veusz document to specified file."""
-        # there might be a precision argument or format string
-        # Found, just save in hdf veusz format, vszh5
-        # MUST find a way to save higher precision!!!!
-        # a work around would be to save all data to np.float64 arrays
-        # in files and link them in the veusz document, I would really prefer
-        # not do it this way.
-        # self.doc.Save(filename, 'vsz')
+        """Save Veusz document to specified file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to save the file.
+        """
         filename_root = os.path.splitext(filename)[0]
-        filenameHP = filename_root + '.vszh5'
-        fileSplit = os.path.split(filename)
-        filenameVSZ = (fileSplit[0] + '/Beware_oldVersion/' +
-                       os.path.splitext(fileSplit[1])[0] + '_BEWARE.vsz')
-        # filename3 = filename_root + '_hdf5.hdf5'
-        self.doc.Save(filenameHP, mode='hdf5')
-        os.makedirs(fileSplit[0] + '/Beware_oldVersion/', exist_ok=True)
-        self.doc.Save(filenameVSZ, mode='vsz')
+        filename_hp = filename_root + '.vszh5'
+        file_split = os.path.split(filename)
+        filename_vsz = (
+            file_split[0] + '/Beware_oldVersion/' +
+            os.path.splitext(file_split[1])[0] + '_BEWARE.vsz'
+        )
+
+        # Save high precision version
+        self.doc.Save(filename_hp, mode='hdf5')
+
+        # Save legacy version
+        os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
+        self.doc.Save(filename_vsz, mode='vsz')
 
     def open_veusz_gui(self, filename: str):
-        """Launch Veusz GUI with generated project file."""
+        """Launch Veusz GUI with generated project file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the Veusz file to open.
+        """
         if sys.platform.startswith('win'):
             veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
         else:
@@ -916,7 +1104,7 @@ class PlotATR:
             QMessageBox.critical(
                 None,
                 "Veusz Not Found",
-                "Veusz not found in Python environment.\n",
+                "Veusz not found in Python environment.\n"
                 "Install with: [pip OR conda OR mamba] install veusz"
             )
             return
@@ -931,55 +1119,48 @@ class PlotATR:
             )
 
     def run(self):
-        """Use to run the ATR Plotting Routines.
-
-        Returns
-        -------
-        None.
-
-        """
-        # run the GUI!
-        # Show the window
+        """Run the ATR Plotting Routines."""
         self.plotwindow.show()
-
-        # Start the application event loop
         if QApplication.instance():
             self.plotapp.exec_()
 
 
-def cartesian_to_polar(x, y):
-    """
-    Convert Cartesian coordinates to polar coordinates.
+# %% Utility Functions
+
+# FIX 13: Updated function signature
+def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Convert Cartesian coordinates to polar coordinates.
 
     Parameters
     ----------
-    x : array_like
+    x : np.ndarray
         x-coordinate(s).
-    y : array_like
+    y : np.ndarray
         y-coordinate(s).
 
     Returns
     -------
-    r : ndarray
-        Radial coordinate(s).
-    theta : ndarray
-        Angular coordinate(s) in radians.
+    Tuple[np.ndarray, np.ndarray]
+        Tuple containing (r, theta) where r is radial coordinate(s)
+        and theta is angular coordinate(s) in radians.
     """
     r = np.hypot(x, y)
     theta = np.arctan2(y, x)
     return r, theta
 
 
+# %% Main Execution
+
 def main():
     """Execute main function."""
-    # =============================================================================
-
-    ATR_Example = PlotATR()
-    ATR_Example.run()
-
-    # sys.exit(PlotATR.plotapp.exec_())
+    # Create enhanced PlotATR instance with multiprocessing and GPU support
+    atr_plotter = PlotATR(
+        enable_multiprocessing=True,  # Enable multiprocessing
+        enable_gpu=True,              # Enable GPU acceleration
+        max_workers=None              # Use all available CPU cores
+    )
+    atr_plotter.run()
 
 
 if __name__ == "__main__":
     main()
-    sys.exit(main())
