@@ -35,8 +35,8 @@ from qtpy.QtWidgets import (
 )
 
 # %%% Debugging Modules
-from rich import inspect as richinspect
-import pdir
+# from rich import inspect as richinspect
+# import pdir
 
 # %% GPU Computing imports with fallback support
 
