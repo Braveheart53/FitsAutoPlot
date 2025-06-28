@@ -1,16 +1,7 @@
-"""Enhanced ATR AutoPlot with Multiprocessing and GPU Acceleration - FIXED.
-# %% Heading Info
-This version combines:
-• the multiprocessing/GPU fixes (magnitude data no longer re-converted to dB),
-• the RandS-style modern Qt interface, and
-• the original ATR plotting logic.
-
-Author: William W. Wallace
-Last updated: 2025-06-28
-"""
+"""Enhanced ATR AutoPlot with Multiprocessing and GPU Acceleration - FIXED."""
 
 # -*- coding: utf-8 -*-
-# %% Import Modules
+
 import multiprocessing
 import os
 import subprocess
@@ -20,11 +11,9 @@ from operator import itemgetter
 # FIX 1: Add comprehensive typing imports for Python < 3.9 compatibility
 from typing import List, Dict, Tuple, Optional, Union, Any
 
-# %%% Import Math and Plotting Modules
 import numpy as np
 import veusz.embed as vz
 
-# %%% Import GUI Modules
 from qtpy.QtGui import *
 from qtpy.QtWidgets import (
     QApplication,
@@ -37,12 +26,9 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-# Debugging Modules
 from rich import inspect as richinspect
 import pdir
 
-# %% Class Definitons
 # GPU Computing imports with fallback support
 try:
     import cupy as cp
@@ -715,6 +701,5 @@ def main():
     atr_plotter.run()
 
 
-# %% Main Execution
 if __name__ == "__main__":
     main()
