@@ -29,7 +29,6 @@ nuitka ^
     --show-progress ^
     --show-memory ^
     --plugin-enable=pyside6 ^
-    --plugin-enable=numpy ^
     --include-package=veusz ^
     --include-package-data=veusz ^
     --include-package=numpy ^
@@ -41,7 +40,7 @@ nuitka ^
     --nofollow-import-to=PyQt5 ^
     --nofollow-import-to=PyQt6 ^
     --nofollow-import-to=tk ^
-    --windows-console-mode=enable ^
+    --windows-console-mode=force ^
     --windows-icon-from-ico=GBT_2.ico ^
     --output-filename=ATR_AutoPlot.exe ^
     --remove-output ^
