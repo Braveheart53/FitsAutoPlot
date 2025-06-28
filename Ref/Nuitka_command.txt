@@ -41,8 +41,8 @@ nuitka ^
     --nofollow-import-to=PyQt5 ^
     --nofollow-import-to=PyQt6 ^
     --nofollow-import-to=tk ^
-    --windows-disable-console ^
-    --windows-icon-from-ico=icon.ico ^
+    --windows-console-mode=enable ^
+    --windows-icon-from-ico=GBT_2.ico ^
     --output-filename=ATR_AutoPlot.exe ^
     --remove-output ^
     ATR_AutoPlot.py
