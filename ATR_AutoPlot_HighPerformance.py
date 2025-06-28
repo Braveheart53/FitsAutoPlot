@@ -1,20 +1,13 @@
-"""Enhanced ATR AutoPlot with Multiprocessing and GPU Acceleration."""
+"""Enhanced ATR AutoPlot with Modern GUI Interface from RandS Implementation."""
+
 # %% Header
 # =============================================================================
 # Author: William W. Wallace
-#
-#
-#
-#
-# TODO: Somethis is amiss with magnitude data, check how this is processed
-# TODO: Checkout PyAntenna and stats calcs for the data
-#
+# Enhanced with Modern GUI Interface based on RandS implementation
+# 
 # This script provides automated plotting for GBO Outdoor Antenna Range
-# Data Files
-# with optional multiprocessing for file processing and GPU acceleration for
-# numerical computations.
+# Data Files with modern Qt interface, multiprocessing, and GPU acceleration.
 # =============================================================================
-
 
 # %% Module Imports
 import multiprocessing
@@ -24,23 +17,20 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from operator import itemgetter
 from typing import List, Optional, Tuple, Union
+import datetime
 
 # %%% Math and plotting Imports
 import numpy as np
 import veusz.embed as vz
 
-# %%% QtPy Imports
+# %%% Enhanced QtPy Imports for Modern GUI
 from qtpy.QtGui import *
+from qtpy.QtCore import Qt, QSize, QThread, Signal
 from qtpy.QtWidgets import (
-    QApplication,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QGroupBox, QListWidget, QCheckBox, QSpinBox, QProgressBar,
+    QTextEdit, QPushButton, QLabel, QLineEdit, QFileDialog,
+    QMessageBox, QSplitter
 )
 
 # %%% Debug Imports
@@ -70,8 +60,120 @@ except ImportError:
 # %%System Interface Modules
 os.environ['QT_API'] = 'pyside6'
 
-# %% Class and Function Defintions
+# %% Enhanced Threading Class for Non-blocking Processing
+class ATRProcessingThread(QThread):
+    """Thread for handling ATR file processing without blocking the GUI."""
 
+    progress_updated = Signal(int)
+    processing_finished = Signal(object)
+    error_occurred = Signal(str)
+    status_message = Signal(str)
+
+    def __init__(self, filenames, mp_config, gpu_accelerator):
+        """
+        Initialize ATR processing thread.
+
+        Parameters
+        ----------
+        filenames : list
+            List of ATR files to process.
+        mp_config : MultiprocessingConfig
+            Multiprocessing configuration.
+        gpu_accelerator : GPUAccelerator
+            GPU acceleration instance.
+        """
+        super().__init__()
+        self.filenames = filenames
+        self.mp_config = mp_config
+        self.gpu_accelerator = gpu_accelerator
+
+    def run(self):
+        """Execute ATR file processing in separate thread."""
+        try:
+            self.status_message.emit("Starting ATR file processing...")
+
+            if (self.mp_config.enable_multiprocessing and 
+                len(self.filenames) > 1):
+                processed_data = self._process_files_multiprocessing()
+            else:
+                processed_data = self._process_files_sequential()
+
+            self.processing_finished.emit(processed_data)
+
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def _process_files_multiprocessing(self) -> dict:
+        """Process files using multiprocessing."""
+        self.status_message.emit(
+            f"Processing {len(self.filenames)} files using "
+            f"{self.mp_config.max_workers} workers"
+        )
+
+        processed_data = {}
+        line_number = 13  # Zero-indexed line number for data
+
+        # Prepare file information for multiprocessing
+        file_info_list = [
+            (file_path, line_number, self.gpu_accelerator)
+            for file_path in self.filenames
+        ]
+
+        # Use ProcessPoolExecutor for better control and error handling
+        with ProcessPoolExecutor(
+            max_workers=self.mp_config.max_workers) as executor:
+
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(process_single_file, file_info): file_info[0]
+                for file_info in file_info_list
+            }
+
+            # Collect results as they complete
+            completed = 0
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                try:
+                    filename, data = future.result()
+                    if data is not None:
+                        processed_data[filename] = data
+                        self.status_message.emit(f"Successfully processed: {filename}")
+                    else:
+                        self.status_message.emit(f"Failed to process: {filename}")
+
+                    completed += 1
+                    progress = int((completed / len(self.filenames)) * 100)
+                    self.progress_updated.emit(progress)
+
+                except Exception as e:
+                    self.status_message.emit(f"Error processing {file_path}: {str(e)}")
+
+        return processed_data
+
+    def _process_files_sequential(self) -> dict:
+        """Process files sequentially (fallback method)."""
+        self.status_message.emit(f"Processing {len(self.filenames)} files sequentially")
+
+        processed_data = {}
+        line_number = 13
+
+        for i, file_path in enumerate(self.filenames):
+            filename, data = process_single_file(
+                (file_path, line_number, self.gpu_accelerator)
+            )
+
+            if data is not None:
+                processed_data[filename] = data
+                self.status_message.emit(f"Successfully processed: {filename}")
+            else:
+                self.status_message.emit(f"Failed to process: {filename}")
+
+            progress = int(((i + 1) / len(self.filenames)) * 100)
+            self.progress_updated.emit(progress)
+
+        return processed_data
+
+# %% Existing Classes with Enhancements (keeping original functionality)
 
 class GPUAccelerator:
     """Handles GPU-accelerated computations with cross-platform support."""
@@ -176,9 +278,9 @@ class GPUAccelerator:
 
         # Define OpenCL kernel for log operations
         kernel_code = """
-        __kernel void log_transform(__global float* input, 
-                                  __global float* output,
-                                  int n) {
+        __kernel void log_transform(__global float* input,
+                                   __global float* output,
+                                   int n) {
             int i = get_global_id(0);
             if (i < n) {
                 if (input[i] != 0.0f) {
@@ -206,7 +308,7 @@ class GPUAccelerator:
         """Taichi-based GPU operations."""
         @ti.kernel
         def log_transform(input_field: ti.template(),
-                          output_field: ti.template()) -> None:
+                         output_field: ti.template()) -> None:
             for i in input_field:
                 if input_field[i] != 0.0:
                     output_field[i] = 20.0 * ti.log10(ti.abs(input_field[i]))
@@ -253,7 +355,7 @@ class MultiprocessingConfig:
 
 
 def process_single_file(
-        file_info: Tuple[str, int, object]) -> Tuple[str, dict]:
+    file_info: Tuple[str, int, object]) -> Tuple[str, dict]:
     """Process a single ATR file with multiprocessing support.
 
     This function is designed to be used with multiprocessing pools.
@@ -273,7 +375,6 @@ def process_single_file(
     try:
         # Read file with optimized approach based on size
         filesize = os.path.getsize(file_path)
-
         if filesize < 10**7:  # < 10MB
             with open(file_path, 'rb') as file:
                 content = file.read().decode('ascii')
@@ -358,51 +459,6 @@ class switch:
         return self.value in args
 
 
-class qtSave:
-    """Handles all Qt-based user interactions."""
-
-    def __init__(self):
-        """Initialize Qt save handler."""
-        self.appSave = QApplication(sys.argv)
-
-    def closeEvent(self, event):
-        """Close the Event."""
-        QApplication.closeAllWindows()
-        event.accept()
-
-    def _select_sft_file(self, dialog):
-        """Handle file selection button click."""
-        fname, _ = QFileDialog.getOpenFileName(
-            dialog, "Open ATR File", "", "GBO ATR Files (*.atr)"
-        )
-
-        if fname:
-            self.selected_file = fname
-            self.file_label.setText(fname)
-
-    def _validate_selection(self, dialog):
-        """Validate file selection before accepting dialog."""
-        if not self.selected_file:
-            self.file_label.setText("Please select a file!")
-            return
-
-        dialog.accept()
-
-    def get_save_filename(self):
-        """Display file save dialog for Veusz project."""
-        return QFileDialog.getSaveFileName(
-            None, "Save Veusz Project", "",
-            "Veusz High Precision Files (*.vszh5)")[0]
-
-    def ask_open_veusz(self):
-        """Display dialog to open created file in Veusz GUI."""
-        msg = QMessageBox()
-        msg.setWindowTitle("Open in Veusz")
-        msg.setText("Would you like to open the file in Veusz?")
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        return msg.exec_() == QMessageBox.Yes
-
-
 class Wrap4With:
     """Used to add context management to a given object."""
 
@@ -423,49 +479,402 @@ class Wrap4With:
             self._resource.close()
         return None
 
+# %% Enhanced ATR GUI Class - Modern Interface from RandS Implementation
 
-class PlotATR:
-    """Class for importing, parsing, and plotting GBO Outdoor Range Data.
+class EnhancedATRMainWindow(QMainWindow):
+    """Enhanced ATR main window with modern Qt interface based on RandS implementation."""
 
-    Enhanced with multiprocessing and GPU acceleration capabilities.
-    """
+    def __init__(self):
+        """Initialize the enhanced ATR main window."""
+        super().__init__()
+        self.setWindowTitle("Enhanced ATR AutoPlot - GBO Outdoor Antenna Range")
+        self.setGeometry(100, 100, 900, 700)
 
-    def __init__(self, enable_multiprocessing: bool = True,
-                 enable_gpu: bool = True,
-                 max_workers: Optional[int] = None):
-        """Initialize the PlotATR Class.
+        # Initialize configuration
+        self.mp_config = MultiprocessingConfig()
+        self.gpu_accelerator = GPUAccelerator()
+
+        # Initialize ATR plotting functionality
+        self.atr_plotter = PlotATRCore(self.mp_config, self.gpu_accelerator)
+
+        # Setup UI
+        self._setup_ui()
+
+        # File list
+        self.selected_files = []
+        self.processing_thread = None
+
+    def _setup_ui(self):
+        """Set up the user interface with modern layout."""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        # Main layout with splitter for better organization
+        main_layout = QVBoxLayout(central_widget)
+        splitter = QSplitter(Qt.Vertical)
+        main_layout.addWidget(splitter)
+
+        # Top section for file selection and options
+        top_widget = QWidget()
+        top_layout = QVBoxLayout(top_widget)
+
+        # File selection section
+        file_group = QGroupBox("ATR File Selection")
+        file_layout = QVBoxLayout(file_group)
+
+        # File list widget
+        self.file_list_widget = QListWidget()
+        self.file_list_widget.setMinimumHeight(150)
+        self.file_list_widget.setSelectionMode(QListWidget.ExtendedSelection)
+        file_layout.addWidget(self.file_list_widget)
+
+        # File operation buttons
+        file_button_layout = QHBoxLayout()
+        self.browse_button = QPushButton("Browse ATR Files")
+        self.browse_button.clicked.connect(self._browse_atr_files)
+        file_button_layout.addWidget(self.browse_button)
+
+        self.clear_button = QPushButton("Clear Files")
+        self.clear_button.clicked.connect(self._clear_files)
+        file_button_layout.addWidget(self.clear_button)
+
+        file_button_layout.addStretch()
+        file_layout.addLayout(file_button_layout)
+
+        top_layout.addWidget(file_group)
+
+        # Plot configuration section
+        plot_config_group = QGroupBox("Plot Configuration")
+        plot_config_layout = QVBoxLayout(plot_config_group)
+
+        # Plot title
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel("Plot Title:"))
+        self.plot_title_edit = QLineEdit("GBO Outdoor Antenna Range Pattern")
+        title_layout.addWidget(self.plot_title_edit)
+        plot_config_layout.addLayout(title_layout)
+
+        # Dataset name
+        dataset_layout = QHBoxLayout()
+        dataset_layout.addWidget(QLabel("Dataset Name:"))
+        self.dataset_name_edit = QLineEdit()
+        dataset_layout.addWidget(self.dataset_name_edit)
+        plot_config_layout.addLayout(dataset_layout)
+
+        top_layout.addWidget(plot_config_group)
+
+        # Processing options section
+        options_group = QGroupBox("Processing Options")
+        options_layout = QVBoxLayout(options_group)
+
+        # Multiprocessing options
+        self.enable_mp_checkbox = QCheckBox("Enable Multiprocessing")
+        self.enable_mp_checkbox.setChecked(self.mp_config.enable_multiprocessing)
+        self.enable_mp_checkbox.stateChanged.connect(self._update_mp_config)
+        options_layout.addWidget(self.enable_mp_checkbox)
+
+        # CPU cores selection
+        cpu_layout = QHBoxLayout()
+        cpu_layout.addWidget(QLabel("CPU Cores:"))
+        self.cpu_spinbox = QSpinBox()
+        self.cpu_spinbox.setMinimum(1)
+        self.cpu_spinbox.setMaximum(multiprocessing.cpu_count())
+        self.cpu_spinbox.setValue(self.mp_config.max_workers)
+        self.cpu_spinbox.valueChanged.connect(self._update_cpu_config)
+        cpu_layout.addWidget(self.cpu_spinbox)
+        cpu_layout.addStretch()
+        options_layout.addLayout(cpu_layout)
+
+        # GPU options
+        self.enable_gpu_checkbox = QCheckBox("Enable GPU Processing")
+        self.enable_gpu_checkbox.setChecked(self.gpu_accelerator.gpu_enabled)
+        self.enable_gpu_checkbox.stateChanged.connect(self._update_gpu_config)
+        options_layout.addWidget(self.enable_gpu_checkbox)
+
+        # GPU backend info
+        gpu_info_label = QLabel(
+            f"GPU Backend: {self.gpu_accelerator.backend or 'None'}")
+        gpu_info_label.setStyleSheet("QLabel { color: gray; font-style: italic; }")
+        options_layout.addWidget(gpu_info_label)
+
+        top_layout.addWidget(options_group)
+        splitter.addWidget(top_widget)
+
+        # Bottom section for progress and status
+        bottom_widget = QWidget()
+        bottom_layout = QVBoxLayout(bottom_widget)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        bottom_layout.addWidget(self.progress_bar)
+
+        # Status text area
+        status_group = QGroupBox("Status Messages")
+        status_layout = QVBoxLayout(status_group)
+        self.status_text = QTextEdit()
+        self.status_text.setMaximumHeight(150)
+        self.status_text.setReadOnly(True)
+        self.status_text.setFont(QFont("Consolas", 9))
+        status_layout.addWidget(self.status_text)
+        bottom_layout.addWidget(status_group)
+
+        # Control buttons
+        button_layout = QHBoxLayout()
+
+        self.process_button = QPushButton("Process and Create Plots")
+        self.process_button.clicked.connect(self._process_and_plot)
+        self.process_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        button_layout.addWidget(self.process_button)
+
+        self.save_button = QPushButton("Save Veusz Project")
+        self.save_button.clicked.connect(self._save_project)
+        self.save_button.setEnabled(False)
+        self.save_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                padding: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        button_layout.addWidget(self.save_button)
+
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.close)
+        self.close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                border: none;
+                padding: 8px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        """)
+        button_layout.addWidget(self.close_button)
+
+        bottom_layout.addLayout(button_layout)
+        splitter.addWidget(bottom_widget)
+
+        # Set splitter proportions
+        splitter.setSizes([400, 300])
+
+        # Initialize status
+        self._log_message("Enhanced ATR AutoPlot initialized")
+        self._log_message(f"Multiprocessing: {'Enabled' if self.mp_config.enable_multiprocessing else 'Disabled'} ({self.mp_config.max_workers} workers)")
+        self._log_message(f"GPU Acceleration: {'Enabled' if self.gpu_accelerator.gpu_enabled else 'Disabled'} ({self.gpu_accelerator.backend or 'None'})")
+
+    def _browse_atr_files(self):
+        """Open file dialog to select multiple ATR files."""
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.ExistingFiles)
+        file_dialog.setNameFilter("GBO ATR Files (*.atr);;All Files (*)")
+        file_dialog.setWindowTitle("Select ATR Files")
+
+        if file_dialog.exec_() == QFileDialog.Accepted:
+            selected_files = file_dialog.selectedFiles()
+            # Remove duplicates
+            new_files = [f for f in selected_files if f not in self.selected_files]
+            self.selected_files.extend(new_files)
+            self._update_file_list()
+            self._log_message(f"Selected {len(new_files)} new files ({len(self.selected_files)} total)")
+
+    def _clear_files(self):
+        """Clear the selected files list."""
+        self.selected_files.clear()
+        self._update_file_list()
+        self._log_message("File list cleared")
+
+    def _update_file_list(self):
+        """Update the file list widget."""
+        self.file_list_widget.clear()
+        for file_path in self.selected_files:
+            self.file_list_widget.addItem(os.path.basename(file_path))
+
+    def _update_mp_config(self, state):
+        """Update multiprocessing configuration."""
+        self.mp_config.enable_multiprocessing = state == Qt.Checked
+        self._log_message(
+            f"Multiprocessing: {'Enabled' if self.mp_config.enable_multiprocessing else 'Disabled'}")
+
+    def _update_cpu_config(self, value):
+        """Update CPU cores configuration."""
+        self.mp_config.max_workers = value
+        self._log_message(f"CPU cores set to: {value}")
+
+    def _update_gpu_config(self, state):
+        """Update GPU processing configuration."""
+        # Note: This only updates the checkbox state for display
+        # Actual GPU reinitialization would require more complex logic
+        enabled = state == Qt.Checked
+        self._log_message(
+            f"GPU processing preference: {'Enabled' if enabled else 'Disabled'}")
+
+    def _log_message(self, message):
+        """Add message to status text with timestamp."""
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.status_text.append(f"[{timestamp}] {message}")
+        # Auto-scroll to bottom
+        self.status_text.moveCursor(self.status_text.textCursor().End)
+
+    def _process_and_plot(self):
+        """Process selected files and create plots."""
+        if not self.selected_files:
+            QMessageBox.warning(
+                self, "Warning", "Please select ATR files first.")
+            return
+
+        self.process_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+
+        # Update plot title if provided
+        if self.plot_title_edit.text().strip():
+            self.atr_plotter.plotTitle = self.plot_title_edit.text().strip()
+
+        # Start processing thread
+        self.processing_thread = ATRProcessingThread(
+            self.selected_files,
+            self.mp_config,
+            self.gpu_accelerator
+        )
+
+        self.processing_thread.progress_updated.connect(
+            self.progress_bar.setValue)
+        self.processing_thread.processing_finished.connect(
+            self._on_processing_finished)
+        self.processing_thread.error_occurred.connect(
+            self._on_processing_error)
+        self.processing_thread.status_message.connect(
+            self._log_message)
+
+        self.processing_thread.start()
+        self._log_message("Processing started...")
+
+    def _on_processing_finished(self, processed_data):
+        """Handle processing completion."""
+        self.progress_bar.setVisible(False)
+        self.process_button.setEnabled(True)
+
+        successful_files = [k for k, v in processed_data.items() if v is not None]
+        failed_files = [k for k, v in processed_data.items() if v is None]
+
+        self._log_message(
+            f"Processing completed: {len(successful_files)} successful, {len(failed_files)} failed")
+
+        if failed_files:
+            error_msg = "\n".join(failed_files)
+            QMessageBox.warning(self, "Processing Errors",
+                              f"Some files failed to process:\n{error_msg}")
+
+        if successful_files:
+            try:
+                self._create_plots(processed_data)
+                self.save_button.setEnabled(True)
+                self._log_message("Plots created successfully")
+            except Exception as e:
+                QMessageBox.critical(self, "Plot Creation Error", str(e))
+                self._log_message(f"Plot creation failed: {e}")
+
+    def _on_processing_error(self, error_message):
+        """Handle processing error."""
+        self.progress_bar.setVisible(False)
+        self.process_button.setEnabled(True)
+        self._log_message(f"Processing error: {error_message}")
+        QMessageBox.critical(self, "Processing Error", error_message)
+
+    def _create_plots(self, processed_data):
+        """Create Veusz plots from processed data."""
+        self._log_message("Creating Veusz plots...")
+        self.atr_plotter._create_plots_from_data(processed_data)
+
+    def _save_project(self):
+        """Save Veusz project."""
+        file_dialog = QFileDialog()
+        save_path, _ = file_dialog.getSaveFileName(
+            self, "Save Veusz Project", "",
+            "Veusz High Precision Files (*.vszh5);;All Files (*)"
+        )
+
+        if save_path:
+            try:
+                self.atr_plotter.save(save_path)
+                self._log_message(f"Project saved: {save_path}")
+
+                # Ask to open in Veusz
+                reply = QMessageBox.question(
+                    self, "Open in Veusz",
+                    "Would you like to open the file in Veusz?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+
+                if reply == QMessageBox.Yes:
+                    self.atr_plotter.open_veusz_gui(save_path)
+
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error",
+                                   f"Failed to save project: {e}")
+                self._log_message(f"Save error: {e}")
+
+    def closeEvent(self, event):
+        """Handle window close event."""
+        if self.processing_thread and self.processing_thread.isRunning():
+            reply = QMessageBox.question(
+                self, "Close Application",
+                "Processing is still running. Do you want to close anyway?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                self.processing_thread.terminate()
+                self.processing_thread.wait()
+            else:
+                event.ignore()
+                return
+
+        event.accept()
+
+# %% ATR Core Plotting Class - Maintains Original Functionality
+
+class PlotATRCore:
+    """Core ATR plotting functionality separated from GUI for better organization."""
+
+    def __init__(self, mp_config: MultiprocessingConfig, gpu_accelerator: GPUAccelerator):
+        """Initialize the PlotATR Core functionality.
 
         Parameters
         ----------
-        enable_multiprocessing : bool, optional
-            Enable multiprocessing for file operations. Default is True.
-        enable_gpu : bool, optional
-            Enable GPU acceleration for computations. Default is True.
-        max_workers : int, optional
-            Maximum number of worker processes. If None, uses CPU count.
+        mp_config : MultiprocessingConfig
+            Multiprocessing configuration.
+        gpu_accelerator : GPUAccelerator
+            GPU acceleration instance.
         """
-        # Initialize multiprocessing configuration
-        self.mp_config = MultiprocessingConfig(
-            enable_multiprocessing, max_workers
-        )
-
-        # Initialize GPU accelerator
-        self.gpu_accelerator = GPUAccelerator(enable_gpu)
-
-        # Initialize Qt application
-        if not hasattr(self, 'plotApp'):
-            self.plotapp = (
-                QApplication.instance() or QApplication(sys.argv)
-            )
-
-        self.plotwindow = QWidget()
-        self.plotwindow.setWindowTitle('Enhanced ATR Plot Interface')
-        self.plotwindow.resize(600, 400)
-
-        # Create UI elements
-        self._create_ui_elements()
-        self._setup_layout()
-        self._connect_signals()
+        self.mp_config = mp_config
+        self.gpu_accelerator = gpu_accelerator
 
         # Initialize file and plot information
         self.fileParts = None
@@ -483,226 +892,6 @@ class PlotATR:
             self.doc = vz.Embedded(
                 'Enhanced GBO ATR Autoplotter', hidden=False)
             self.doc.EnableToolbar()
-
-    def _create_ui_elements(self):
-        """Create UI elements for the interface."""
-        # Labels
-        self.label_filename = QLabel('Filename(s):')
-        self.label_plot_title = QLabel('Plot Title:')
-        self.label_data_set = QLabel('Data Set Name:')
-        self.label_status = QLabel('Status Messages')
-        self.label_mp_status = QLabel(
-            f'Multiprocessing: {"Enabled" if self.mp_config.enable_multiprocessing else "Disabled"} '
-            f'({self.mp_config.max_workers} workers)'
-        )
-        self.label_gpu_status = QLabel(
-            f'GPU Acceleration: {"Enabled" if self.gpu_accelerator.gpu_enabled else "Disabled"} '
-            f'({self.gpu_accelerator.backend or "None"})'
-        )
-
-        # Input fields
-        self.lineedit_filename = QLineEdit()
-        self.lineedit_plot_title = QLineEdit()
-        self.lineedit_data_set = QLineEdit()
-
-        # Buttons
-        self.button_browse = QPushButton('Browse')
-        self.button_create_plots = QPushButton('Create Plots')
-        self.button_save_close = QPushButton('Save and Close')
-
-    def _setup_layout(self):
-        """Setup the layout for the UI."""
-        # Filename field with Browse button
-        self.filename_layout = QHBoxLayout()
-        self.filename_layout.addWidget(self.lineedit_filename)
-        self.filename_layout.addWidget(self.button_browse)
-
-        # Main layout
-        self.main_layout = QVBoxLayout()
-
-        # Add filename section
-        self.main_layout.addWidget(self.label_filename)
-        self.main_layout.addLayout(self.filename_layout)
-
-        # Add plot title field
-        self.main_layout.addWidget(self.label_plot_title)
-        self.main_layout.addWidget(self.lineedit_plot_title)
-
-        # Add dataset name field
-        self.main_layout.addWidget(self.label_data_set)
-        self.main_layout.addWidget(self.lineedit_data_set)
-
-        # Add status labels
-        self.main_layout.addSpacing(20)
-        self.main_layout.addWidget(self.label_mp_status)
-        self.main_layout.addWidget(self.label_gpu_status)
-        self.main_layout.addWidget(self.label_status)
-
-        # Add action buttons
-        self.main_layout.addWidget(self.button_create_plots)
-        self.main_layout.addWidget(self.button_save_close)
-
-        # Set main layout
-        self.plotwindow.setLayout(self.main_layout)
-
-    def _connect_signals(self):
-        """Connect button signals to their respective methods."""
-        self.button_create_plots.clicked.connect(self.create_plot)
-        self.button_save_close.clicked.connect(self.save_Veusz)
-        self.button_browse.clicked.connect(self._select_atr_files)
-
-    def save_Veusz(self):
-        """Save the generated file and ask to open Veusz Interface."""
-        self.label_status.setText('Saving the Plots to a Veusz File...')
-        gui = qtSave()
-
-        if save_path := gui.get_save_filename():
-            self.save(save_path)
-            if gui.ask_open_veusz():
-                self.open_veusz_gui(save_path)
-
-        self.plotwindow.close()
-        QApplication.closeAllWindows()
-
-    def _select_atr_files(self, parent: QWidget = None,
-                          caption: str = "Select Files",
-                          directory: str = "",
-                          filter: str = "GBO ATR Files (*.atr)"):
-        """Open a file dialog for multiple file selection using qtpy.
-
-        Parameters
-        ----------
-        parent : QWidget, optional
-            The parent widget for the dialog.
-        caption : str, optional
-            The dialog window title.
-        directory : str, optional
-            The initial directory shown in the dialog.
-        filter : str, optional
-            File type filter string.
-
-        Returns
-        -------
-        Tuple[List[str], List[Tuple[str, str]]]
-            Tuple containing (filenames, file_parts).
-        """
-        self.label_status.setText('Selecting Input Files...')
-
-        if parent is None or not parent:
-            parent = QWidget()
-
-        self.filenames, _ = QFileDialog.getOpenFileNames(
-            parent, caption, directory, filter
-        )
-
-        if not self.filenames:
-            self.label_status.setText('No files selected.')
-            return [], []
-
-        # Process file parts
-        self.fileParts = [None] * len(self.filenames)
-        for i, filename in enumerate(self.filenames):
-            self.fileParts[i] = os.path.split(filename)
-
-        if self.fileParts[0][0]:
-            filenames_only = list(map(itemgetter(1), self.fileParts))
-            self.lineedit_filename.setText(' ; '.join(filenames_only))
-            self.label_status.setText(
-                f'Selected {len(self.filenames)} files for processing.'
-            )
-
-        return self.filenames, self.fileParts
-
-    def create_plot(self):
-        """Create the 2D plots for all data with optional multiprocessing."""
-        if not self.filenames:
-            self.label_status.setText("Please select at least one file.")
-            return
-
-        self.label_status.setText('Processing files and creating plots...')
-
-        # Process files with or without multiprocessing
-        if (self.mp_config.enable_multiprocessing and
-                len(self.filenames) > 1):
-            processed_data = self._process_files_multiprocessing()
-        else:
-            processed_data = self._process_files_sequential()
-
-        # Create plots using processed data
-        self._create_plots_from_data(processed_data)
-
-        self.label_status.setText(
-            'All Selected Data Has Been Processed and Plotted.'
-        )
-
-    def _process_files_multiprocessing(self) -> dict:
-        """Process files using multiprocessing.
-
-        Returns
-        -------
-        dict
-            Dictionary containing processed data for each file.
-        """
-        print(f"Processing {len(self.filenames)} files using "
-              f"{self.mp_config.max_workers} workers")
-
-        processed_data = {}
-        line_number = 13  # Zero-indexed line number for data
-
-        # Prepare file information for multiprocessing
-        file_info_list = [
-            (file_path, line_number, self.gpu_accelerator)
-            for file_path in self.filenames
-        ]
-
-        # Use ProcessPoolExecutor for better control and error handling
-        with ProcessPoolExecutor(
-                max_workers=self.mp_config.max_workers) as executor:
-            # Submit all tasks
-            future_to_file = {
-                executor.submit(process_single_file, file_info): file_info[0]
-                for file_info in file_info_list
-            }
-
-            # Collect results as they complete
-            for future in as_completed(future_to_file):
-                file_path = future_to_file[future]
-                try:
-                    filename, data = future.result()
-                    if data is not None:
-                        processed_data[filename] = data
-                        print(f"Successfully processed: {filename}")
-                    else:
-                        print(f"Failed to process: {filename}")
-                except Exception as e:
-                    print(f"Error processing {file_path}: {str(e)}")
-
-        return processed_data
-
-    def _process_files_sequential(self) -> dict:
-        """Process files sequentially (fallback method).
-
-        Returns
-        -------
-        dict
-            Dictionary containing processed data for each file.
-        """
-        print(f"Processing {len(self.filenames)} files sequentially")
-
-        processed_data = {}
-        line_number = 13
-
-        for file_path in self.filenames:
-            filename, data = process_single_file(
-                (file_path, line_number, self.gpu_accelerator)
-            )
-            if data is not None:
-                processed_data[filename] = data
-                print(f"Successfully processed: {filename}")
-            else:
-                print(f"Failed to process: {filename}")
-
-        return processed_data
 
     def _create_plots_from_data(self, processed_data: dict):
         """Create Veusz plots from processed data.
@@ -752,8 +941,8 @@ class PlotATR:
             self.doc.Root.colorTheme.val = 'max128'
 
     def _configure_overlay_graph(self, graph, title: str, x_label: str,
-                                 y_label: str, y_min: float, y_max: float,
-                                 x_min: float, x_max: float):
+                                y_label: str, y_min: float, y_max: float,
+                                x_min: float, x_max: float):
         """Configure an overlay graph with standard settings.
 
         Parameters
@@ -904,8 +1093,8 @@ class PlotATR:
         self._configure_polar_plot(rtheta_phase, phase_name, az_name)
 
     def _configure_standard_graph(self, graph, title: str, x_label: str,
-                                  y_label: str, y_min: float, y_max: float,
-                                  x_min: float, x_max: float):
+                                 y_label: str, y_min: float, y_max: float,
+                                 x_min: float, x_max: float):
         """Configure a standard XY graph."""
         with Wrap4With(graph) as g:
             g.Add('label', name='plotTitle')
@@ -994,6 +1183,7 @@ class PlotATR:
         # Get overlay graphs
         pageAll_mag = self.doc.Root.Overlay_All_mag
         graphAll_mag = pageAll_mag.grid1.Overlay_All_mag
+
         pageAll_phase = self.doc.Root.Overlay_All_phase
         graphAll_phase = pageAll_phase.grid1.Overlay_All_phase
 
@@ -1078,12 +1268,6 @@ class PlotATR:
                 f"Failed to start Veusz: {str(e)}"
             )
 
-    def run(self):
-        """Run the ATR Plotting Routines."""
-        self.plotwindow.show()
-        if QApplication.instance():
-            self.plotapp.exec_()
-
 
 def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Convert Cartesian coordinates to polar coordinates.
@@ -1098,25 +1282,26 @@ def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.nda
     Returns
     -------
     Tuple[np.ndarray, np.ndarray]
-        Tuple containing (r, theta) where r is radial coordinate(s) 
+        Tuple containing (r, theta) where r is radial coordinate(s)
         and theta is angular coordinate(s) in radians.
     """
     r = np.hypot(x, y)
     theta = np.arctan2(y, x)
     return r, theta
 
-# %%% Main Function
 
-
+# %%% Enhanced Main Function
 def main():
-    """Execute main function."""
-    # Create enhanced PlotATR instance with multiprocessing and GPU support
-    atr_plotter = PlotATR(
-        enable_multiprocessing=True,  # Enable multiprocessing
-        enable_gpu=True,              # Enable GPU acceleration
-        max_workers=None              # Use all available CPU cores
-    )
-    atr_plotter.run()
+    """Execute main function with enhanced GUI."""
+    # Create enhanced ATR plotter application
+    app = QApplication(sys.argv)
+
+    # Create and show main window
+    window = EnhancedATRMainWindow()
+    window.show()
+
+    # Run application
+    sys.exit(app.exec_())
 
 
 # %% Main Execution
