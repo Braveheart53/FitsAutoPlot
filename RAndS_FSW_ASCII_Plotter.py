@@ -1,171 +1,87 @@
 # -*- coding: utf-8 -*-
+
 """
 =============================================================================
-# %% Header Info
---------
+Enhanced R&S FSW ASCII Plotter with Multiprocessing and GPU Support
 
-Created on 2025-06-17
+Created on 2025-06-28
+Enhanced version with parallel processing and GPU acceleration capabilities
 
-# %%% Author Information
-@author: William W. Wallace
+Author: William W. Wallace (Enhanced)
 Author Email: wwallace@nrao.edu
 Author Secondary Email: naval.antennas@gmail.com
 Author Business Phone: +1 (304) 456-2216
 
-
-# %%% Revisions
---------
-Utilizing Semantic Schema as External Release.Internal Release.Working version
-
-# %%%% 0.0.1: Script to run in consol description
-Date: 2025-06-17
-# %%%%% Function Descriptions
-        main: main script body
-        select_file: utilzing module os, select multiple files for processing
-
-# %%%%% Variable Descriptions
-    Define all utilized variables
-        file_path: path(s) to selected files for processing
-
-# %%%%% More Info
-
-Utilizing Semantic Schema as External Release.Internal Release.Working version
-
-# %%%% 0.0.2: Script to run in consol description
-Date: 2025-06-19
-# %%%%% Function Descriptions
-        main: main script body
-        select_file: utilzing module os, select multiple files for processing
-
-# %%%%% Variable Descriptions
-    Define all utilized variables
-        file_path: path(s) to selected files for processing
-
-# %%%%% More Info
-Version 0.0.1 works as expected, but the pages are not nested under the file
-of origin and this makes it hard to explore. This version will correct that 
-issue by creating a parent page and nesting all plots from that file under that
-parent.
-
-So yeah, thats not how pages work. Not possible. But still using this version
-to clean up the code and putting in markers with transparency.
-
-# %%%% 0.1.0: Script to run in consol description
-Date: 2025-06-23
-# %%%%% Function Descriptions
-        main: main script body
-        select_file: utilzing module os, select multiple files for processing
-
-# %%%%% Variable Descriptions
-    Define all utilized variables
-        file_path: path(s) to selected files for processing
-
-# %%%%% More Info
-Works to import as many files as the user can select in windows,
-in linux, only one file can be selected by the gui (need to see
-                                                    if I can fix this)
-This version also creates a single plot with all scatter plots overlaid in it.
-
-TODO
-1. Make file selection in linux work with multiple files
+Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 =============================================================================
 """
-
-# event loop QApplication.exec_()
+# TODO: Trouble shoot processing lag and ensure file saving works
 # %% Import all required modules
-# %%% GUI Module Imports
-# %%%% QtPy
+
+# %%% GUI Module Imports - QtPy for cross-platform compatibility
 from qtpy.QtGui import *
-from qtpy.QtCore import Qt, QSize
+from qtpy.QtCore import Qt, QSize, QThread, Signal
 from qtpy.QtWidgets import (
-    QApplication,
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QFileDialog,
-    QLabel,
-    QRadioButton,
-    QButtonGroup,
-    QMessageBox
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+    QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+    QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+    QSpinBox, QGroupBox, QListWidget, QSplitter
 )
-# %%%% PyQt 6 GUI
-# =============================================================================
-# from PyQt6.QtGui import *
-# from PyQt6.QtWidgets import (QApplication, QPushButton, QMainWindow, QLabel)
-# from PyQt6.QtCore import Qt, QSize
-# =============================================================================
-# %%%% PySide6
-# =============================================================================
-# from PySide6.QtWidgets import QApplication, QWidget
-# =============================================================================
-# %%%% tkinter (essentially a Tcl wrapper)
-import tkinter as tk
-from tkinter import filedialog
-from tkinter.filedialog import askopenfilenames
-# %%% Astronomy Modules
-# =============================================================================
-# from astropy.io import fits as pyfits
-# from astropy.table import QTable as astroQTable
-# from astropy import units as astroU
-# from astropy import coordinates as astroCoord
-# from astropy.cosmology import WMAP7
-# from astropy.table import Table as astroTable
-# from astropy.wcs import WCS
-# =============================================================================
-# %%% Math Modules and others
-# import pandas as pd
-# import xarray as xr
+
+# %%% Math and Processing Modules
 import numpy as np
-# import skrf as rf
 from operator import itemgetter
 import re
 from dataclasses import dataclass
+
 # %%% System Interface Modules
 import os
-# import time as time
 import sys
 import subprocess
+import psutil  # For CPU count detection
+
+# %%% Parallel Processing Modules
+import multiprocessing as mp
+from multiprocessing import Pool, cpu_count
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import threading
+
+# %%% GPU Acceleration Modules
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+
+try:
+    import pyopencl as cl
+    PYOPENCL_AVAILABLE = True
+except ImportError:
+    PYOPENCL_AVAILABLE = False
+
 # %%% Plotting Environment
 import veusz.embed as embed
-# from FITS_AutoPlot import VZPlot
-# import pydoc
-# %%% File type Export/Import
-# =============================================================================
-# import h5py as h5
-# from scipy.io import savemat
-from fastest_ascii_import import fastest_file_parser as fparser
-# =============================================================================
-# %%% Debug and Console Display
-# =============================================================================
-import pdir
-from rich import inspect as richinspect
-from rich import pretty
-import inspect
-from pprint import pprint
-# =============================================================================
-# %%% Parallel Processing Modules
-# =============================================================================
-# from multiprocessing import Pool  # udpate when you learn it!
-# from multiprocessing import Process
-# from multiprocess import Pool
-# from multiprocess import Process
-# =============================================================================
-# %%% GPU Acceleration
-# =============================================================================
-# # Cupy is numpy implementation in CUDA for GPU use, need to learn more
-# import cupy
-# from cuda import cuda, nvrtc  # need to learn this as well, see class below
-# =============================================================================
 
-# %% Class and Function Definitons
+# %%% File Processing
+from fastest_ascii_import import fastest_file_parser as fparser
+
+# %% Configuration and Data Classes
+
+
+@dataclass
+class ProcessingConfig:
+    """Configuration class for processing settings."""
+    enable_multiprocessing: bool = False
+    enable_gpu_processing: bool = False
+    use_opencl: bool = True  # Prefer OpenCL for cross-platform compatibility
+    num_processes: int = cpu_count()
+    max_workers: int = cpu_count()
+    chunk_size: int = 1000
 
 
 @dataclass
 class plotDescInfo:
-    """
-    Setting up general plot info class to update as needed
-    """
+    """Setting up general plot info class to update as needed."""
     xAxis_label: str
     yAxis_label: str
     graph_notes: str
@@ -173,88 +89,568 @@ class plotDescInfo:
     base_name: str
     first_plot: bool
 
+# %% GPU Processing Classes
 
-class qtGUI:
-    """Handles all Qt-based user interactions."""
+
+class GPUProcessor:
+    """Handles GPU acceleration using either CuPy or PyOpenCL."""
+
+    def __init__(self, config: ProcessingConfig):
+        """
+        Initialize GPU processor based on available libraries.
+
+        Parameters
+        ----------
+        config : ProcessingConfig
+            Configuration object containing GPU settings.
+        """
+        self.config = config
+        self.gpu_available = False
+        self.context = None
+        self.queue = None
+
+        if config.enable_gpu_processing:
+            self._initialize_gpu()
+
+    def _initialize_gpu(self):
+        """Initialize GPU context based on available libraries."""
+        if self.config.use_opencl and PYOPENCL_AVAILABLE:
+            self._initialize_opencl()
+        elif CUPY_AVAILABLE:
+            self._initialize_cupy()
+        else:
+            print("No GPU libraries available. Falling back to CPU processing.")
+
+    def _initialize_opencl(self):
+        """Initialize OpenCL context for cross-platform GPU support."""
+        try:
+            platforms = cl.get_platforms()
+            if platforms:
+                # Select first available platform and device
+                platform = platforms[0]
+                devices = platform.get_devices(cl.device_type.GPU)
+                if not devices:
+                    devices = platform.get_devices(cl.device_type.CPU)
+
+                if devices:
+                    self.context = cl.Context(devices=[devices[0]])
+                    self.queue = cl.CommandQueue(self.context)
+                    self.gpu_available = True
+                    print(f"OpenCL initialized with device: {devices[0].name}")
+        except Exception as e:
+            print(f"OpenCL initialization failed: {e}")
+
+    def _initialize_cupy(self):
+        """Initialize CuPy for NVIDIA GPU acceleration."""
+        try:
+            cp.cuda.Device(0).use()
+            self.gpu_available = True
+            print("CuPy initialized successfully")
+        except Exception as e:
+            print(f"CuPy initialization failed: {e}")
+
+    def process_array_gpu(self, data_array):
+        """
+        Process numpy array using GPU acceleration.
+
+        Parameters
+        ----------
+        data_array : numpy.ndarray
+            Input data array to process.
+
+        Returns
+        -------
+        numpy.ndarray
+            Processed data array.
+        """
+        if not self.gpu_available:
+            return data_array
+
+        try:
+            if self.config.use_opencl and self.context:
+                return self._process_opencl(data_array)
+            elif CUPY_AVAILABLE:
+                return self._process_cupy(data_array)
+        except Exception as e:
+            print(f"GPU processing failed: {e}. Falling back to CPU.")
+
+        return data_array
+
+    def _process_opencl(self, data_array):
+        """Process data using OpenCL."""
+        # Create OpenCL buffers
+        mf = cl.mem_flags
+        data_buffer = cl.Buffer(self.context, mf.READ_WRITE | mf.COPY_HOST_PTR,
+                                hostbuf=data_array.astype(np.float32))
+
+        # Simple kernel for demonstration (can be replaced with more complex operations)
+        kernel_source = """
+        __kernel void process_data(__global float* data) {
+            int gid = get_global_id(0);
+            // Example: apply some mathematical operation
+            data[gid] = data[gid] * 1.0f;  // Identity operation for now
+        }
+        """
+
+        program = cl.Program(self.context, kernel_source).build()
+        kernel = program.process_data
+
+        # Execute kernel
+        kernel(self.queue, (len(data_array),), None, data_buffer)
+
+        # Read back results
+        result = np.empty_like(data_array, dtype=np.float32)
+        cl.enqueue_copy(self.queue, result, data_buffer)
+        self.queue.finish()
+
+        return result.astype(data_array.dtype)
+
+    def _process_cupy(self, data_array):
+        """Process data using CuPy."""
+        gpu_array = cp.asarray(data_array)
+        # Example processing (can be replaced with more complex operations)
+        processed_gpu = gpu_array * 1.0  # Identity operation for now
+        return cp.asnumpy(processed_gpu)
+
+# %% Multiprocessing Worker Functions
+
+
+def process_file_worker(file_info):
+    """
+    Worker function for processing individual SFT files in parallel.
+
+    Parameters
+    ----------
+    file_info : tuple
+        Tuple containing (filename, search_strings, sft_lines, config).
+
+    Returns
+    -------
+    dict
+        Processed file data.
+    """
+    filename, search_strings, sft_lines, config = file_info
+
+    try:
+        # Parse the file
+        data_returned = fparser(filename, line_targets=sft_lines,
+                                string_patterns=search_strings)
+
+        # Initialize GPU processor if enabled
+        if config.enable_gpu_processing:
+            gpu_processor = GPUProcessor(config)
+
+            # Process data arrays with GPU if available
+            for key, data_match in data_returned['data_matches'].items():
+                if 'extracted_value' in data_match:
+                    data_array = np.array(data_match['extracted_value'])
+                    processed_array = gpu_processor.process_array_gpu(
+                        data_array)
+                    data_returned['data_matches'][key]['extracted_value'] = processed_array.tolist(
+                    )
+
+        return {
+            'filename': filename,
+            'data': data_returned,
+            'success': True,
+            'error': None
+        }
+    except Exception as e:
+        return {
+            'filename': filename,
+            'data': None,
+            'success': False,
+            'error': str(e)
+        }
+
+
+def extract_with_regex(inputText: str, delim: str = ';'):
+    """
+    Extract all substrings enclosed by the same delimiter using regex.
+
+    Parameters
+    ----------
+    inputText : str
+        Input text to search.
+    delim : str
+        Delimiter character.
+
+    Returns
+    -------
+    list
+        List of extracted strings.
+    """
+    esc = re.escape(delim)
+    pattern = rf"{esc}(.*?){esc}"
+    return re.findall(pattern, inputText)
+
+# %% Enhanced Qt GUI Classes
+
+
+class FileProcessingThread(QThread):
+    """Thread for handling file processing without blocking the GUI."""
+
+    progress_updated = Signal(int)
+    processing_finished = Signal(object)
+    error_occurred = Signal(str)
+
+    def __init__(self, file_list, config, search_strings, sft_lines):
+        """
+        Initialize processing thread.
+
+        Parameters
+        ----------
+        file_list : list
+            List of files to process.
+        config : ProcessingConfig
+            Processing configuration.
+        search_strings : dict
+            Search patterns for file parsing.
+        sft_lines : list
+            Line targets for file parsing.
+        """
+        super().__init__()
+        self.file_list = file_list
+        self.config = config
+        self.search_strings = search_strings
+        self.sft_lines = sft_lines
+
+    def run(self):
+        """Execute file processing in separate thread."""
+        try:
+            if self.config.enable_multiprocessing and len(self.file_list) > 1:
+                results = self._process_files_parallel()
+            else:
+                results = self._process_files_sequential()
+
+            self.processing_finished.emit(results)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def _process_files_parallel(self):
+        """Process files using multiprocessing."""
+        file_info_list = [
+            (filename, self.search_strings, self.sft_lines, self.config)
+            for filename in self.file_list
+        ]
+
+        results = []
+        with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
+            future_to_file = {
+                executor.submit(process_file_worker, file_info): file_info[0]
+                for file_info in file_info_list
+            }
+
+            completed = 0
+            for future in as_completed(future_to_file):
+                result = future.result()
+                results.append(result)
+                completed += 1
+                progress = int((completed / len(self.file_list)) * 100)
+                self.progress_updated.emit(progress)
+
+        return results
+
+    def _process_files_sequential(self):
+        """Process files sequentially."""
+        results = []
+        for i, filename in enumerate(self.file_list):
+            file_info = (filename, self.search_strings,
+                         self.sft_lines, self.config)
+            result = process_file_worker(file_info)
+            results.append(result)
+            progress = int(((i + 1) / len(self.file_list)) * 100)
+            self.progress_updated.emit(progress)
+
+        return results
+
+
+class EnhancedMainWindow(QMainWindow):
+    """Enhanced main window with modern Qt interface."""
 
     def __init__(self):
-        self.app = QApplication(sys.argv)
+        """Initialize the enhanced main window."""
+        super().__init__()
+        self.setWindowTitle("Enhanced R&S SFT File Plotter")
+        self.setGeometry(100, 100, 800, 600)
 
-    def closeEvent(self, event):
-        QApplication.closeAllWindows()
-        event.accept()
+        # Initialize configuration
+        self.config = ProcessingConfig()
 
-    def _select_sft_file(self, dialog):
-        """Handle file selection button click."""
-        fname, _ = QFileDialog.getOpenFileName(
-            dialog, "Open SFT File", "", "R&S SFT Files (*.sft)"
-        )
-        if fname:
-            self.selected_file = fname
-            self.file_label.setText(fname)
+        # Initialize VZPlotRnS
+        self.vzplot = VZPlotRnS()
 
-    def _validate_selection(self, dialog):
-        """Validate file selection before accepting dialog."""
-        if not self.selected_file:
-            self.file_label.setText("Please select a file!")
+        # Setup UI
+        self._setup_ui()
+
+        # File list
+        self.selected_files = []
+
+    def _setup_ui(self):
+        """Set up the user interface."""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
+
+        # File selection section
+        file_group = QGroupBox("File Selection")
+        file_layout = QVBoxLayout(file_group)
+
+        # File list widget
+        self.file_list_widget = QListWidget()
+        file_layout.addWidget(self.file_list_widget)
+
+        # Browse button
+        browse_layout = QHBoxLayout()
+        self.browse_button = QPushButton("Browse Files")
+        self.browse_button.clicked.connect(self._browse_files)
+        browse_layout.addWidget(self.browse_button)
+
+        self.clear_button = QPushButton("Clear Files")
+        self.clear_button.clicked.connect(self._clear_files)
+        browse_layout.addWidget(self.clear_button)
+
+        file_layout.addLayout(browse_layout)
+        main_layout.addWidget(file_group)
+
+        # Processing options section
+        options_group = QGroupBox("Processing Options")
+        options_layout = QVBoxLayout(options_group)
+
+        # Multiprocessing options
+        self.enable_mp_checkbox = QCheckBox("Enable Multiprocessing")
+        self.enable_mp_checkbox.setChecked(self.config.enable_multiprocessing)
+        self.enable_mp_checkbox.stateChanged.connect(self._update_mp_config)
+        options_layout.addWidget(self.enable_mp_checkbox)
+
+        # CPU cores selection
+        cpu_layout = QHBoxLayout()
+        cpu_layout.addWidget(QLabel("CPU Cores:"))
+        self.cpu_spinbox = QSpinBox()
+        self.cpu_spinbox.setMinimum(1)
+        self.cpu_spinbox.setMaximum(cpu_count())
+        self.cpu_spinbox.setValue(self.config.num_processes)
+        self.cpu_spinbox.valueChanged.connect(self._update_cpu_config)
+        cpu_layout.addWidget(self.cpu_spinbox)
+        cpu_layout.addStretch()
+        options_layout.addLayout(cpu_layout)
+
+        # GPU options
+        self.enable_gpu_checkbox = QCheckBox("Enable GPU Processing")
+        self.enable_gpu_checkbox.setChecked(self.config.enable_gpu_processing)
+        self.enable_gpu_checkbox.stateChanged.connect(self._update_gpu_config)
+        options_layout.addWidget(self.enable_gpu_checkbox)
+
+        # OpenCL preference
+        self.use_opencl_checkbox = QCheckBox("Prefer OpenCL (Cross-platform)")
+        self.use_opencl_checkbox.setChecked(self.config.use_opencl)
+        self.use_opencl_checkbox.stateChanged.connect(
+            self._update_opencl_config)
+        options_layout.addWidget(self.use_opencl_checkbox)
+
+        main_layout.addWidget(options_group)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
+        # Status text
+        self.status_text = QTextEdit()
+        self.status_text.setMaximumHeight(100)
+        self.status_text.setReadOnly(True)
+        main_layout.addWidget(self.status_text)
+
+        # Control buttons
+        button_layout = QHBoxLayout()
+
+        self.plot_button = QPushButton("Process and Plot")
+        self.plot_button.clicked.connect(self._process_and_plot)
+        button_layout.addWidget(self.plot_button)
+
+        self.save_button = QPushButton("Save Project")
+        self.save_button.clicked.connect(self._save_project)
+        self.save_button.setEnabled(False)
+        button_layout.addWidget(self.save_button)
+
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.close)
+        button_layout.addWidget(self.close_button)
+
+        main_layout.addLayout(button_layout)
+
+    def _browse_files(self):
+        """Open file dialog to select multiple SFT files."""
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.ExistingFiles)
+        file_dialog.setNameFilter("R&S SFT Files (*.sft)")
+        file_dialog.setWindowTitle("Select SFT Files")
+
+        if file_dialog.exec_() == QFileDialog.Accepted:
+            selected_files = file_dialog.selectedFiles()
+            self.selected_files.extend(selected_files)
+            self._update_file_list()
+            self._log_message(f"Selected {len(selected_files)} files")
+
+    def _clear_files(self):
+        """Clear the selected files list."""
+        self.selected_files.clear()
+        self._update_file_list()
+        self._log_message("File list cleared")
+
+    def _update_file_list(self):
+        """Update the file list widget."""
+        self.file_list_widget.clear()
+        for file_path in self.selected_files:
+            self.file_list_widget.addItem(os.path.basename(file_path))
+
+    def _update_mp_config(self, state):
+        """Update multiprocessing configuration."""
+        self.config.enable_multiprocessing = state == Qt.Checked
+        self._log_message(
+            f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}")
+
+    def _update_cpu_config(self, value):
+        """Update CPU cores configuration."""
+        self.config.num_processes = value
+        self.config.max_workers = value
+        self._log_message(f"CPU cores set to: {value}")
+
+    def _update_gpu_config(self, state):
+        """Update GPU processing configuration."""
+        self.config.enable_gpu_processing = state == Qt.Checked
+        self._log_message(
+            f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}")
+
+    def _update_opencl_config(self, state):
+        """Update OpenCL preference configuration."""
+        self.config.use_opencl = state == Qt.Checked
+        self._log_message(
+            f"OpenCL preference: {'Enabled' if self.config.use_opencl else 'Disabled'}")
+
+    def _log_message(self, message):
+        """Add message to status text."""
+        self.status_text.append(f"[{self._get_timestamp()}] {message}")
+
+    def _get_timestamp(self):
+        """Get current timestamp string."""
+        import datetime
+        return datetime.datetime.now().strftime("%H:%M:%S")
+
+    def _process_and_plot(self):
+        """Process selected files and create plots."""
+        if not self.selected_files:
+            QMessageBox.warning(
+                self, "Warning", "Please select SFT files first.")
             return
-        dialog.accept()
 
-    def get_save_filename(self):
-        """Display file save dialog for Veusz project."""
-        return QFileDialog.getSaveFileName(
-            None, "Save Veusz Project", "",
-            "Veusz High Precision Files (*.vszh5)")[0]
+        self.plot_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
 
-    def ask_open_veusz(self):
-        """Display dialog to open created file in Veusz GUI."""
-        msg = QMessageBox()
-        msg.setWindowTitle("Open in Veusz")
-        msg.setText("Would you like to open the file in Veusz?")
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        return msg.exec_() == QMessageBox.Yes
+        # Start processing thread
+        self.processing_thread = FileProcessingThread(
+            self.selected_files,
+            self.config,
+            self.vzplot.searchData_strings,
+            self.vzplot.sft_lines
+        )
 
+        self.processing_thread.progress_updated.connect(
+            self.progress_bar.setValue)
+        self.processing_thread.processing_finished.connect(
+            self._on_processing_finished)
+        self.processing_thread.error_occurred.connect(
+            self._on_processing_error)
 
-class switch:
-    """"Creates a case or switch style statement."""
-    """
-    This is utilized as follows:
+        self.processing_thread.start()
+        self._log_message("Processing started...")
 
-        for case in switch('b'):
-            if case('a'):
-                # print or do whatever one wants
-                print("Case A")
-                break
-            if case('b'):
-                print("Case B")  # Output: "Case B"
-                break
-    """
+    def _on_processing_finished(self, results):
+        """Handle processing completion."""
+        self.progress_bar.setVisible(False)
+        self.plot_button.setEnabled(True)
 
-    def __init__(self, value):
-        self.value = value
+        successful_results = [r for r in results if r['success']]
+        failed_results = [r for r in results if not r['success']]
 
-    def __iter__(self):
-        """interate and find the match."""
-        yield self.match
+        self._log_message(
+            f"Processing completed: {len(successful_results)} successful, {len(failed_results)} failed")
 
-    def match(self, *args):
-        return self.value in args
+        if failed_results:
+            error_msg = "\n".join(
+                [f"{r['filename']}: {r['error']}" for r in failed_results])
+            QMessageBox.warning(self, "Processing Errors",
+                                f"Some files failed to process:\n{error_msg}")
+
+        if successful_results:
+            self._create_plots(successful_results)
+            self.save_button.setEnabled(True)
+
+    def _on_processing_error(self, error_message):
+        """Handle processing error."""
+        self.progress_bar.setVisible(False)
+        self.plot_button.setEnabled(True)
+        self._log_message(f"Processing error: {error_message}")
+        QMessageBox.critical(self, "Processing Error", error_message)
+
+    def _create_plots(self, results):
+        """Create Veusz plots from processed results."""
+        self._log_message("Creating plots...")
+
+        for result in results:
+            filename = result['filename']
+            data_returned = result['data']
+
+            try:
+                self.vzplot._process_file_data(filename, data_returned)
+            except Exception as e:
+                self._log_message(f"Plot creation failed for {filename}: {e}")
+
+        self._log_message("Plot creation completed")
+
+    def _save_project(self):
+        """Save Veusz project."""
+        file_dialog = QFileDialog()
+        save_path, _ = file_dialog.getSaveFileName(
+            self, "Save Veusz Project", "",
+            "Veusz High Precision Files (*.vszh5)"
+        )
+
+        if save_path:
+            try:
+                self.vzplot.save(save_path)
+                self._log_message(f"Project saved: {save_path}")
+
+                # Ask to open in Veusz
+                reply = QMessageBox.question(
+                    self, "Open in Veusz",
+                    "Would you like to open the file in Veusz?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+
+                if reply == QMessageBox.Yes:
+                    VZPlotRnS.open_veusz_gui(save_path)
+
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error",
+                                     f"Failed to save project: {e}")
+
+# %% Auto Plotter Class
 
 
 class VZPlotRnS:
-    """
-        Used to create vuesz plots using data fron Rns
-    """
+    """Enhanced Veusz plotting class with multiprocessing support."""
 
     def __init__(self):
-        self.doc = embed.Embedded('Rhode & Schwarz SFT File Plotter')
-        # self.page = self.doc.Root.Add('page')
-        # self.grid = self.page.Add('grid', columns=2)
+        """Initialize VZPlotRnS with enhanced capabilities."""
+        self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
         self.first_1d = True
         self.doc.EnableToolbar(enable=True)
-        # strings to search for and parse data by, section would contain
-        # the date time after a ';'
-        # then the next line is data
+
+        # Search strings for data parsing
         self.searchData_strings = {
             'version': 'VERSION',
             'type': 'TYPE',
@@ -265,9 +661,10 @@ class VZPlotRnS:
             'x-axis': 'X-AXIS',
             'start': 'START',
             'stop': 'STOP',
+            'stop_2': 'STOP',  # Added for compatibility
             'ref level': 'REF LEVEL',
             'level offset': 'LEVEL OFFSET',
-            'ref psotion': 'REF POSITION',
+            'ref position': 'REF POSITION',
             'y-axis': 'Y-AXIS',
             'level range': 'LEVEL RANGE',
             'rf att': 'RF ATT',
@@ -286,14 +683,10 @@ class VZPlotRnS:
             'section': 'SECTION'
         }
 
-        # from file examples, there are many blank lines in the header
-        # just grab the header data with this as well as the strings
-        # but really the string search should work as well, this will
-        # grab the entire heading lines
+        # Line targets for header parsing
         self.sft_lines = [1, 2, 3] + list(range(5, 58, 2))
 
-        # setup the shared plot info are that to be changed and passed
-        # with self
+        # Plot info initialization
         self.plotInfo = plotDescInfo(
             xAxis_label='Frequency (Hz)',
             yAxis_label='Uncalibrated (dBm)',
@@ -303,72 +696,143 @@ class VZPlotRnS:
             first_plot=True
         )
 
+    def _process_file_data(self, filename, data_returned):
+        """
+        Process individual file data and create plots.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the processed file.
+        data_returned : dict
+            Parsed file data.
+        """
+        base_name = os.path.splitext(os.path.basename(filename))[0]
+        self.plotInfo.base_name = base_name
+
+        # Extract section data
+        data_sections = dict(filter(
+            lambda item: 'section' in item[0],
+            data_returned['pattern_matches'].items()
+        ))
+
+        if len(data_sections) != len(data_returned['data_matches']):
+            raise ValueError(f"Data sections mismatch in file {filename}")
+
+        # Process data values
+        data_y_values = list(map(itemgetter('extracted_value'),
+                                 data_returned['data_matches'].values()))
+        data_line_numbers = list(map(itemgetter('line_number'),
+                                     data_returned['data_matches'].values()))
+        data_section_line_numbers = list(map(itemgetter('line_number'),
+                                             data_sections.values()))
+        data_section_content = list(map(itemgetter('content'),
+                                        data_sections.values()))
+
+        # Create frequency range
+        data_fields = data_returned['pattern_matches']
+        num_pts = extract_with_regex(data_fields['values']['extracted_value'])
+        if len(num_pts) != 1:
+            raise ValueError(f"Invalid VALUES field in {filename}")
+        num_pts = int(num_pts[0])
+
+        # Extract frequency parameters
+        freq_start = float(extract_with_regex(
+            data_fields['start']['extracted_value'])[0])
+        freq_stop = float(extract_with_regex(
+            data_fields['stop_2']['extracted_value'])[0])
+
+        freq_range = np.linspace(freq_start, freq_stop, num=num_pts,
+                                 endpoint=True, dtype=np.float64)
+
+        # Create header notes
+        data_header = data_returned['line_data']
+        data_notes = '\n'.join(data_header.values())
+        data_notes = os.path.split(filename)[1] + '\n\n' + data_notes
+
+        # Process each data section
+        for index, label in enumerate(data_section_content):
+            dataset_name = label
+
+            if index == 0:
+                x_data_name = base_name + '_freq'
+                self.doc.SetData(name=x_data_name, val=freq_range)
+                self.doc.TagDatasets(base_name, [x_data_name])
+
+            # Verify data alignment
+            if (data_line_numbers[index] - 1 != data_section_line_numbers[index]):
+                raise ValueError(f"Data alignment error in {filename}")
+
+            # Set data in Veusz
+            self.doc.SetData(name=dataset_name, val=data_y_values[index])
+            self.doc.TagDatasets(base_name, [dataset_name])
+
+            # Update plot info and create plot
+            self.plotInfo.graph_notes = data_notes
+            self.plotInfo.graph_title = base_name + '::' + dataset_name
+            self.plotInfo.graph_title = self.plotInfo.graph_title.replace(
+                '_', ' ')
+
+            self._plot_1d(dataset_name)
+
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
         self.page = self.doc.Root.Add('page', name=dataset)
         self.grid = self.page.Add('grid', columns=2)
 
     def _plot_1d(self, dataset: str):
-        """Create line plot for 1D datasets with red initial trace."""
+        """Create line plot for 1D datasets with enhanced styling."""
         try:
-            # create the plot for the data set
-            # if self.plotInfo.first_plot:
-            # create a single plot to put all scatters in
+            # Create overlay plot if it doesn't exist
             if 'AllImported' not in self.doc.Root.childnames:
                 self._create_page('AllImported')
-                self.page.notes.val = ("All Imported " +
-                                       "and Plottable Data Overlay")
-                graphAll = self.grid.Add('graph', name='Imported_Overlay')
-                graphAll.Add('label', name='plotTitle')
-                graphAll.topMargin.val = '1cm'
-                graphAll.plotTitle.Text.size.val = '10pt'
-                graphAll.plotTitle.label.val = 'Overlay of All Imported'
-                graphAll.plotTitle.alignHorz.val = 'centre'
-                graphAll.plotTitle.yPos.val = 1.05
-                graphAll.plotTitle.xPos.val = 0.5
-                graphAll.notes.val = ('All imported overlay, ' +
-                                      'see scatters for specifics.')
-                # set graph axis labels
-                graphAll.x.label.val = self.plotInfo.xAxis_label
-                graphAll.y.label.val = self.plotInfo.yAxis_label
+                self.page.notes.val = "All Imported and Plottable Data Overlay"
+
+                graph_all = self.grid.Add('graph', name='Imported_Overlay')
+                graph_all.Add('label', name='plotTitle')
+                graph_all.topMargin.val = '1cm'
+                graph_all.plotTitle.Text.size.val = '10pt'
+                graph_all.plotTitle.label.val = 'Overlay of All Imported'
+                graph_all.plotTitle.alignHorz.val = 'centre'
+                graph_all.plotTitle.yPos.val = 1.05
+                graph_all.plotTitle.xPos.val = 0.5
+                graph_all.notes.val = 'All imported overlay, see individual plots for specifics.'
+
+                # Set axis labels
+                graph_all.x.label.val = self.plotInfo.xAxis_label
+                graph_all.y.label.val = self.plotInfo.yAxis_label
                 self.doc.Root.colorTheme.val = 'max128'
             else:
                 self.page = self.doc.Root.AllImported
-                graphAll = self.doc.Root.AllImported.grid1.Imported_Overlay
+                graph_all = self.doc.Root.AllImported.grid1.Imported_Overlay
 
-                # add graph title
-                # Seems like this should be able to be completed with a with
-                # statement, but does not work
+            # Add overlay plot
+            all_overlay_xy = graph_all.Add('xy', name=dataset)
+            all_overlay_xy.yData.val = dataset
+            all_overlay_xy.xData.val = self.plotInfo.base_name + '_freq'
+            all_overlay_xy.nanHandling = 'break-on'
 
-            allOverlayXY = graphAll.Add('xy', name=dataset)
+            # Style overlay plot
+            all_overlay_xy.marker.val = 'circle'
+            all_overlay_xy.markerSize.val = '2pt'
+            all_overlay_xy.MarkerLine.color.val = 'transparent'
+            all_overlay_xy.MarkerFill.color.val = 'auto'
+            all_overlay_xy.MarkerFill.transparency.val = 80
+            all_overlay_xy.MarkerFill.style.val = 'solid'
+            all_overlay_xy.FillBelow.transparency.val = 90
+            all_overlay_xy.FillBelow.style.val = 'solid'
+            all_overlay_xy.FillBelow.fillto.val = 'bottom'
+            all_overlay_xy.FillBelow.color.val = 'darkgreen'
+            all_overlay_xy.FillBelow.hide.val = True
+            all_overlay_xy.PlotLine.color.val = 'auto'
 
-            allOverlayXY.yData.val = dataset
-            allOverlayXY.xData.val = self.plotInfo.base_name + '_freq'
-            allOverlayXY.nanHandling = 'break-on'
-
-            # set marker and colors for overlay plot
-            allOverlayXY.marker.val = 'circle'
-            allOverlayXY.markerSize.val = '2pt'
-            # allOverlayXY.MarkerLine.transparency.val =
-            allOverlayXY.MarkerLine.color.val = 'transparent'
-            allOverlayXY.MarkerFill.color.val = 'auto'
-            allOverlayXY.MarkerFill.transparency.val = 80
-            allOverlayXY.MarkerFill.style.val = 'solid'
-            allOverlayXY.FillBelow.transparency.val = 90
-            allOverlayXY.FillBelow.style.val = 'solid'
-            allOverlayXY.FillBelow.fillto.val = 'bottom'
-            allOverlayXY.FillBelow.color.val = 'darkgreen'
-            allOverlayXY.FillBelow.hide.val = True
-            allOverlayXY.PlotLine.color.val = 'auto'
-
-            # for overlays only
             self.plotInfo.first_plot = False
 
+            # Create individual plot
             self._create_page(self.plotInfo.graph_title)
             self.page.notes.val = self.plotInfo.graph_notes
-            graph = self.grid.Add('graph', name=dataset)
 
-            # add graph title
+            graph = self.grid.Add('graph', name=dataset)
             graph.Add('label', name='plotTitle')
             graph.topMargin.val = '1cm'
             graph.plotTitle.Text.size.val = '10pt'
@@ -376,31 +840,21 @@ class VZPlotRnS:
             graph.plotTitle.alignHorz.val = 'left'
             graph.plotTitle.yPos.val = 1.05
             graph.plotTitle.xPos.val = -0.3
-
-            # add notes to graph
             graph.notes.val = self.plotInfo.graph_notes
 
-            # add xy scatter plot
+            # Add individual plot
             xy = graph.Add('xy', name=dataset)
-
-            # set the datasets being used for the plot
-            # TODO
-            # may want to look into crating separate files for high precision
-            # such as np.save('high_precision_data.npy', x_data)
-            # then just linking those files instead of using local datasets
             xy.yData.val = dataset
             xy.xData.val = self.plotInfo.base_name + '_freq'
             xy.nanHandling = 'break-on'
 
-            # set graph axis labels
+            # Set axis labels
             graph.x.label.val = self.plotInfo.xAxis_label
             graph.y.label.val = self.plotInfo.yAxis_label
-            # breakpoint
 
-            # set marker and colors
+            # Style individual plot
             xy.marker.val = 'circle'
             xy.markerSize.val = '2pt'
-            # xy.MarkerLine.transparency.val =
             xy.MarkerLine.color.val = 'transparent'
             xy.MarkerFill.color.val = 'foreground'
             xy.MarkerFill.transparency.val = 80
@@ -416,31 +870,24 @@ class VZPlotRnS:
                 self.first_1d = False
 
         except Exception as e:
-            QMessageBox.critical(
-                None,
-                "1D Plotting Error",
-                f"Failed to Plot 1D Data Set: {str(e)}"
-            )
+            raise RuntimeError(f"Failed to create 1D plot: {e}")
 
     def save(self, filename: str):
-        """Save Veusz document to specified file."""
-        # there might be a precision argument or format string
-        # TODO
-        # MUST find a way to save higher precision!!!!
-        # a work around would be to save all data to np.float64 arrays
-        # in files and link them in the veusz document, I would really prefer
-        # not do it this way.
-        # self.doc.Save(filename, 'vsz')
+        """Save Veusz document with high precision support."""
         filename_root = os.path.splitext(filename)[0]
-        filenameHP = filename_root + '.vszh5'
-        fileSplit = os.path.split(filename)
-        filenameVSZ = (fileSplit[0] + '/Beware_oldVersion/' +
-                       os.path.splitext(fileSplit[1])[0] + '_BEWARE.vsz')
-        # filename3 = filename_root + '_hdf5.hdf5'
-        self.doc.Save(filenameHP, mode='hdf5')
-        os.makedirs(fileSplit[0] + '/Beware_oldVersion/', exist_ok=True)
-        self.doc.Save(filenameVSZ, mode='vsz')
+        filename_hp = filename_root + '.vszh5'
+        file_split = os.path.split(filename)
+        filename_vsz = (file_split[0] + '/Beware_oldVersion/' +
+                        os.path.splitext(file_split[1])[0] + '_BEWARE.vsz')
 
+        # Save high precision version
+        self.doc.Save(filename_hp, mode='hdf5')
+
+        # Save legacy version
+        os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
+        self.doc.Save(filename_vsz, mode='vsz')
+
+    @staticmethod
     def open_veusz_gui(filename: str):
         """Launch Veusz GUI with generated project file."""
         if sys.platform.startswith('win'):
@@ -450,9 +897,8 @@ class VZPlotRnS:
 
         if not os.path.exists(veusz_exe):
             QMessageBox.critical(
-                None,
-                "Veusz Not Found",
-                "Veusz not found in Python environment.\n",
+                None, "Veusz Not Found",
+                "Veusz not found in Python environment.\n"
                 "Install with: [pip OR conda OR mamba] install veusz"
             )
             return
@@ -461,309 +907,28 @@ class VZPlotRnS:
             subprocess.Popen([veusz_exe, filename])
         except Exception as e:
             QMessageBox.critical(
-                None,
-                "Launch Error",
-                f"Failed to start Veusz: {str(e)}"
+                None, "Launch Error",
+                f"Failed to start Veusz: {e}"
             )
 
-    def rns_sft_parser(self, fileName: str = None):
-        """
-        Used to import all data into the Vuesz environment. Then pass to
-        create_plots to plot based on data within the veusz environment.
-
-        Parameters
-        ----------
-        dataIn : dict
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
-        """
-        # check is a fileName was passed and if it is a list or tuple, then
-        # process accordingly.
-        if fileName is None:
-            fileName, fileParts = self._select_sft_files()
-        elif ((isinstance(fileName, list) or isinstance(fileName, tuple)) and
-              os.path.splitext(fileName[0])[1] == '.sft'):
-            fileParts = [None]*len(fileName)
-            for mainLooper in range(len(fileName)):
-                # this loop processes the files passed one at a time,
-                # while combining
-                # the data as it progresses
-
-                # get the file parts for further use of the current file.
-                fileParts[mainLooper] = os.path.split(fileName[mainLooper])
-        elif fileName.isascii() and os.path.splitext(fileName[0])[1] == '.sft':
-            fileParts = os.path.split(fileName)
-        else:
-            # add a prompt gui to user and exit
-            QMessageBox.critical(
-                None,
-                "File Selected or Passed is not the correct file type. \n",
-                "Ensure the extension .sft is included and \n",
-                "that you are using the ASCII type of that file."
-            )
-            return
-
-        # parse all the data through a general parser
-        if isinstance(fileName, list) or isinstance(fileName, tuple):
-            pass
-        else:
-            # just make it a list so the following applies without issue
-            fileName = [fileName]
-
-        for currentFile in fileName:
-            dataReturned = fparser(currentFile, line_targets=self.sft_lines,
-                                   string_patterns=self.searchData_strings)
-
-            # used for data set name and label
-            base_name = os.path.splitext(os.path.basename(currentFile))[0]
-            self.plotInfo.base_name = base_name
-            # based on section string in the sft file, extract on the
-            # section data defintions
-            data_Sections = dict(filter(
-                lambda item: 'section' in item[0],
-                dataReturned['pattern_matches'].items()
-            ))
-
-            # test length of data sections and data_located
-            if len(data_Sections) != len(dataReturned['data_matches']):
-                # error, these should match
-                QMessageBox.critical(
-                    None,
-                    ("Data Sections and the extracted number of data \n",
-                     "lists do not match. \n",
-                     "Unable to proceed at the moment. \n",
-                     "Tell William to stop being lazy and correct this.")
-                )
-                # TODO
-                # make this more robust, it really should match, but at
-                # least do some error checking on the data itself.
-                return
-
-            # now we have all the data in dataReturned of type dict
-            # use this and VZPlotRns to create Veusz plots
-
-            # all_items = [(k, v) for subdict in parent_dict.values() for
-            #               k, v in subdict.items()]
-            #
-            # using operator itemgetter for better performance
-            # being 0 based index, but all data matches the index of the
-            # dict data_Sections for date info
-            # line numbers will be used to ensure we are using the
-            # correct data.
-            data_y_values = list(map(itemgetter('extracted_value'),
-                                     dataReturned['data_matches'].values())
-                                 )
-            data_line_numbers = list(map(itemgetter('line_number'),
-                                         dataReturned['data_matches'].values())
-                                     )
-            data_Section_line_numbers = list(map(itemgetter('line_number'),
-                                                 data_Sections.values()))
-            data_Section_content = list(map(itemgetter('content'),
-                                            data_Sections.values()))
-            # breakpoint
-            # so now we have to make the X axis. For each file this
-            # remains the same.
-            # use pattern_matches for this
-            data_fields = dataReturned['pattern_matches']
-
-            # get number of points
-            numPts = extract_with_regex(
-                data_fields['values']['extracted_value'])
-
-            if len(numPts) != 1:
-                QMessageBox.critical(
-                    None,
-                    "Values Line of SFT File Incorrect. \n",
-                    "Check file " + str(currentFile)
-                )
-                # TODO
-                # make this more robust, it really should match, but at
-                # least do some error checking on the data itself.
-                return
-            else:
-                numPts = int(numPts[0])
-
-            # get span
-            freqStart = extract_with_regex(
-                data_fields['start']['extracted_value'])
-            freqStop = extract_with_regex(
-                data_fields['stop_2']['extracted_value'])
-            freqCenter = extract_with_regex(
-                data_fields['center freq']['extracted_value'])
-            freqSpan = extract_with_regex(
-                data_fields['span']['extracted_value'])
-            freqStart = float(freqStart[0])
-            freqStop = float(freqStop[0])
-            freqCenter = float(freqCenter[0])
-            freqSpan = float(freqSpan[0])
-            # TODO
-            # look at these values and ensure they are not trucated here
-            freqRange = np.linspace(freqStart, freqStop, num=numPts,
-                                    endpoint=True, dtype=np.float64)
-            # data_x_value = freqRange.tolist()
-            data_x_value = freqRange
-
-            if len(data_x_value) != len(set(data_x_value)):
-                QMessageBox.critical(
-                    None,
-                    "Something happened with frequency list \n",
-                    "Generation from file  ", str(currentFile), ".\n",
-                    "See ", "data_fields in the script."
-                )
-
-            # step through line data to create header notes to be
-            # put in each graph.
-            data_header = dataReturned['line_data']
-            data_notes = '\n'.join(data_header.values())
-            data_notes = os.path.split(currentFile)[1] + '\n\n' + data_notes
-
-            for index, label in enumerate(data_Section_content):
-                dataSetName = label
-                if index == 0:
-                    x_data = data_x_value
-                    x_data_name = base_name + '_freq'
-                    # TODO
-                    # may want to look into crating separate files for high precision
-                    # such as np.save('high_precision_data.npy', x_data)
-                    # then just linking those files instead of using local datasets
-                    self.doc.SetData(name=x_data_name, val=x_data)
-                    # self.doc.SetDataLabel(dataSetName,
-                    #                       f"Frequency [{base_name}]")
-                    self.doc.TagDatasets(base_name, [x_data_name])
-                description = label
-                # Put all of the header information in the notes of the plot
-                # self.doc.SetNote()
-
-                # Put all data into a dataset with a name and label and tag
-                if (data_line_numbers[index]-1
-                        != data_Section_line_numbers[index]):
-                    QMessageBox.critical(
-                        None,
-                        "The data and its labels are not aligned. \n",
-                        "Check file " + str(currentFile)
-                    )
-                    # TODO
-                    # make this more robust, it really should match, but at
-                    # least do some error checking on the data itself.
-                    return
-
-                self.doc.SetData(name=dataSetName, val=data_y_values[index])
-                self.doc.TagDatasets(base_name, [dataSetName])
-
-                # ok, all the data is now in Veusz, so we need to create
-                # the pages, grids and graphs. I would like to embed
-                # the header information is each graph.
-                # best to do per file and data section so information
-                # is not lost and exterion indexing is not needed
-                self.plotInfo.graph_notes = data_notes
-                self.plotInfo.graph_title = base_name + '::' + dataSetName
-                self.plotInfo.graph_title = (
-                    self.plotInfo.graph_title.replace('_', ' ')
-                )
-
-                # plotting directly instead of using self.create_plots(self)
-                self._plot_1d(dataSetName)
-                # breakpoint
-
-    def _select_sft_files(self):
-        """
-        GUI using tkiner for sft file selection. Does work with
-        multiple files.
-
-        Returns
-        -------
-        filename : TYPE
-            DESCRIPTION.
-        fileParts : TYPE
-            DESCRIPTION.
-
-        """
-        # import os
-        # Create a root window
-        root = tk.Tk()
-
-        # Hide the root window
-        root.withdraw()
-        # root.iconify()
-
-        filename = askopenfilenames(filetypes=[("Rhode & Schwarz SFT Files",
-                                                ".SFT")])
-        root.destroy()
-        # start the main loop for processing the selected files
-        fileParts = [None] * len(filename)
-        for mainLooper in range(len(filename)):
-            # this loop processes the files selected one at a time, while combining
-            # the data as it progresses
-
-            # get the file parts for further use of the current file.
-            fileParts[mainLooper] = os.path.split(filename[mainLooper])
-
-        return filename, fileParts
-
-        # if file_path:
-        #     file_entry.delete(0, tk.END)
-        #     file_entry.insert(0, file_path)
+# %% Main Application
 
 
-def extract_between(inputText: str, start_char: str, end_char: str):
-    """
-    Extract a string between two characters and return a list of found.
+def main():
+    """Main application entry point."""
+    # Set multiprocessing start method for cross-platform compatibility
+    if __name__ == '__main__':
+        mp.set_start_method('spawn', force=True)
 
-    Parameters
-    ----------
-    text : TYPE
-        DESCRIPTION.
-    start_char : TYPE
-        DESCRIPTION.
-    end_char : TYPE
-        DESCRIPTION.
+    app = QApplication(sys.argv)
 
-    Returns
-    -------
-    TYPE
-        DESCRIPTION.
+    # Create and show main window
+    window = EnhancedMainWindow()
+    window.show()
 
-    """
-    pattern = re.escape(start_char) + r"(.*?)" + re.escape(end_char)
-    return re.findall(pattern, text)
+    # Run application
+    sys.exit(app.exec_())
 
 
-def extract_with_regex(inputText: str, delim: str = ';'):
-    """
-    Extract all substrings enclosed by the same delimiter using regex.
-    """
-    # Escape delim if it’s a regex special character
-    esc = re.escape(delim)
-    pattern = rf"{esc}(.*?){esc}"        # Non-greedy capture between delim
-    return re.findall(pattern, inputText)     # List of all matches
-
-
-# %% Main Execution
 if __name__ == '__main__':
-    """
-    execution of main function
-    """
-    vz = VZPlotRnS()
-    vz.rns_sft_parser()
-
-    # this is done in the data parsing to ensure multiple traces are labeled
-    # correctly
-    # vz.create_plots()
-
-    gui = qtGUI()
-    if save_path := gui.get_save_filename():
-        vz.save(save_path)
-        if gui.ask_open_veusz():
-            VZPlotRnS.open_veusz_gui(save_path)
-
-    sys.exit(gui.app.exec_())
-    # QApplication.closeAllWindows()
-    gui.closeEvent()
-
-
-# if __name__ == "__main__":
-#     main()
+    main()
