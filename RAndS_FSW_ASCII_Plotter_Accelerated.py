@@ -15,7 +15,7 @@ Author Business Phone: +1 (304) 456-2216
 Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 =============================================================================
 """
-
+# TODO: Trouble shoot processing lag and ensure file saving works
 # %% Import all required modules
 
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
