@@ -6,10 +6,11 @@
 #
 #
 #
-# TODO: Update CSV to auto plot multiple files, extract it to its own file
+# TODO: Somethis is amiss with magnitude data, check how this is processed
 # TODO: Checkout PyAntenna and stats calcs for the data
 #
-# This script provides automated plotting for GBO Outdoor Antenna Range Data Files
+# This script provides automated plotting for GBO Outdoor Antenna Range
+# Data Files
 # with optional multiprocessing for file processing and GPU acceleration for
 # numerical computations.
 # =============================================================================
@@ -655,7 +656,8 @@ class PlotATR:
         ]
 
         # Use ProcessPoolExecutor for better control and error handling
-        with ProcessPoolExecutor(max_workers=self.mp_config.max_workers) as executor:
+        with ProcessPoolExecutor(
+                max_workers=self.mp_config.max_workers) as executor:
             # Submit all tasks
             future_to_file = {
                 executor.submit(process_single_file, file_info): file_info[0]
