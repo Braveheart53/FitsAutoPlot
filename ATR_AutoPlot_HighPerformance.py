@@ -1,12 +1,21 @@
-"""Enhanced ATR AutoPlot with Multiprocessing and GPU Acceleration.
+"""Enhanced ATR AutoPlot with Multiprocessing and GPU Acceleration."""
+# %% Header
+# =============================================================================
+# Author: William W. Wallace
+#
+#
+#
+#
+# TODO: Update CSV to auto plot multiple files, extract it to its own file
+# TODO: Checkout PyAntenna and stats calcs for the data
+#
+# This script provides automated plotting for GBO Outdoor Antenna Range Data Files
+# with optional multiprocessing for file processing and GPU acceleration for
+# numerical computations.
+# =============================================================================
 
-This script provides automated plotting for GBO Outdoor Antenna Range Data Files
-with optional multiprocessing for file processing and GPU acceleration for
-numerical computations.
-"""
 
-# -*- coding: utf-8 -*-
-
+# %% Module Imports
 import multiprocessing
 import os
 import subprocess
@@ -15,8 +24,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from operator import itemgetter
 from typing import List, Optional, Tuple, Union
 
+# %%% Math and plotting Imports
 import numpy as np
 import veusz.embed as vz
+
+# %%% QtPy Imports
 from qtpy.QtGui import *
 from qtpy.QtWidgets import (
     QApplication,
@@ -29,10 +41,12 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+# %%% Debug Imports
 from rich import inspect as richinspect
 import pdir
 
-# GPU Computing imports with fallback support
+# %%% GPU Computing imports with fallback support
 try:
     import cupy as cp
     GPU_AVAILABLE = "cupy"
@@ -52,8 +66,10 @@ except ImportError:
             GPU_AVAILABLE = None
             print("No GPU acceleration libraries available - using CPU only")
 
-# System Interface Modules
+# %%System Interface Modules
 os.environ['QT_API'] = 'pyside6'
+
+# %% Class and Function Defintions
 
 
 class GPUAccelerator:
@@ -235,7 +251,8 @@ class MultiprocessingConfig:
               f"workers={self.max_workers}")
 
 
-def process_single_file(file_info: Tuple[str, int, object]) -> Tuple[str, dict]:
+def process_single_file(
+        file_info: Tuple[str, int, object]) -> Tuple[str, dict]:
     """Process a single ATR file with multiprocessing support.
 
     This function is designed to be used with multiprocessing pools.
@@ -1086,6 +1103,8 @@ def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.nda
     theta = np.arctan2(y, x)
     return r, theta
 
+# %%% Main Function
+
 
 def main():
     """Execute main function."""
@@ -1098,5 +1117,6 @@ def main():
     atr_plotter.run()
 
 
+# %% Main Execution
 if __name__ == "__main__":
     main()
