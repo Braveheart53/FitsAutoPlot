@@ -96,4 +96,12 @@ nuitka ^
 
 
 
+Add another tab to the solution for touchstone plotting in python 3.8 for Smith Chart Potting.
+Find the best method utilizing scikit-rf and veusz to create and embed colorful smith chart plots in veusz.
+In this tab, use a drop box and an embedded plot to display a selected file on the smith chart. Make a check box on this tab to enable or disable time domain filtering on the data shown on the embedded plot.
+Add a button on this tab to generate and embed the plots in pages in the active veusz object and window. The goal is to edit the plots and data in veusz just as other veusz plot types once the file is saved.
+There should be a check box to generate a smith chart plot only for the selected file on this tab from the drop down box, or for all files selected.
+Then the plot should be created in vuesz when the user presses the button. The plot will be time domain filtered data if the check box for time domain filtering is checked.
 
+On the time domain fitlering tab, add a check box that states to plot only select file from drop down or all selected files for processing. Label accordingly.
+All of this should be as parallelized as possible or use GPU acceleration where possible per the check boxes on the main gui tab.
