@@ -1,0 +1,11 @@
+*.exe
+*.pkg
+build/
+build/*
+dist/
+dist/*
+Nuitka/
+Nuitka/*
+Nuitka*/
+Nuitka*/*
+ATR_AutoPlot_HighPerformance_changeGUI.py
