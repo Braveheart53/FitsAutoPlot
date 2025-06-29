@@ -1,14 +1,14 @@
-"""Enhanced Touchstone AutoPlot with Modern Qt GUI Interface and Time Domain Analysis.
+"""Enhanced Touchstone AutoPlot with Modern Qt GUI Interface, Time Domain Analysis, and Smith Chart Plotting.
 # %% Header Info
 This version integrates modern Qt GUI interface with comprehensive Touchstone file processing
-capabilities using scikit-rf, including multiprocessing, GPU acceleration, and advanced
-time domain analysis with gating functionality.
+capabilities using scikit-rf, including multiprocessing, GPU acceleration, advanced
+time domain analysis with gating functionality, and Smith Chart plotting.
 # %%% Author
 Author: William W. Wallace
 Last updated: 2025-06-28
 
 # %%% Nuitka Project Options for Optimal Compilation
-nuitka-project: --enable-plugin=pyside6
+# nuitka-project: --enable-plugin=pyside6
 nuitka-project: --enable-plugin=pylint-warnings
 nuitka-project: --include-package=veusz
 nuitka-project: --include-package-data=veusz
@@ -32,7 +32,7 @@ nuitka-project: --python-flag=no_site
 nuitka-project: --python-flag=-O
 nuitka-project: --lto=yes
 
-# %%% Nuitka Command line:
+# %%% Nuitka Command Line
 nuitka ^
   --mingw64 ^
   --standalone ^
@@ -70,8 +70,7 @@ nuitka ^
   --output-dir=dist ^
   --windows-console-mode=disable ^
   --assume-yes-for-downloads ^
-  Touchstone_AutoPlot.py
-
+  TouchstoneAutoPlot.py
 
 """
 
@@ -166,6 +165,21 @@ class TimeDomainConfig:
     method: str = 'fft'
     t_unit: str = 'ns'
     auto_gate: bool = True
+
+
+@dataclass
+class SmithChartConfig:
+    """Configuration class for Smith Chart plotting settings."""
+
+    chart_type: str = 'z'  # 'z' for impedance, 'y' for admittance
+    draw_labels: bool = True
+    draw_vswr: bool = True
+    reference_impedance: float = 50.0
+    show_legend: bool = True
+    grid_color: str = 'gray'
+    trace_color: str = 'blue'
+    marker_style: str = 'circle'
+    marker_size: int = 4
 
 
 # %% GPU Acceleration Classes
@@ -539,6 +553,77 @@ class TimeDomainProcessor:
         return results
 
 
+# %% Smith Chart Processing Classes
+class SmithChartProcessor:
+    """Handles Smith Chart analysis and plotting of S-parameter data."""
+
+    def __init__(self, config):
+        """Initialize Smith Chart processor.
+
+        Parameters
+        ----------
+        config : SmithChartConfig
+            Smith Chart plotting configuration.
+        """
+        self.config = config
+
+    def process_network_for_smith_chart(self, network, apply_td_filter=False, td_processor=None):
+        """Process a network for Smith Chart plotting.
+
+        Parameters
+        ----------
+        network : Network
+            scikit-rf Network object.
+        apply_td_filter : bool, optional
+            Whether to apply time domain filtering. Default is False.
+        td_processor : TimeDomainProcessor, optional
+            Time domain processor for filtering.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing Smith Chart data.
+        """
+        results = {}
+
+        try:
+            # Use time domain filtered data if requested
+            if apply_td_filter and td_processor:
+                td_results = td_processor.process_network(network)
+                if 'error' not in td_results:
+                    # Create filtered networks for each S-parameter
+                    for i in range(network.nports):
+                        for j in range(network.nports):
+                            param_name = "S{}{}".format(i+1, j+1)
+                            gated_key = "{}_gated".format(param_name)
+                            if gated_key in td_results:
+                                results[param_name] = td_results[gated_key]
+                else:
+                    # Fall back to original data if filtering failed
+                    apply_td_filter = False
+
+            if not apply_td_filter:
+                # Use original S-parameter data
+                for i in range(network.nports):
+                    for j in range(network.nports):
+                        param_name = "S{}{}".format(i+1, j+1)
+                        # Create single S-parameter network
+                        temp_network = network.copy()
+                        temp_network.s = network.s[:, i, j].reshape(-1, 1, 1)
+                        results[param_name] = temp_network
+
+            # Store metadata
+            results['frequency'] = network.frequency
+            results['reference_impedance'] = self.config.reference_impedance
+            results['filtered'] = apply_td_filter
+
+        except Exception as e:
+            print("Smith Chart processing error: {}".format(e))
+            results['error'] = str(e)
+
+        return results
+
+
 # %% Matplotlib Canvas for Embedded Plots
 class TouchstonePlotCanvas(FigureCanvas):
     """Custom matplotlib canvas for Touchstone plots."""
@@ -650,6 +735,59 @@ class TouchstonePlotCanvas(FigureCanvas):
 
         self.draw()
 
+    def plot_smith_chart(self, network, title="Smith Chart", chart_type='z',
+                         draw_labels=True, draw_vswr=True):
+        """Plot Smith chart on the canvas.
+
+        Parameters
+        ----------
+        network : Network
+            scikit-rf Network object.
+        title : str, optional
+            Plot title. Default is "Smith Chart".
+        chart_type : str, optional
+            Chart type ('z' for impedance, 'y' for admittance). Default is 'z'.
+        draw_labels : bool, optional
+            Whether to draw labels. Default is True.
+        draw_vswr : bool, optional
+            Whether to draw VSWR circles. Default is True.
+        """
+        self.fig.clear()
+
+        ax = self.fig.add_subplot(111)
+
+        try:
+            # Use scikit-rf's built-in Smith chart plotting
+            network.plot_s_smith(
+                ax=ax,
+                chart_type=chart_type,
+                draw_labels=draw_labels,
+                draw_vswr=draw_vswr,
+                show_legend=True
+            )
+
+            ax.set_title(title)
+
+        except Exception as e:
+            # Fallback to basic complex plot if Smith chart fails
+            print("Smith chart plotting failed: {}. Using complex plot.".format(e))
+
+            for i in range(network.nports):
+                for j in range(network.nports):
+                    s_param = network.s[:, i, j]
+                    ax.plot(s_param.real, s_param.imag,
+                            label='S{}{}'.format(i+1, j+1),
+                            marker='o', markersize=3)
+
+            ax.set_xlabel('Real Part')
+            ax.set_ylabel('Imaginary Part')
+            ax.set_title('{} (Complex Plane)'.format(title))
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            ax.axis('equal')
+
+        self.draw()
+
 
 # %% Main Application Classes
 class TouchstoneMainWindow(QMainWindow):
@@ -659,21 +797,24 @@ class TouchstoneMainWindow(QMainWindow):
         """Initialize the main window."""
         super().__init__()
         self.setWindowTitle(
-            "Enhanced Touchstone AutoPlot with Modern GUI and Time Domain Analysis")
-        self.setGeometry(100, 100, 1200, 800)
+            "Enhanced Touchstone AutoPlot with Modern GUI, Time Domain Analysis, and Smith Chart Plotting")
+        self.setGeometry(100, 100, 1400, 900)
 
         # Initialize configurations
         self.config = ProcessingConfig()
         self.td_config = TimeDomainConfig()
+        self.smith_config = SmithChartConfig()
 
         # Initialize components
         self.touchstone_plotter = None
         self.td_processor = TimeDomainProcessor(self.td_config)
+        self.smith_processor = SmithChartProcessor(self.smith_config)
 
         # Data storage
         self.selected_files = []
         self.processed_data = {}
         self.td_results = {}
+        self.smith_results = {}
 
         # Setup UI
         self._setup_ui()
@@ -699,6 +840,7 @@ class TouchstoneMainWindow(QMainWindow):
         # Setup tabs
         self._setup_main_tab()
         self._setup_time_domain_tab()
+        self._setup_smith_chart_tab()
 
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -898,6 +1040,17 @@ class TouchstoneMainWindow(QMainWindow):
 
         controls_layout.addWidget(method_group)
 
+        # Processing scope selection
+        scope_group = QGroupBox("Processing Scope")
+        scope_layout = QVBoxLayout(scope_group)
+
+        self.td_process_selected_only = QCheckBox(
+            "Process only selected file from dropdown")
+        self.td_process_selected_only.setChecked(False)
+        scope_layout.addWidget(self.td_process_selected_only)
+
+        controls_layout.addWidget(scope_group)
+
         # Process button for time domain
         self.td_process_button = QPushButton("Process Time Domain")
         self.td_process_button.clicked.connect(self._process_time_domain)
@@ -912,6 +1065,102 @@ class TouchstoneMainWindow(QMainWindow):
         # Add to layout
         layout.addWidget(controls_widget)
         layout.addWidget(self.td_plot_canvas)
+
+    def _setup_smith_chart_tab(self):
+        """Setup the Smith Chart analysis tab."""
+        smith_tab = QWidget()
+        self.tab_widget.addTab(smith_tab, "Smith Chart Analysis")
+
+        layout = QHBoxLayout(smith_tab)
+
+        # Left panel for controls
+        controls_widget = QWidget()
+        controls_widget.setMaximumWidth(400)
+        controls_layout = QVBoxLayout(controls_widget)
+
+        # File selection for preview
+        file_select_group = QGroupBox("File Selection for Preview")
+        file_select_layout = QVBoxLayout(file_select_group)
+
+        self.smith_file_combo = QComboBox()
+        self.smith_file_combo.currentTextChanged.connect(
+            self._update_smith_preview)
+        file_select_layout.addWidget(self.smith_file_combo)
+
+        controls_layout.addWidget(file_select_group)
+
+        # Smith Chart settings
+        smith_group = QGroupBox("Smith Chart Settings")
+        smith_layout = QFormLayout(smith_group)
+
+        self.chart_type_combo = QComboBox()
+        self.chart_type_combo.addItems(['z (Impedance)', 'y (Admittance)'])
+        self.chart_type_combo.setCurrentText('z (Impedance)')
+        self.chart_type_combo.currentTextChanged.connect(
+            self._update_chart_type)
+        smith_layout.addRow("Chart Type:", self.chart_type_combo)
+
+        self.ref_impedance_spin = QDoubleSpinBox()
+        self.ref_impedance_spin.setRange(1.0, 1000.0)
+        self.ref_impedance_spin.setValue(self.smith_config.reference_impedance)
+        self.ref_impedance_spin.setSuffix(' Ω')
+        self.ref_impedance_spin.valueChanged.connect(
+            self._update_ref_impedance)
+        smith_layout.addRow("Reference Impedance:", self.ref_impedance_spin)
+
+        self.draw_labels_checkbox = QCheckBox("Draw Labels")
+        self.draw_labels_checkbox.setChecked(self.smith_config.draw_labels)
+        self.draw_labels_checkbox.stateChanged.connect(
+            self._update_draw_labels)
+        smith_layout.addRow(self.draw_labels_checkbox)
+
+        self.draw_vswr_checkbox = QCheckBox("Draw VSWR Circles")
+        self.draw_vswr_checkbox.setChecked(self.smith_config.draw_vswr)
+        self.draw_vswr_checkbox.stateChanged.connect(self._update_draw_vswr)
+        smith_layout.addRow(self.draw_vswr_checkbox)
+
+        controls_layout.addWidget(smith_group)
+
+        # Time domain filtering option
+        td_filter_group = QGroupBox("Time Domain Filtering")
+        td_filter_layout = QVBoxLayout(td_filter_group)
+
+        self.smith_enable_td_filter = QCheckBox(
+            "Enable time domain filtering on Smith Chart data")
+        self.smith_enable_td_filter.setChecked(False)
+        self.smith_enable_td_filter.stateChanged.connect(
+            self._update_smith_preview)
+        td_filter_layout.addWidget(self.smith_enable_td_filter)
+
+        controls_layout.addWidget(td_filter_group)
+
+        # Processing scope selection
+        scope_group = QGroupBox("Processing Scope")
+        scope_layout = QVBoxLayout(scope_group)
+
+        self.smith_process_selected_only = QCheckBox(
+            "Generate Smith Chart only for selected file from dropdown")
+        self.smith_process_selected_only.setChecked(False)
+        scope_layout.addWidget(self.smith_process_selected_only)
+
+        controls_layout.addWidget(scope_group)
+
+        # Process button for Smith Charts
+        self.smith_process_button = QPushButton(
+            "Generate Smith Charts in Veusz")
+        self.smith_process_button.clicked.connect(self._process_smith_charts)
+        self.smith_process_button.setEnabled(False)
+        controls_layout.addWidget(self.smith_process_button)
+
+        controls_layout.addStretch()
+
+        # Right panel for plot
+        self.smith_plot_canvas = TouchstonePlotCanvas(
+            smith_tab, width=8, height=6)
+
+        # Add to layout
+        layout.addWidget(controls_widget)
+        layout.addWidget(self.smith_plot_canvas)
 
     def _browse_files(self):
         """Open file dialog to select multiple Touchstone files."""
@@ -932,8 +1181,10 @@ class TouchstoneMainWindow(QMainWindow):
         self.selected_files.clear()
         self.processed_data.clear()
         self.td_results.clear()
+        self.smith_results.clear()
         self._update_file_list()
         self._update_td_file_combo()
+        self._update_smith_file_combo()
         self._log_message("File list cleared")
 
     def _update_file_list(self):
@@ -948,6 +1199,13 @@ class TouchstoneMainWindow(QMainWindow):
         if self.processed_data:
             self.td_file_combo.addItems(list(self.processed_data.keys()))
         self.td_process_button.setEnabled(len(self.processed_data) > 0)
+
+    def _update_smith_file_combo(self):
+        """Update the Smith Chart file selection combo box."""
+        self.smith_file_combo.clear()
+        if self.processed_data:
+            self.smith_file_combo.addItems(list(self.processed_data.keys()))
+        self.smith_process_button.setEnabled(len(self.processed_data) > 0)
 
     def _update_mp_config(self, state):
         """Update multiprocessing configuration.
@@ -1068,6 +1326,53 @@ class TouchstoneMainWindow(QMainWindow):
         self.td_config.method = method
         self._update_td_preview()
 
+    def _update_chart_type(self, chart_type_text):
+        """Update Smith Chart type configuration.
+
+        Parameters
+        ----------
+        chart_type_text : str
+            Chart type selection text.
+        """
+        if 'Impedance' in chart_type_text:
+            self.smith_config.chart_type = 'z'
+        else:
+            self.smith_config.chart_type = 'y'
+        self._update_smith_preview()
+
+    def _update_ref_impedance(self, value):
+        """Update reference impedance configuration.
+
+        Parameters
+        ----------
+        value : float
+            Reference impedance value.
+        """
+        self.smith_config.reference_impedance = value
+        self._update_smith_preview()
+
+    def _update_draw_labels(self, state):
+        """Update draw labels configuration.
+
+        Parameters
+        ----------
+        state : int
+            Checkbox state.
+        """
+        self.smith_config.draw_labels = state == Qt.Checked
+        self._update_smith_preview()
+
+    def _update_draw_vswr(self, state):
+        """Update draw VSWR configuration.
+
+        Parameters
+        ----------
+        state : int
+            Checkbox state.
+        """
+        self.smith_config.draw_vswr = state == Qt.Checked
+        self._update_smith_preview()
+
     def _update_td_preview(self):
         """Update the time domain preview plot."""
         if not self.processed_data:
@@ -1142,6 +1447,59 @@ class TouchstoneMainWindow(QMainWindow):
         except Exception as e:
             self._log_message("Preview update error: {}".format(e))
 
+    def _update_smith_preview(self):
+        """Update the Smith Chart preview plot."""
+        if not self.processed_data:
+            return
+
+        current_file = self.smith_file_combo.currentText()
+        if not current_file or current_file not in self.processed_data:
+            return
+
+        try:
+            # Get current file data
+            data = self.processed_data[current_file]
+            network = data['network']
+
+            # Update Smith Chart processor config
+            self.smith_processor.config = self.smith_config
+
+            # Apply time domain filtering if requested
+            apply_td_filter = self.smith_enable_td_filter.isChecked()
+
+            if apply_td_filter:
+                smith_data = self.smith_processor.process_network_for_smith_chart(
+                    network, apply_td_filter=True, td_processor=self.td_processor
+                )
+
+                if 'error' not in smith_data and 'S11' in smith_data:
+                    preview_network = smith_data['S11']
+                    plot_title = "{} - S11 Smith Chart (Time Domain Filtered)".format(
+                        current_file)
+                else:
+                    # Fall back to original if filtering failed
+                    preview_network = network.copy()
+                    preview_network.s = network.s[:, 0, 0].reshape(-1, 1, 1)
+                    plot_title = "{} - S11 Smith Chart (Original)".format(
+                        current_file)
+            else:
+                # Use original network
+                preview_network = network.copy()
+                preview_network.s = network.s[:, 0, 0].reshape(-1, 1, 1)
+                plot_title = "{} - S11 Smith Chart".format(current_file)
+
+            # Update plot
+            self.smith_plot_canvas.plot_smith_chart(
+                preview_network,
+                title=plot_title,
+                chart_type=self.smith_config.chart_type,
+                draw_labels=self.smith_config.draw_labels,
+                draw_vswr=self.smith_config.draw_vswr
+            )
+
+        except Exception as e:
+            self._log_message("Smith Chart preview error: {}".format(e))
+
     def _process_files(self):
         """Process selected Touchstone files."""
         if not self.selected_files:
@@ -1197,6 +1555,7 @@ class TouchstoneMainWindow(QMainWindow):
         if successful_files > 0:
             self.processed_data = results
             self._update_td_file_combo()
+            self._update_smith_file_combo()
             self._create_plots(results)
             self.save_button.setEnabled(True)
 
@@ -1232,8 +1591,21 @@ class TouchstoneMainWindow(QMainWindow):
             # Update processor config
             self.td_processor.config = self.td_config
 
+            # Determine which files to process
+            if self.td_process_selected_only.isChecked():
+                current_file = self.td_file_combo.currentText()
+                if current_file and current_file in self.processed_data:
+                    files_to_process = {
+                        current_file: self.processed_data[current_file]}
+                else:
+                    QMessageBox.warning(
+                        self, "Warning", "No file selected for processing.")
+                    return
+            else:
+                files_to_process = self.processed_data
+
             # Process each file
-            for filename, data in self.processed_data.items():
+            for filename, data in files_to_process.items():
                 network = data['network']
                 td_result = self.td_processor.process_network(network)
                 self.td_results[filename] = td_result
@@ -1241,11 +1613,61 @@ class TouchstoneMainWindow(QMainWindow):
                 # Create time domain plots in Veusz
                 self._create_time_domain_plots(filename, data, td_result)
 
-            self._log_message("Time domain analysis completed")
+            scope_msg = "selected file" if self.td_process_selected_only.isChecked() else "all files"
+            self._log_message(
+                "Time domain analysis completed for {}".format(scope_msg))
 
         except Exception as e:
             self._log_message("Time domain analysis error: {}".format(e))
             QMessageBox.critical(self, "Time Domain Error", str(e))
+
+    def _process_smith_charts(self):
+        """Process Smith Chart analysis for files."""
+        if not self.processed_data:
+            QMessageBox.warning(
+                self, "Warning", "Please process Touchstone files first.")
+            return
+
+        self._log_message("Starting Smith Chart analysis...")
+
+        try:
+            # Update processor config
+            self.smith_processor.config = self.smith_config
+
+            # Determine which files to process
+            if self.smith_process_selected_only.isChecked():
+                current_file = self.smith_file_combo.currentText()
+                if current_file and current_file in self.processed_data:
+                    files_to_process = {
+                        current_file: self.processed_data[current_file]}
+                else:
+                    QMessageBox.warning(
+                        self, "Warning", "No file selected for processing.")
+                    return
+            else:
+                files_to_process = self.processed_data
+
+            # Process each file
+            apply_td_filter = self.smith_enable_td_filter.isChecked()
+
+            for filename, data in files_to_process.items():
+                network = data['network']
+                smith_result = self.smith_processor.process_network_for_smith_chart(
+                    network, apply_td_filter=apply_td_filter, td_processor=self.td_processor
+                )
+                self.smith_results[filename] = smith_result
+
+                # Create Smith Chart plots in Veusz
+                self._create_smith_chart_plots(filename, data, smith_result)
+
+            scope_msg = "selected file" if self.smith_process_selected_only.isChecked() else "all files"
+            filter_msg = " (with time domain filtering)" if apply_td_filter else ""
+            self._log_message(
+                "Smith Chart analysis completed for {}{}".format(scope_msg, filter_msg))
+
+        except Exception as e:
+            self._log_message("Smith Chart analysis error: {}".format(e))
+            QMessageBox.critical(self, "Smith Chart Error", str(e))
 
     def _create_plots(self, results):
         """Create Veusz plots from processed results.
@@ -1290,6 +1712,28 @@ class TouchstoneMainWindow(QMainWindow):
 
         except Exception as e:
             self._log_message("Time domain plot creation error: {}".format(e))
+
+    def _create_smith_chart_plots(self, filename, data, smith_result):
+        """Create Smith Chart plots in Veusz.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the file.
+        data : dict
+            Original data dictionary.
+        smith_result : dict
+            Smith Chart analysis results.
+        """
+        if not self.touchstone_plotter or 'error' in smith_result:
+            return
+
+        try:
+            self.touchstone_plotter.create_smith_chart_plots(
+                filename, data, smith_result)
+
+        except Exception as e:
+            self._log_message("Smith Chart plot creation error: {}".format(e))
 
     def _save_project(self):
         """Save Veusz project."""
@@ -1457,6 +1901,35 @@ class TouchstonePlotter:
                 if td_key in td_result and tdf_key in td_result:
                     self._create_time_domain_page(
                         dataset_name, param_name, data, td_result
+                    )
+
+    def create_smith_chart_plots(self, filename, data, smith_result):
+        """Create Smith Chart plots in Veusz.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the file.
+        data : Dict[str, Any]
+            Original data dictionary.
+        smith_result : Dict[str, Any]
+            Smith Chart analysis results.
+        """
+        if 'error' in smith_result:
+            return
+
+        dataset_name = os.path.splitext(filename)[0]
+
+        # Create Smith Chart pages for each S-parameter
+        network = data['network']
+        n_ports = network.nports
+
+        for i in range(n_ports):
+            for j in range(n_ports):
+                param_name = "S{}{}".format(i+1, j+1)
+                if param_name in smith_result:
+                    self._create_smith_chart_page(
+                        dataset_name, param_name, data, smith_result
                     )
 
     def _create_overlay_pages(self):
@@ -1710,6 +2183,78 @@ class TouchstonePlotter:
         xy_filt = graph_td.Add('xy', name="{}_td_filt".format(param_name))
         self._configure_xy_plot(xy_filt, time_name, td_filt_name, 'red')
 
+    def _create_smith_chart_page(self, dataset_name, param_name, data, smith_result):
+        """Create Smith Chart plot page for a specific S-parameter.
+
+        Parameters
+        ----------
+        dataset_name : str
+            Name of the dataset.
+        param_name : str
+            S-parameter name.
+        data : dict
+            Original data dictionary.
+        smith_result : dict
+            Smith Chart results.
+        """
+        # Get the network for this parameter
+        param_network = smith_result.get(param_name)
+        if param_network is None:
+            return
+
+        # Create datasets for Smith Chart
+        real_name = "{}_{}_real".format(dataset_name, param_name)
+        imag_name = "{}_{}_imag".format(dataset_name, param_name)
+
+        # Extract real and imaginary parts of S-parameters
+        s_param = param_network.s[:, 0, 0]  # Single port network
+        real_part = np.real(s_param)
+        imag_part = np.imag(s_param)
+
+        # Set data in Veusz
+        self.doc.SetData(real_name, real_part)
+        self.doc.SetData(imag_name, imag_part)
+
+        # Create Smith Chart page using polar plot
+        smith_page_name = "{}_{}_SmithChart".format(dataset_name, param_name)
+        page_smith = self.doc.Root.Add('page', name=smith_page_name)
+        grid_smith = page_smith.Add('grid', columns=2)
+
+        # Use polar plot to simulate Smith Chart
+        graph_smith = grid_smith.Add(
+            'polar', name="{}_{}_Smith_Graph".format(dataset_name, param_name))
+
+        # Add header info to page notes
+        if 'header_info' in data:
+            page_smith.notes.val = '\n'.join(data['header_info'])
+
+        # Configure polar graph for Smith Chart appearance
+        self._configure_smith_polar_graph(
+            graph_smith,
+            "{} - {} Smith Chart{}".format(
+                dataset_name.replace('_', ' '),
+                param_name,
+                " (Time Domain Filtered)" if smith_result.get(
+                    'filtered', False) else ""
+            )
+        )
+
+        # Convert to polar coordinates for polar plot
+        magnitude = np.abs(s_param)
+        phase_rad = np.angle(s_param)
+
+        # Create datasets for polar representation
+        mag_name = "{}_{}_smith_mag".format(dataset_name, param_name)
+        phase_name = "{}_{}_smith_phase".format(dataset_name, param_name)
+
+        self.doc.SetData(mag_name, magnitude)
+        self.doc.SetData(phase_name, phase_rad)
+
+        # Add polar plot for Smith Chart
+        polar_plot = graph_smith.Add(
+            'nonorthpoint', name="{}_smith".format(param_name))
+        self._configure_smith_polar_plot(polar_plot, mag_name, phase_name)
+
     def _configure_standard_graph(self, graph, title, x_label,
                                   y_label, y_min, y_max):
         """Configure a standard XY graph.
@@ -1775,6 +2320,54 @@ class TouchstonePlotter:
             plot.markerSize.val = '2pt'
             plot.MarkerFill.color.val = 'auto'
             plot.MarkerFill.transparency.val = 80
+
+    def _configure_smith_polar_graph(self, graph, title):
+        """Configure a polar graph for Smith Chart representation.
+
+        Parameters
+        ----------
+        graph : veusz polar graph object
+            Polar graph to configure.
+        title : str
+            Graph title.
+        """
+        with self._wrap_widget(graph) as g:
+            g.Add('label', name='plotTitle')
+            g.topMargin.val = '1cm'
+            g.plotTitle.Text.size.val = '12pt'
+            g.plotTitle.label.val = title
+            g.plotTitle.alignHorz.val = 'centre'
+            g.plotTitle.yPos.val = 1.05
+            g.plotTitle.xPos.val = 0.5
+
+            # Configure polar settings for Smith Chart
+            g.units.val = 'radians'
+            g.direction.val = 'anticlockwise'
+            g.position0.val = 'right'
+            g.minradius.val = 0
+            g.maxradius.val = 1
+
+    def _configure_smith_polar_plot(self, plot, mag_data, phase_data):
+        """Configure a polar plot for Smith Chart representation.
+
+        Parameters
+        ----------
+        plot : veusz polar plot object
+            Polar plot to configure.
+        mag_data : str
+            Magnitude data name.
+        phase_data : str
+            Phase data name.
+        """
+        with self._wrap_widget(plot) as p:
+            p.data1.val = mag_data
+            p.data2.val = phase_data
+            p.PlotLine.color.val = 'blue'
+            p.PlotLine.width.val = '2pt'
+            p.marker.val = 'circle'
+            p.markerSize.val = '3pt'
+            p.MarkerFill.color.val = 'blue'
+            p.MarkerFill.transparency.val = 60
 
     def _add_to_overlay_plots(self, dataset_name, data):
         """Add dataset to overlay plots.
