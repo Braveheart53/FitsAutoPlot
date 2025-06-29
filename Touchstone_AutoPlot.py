@@ -1,9 +1,9 @@
 """Enhanced Touchstone AutoPlot with Modern Qt GUI Interface and Time Domain Analysis.
-
+# %% Heading Info
 This version integrates modern Qt GUI interface with comprehensive Touchstone file processing
 capabilities using scikit-rf, including multiprocessing, GPU acceleration, and advanced
 time domain analysis with gating functionality.
-
+# %%% Author Info
 Author: William W. Wallace
 Last updated: 2025-06-28
 """
@@ -70,12 +70,12 @@ except ImportError:
 # System Interface Modules
 os.environ['QT_API'] = 'pyside6'
 
+
 # %% Configuration Classes
-
-
 @dataclass
 class ProcessingConfig:
     """Configuration class for processing settings."""
+
     enable_multiprocessing: bool = True
     enable_gpu_processing: bool = True
     use_opencl: bool = True
@@ -87,6 +87,7 @@ class ProcessingConfig:
 @dataclass
 class TimeDomainConfig:
     """Configuration class for time domain analysis settings."""
+
     window_type: str = 'kaiser'
     window_param: float = 6.0
     gate_start: float = 0.0
@@ -98,13 +99,12 @@ class TimeDomainConfig:
     t_unit: str = 'ns'
     auto_gate: bool = True
 
+
 # %% GPU Acceleration Classes
-
-
 class GPUAccelerator:
     """Handles GPU-accelerated computations with cross-platform support."""
 
-    def __init__(self, enable_gpu: bool = True):
+    def __init__(self, enable_gpu=True):
         """Initialize GPU accelerator.
 
         Parameters
@@ -123,18 +123,18 @@ class GPUAccelerator:
         if self.backend == "cupy":
             try:
                 cp.cuda.Device(0).use()
-                print(f"CuPy initialized on device: {cp.cuda.Device()}")
+                print("CuPy initialized on device: {}".format(cp.cuda.Device()))
             except Exception as e:
-                print(f"CuPy initialization failed: {e}")
+                print("CuPy initialization failed: {}".format(e))
                 self.gpu_enabled = False
 
         elif self.backend == "opencl":
             try:
                 self.cl_context = cl.create_some_context()
                 self.cl_queue = cl.CommandQueue(self.cl_context)
-                print(f"OpenCL initialized: {self.cl_context.devices}")
+                print("OpenCL initialized: {}".format(self.cl_context.devices))
             except Exception as e:
-                print(f"OpenCL initialization failed: {e}")
+                print("OpenCL initialization failed: {}".format(e))
                 self.gpu_enabled = False
 
         elif self.backend == "taichi":
@@ -142,12 +142,12 @@ class GPUAccelerator:
                 ti.init(arch=ti.gpu)
                 print("Taichi GPU backend initialized")
             except Exception as e:
-                print(f"Taichi GPU initialization failed: {e}")
+                print("Taichi GPU initialization failed: {}".format(e))
                 ti.init(arch=ti.cpu)
                 print("Taichi fallback to CPU")
                 self.gpu_enabled = False
 
-    def process_s_parameters(self, s_data: np.ndarray) -> np.ndarray:
+    def process_s_parameters(self, s_data):
         """Process S-parameter data with GPU acceleration if available.
 
         Parameters
@@ -171,34 +171,66 @@ class GPUAccelerator:
             elif self.backend == "taichi":
                 return self._taichi_process(s_data)
         except Exception as e:
-            print(f"GPU processing failed, falling back to CPU: {e}")
+            print("GPU processing failed, falling back to CPU: {}".format(e))
             return np.copy(s_data)
 
         return np.copy(s_data)
 
-    def _cupy_process(self, data: np.ndarray) -> np.ndarray:
-        """CuPy-based GPU processing."""
+    def _cupy_process(self, data):
+        """CuPy-based GPU processing.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Input data array.
+
+        Returns
+        -------
+        np.ndarray
+            Processed data array.
+        """
         gpu_data = cp.asarray(data)
         # Perform any GPU-accelerated computations here
         result = cp.copy(gpu_data)
         return cp.asnumpy(result)
 
-    def _opencl_process(self, data: np.ndarray) -> np.ndarray:
-        """OpenCL-based GPU processing."""
+    def _opencl_process(self, data):
+        """OpenCL-based GPU processing.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Input data array.
+
+        Returns
+        -------
+        np.ndarray
+            Processed data array.
+        """
         # Basic passthrough with OpenCL memory management
         data_gpu = cl_array.to_device(self.cl_queue, data.astype(np.complex64))
         result = data_gpu.get()
         return result
 
-    def _taichi_process(self, data: np.ndarray) -> np.ndarray:
-        """Taichi-based GPU processing."""
+    def _taichi_process(self, data):
+        """Taichi-based GPU processing.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Input data array.
+
+        Returns
+        -------
+        np.ndarray
+            Processed data array.
+        """
         # Basic passthrough with Taichi
         return np.copy(data)
 
+
 # %% Worker Functions for Multiprocessing
-
-
-def process_single_touchstone_file(file_info: Tuple[str, object]) -> Tuple[str, Dict[str, Any]]:
+def process_single_touchstone_file(file_info):
     """Process a single Touchstone file with multiprocessing support.
 
     This function is designed to be used with multiprocessing pools.
@@ -242,7 +274,8 @@ def process_single_touchstone_file(file_info: Tuple[str, object]) -> Tuple[str, 
                     elif line.strip() and not line[0].isdigit():
                         header_info.append(line.strip())
         except Exception as e:
-            print(f"Warning: Could not extract header from {filename}: {e}")
+            print("Warning: Could not extract header from {}: {}".format(
+                filename, e))
 
         return filename, {
             'network': network,
@@ -258,12 +291,12 @@ def process_single_touchstone_file(file_info: Tuple[str, object]) -> Tuple[str, 
         }
 
     except Exception as e:
-        print(f"Error processing Touchstone file {file_path}: {str(e)}")
+        print("Error processing Touchstone file {}: {}".format(
+            file_path, str(e)))
         return os.path.basename(file_path), {}
 
+
 # %% Threading Classes
-
-
 class TouchstoneProcessingThread(QThread):
     """Thread for handling Touchstone file processing without blocking the GUI."""
 
@@ -300,7 +333,13 @@ class TouchstoneProcessingThread(QThread):
             self.error_occurred.emit(str(e))
 
     def _process_files_parallel(self):
-        """Process files using multiprocessing."""
+        """Process files using multiprocessing.
+
+        Returns
+        -------
+        dict
+            Dictionary containing processed results.
+        """
         file_info_list = [
             (file_path, self.gpu_accelerator)
             for file_path in self.file_list
@@ -326,7 +365,13 @@ class TouchstoneProcessingThread(QThread):
         return results
 
     def _process_files_sequential(self):
-        """Process files sequentially."""
+        """Process files sequentially.
+
+        Returns
+        -------
+        dict
+            Dictionary containing processed results.
+        """
         results = {}
 
         for i, file_path in enumerate(self.file_list):
@@ -342,13 +387,12 @@ class TouchstoneProcessingThread(QThread):
 
         return results
 
+
 # %% Time Domain Analysis Classes
-
-
 class TimeDomainProcessor:
     """Handles time domain analysis and gating of S-parameter data."""
 
-    def __init__(self, config: TimeDomainConfig):
+    def __init__(self, config):
         """Initialize time domain processor.
 
         Parameters
@@ -358,7 +402,7 @@ class TimeDomainProcessor:
         """
         self.config = config
 
-    def process_network(self, network: Network) -> Dict[str, Any]:
+    def process_network(self, network):
         """Process a network for time domain analysis.
 
         Parameters
@@ -409,24 +453,25 @@ class TimeDomainProcessor:
                         )
 
                     # Store results
-                    param_name = f"S{i+1}{j+1}"
-                    results[f"{param_name}_original"] = temp_network
-                    results[f"{param_name}_gated"] = gated_network
-                    results[f"{param_name}_td"] = temp_network.s_time_db
-                    results[f"{param_name}_td_filtered"] = gated_network.s_time_db
+                    param_name = "S{}{}".format(i+1, j+1)
+                    results["{}_original".format(param_name)] = temp_network
+                    results["{}_gated".format(param_name)] = gated_network
+                    results["{}_td".format(param_name)
+                            ] = temp_network.s_time_db
+                    results["{}_td_filtered".format(
+                        param_name)] = gated_network.s_time_db
 
             # Store time vector
             results['time'] = network.frequency.t_ns
 
         except Exception as e:
-            print(f"Time domain processing error: {e}")
+            print("Time domain processing error: {}".format(e))
             results['error'] = str(e)
 
         return results
 
+
 # %% Matplotlib Canvas for Embedded Plots
-
-
 class TouchstonePlotCanvas(FigureCanvas):
     """Custom matplotlib canvas for Touchstone plots."""
 
@@ -477,11 +522,12 @@ class TouchstonePlotCanvas(FigureCanvas):
             for j in range(n_ports):
                 idx = i * n_ports + j
                 mag_db = 20 * np.log10(np.abs(s_data[:, idx]) + 1e-12)
-                ax1.plot(frequency / 1e9, mag_db, label=f'S{i+1}{j+1}')
+                ax1.plot(frequency / 1e9, mag_db,
+                         label='S{}{}'.format(i+1, j+1))
 
         ax1.set_xlabel('Frequency (GHz)')
         ax1.set_ylabel('Magnitude (dB)')
-        ax1.set_title(f'{title} - Magnitude')
+        ax1.set_title('{} - Magnitude'.format(title))
         ax1.grid(True, alpha=0.3)
         ax1.legend()
 
@@ -490,11 +536,12 @@ class TouchstonePlotCanvas(FigureCanvas):
             for j in range(n_ports):
                 idx = i * n_ports + j
                 phase_deg = np.angle(s_data[:, idx], deg=True)
-                ax2.plot(frequency / 1e9, phase_deg, label=f'S{i+1}{j+1}')
+                ax2.plot(frequency / 1e9, phase_deg,
+                         label='S{}{}'.format(i+1, j+1))
 
         ax2.set_xlabel('Frequency (GHz)')
         ax2.set_ylabel('Phase (degrees)')
-        ax2.set_title(f'{title} - Phase')
+        ax2.set_title('{} - Phase'.format(title))
         ax2.grid(True, alpha=0.3)
         ax2.legend()
 
@@ -535,9 +582,8 @@ class TouchstonePlotCanvas(FigureCanvas):
 
         self.draw()
 
+
 # %% Main Application Classes
-
-
 class TouchstoneMainWindow(QMainWindow):
     """Main window for Touchstone AutoPlot application."""
 
@@ -566,9 +612,9 @@ class TouchstoneMainWindow(QMainWindow):
 
         # Initialize status
         self._log_message("Enhanced Touchstone AutoPlot initialized")
-        self._log_message(f"GPU Support: {GPU_AVAILABLE or 'None'}")
-        self._log_message(
-            f"CPU Cores Available: {multiprocessing.cpu_count()}")
+        self._log_message("GPU Support: {}".format(GPU_AVAILABLE or 'None'))
+        self._log_message("CPU Cores Available: {}".format(
+            multiprocessing.cpu_count()))
 
     def _setup_ui(self):
         """Set up the user interface with tab widget."""
@@ -811,7 +857,7 @@ class TouchstoneMainWindow(QMainWindow):
             self.selected_files.extend(selected_files)
             self._update_file_list()
             self._log_message(
-                f"Selected {len(selected_files)} Touchstone files")
+                "Selected {} Touchstone files".format(len(selected_files)))
 
     def _clear_files(self):
         """Clear the selected files list."""
@@ -836,59 +882,121 @@ class TouchstoneMainWindow(QMainWindow):
         self.td_process_button.setEnabled(len(self.processed_data) > 0)
 
     def _update_mp_config(self, state):
-        """Update multiprocessing configuration."""
+        """Update multiprocessing configuration.
+
+        Parameters
+        ----------
+        state : int
+            Checkbox state.
+        """
         self.config.enable_multiprocessing = state == Qt.Checked
-        self._log_message(
-            f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}"
+        status_msg = "Multiprocessing: {}".format(
+            'Enabled' if self.config.enable_multiprocessing else 'Disabled'
         )
+        self._log_message(status_msg)
 
     def _update_cpu_config(self, value):
-        """Update CPU cores configuration."""
+        """Update CPU cores configuration.
+
+        Parameters
+        ----------
+        value : int
+            Number of CPU cores.
+        """
         self.config.num_processes = value
         self.config.max_workers = value
-        self._log_message(f"CPU cores set to: {value}")
+        self._log_message("CPU cores set to: {}".format(value))
 
     def _update_gpu_config(self, state):
-        """Update GPU processing configuration."""
+        """Update GPU processing configuration.
+
+        Parameters
+        ----------
+        state : int
+            Checkbox state.
+        """
         self.config.enable_gpu_processing = state == Qt.Checked
-        self._log_message(
-            f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}"
+        status_msg = "GPU processing: {}".format(
+            'Enabled' if self.config.enable_gpu_processing else 'Disabled'
         )
+        self._log_message(status_msg)
 
     def _update_window_config(self, window_type):
-        """Update window type configuration."""
+        """Update window type configuration.
+
+        Parameters
+        ----------
+        window_type : str
+            Window type selection.
+        """
         self.td_config.window_type = window_type
         self._update_td_preview()
 
     def _update_window_param(self, value):
-        """Update window parameter configuration."""
+        """Update window parameter configuration.
+
+        Parameters
+        ----------
+        value : float
+            Window parameter value.
+        """
         self.td_config.window_param = value
         self._update_td_preview()
 
     def _update_auto_gate(self, state):
-        """Update auto gate configuration."""
+        """Update auto gate configuration.
+
+        Parameters
+        ----------
+        state : int
+            Checkbox state.
+        """
         self.td_config.auto_gate = state == Qt.Checked
         self.gate_start_spin.setEnabled(not self.td_config.auto_gate)
         self.gate_stop_spin.setEnabled(not self.td_config.auto_gate)
         self._update_td_preview()
 
     def _update_gate_start(self, value):
-        """Update gate start configuration."""
+        """Update gate start configuration.
+
+        Parameters
+        ----------
+        value : float
+            Gate start value.
+        """
         self.td_config.gate_start = value
         self._update_td_preview()
 
     def _update_gate_stop(self, value):
-        """Update gate stop configuration."""
+        """Update gate stop configuration.
+
+        Parameters
+        ----------
+        value : float
+            Gate stop value.
+        """
         self.td_config.gate_stop = value
         self._update_td_preview()
 
     def _update_mode(self, mode):
-        """Update processing mode configuration."""
+        """Update processing mode configuration.
+
+        Parameters
+        ----------
+        mode : str
+            Processing mode.
+        """
         self.td_config.mode = mode
         self._update_td_preview()
 
     def _update_method(self, method):
-        """Update processing method configuration."""
+        """Update processing method configuration.
+
+        Parameters
+        ----------
+        method : str
+            Processing method.
+        """
         self.td_config.method = method
         self._update_td_preview()
 
@@ -945,21 +1053,26 @@ class TouchstoneMainWindow(QMainWindow):
                     td_filtered = gated_network.s_time_db
 
                     # Update plot
+                    plot_title = "{} - S11 Time Domain Preview".format(
+                        current_file)
                     self.td_plot_canvas.plot_time_domain(
                         time_ns, td_unfiltered[:, 0, 0], td_filtered[:, 0, 0],
-                        f"{current_file} - S11 Time Domain Preview"
+                        plot_title
                     )
 
                 except Exception as e:
-                    self._log_message(f"Time domain preview error: {e}")
+                    self._log_message(
+                        "Time domain preview error: {}".format(e))
                     # Plot only unfiltered data
+                    plot_title = "{} - S11 Time Domain (Unfiltered)".format(
+                        current_file)
                     self.td_plot_canvas.plot_time_domain(
                         time_ns, td_unfiltered[:, 0, 0], None,
-                        f"{current_file} - S11 Time Domain (Unfiltered)"
+                        plot_title
                     )
 
         except Exception as e:
-            self._log_message(f"Preview update error: {e}")
+            self._log_message("Preview update error: {}".format(e))
 
     def _process_files(self):
         """Process selected Touchstone files."""
@@ -995,16 +1108,23 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message("Touchstone processing started...")
 
     def _on_processing_finished(self, results):
-        """Handle processing completion."""
+        """Handle processing completion.
+
+        Parameters
+        ----------
+        results : dict
+            Processing results dictionary.
+        """
         self.progress_bar.setVisible(False)
         self.process_button.setEnabled(True)
 
         successful_files = len([r for r in results.values() if r])
         failed_files = len(results) - successful_files
 
-        self._log_message(
-            f"Processing completed: {successful_files} successful, {failed_files} failed"
+        completion_msg = "Processing completed: {} successful, {} failed".format(
+            successful_files, failed_files
         )
+        self._log_message(completion_msg)
 
         if successful_files > 0:
             self.processed_data = results
@@ -1013,16 +1133,22 @@ class TouchstoneMainWindow(QMainWindow):
             self.save_button.setEnabled(True)
 
         if failed_files > 0:
-            QMessageBox.warning(
-                self, "Processing Warnings",
-                f"{failed_files} files failed to process. Check status log for details."
+            warning_msg = "{} files failed to process. Check status log for details.".format(
+                failed_files
             )
+            QMessageBox.warning(self, "Processing Warnings", warning_msg)
 
     def _on_processing_error(self, error_message):
-        """Handle processing error."""
+        """Handle processing error.
+
+        Parameters
+        ----------
+        error_message : str
+            Error message string.
+        """
         self.progress_bar.setVisible(False)
         self.process_button.setEnabled(True)
-        self._log_message(f"Processing error: {error_message}")
+        self._log_message("Processing error: {}".format(error_message))
         QMessageBox.critical(self, "Processing Error", error_message)
 
     def _process_time_domain(self):
@@ -1050,11 +1176,17 @@ class TouchstoneMainWindow(QMainWindow):
             self._log_message("Time domain analysis completed")
 
         except Exception as e:
-            self._log_message(f"Time domain analysis error: {e}")
+            self._log_message("Time domain analysis error: {}".format(e))
             QMessageBox.critical(self, "Time Domain Error", str(e))
 
     def _create_plots(self, results):
-        """Create Veusz plots from processed results."""
+        """Create Veusz plots from processed results.
+
+        Parameters
+        ----------
+        results : dict
+            Processing results dictionary.
+        """
         self._log_message("Creating Touchstone plots...")
 
         try:
@@ -1066,11 +1198,21 @@ class TouchstoneMainWindow(QMainWindow):
             self._log_message("Touchstone plot creation completed")
 
         except Exception as e:
-            self._log_message(f"Plot creation error: {e}")
+            self._log_message("Plot creation error: {}".format(e))
             QMessageBox.critical(self, "Plot Creation Error", str(e))
 
     def _create_time_domain_plots(self, filename, data, td_result):
-        """Create time domain plots in Veusz."""
+        """Create time domain plots in Veusz.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the file.
+        data : dict
+            Original data dictionary.
+        td_result : dict
+            Time domain analysis results.
+        """
         if not self.touchstone_plotter or 'error' in td_result:
             return
 
@@ -1079,7 +1221,7 @@ class TouchstoneMainWindow(QMainWindow):
                 filename, data, td_result)
 
         except Exception as e:
-            self._log_message(f"Time domain plot creation error: {e}")
+            self._log_message("Time domain plot creation error: {}".format(e))
 
     def _save_project(self):
         """Save Veusz project."""
@@ -1092,7 +1234,7 @@ class TouchstoneMainWindow(QMainWindow):
         if save_path and self.touchstone_plotter:
             try:
                 self.touchstone_plotter.save(save_path)
-                self._log_message(f"Project saved: {save_path}")
+                self._log_message("Project saved: {}".format(save_path))
 
                 # Ask to open in Veusz
                 reply = QMessageBox.question(
@@ -1106,10 +1248,16 @@ class TouchstoneMainWindow(QMainWindow):
 
             except Exception as e:
                 QMessageBox.critical(self, "Save Error",
-                                     f"Failed to save project: {e}")
+                                     "Failed to save project: {}".format(e))
 
-    def _open_veusz_gui(self, filename: str):
-        """Launch Veusz GUI with generated project file."""
+    def _open_veusz_gui(self, filename):
+        """Launch Veusz GUI with generated project file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the Veusz project file.
+        """
         if sys.platform.startswith('win'):
             veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
         else:
@@ -1127,26 +1275,39 @@ class TouchstoneMainWindow(QMainWindow):
             subprocess.Popen([veusz_exe, filename])
         except Exception as e:
             QMessageBox.critical(
-                self, "Launch Error", f"Failed to start Veusz: {str(e)}"
+                self, "Launch Error", "Failed to start Veusz: {}".format(
+                    str(e))
             )
 
     def _log_message(self, message):
-        """Add message to status text."""
-        self.status_text.append(f"[{self._get_timestamp()}] {message}")
+        """Add message to status text.
+
+        Parameters
+        ----------
+        message : str
+            Message to log.
+        """
+        timestamp = self._get_timestamp()
+        self.status_text.append("[{}] {}".format(timestamp, message))
 
     def _get_timestamp(self):
-        """Get current timestamp string."""
+        """Get current timestamp string.
+
+        Returns
+        -------
+        str
+            Formatted timestamp string.
+        """
         import datetime
         return datetime.datetime.now().strftime("%H:%M:%S")
 
+
 # %% Touchstone Plotter Class
-
-
 class TouchstonePlotter:
     """Enhanced Touchstone plotting class with Veusz integration."""
 
-    def __init__(self, plot_title: str = "Touchstone S-Parameter Analysis",
-                 dataset_name: str = "Touchstone_Dataset"):
+    def __init__(self, plot_title="Touchstone S-Parameter Analysis",
+                 dataset_name="Touchstone_Dataset"):
         """Initialize Touchstone plotter.
 
         Parameters
@@ -1172,7 +1333,7 @@ class TouchstonePlotter:
         # Track overlay pages
         self.overlay_created = False
 
-    def create_plots_from_data(self, filename: str, data: Dict[str, Any]):
+    def create_plots_from_data(self, filename, data):
         """Create Veusz plots from processed Touchstone data.
 
         Parameters
@@ -1198,7 +1359,7 @@ class TouchstonePlotter:
         # Add to overlay plots
         self._add_to_overlay_plots(dataset_name, data)
 
-    def create_time_domain_plots(self, filename: str, data: Dict[str, Any], td_result: Dict[str, Any]):
+    def create_time_domain_plots(self, filename, data, td_result):
         """Create time domain plots in Veusz.
 
         Parameters
@@ -1221,8 +1382,11 @@ class TouchstonePlotter:
 
         for i in range(n_ports):
             for j in range(n_ports):
-                param_name = f"S{i+1}{j+1}"
-                if f"{param_name}_td" in td_result and f"{param_name}_td_filtered" in td_result:
+                param_name = "S{}{}".format(i+1, j+1)
+                td_key = "{}_td".format(param_name)
+                tdf_key = "{}_td_filtered".format(param_name)
+
+                if td_key in td_result and tdf_key in td_result:
                     self._create_time_domain_page(
                         dataset_name, param_name, data, td_result
                     )
@@ -1252,10 +1416,30 @@ class TouchstonePlotter:
         # Set auto color theme
         self.doc.Root.colorTheme.val = 'max128'
 
-    def _configure_overlay_graph(self, graph, title: str, x_label: str,
-                                 y_label: str, y_min: float, y_max: float,
-                                 x_min: float, x_max: float):
-        """Configure an overlay graph with standard settings."""
+    def _configure_overlay_graph(self, graph, title, x_label,
+                                 y_label, y_min, y_max,
+                                 x_min, x_max):
+        """Configure an overlay graph with standard settings.
+
+        Parameters
+        ----------
+        graph : veusz graph object
+            Graph to configure.
+        title : str
+            Graph title.
+        x_label : str
+            X-axis label.
+        y_label : str
+            Y-axis label.
+        y_min : float
+            Y-axis minimum.
+        y_max : float
+            Y-axis maximum.
+        x_min : float
+            X-axis minimum.
+        x_max : float
+            X-axis maximum.
+        """
         with self._wrap_widget(graph) as g:
             g.Add('label', name='plotTitle')
             g.topMargin.val = '1cm'
@@ -1281,22 +1465,30 @@ class TouchstonePlotter:
             g.x.min.val = x_min
             g.x.max.val = x_max
 
-    def _create_individual_plots(self, dataset_name: str, data: Dict[str, Any]):
-        """Create individual plots for a dataset."""
+    def _create_individual_plots(self, dataset_name, data):
+        """Create individual plots for a dataset.
+
+        Parameters
+        ----------
+        dataset_name : str
+            Name of the dataset.
+        data : dict
+            Data dictionary.
+        """
         network = data['network']
         n_ports = network.nports
 
         # Create frequency dataset
-        freq_name = f"{dataset_name}_freq"
+        freq_name = "{}_freq".format(dataset_name)
         self.doc.SetData(freq_name, data['freq_ghz'])
 
         # Create datasets for each S-parameter
         for i in range(n_ports):
             for j in range(n_ports):
                 # S-parameter names
-                param_name = f"S{i+1}{j+1}"
-                mag_name = f"{dataset_name}_{param_name}_mag"
-                phase_name = f"{dataset_name}_{param_name}_phase"
+                param_name = "S{}{}".format(i+1, j+1)
+                mag_name = "{}_{}_mag".format(dataset_name, param_name)
+                phase_name = "{}_{}_phase".format(dataset_name, param_name)
 
                 # Extract S-parameter data
                 s_param = network.s[:, i, j]
@@ -1308,24 +1500,34 @@ class TouchstonePlotter:
                 self.doc.SetData(phase_name, phase_deg)
 
                 # Tag datasets
+                tag_name = "{}_{}".format(dataset_name, param_name)
                 self.doc.TagDatasets(
-                    f"{dataset_name}_{param_name}",
+                    tag_name,
                     [freq_name, mag_name, phase_name]
                 )
 
         # Create individual pages
         self._create_magnitude_phase_pages(dataset_name, data)
 
-    def _create_magnitude_phase_pages(self, dataset_name: str, data: Dict[str, Any]):
-        """Create magnitude and phase plot pages."""
+    def _create_magnitude_phase_pages(self, dataset_name, data):
+        """Create magnitude and phase plot pages.
+
+        Parameters
+        ----------
+        dataset_name : str
+            Name of the dataset.
+        data : dict
+            Data dictionary.
+        """
         network = data['network']
         n_ports = network.nports
 
         # Create magnitude page
-        mag_page_name = f"{dataset_name}_Magnitude"
+        mag_page_name = "{}_Magnitude".format(dataset_name)
         page_mag = self.doc.Root.Add('page', name=mag_page_name)
         grid_mag = page_mag.Add('grid', columns=2)
-        graph_mag = grid_mag.Add('graph', name=f"{dataset_name}_Mag_Graph")
+        graph_mag = grid_mag.Add(
+            'graph', name="{}_Mag_Graph".format(dataset_name))
 
         # Add header info to page notes
         if 'header_info' in data:
@@ -1333,26 +1535,26 @@ class TouchstonePlotter:
 
         # Configure magnitude graph
         self._configure_standard_graph(
-            graph_mag, f"{dataset_name.replace('_', ' ')} - Magnitude",
+            graph_mag, "{} - Magnitude".format(dataset_name.replace('_', ' ')),
             self.freq_label, self.mag_label, -60, 20
         )
 
         # Add S-parameter plots to magnitude graph
-        freq_name = f"{dataset_name}_freq"
+        freq_name = "{}_freq".format(dataset_name)
         for i in range(n_ports):
             for j in range(n_ports):
-                param_name = f"S{i+1}{j+1}"
-                mag_name = f"{dataset_name}_{param_name}_mag"
+                param_name = "S{}{}".format(i+1, j+1)
+                mag_name = "{}_{}_mag".format(dataset_name, param_name)
 
-                xy_mag = graph_mag.Add('xy', name=f"{param_name}_mag")
+                xy_mag = graph_mag.Add('xy', name="{}_mag".format(param_name))
                 self._configure_xy_plot(xy_mag, freq_name, mag_name, 'auto')
 
         # Create phase page
-        phase_page_name = f"{dataset_name}_Phase"
+        phase_page_name = "{}_Phase".format(dataset_name)
         page_phase = self.doc.Root.Add('page', name=phase_page_name)
         grid_phase = page_phase.Add('grid', columns=2)
         graph_phase = grid_phase.Add(
-            'graph', name=f"{dataset_name}_Phase_Graph")
+            'graph', name="{}_Phase_Graph".format(dataset_name))
 
         # Add header info to page notes
         if 'header_info' in data:
@@ -1360,32 +1562,47 @@ class TouchstonePlotter:
 
         # Configure phase graph
         self._configure_standard_graph(
-            graph_phase, f"{dataset_name.replace('_', ' ')} - Phase",
+            graph_phase, "{} - Phase".format(dataset_name.replace('_', ' ')),
             self.freq_label, self.phase_label, -180, 180
         )
 
         # Add S-parameter plots to phase graph
         for i in range(n_ports):
             for j in range(n_ports):
-                param_name = f"S{i+1}{j+1}"
-                phase_name = f"{dataset_name}_{param_name}_phase"
+                param_name = "S{}{}".format(i+1, j+1)
+                phase_name = "{}_{}_phase".format(dataset_name, param_name)
 
-                xy_phase = graph_phase.Add('xy', name=f"{param_name}_phase")
+                xy_phase = graph_phase.Add(
+                    'xy', name="{}_phase".format(param_name))
                 self._configure_xy_plot(
                     xy_phase, freq_name, phase_name, 'auto')
 
-    def _create_time_domain_page(self, dataset_name: str, param_name: str,
-                                 data: Dict[str, Any], td_result: Dict[str, Any]):
-        """Create time domain plot page for a specific S-parameter."""
+    def _create_time_domain_page(self, dataset_name, param_name,
+                                 data, td_result):
+        """Create time domain plot page for a specific S-parameter.
+
+        Parameters
+        ----------
+        dataset_name : str
+            Name of the dataset.
+        param_name : str
+            S-parameter name.
+        data : dict
+            Original data dictionary.
+        td_result : dict
+            Time domain results.
+        """
         # Create time domain datasets
-        time_name = f"{dataset_name}_{param_name}_time"
-        td_unfilt_name = f"{dataset_name}_{param_name}_td"
-        td_filt_name = f"{dataset_name}_{param_name}_tdf"
+        time_name = "{}_{}_time".format(dataset_name, param_name)
+        td_unfilt_name = "{}_{}_td".format(dataset_name, param_name)
+        td_filt_name = "{}_{}_tdf".format(dataset_name, param_name)
 
         # Get time domain data
         time_data = td_result.get('time', np.array([]))
-        td_unfilt_data = td_result.get(f"{param_name}_td", np.array([]))
-        td_filt_data = td_result.get(f"{param_name}_td_filtered", np.array([]))
+        td_unfilt_data = td_result.get(
+            "{}_td".format(param_name), np.array([]))
+        td_filt_data = td_result.get(
+            "{}_td_filtered".format(param_name), np.array([]))
 
         # Set data in Veusz
         self.doc.SetData(time_name, time_data)
@@ -1393,24 +1610,26 @@ class TouchstonePlotter:
         self.doc.SetData(td_filt_name, np.abs(td_filt_data))
 
         # Create time domain page
-        td_page_name = f"{dataset_name}_{param_name}_TimeDomain"
+        td_page_name = "{}_{}_TimeDomain".format(dataset_name, param_name)
         page_td = self.doc.Root.Add('page', name=td_page_name)
         grid_td = page_td.Add('grid', columns=2)
         graph_td = grid_td.Add(
-            'graph', name=f"{dataset_name}_{param_name}_TD_Graph")
+            'graph', name="{}_{}_TD_Graph".format(dataset_name, param_name))
 
         # Add header info to page notes
         if 'header_info' in data:
             page_td.notes.val = '\n'.join(data['header_info'])
 
         # Configure time domain graph
+        graph_title = "{} - {} Time Domain".format(
+            dataset_name.replace('_', ' '), param_name)
         self._configure_standard_graph(
-            graph_td, f"{dataset_name.replace('_', ' ')} - {param_name} Time Domain",
+            graph_td, graph_title,
             self.time_label, 'Magnitude', 0, 1
         )
 
         # Add unfiltered time domain plot (dotted line, no markers)
-        xy_unfilt = graph_td.Add('xy', name=f"{param_name}_td_unfilt")
+        xy_unfilt = graph_td.Add('xy', name="{}_td_unfilt".format(param_name))
         with self._wrap_widget(xy_unfilt) as plot:
             plot.xData.val = time_name
             plot.yData.val = td_unfilt_name
@@ -1420,12 +1639,28 @@ class TouchstonePlotter:
             plot.marker.val = 'none'
 
         # Add filtered time domain plot (solid line)
-        xy_filt = graph_td.Add('xy', name=f"{param_name}_td_filt")
+        xy_filt = graph_td.Add('xy', name="{}_td_filt".format(param_name))
         self._configure_xy_plot(xy_filt, time_name, td_filt_name, 'red')
 
-    def _configure_standard_graph(self, graph, title: str, x_label: str,
-                                  y_label: str, y_min: float, y_max: float):
-        """Configure a standard XY graph."""
+    def _configure_standard_graph(self, graph, title, x_label,
+                                  y_label, y_min, y_max):
+        """Configure a standard XY graph.
+
+        Parameters
+        ----------
+        graph : veusz graph object
+            Graph to configure.
+        title : str
+            Graph title.
+        x_label : str
+            X-axis label.
+        y_label : str
+            Y-axis label.
+        y_min : float
+            Y-axis minimum.
+        y_max : float
+            Y-axis maximum.
+        """
         with self._wrap_widget(graph) as g:
             g.Add('label', name='plotTitle')
             g.topMargin.val = '1cm'
@@ -1449,8 +1684,20 @@ class TouchstonePlotter:
             g.y.min.val = y_min
             g.y.max.val = y_max
 
-    def _configure_xy_plot(self, xy, x_data: str, y_data: str, color: str):
-        """Configure an XY plot."""
+    def _configure_xy_plot(self, xy, x_data, y_data, color):
+        """Configure an XY plot.
+
+        Parameters
+        ----------
+        xy : veusz xy plot object
+            XY plot to configure.
+        x_data : str
+            X data name.
+        y_data : str
+            Y data name.
+        color : str
+            Plot color.
+        """
         with self._wrap_widget(xy) as plot:
             plot.xData.val = x_data
             plot.yData.val = y_data
@@ -1461,8 +1708,16 @@ class TouchstonePlotter:
             plot.MarkerFill.color.val = 'auto'
             plot.MarkerFill.transparency.val = 80
 
-    def _add_to_overlay_plots(self, dataset_name: str, data: Dict[str, Any]):
-        """Add dataset to overlay plots."""
+    def _add_to_overlay_plots(self, dataset_name, data):
+        """Add dataset to overlay plots.
+
+        Parameters
+        ----------
+        dataset_name : str
+            Name of the dataset.
+        data : dict
+            Data dictionary.
+        """
         network = data['network']
         n_ports = network.nports
 
@@ -1474,32 +1729,44 @@ class TouchstonePlotter:
             page_all_phase = self.doc.Root.Overlay_All_Phase
             graph_all_phase = page_all_phase.grid1.Overlay_All_Phase
 
-            freq_name = f"{dataset_name}_freq"
+            freq_name = "{}_freq".format(dataset_name)
 
             # Add each S-parameter to overlays
             for i in range(n_ports):
                 for j in range(n_ports):
-                    param_name = f"S{i+1}{j+1}"
-                    mag_name = f"{dataset_name}_{param_name}_mag"
-                    phase_name = f"{dataset_name}_{param_name}_phase"
+                    param_name = "S{}{}".format(i+1, j+1)
+                    mag_name = "{}_{}_mag".format(dataset_name, param_name)
+                    phase_name = "{}_{}_phase".format(dataset_name, param_name)
 
                     # Add to magnitude overlay
-                    xy_mag = graph_all_mag.Add(
-                        'xy', name=f"{dataset_name}_{param_name}_mag")
+                    xy_mag_name = "{}_{}_mag".format(dataset_name, param_name)
+                    xy_mag = graph_all_mag.Add('xy', name=xy_mag_name)
                     self._configure_xy_plot(
                         xy_mag, freq_name, mag_name, 'auto')
 
                     # Add to phase overlay
-                    xy_phase = graph_all_phase.Add(
-                        'xy', name=f"{dataset_name}_{param_name}_phase")
+                    xy_phase_name = "{}_{}_phase".format(
+                        dataset_name, param_name)
+                    xy_phase = graph_all_phase.Add('xy', name=xy_phase_name)
                     self._configure_xy_plot(
                         xy_phase, freq_name, phase_name, 'auto')
 
         except Exception as e:
-            print(f"Error adding to overlay plots: {e}")
+            print("Error adding to overlay plots: {}".format(e))
 
     def _wrap_widget(self, widget):
-        """Wrapper for Veusz widget context management."""
+        """Wrapper for Veusz widget context management.
+
+        Parameters
+        ----------
+        widget : veusz widget object
+            Widget to wrap.
+
+        Returns
+        -------
+        WidgetWrapper
+            Context manager for the widget.
+        """
         class WidgetWrapper:
             def __init__(self, widget):
                 self.widget = widget
@@ -1512,7 +1779,7 @@ class TouchstonePlotter:
 
         return WidgetWrapper(widget)
 
-    def save(self, filename: str):
+    def save(self, filename):
         """Save Veusz document to specified file.
 
         Parameters
@@ -1523,8 +1790,9 @@ class TouchstonePlotter:
         filename_root = os.path.splitext(filename)[0]
         filename_hp = filename_root + '.vszh5'
         file_split = os.path.split(filename)
+        beware_dir = file_split[0] + '/Beware_oldVersion/'
         filename_vsz = (
-            file_split[0] + '/Beware_oldVersion/' +
+            beware_dir +
             os.path.splitext(file_split[1])[0] + '_BEWARE.vsz'
         )
 
@@ -1532,25 +1800,47 @@ class TouchstonePlotter:
         self.doc.Save(filename_hp, mode='hdf5')
 
         # Save legacy version
-        os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
+        os.makedirs(beware_dir, exist_ok=True)
         self.doc.Save(filename_vsz, mode='vsz')
 
+
 # %% Utility Classes
-
-
 class switch:
     """Creates a case or switch style statement."""
 
     def __init__(self, value):
-        """Initialize switch with value."""
+        """Initialize switch with value.
+
+        Parameters
+        ----------
+        value : Any
+            Value to switch on.
+        """
         self.value = value
 
     def __iter__(self):
-        """Iterate and find the match."""
+        """Iterate and find the match.
+
+        Yields
+        ------
+        function
+            Match function.
+        """
         yield self.match
 
     def match(self, *args):
-        """Return the match."""
+        """Return the match.
+
+        Parameters
+        ----------
+        *args : Any
+            Values to match against.
+
+        Returns
+        -------
+        bool
+            True if value matches any of the arguments.
+        """
         return self.value in args
 
 
@@ -1558,22 +1848,48 @@ class Wrap4With:
     """Used to add context management to a given object."""
 
     def __init__(self, resource):
-        """Initialize wrapper with resource."""
+        """Initialize wrapper with resource.
+
+        Parameters
+        ----------
+        resource : Any
+            Resource to wrap.
+        """
         self._resource = resource
 
     def __enter__(self):
-        """Return the wrapped resource upon entering the context."""
+        """Return the wrapped resource upon entering the context.
+
+        Returns
+        -------
+        Any
+            The wrapped resource.
+        """
         return self._resource
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Clean up the resource upon exiting the context."""
+        """Clean up the resource upon exiting the context.
+
+        Parameters
+        ----------
+        exc_type : type
+            Exception type.
+        exc_val : Exception
+            Exception value.
+        exc_tb : traceback
+            Exception traceback.
+
+        Returns
+        -------
+        None
+            Returns None to propagate exceptions.
+        """
         if hasattr(self._resource, 'close'):
             self._resource.close()
         return None
 
+
 # %% Main Execution
-
-
 def main():
     """Execute main function."""
     # Set multiprocessing start method for cross-platform compatibility
