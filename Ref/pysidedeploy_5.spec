@@ -66,6 +66,10 @@ extra_args =
 	--include-data-files=*.py=./
 	--include-package=veusz
     --include-package-data=veusz
+    --include-package=numpy
+    --include-package=astropy
+    --include-package=multiprocessing
+    --include-package=subprocess
     --include-data-dir=assets=assets
 
 [buildozer]
