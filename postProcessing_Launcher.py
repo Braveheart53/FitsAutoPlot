@@ -61,10 +61,12 @@ WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600
 
 # Script paths - adjust these to your script locations
+# TODO: Add Paths and Script Keys Here
 SCRIPT_PATHS = {
     "atr": "ATR_AutoPlot.py",
     "fits": "FITS_AutoPlot.py",
-    "rands": "RAndS_FSW_ASCII_Plotter.py"
+    "rands": "RAndS_FSW_ASCII_Plotter.py",
+    "snp": "Touchstone_AutoPlot.py"
 }
 
 # %% Splash Screen Classes
@@ -362,6 +364,7 @@ class MainWindow(QMainWindow):
         buttons_layout.setSpacing(10)
 
         # Button configurations: (text, tooltip, script_key, icon_path)
+        # TODO: Add to this list when adding a new button
         button_configs = [
             (
                 "Plot GBO Outdoor ATR Files",
@@ -371,7 +374,7 @@ class MainWindow(QMainWindow):
                 "assets/atr_icon.png"
             ),
             (
-                "Plot FITS Files",
+                "Plot FITS Files (under Construction)",
                 "Launch the FITS file visualization tool\n"
                 "for astronomical and scientific image data",
                 "fits",
@@ -383,6 +386,14 @@ class MainWindow(QMainWindow):
                 "for spectrum analyzer data visualization",
                 "rands",
                 "assets/rands_icon.png"
+            ),
+            (
+                "Plot Touchfiles with Time Domain Processing "
+                " (under construction)",
+                "Launch the GBO Touchstone File AutoPlot GU \nI"
+                "for processing and visualizing S-parameter measurement data",
+                "snp",
+                "assets/snp_icon.png"
             )
         ]
 
@@ -551,6 +562,7 @@ class MainWindow(QMainWindow):
             return
 
         # Provide visual feedback
+        # TODO: Find out why the launch button Touchston files does not update
         button = self.buttons.get(script_key)
         if button:
             button.setEnabled(False)
