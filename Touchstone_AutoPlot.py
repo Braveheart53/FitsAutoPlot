@@ -1883,6 +1883,7 @@ class TouchstonePlotter:
         td_result : Dict[str, Any]
             Time domain analysis results.
         """
+        # TODO: This needs fixed
         if 'error' in td_result:
             return
 
@@ -1915,6 +1916,7 @@ class TouchstonePlotter:
         smith_result : Dict[str, Any]
             Smith Chart analysis results.
         """
+        # TODO: Something amiss here, check it out
         if 'error' in smith_result:
             return
 
