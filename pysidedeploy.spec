@@ -19,7 +19,7 @@ python_path = C:\Users\wwallace\miniforge3\envs\Py3p8\python.exe
 # python packages to install
 # ordered-set = increase compile time performance of nuitka packaging
 # zstandard = provides final executable size optimization
-packages = nuitka==2.7.11,ordered_set,zstandard,veusz,qtpy,numpy,astropy
+packages = nuitka==2.7.11,ordered_set,zstandard,veusz,qtpy,numpy,astropy,multiprocessing,subprocess
 # buildozer = for deploying Android application
 android_packages = buildozer==1.5.0,cython==0.29.33
 
@@ -58,6 +58,12 @@ extra_args =
 	--noinclude-qt-translations
 	--lto=yes
 	--show-progress
+	--assume-yes-for-downloads
+	--include-data-dir=assets=assets
+	--include-data-files=ATR_AutoPlot.py=./
+	--include-data-files=FITS_AutoPlot.py=./
+	--include-data-files=RAndS_FSW_ASCII_Plotter.py=./
+	--include-data-files=*.py=./
 
 [buildozer]
 # build mode
