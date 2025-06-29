@@ -51,30 +51,70 @@ Date: 2025-05-30
 
 # event loop QApplication.exec_()
 # %% Import all required modules
+# %%% System Interface Modules
+import os
+# import time as time
+from datetime import date
+import sys
+import subprocess
+import pdir
 # %%% GUI Module Imports
 # %%%% QtPy
-from qtpy.QtGui import *
+# from qtpy.QtGui import *
+# # from qtpy.QtWidgets import (
+# #     QApplication,
+# #     QLabel,
+# #     QLineEdit,
+# #     QMainWindow,
+# #     QVBoxLayout,
+# #     QWidget,
+# # )
+# from qtpy.QtCore import Qt, QSize
 # from qtpy.QtWidgets import (
 #     QApplication,
-#     QLabel,
-#     QLineEdit,
-#     QMainWindow,
+#     QDialog,
 #     QVBoxLayout,
-#     QWidget,
+#     QHBoxLayout,
+#     QPushButton,
+#     QFileDialog,
+#     QLabel,
+#     QRadioButton,
+#     QButtonGroup,
+#     QMessageBox
 # )
-from qtpy.QtCore import Qt, QSize
-from qtpy.QtWidgets import (
-    QApplication,
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QFileDialog,
-    QLabel,
-    QRadioButton,
-    QButtonGroup,
-    QMessageBox
-)
+
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable - use PySide6 directly
+    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtWidgets import (
+        QApplication,
+        QDialog,
+        QVBoxLayout,
+        QHBoxLayout,
+        QPushButton,
+        QFileDialog,
+        QLabel,
+        QRadioButton,
+        QButtonGroup,
+        QMessageBox
+    )
+else:
+    # Development environment - use QtPy
+    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtWidgets import (
+        QApplication,
+        QDialog,
+        QVBoxLayout,
+        QHBoxLayout,
+        QPushButton,
+        QFileDialog,
+        QLabel,
+        QRadioButton,
+        QButtonGroup,
+        QMessageBox
+    )
 # %%%% PyQt 6 GUI
 # =============================================================================
 # from PyQt6.QtGui import *
@@ -109,13 +149,7 @@ from astropy.table import QTable
 import numpy as np
 # import skrf as rf
 # =============================================================================
-# %%% System Interface Modules
-import os
-# import time as time
-from datetime import date
-import sys
-import subprocess
-import pdir
+
 # %%% Console Interaction Improvement
 import pdir
 from rich import inspect as richinspect

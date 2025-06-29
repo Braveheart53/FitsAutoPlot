@@ -16,29 +16,47 @@ Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 =============================================================================
 """
 # TODO: Trouble shoot processing lag and ensure file saving works
+
 # %% Import all required modules
-
-# %%% GUI Module Imports - QtPy for cross-platform compatibility
-from qtpy.QtGui import *
-from qtpy.QtCore import Qt, QSize, QThread, Signal
-from qtpy.QtWidgets import (
-    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-    QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-    QSpinBox, QGroupBox, QListWidget, QSplitter
-)
-
-# %%% Math and Processing Modules
-import numpy as np
-from operator import itemgetter
-import re
-from dataclasses import dataclass
-
 # %%% System Interface Modules
 import os
 import sys
 import subprocess
 import psutil  # For CPU count detection
+# %%% GUI Module Imports - QtPy for cross-platform compatibility
+# from qtpy.QtGui import *
+# from qtpy.QtCore import Qt, QSize, QThread, Signal
+# from qtpy.QtWidgets import (
+#     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+#     QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+#     QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+#     QSpinBox, QGroupBox, QListWidget, QSplitter
+# )
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable - use PySide6 directly
+    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtWidgets import (
+        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+        QSpinBox, QGroupBox, QListWidget, QSplitter
+    )
+else:
+    # Development environment - use QtPy
+    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtWidgets import (
+        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+        QSpinBox, QGroupBox, QListWidget, QSplitter
+    )
+# %%% Math and Processing Modules
+import numpy as np
+from operator import itemgetter
+import re
+from dataclasses import dataclass
 
 # %%% Parallel Processing Modules
 import multiprocessing as mp

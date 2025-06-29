@@ -100,16 +100,108 @@ from skrf import Network
 from skrf.time import time_gate
 
 # %%% Import GUI Modules
-from qtpy.QtGui import *
-from qtpy.QtCore import Qt, QSize, QThread, Signal, QTimer
-from qtpy.QtWidgets import (
-    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-    QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-    QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-    QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-    QFormLayout, QFrame
-)
+# from qtpy.QtGui import *
+# from qtpy.QtCore import Qt, QSize, QThread, Signal, QTimer
+# from qtpy.QtWidgets import (
+#     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+#     QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+#     QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+#     QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
+#     QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
+#     QFormLayout, QFrame
+# )
+# Force direct PySide6 usage for compiled builds
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable - use PySide6 directly
+    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtWidgets import (
+        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
+        QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
+        QFormLayout, QFrame
+    )
+else:
+    # Development environment - use QtPy
+    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtWidgets import (
+        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
+        QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
+        QFormLayout, QFrame
+    )
+# =============================================================================
+# # Force direct PySide6 usage for compiled builds
+# if getattr(sys, 'frozen', False):
+#     # Running as compiled executable - use PySide6 directly
+#     from PySide6.QtCore import Qt, QSize, QThread, Signal
+#     from PySide6.QtGui import (
+#         QAction, QBrush, QColor, QConicalGradient, QCursor, QFont,
+#         QFontDatabase, QGradient, QIcon, QImage, QKeySequence,
+#         QLinearGradient, QPainter, QPalette, QPixmap, QPolygon,
+#         QPolygonF, QRadialGradient, QTransform, QValidator,
+#         QIntValidator, QDoubleValidator, QRegularExpressionValidator,
+#         QStandardItemModel, QStandardItem, QMovie, QClipboard,
+#         QDrag, QDropEvent, QDragEnterEvent, QDragMoveEvent,
+#         QDragLeaveEvent, QMouseEvent, QKeyEvent, QWheelEvent,
+#         QResizeEvent, QMoveEvent, QCloseEvent, QShowEvent,
+#         QHideEvent, QFocusEvent, QPaintEvent, QContextMenuEvent,
+#         QEnterEvent, QLeaveEvent, QTextCursor, QTextDocument,
+#         QTextFormat, QTextCharFormat, QSyntaxHighlighter
+#     )
+#     from PySide6.QtWidgets import (
+#         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+#         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+#         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+#         QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
+#         QComboBox, QSlider, QScrollArea, QScrollBar, QTabWidget,
+#         QTabBar, QTableWidget, QTableWidgetItem, QTreeWidget,
+#         QTreeWidgetItem, QListWidgetItem, QFrame, QGridLayout,
+#         QFormLayout, QStackedWidget, QToolBar, QMenuBar, QMenu,
+#         QStatusBar, QSizePolicy, QSpacerItem, QGraphicsView,
+#         QGraphicsScene, QGraphicsItem, QGraphicsPixmapItem,
+#         QGraphicsTextItem, QGraphicsRectItem, QGraphicsEllipseItem,
+#         QGraphicsLineItem, QGraphicsPolygonItem, QDockWidget,
+#         QMdiArea, QMdiSubWindow, QCalendarWidget, QDateEdit,
+#         QTimeEdit, QDateTimeEdit, QDial, QLCDNumber, QFontComboBox,
+#         QColorDialog, QFontDialog, QInputDialog, QProgressDialog,
+#         QErrorMessage, QWizard, QWizardPage, QUndoView, QCompleter,
+#         QSystemTrayIcon, QSplashScreen, QPrintDialog, QPrintPreviewDialog,
+#         QAbstractItemView, QHeaderView, QAbstractButton, QAbstractSlider,
+#         QAbstractSpinBox, QAbstractScrollArea, QRubberBand, QSizeGrip,
+#         QToolBox, QToolButton, QCommandLinkButton, QPlainTextEdit
+#     )
+# else:
+#     # Development environment - use QtPy
+#     from qtpy.QtCore import Qt, QSize, QThread, Signal
+#     from qtpy.QtGui import *
+#     from qtpy.QtWidgets import (
+#         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+#         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+#         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+#         QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
+#         QComboBox, QSlider, QScrollArea, QScrollBar, QTabWidget,
+#         QTabBar, QTableWidget, QTableWidgetItem, QTreeWidget,
+#         QTreeWidgetItem, QListWidgetItem, QFrame, QGridLayout,
+#         QFormLayout, QStackedWidget, QToolBar, QMenuBar, QMenu,
+#         QStatusBar, QSizePolicy, QSpacerItem, QGraphicsView,
+#         QGraphicsScene, QGraphicsItem, QGraphicsPixmapItem,
+#         QGraphicsTextItem, QGraphicsRectItem, QGraphicsEllipseItem,
+#         QGraphicsLineItem, QGraphicsPolygonItem, QDockWidget,
+#         QMdiArea, QMdiSubWindow, QCalendarWidget, QDateEdit,
+#         QTimeEdit, QDateTimeEdit, QDial, QLCDNumber, QFontComboBox,
+#         QColorDialog, QFontDialog, QInputDialog, QProgressDialog,
+#         QErrorMessage, QWizard, QWizardPage, QUndoView, QCompleter,
+#         QSystemTrayIcon, QSplashScreen, QPrintDialog, QPrintPreviewDialog,
+#         QAbstractItemView, QHeaderView, QAbstractButton, QAbstractSlider,
+#         QAbstractSpinBox, QAbstractScrollArea, QRubberBand, QSizeGrip,
+#         QToolBox, QToolButton, QCommandLinkButton, QPlainTextEdit
+#     )
 
 # %%% Matplotlib for embedded plots
 import matplotlib.pyplot as plt

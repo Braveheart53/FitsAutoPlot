@@ -40,14 +40,25 @@ from pathlib import Path
 from typing import Optional, Union
 
 # Qt modules - using qtpy for cross-platform compatibility
-from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-from qtpy.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
-    QFrame, QSizePolicy, QSpacerItem
-)
-
+# Force direct PySide6 usage for compiled builds
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable - use PySide6 directly
+    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
+        QFrame, QSizePolicy, QSpacerItem
+    )
+else:
+    # Development environment - use QtPy
+    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
+        QFrame, QSizePolicy, QSpacerItem
+    )
 # %% Configuration Variables
 
 # Background image configuration - easily configurable by developers
