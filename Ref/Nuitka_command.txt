@@ -111,13 +111,12 @@ nuitka ^
   --include-package=veusz ^
   --include-package-data=veusz ^
   --include-qt-plugins=platforms,styles,imageformats ^
-  --include-qt-plugins=all ^
-  --qt-plugin-dir=path/to/your/site-packages/PySide6/plugins
   --include-package=qtpy ^
   --include-package=numpy ^
   --include-package=astropy ^
   --include-package=multiprocessing ^
   --include-package=subprocess ^
+  --include-data-dir=C:\Users\wwallace\miniforge3\envs\Py3p8\lib\site-packages\PySide6=pyside6_dir ^
   --include-data-dir=assets=assets ^
   --include-data-files="ATR_AutoPlot.py=./" ^
   --include-data-files="FITS_AutoPlot.py=./" ^
@@ -135,3 +134,4 @@ nuitka ^
   --assume-yes-for-downloads ^
   postProcessing_Launcher.py
 
+  --include-qt-plugins=all ^
