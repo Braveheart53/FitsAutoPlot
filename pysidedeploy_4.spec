@@ -67,6 +67,7 @@ extra_args =
 	--include-package=veusz
     --include-package-data=veusz
     --include-data-dir=assets=assets
+	--module-parameter=numba-disable-jit=no
 
 [buildozer]
 # build mode
