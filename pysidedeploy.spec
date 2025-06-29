@@ -7,7 +7,7 @@ project_dir = .
 # source file path
 input_file = postProcessing_Launcher.py
 # directory where exec is stored
-exec_directory = ./dist
+exec_directory = ScientificPlottingSuite_dist
 # path to .pyproject project file
 project_file = 
 # application icon
@@ -32,7 +32,7 @@ excluded_qml_plugins = QtQuick,QtQuick3D,QtCharts,QtWebEngine,QtTest,QtSensors
 # qt modules used by the application
 modules = Core,Gui,Widgets
 # qt plugins to include
-plugins = platforms,styles,imageformats
+plugins = platforms,styles,imageformats,windows
 # path to pyside wheel (empty to use installed version)
 wheel_pyside = 
 # path to shiboken wheel (empty to use installed version)
@@ -64,6 +64,9 @@ extra_args =
 	--include-data-files=FITS_AutoPlot.py=./
 	--include-data-files=RAndS_FSW_ASCII_Plotter.py=./
 	--include-data-files=*.py=./
+	--include-package=veusz
+	--include-package-data=veusz
+	--include-data-dir=assets=assets
 
 [buildozer]
 # build mode
