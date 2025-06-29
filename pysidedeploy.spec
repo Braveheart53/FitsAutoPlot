@@ -1,17 +1,17 @@
 [app]
 # title of your application
-title = pyside_app_demo
+title = ScientificPlottingSuite
 # project directory. the general assumption is that project_dir is the parent directory
 # of input_file
 project_dir = .
 # source file path
 input_file = postProcessing_Launcher.py
 # directory where exec is stored
-exec_directory = .
+exec_directory = ./dist
 # path to .pyproject project file
 project_file = 
 # application icon
-icon = C:\Users\wwallace\miniforge3\envs\Py3p8\Library\bin\deploy_lib\pyside_icon.ico
+icon = C:\Users\wwallace\Documents\GitHub\FitsAutoPlot\assets\GBT_2.ico
 
 [python]
 # python path
@@ -19,7 +19,7 @@ python_path = C:\Users\wwallace\miniforge3\envs\Py3p8\python.exe
 # python packages to install
 # ordered-set = increase compile time performance of nuitka packaging
 # zstandard = provides final executable size optimization
-packages = nuitka==1.8.0,ordered_set,zstandard
+packages = nuitka==2.7.11,ordered_set,zstandard,veusz,qtpy,numpy,astropy
 # buildozer = for deploying Android application
 android_packages = buildozer==1.5.0,cython==0.29.33
 
@@ -28,7 +28,15 @@ android_packages = buildozer==1.5.0,cython==0.29.33
 # normally all the qml files required by the project are added automatically
 qml_files = 
 # excluded qml plugin binaries
-excluded_qml_plugins = 
+excluded_qml_plugins = QtQuick,QtQuick3D,QtCharts,QtWebEngine,QtTest,QtSensors
+# qt modules used by the application
+modules = Core,Gui,Widgets
+# qt plugins to include
+plugins = platforms,styles,imageformats
+# path to pyside wheel (empty to use installed version)
+wheel_pyside = 
+# path to shiboken wheel (empty to use installed version)
+wheel_shiboken = 
 
 [android]
 # path to pyside wheel
@@ -39,9 +47,17 @@ wheel_shiboken =
 plugins = platforms_qtforandroid
 
 [nuitka]
+# deployment mode = onefile or standalone
+mode = standalone
+# macos permissions (not applicable for windows)
+macos.permissions = 
 # (str) specify any extra nuitka arguments
 # eg = extra_args = --show-modules --follow-stdlib
-extra_args = --quiet --noinclude-qt-translations
+extra_args = 
+	--quiet
+	--noinclude-qt-translations
+	--lto=yes
+	--show-progress
 
 [buildozer]
 # build mode
