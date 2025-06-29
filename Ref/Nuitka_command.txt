@@ -43,9 +43,8 @@ nuitka ^
     --nofollow-import-to=PyQt6 ^
     --nofollow-import-to=tk ^
     --windows-console-mode=force ^
-    --windows-icon-from-ico=assets/GBO_2.ico ^
+    --windows-icon-from-ico=assets/GBT_1.ico ^
     --output-filename=ATR_AutoPlot.exe ^
-    --optimize=3 ^
     --remove-output ^
     --show-modules ^
     --lto=yes ^
@@ -57,13 +56,13 @@ nuitka ^
 
 # nuitka --mingw64 --onefile --follow-imports --standalone --enable-plugin=pyside6 --include-package=veusz --include-qt-plugins=qml --include-data-files=C:\Users\wwallace\AppData\Local\miniforge3\envs\Py3p8\Scripts\veusz.exe=veusz.exe  --nofollow-import-to=pyqt5 --nofollow-import-to=pyqt6 --nofollow-import-to=tk-inter --nofollow-import-to=tkinter --nofollow-import-to=pyqt6 --output-dir=./Nuitka/ ATR_AutoPlot.py 
 
-# ---- Replace path/to/vesuz with full path to vuesz.exe ----
 nuitka ^
   --mingw64 ^
   --standalone ^
   --onefile ^
   --follow-imports ^
   --enable-plugin=pyside6 ^
+  --enable-plugin=pylint-warnings ^
   --nofollow-import-to=pyqt5 ^
   --nofollow-import-to=PyQt5 ^
   --nofollow-import-to=pyqt6 ^
@@ -79,23 +78,22 @@ nuitka ^
   --include-package=multiprocessing ^
   --include-package=subprocess ^
   --include-qt-plugins=all ^
-  --include-qt-plugins=platforms,sensible ^
-  --include-data-files="assets/**=assets/" ^
+  --include-data-dir=assets=assets ^
   --include-data-files="ATR_AutoPlot.py=./" ^
   --include-data-files="FITS_AutoPlot.py=./" ^
   --include-data-files="RAndS_FSW_ASCII_Plotter.py=./" ^
   --include-data-files="*.py=./" ^
   --lto=yes ^
-  --optimize=3 ^
   --remove-output ^
   --show-progress ^
   --show-memory ^
   --show-modules ^
   --output-filename=ScientificPlottingSuite ^
   --output-dir=dist ^
-  --disable-console ^
-  --windows-icon-from-ico=assets/GBO_1.ico ^
-  plotting_suite_launcher.py
+  --windows-console-mode=disable ^
+  --windows-icon-from-ico=assets/GBT_2.ico ^
+  postProcessing_Launcher.py
+
 
 
 
