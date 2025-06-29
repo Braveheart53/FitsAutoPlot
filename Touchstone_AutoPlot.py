@@ -1,14 +1,82 @@
 """Enhanced Touchstone AutoPlot with Modern Qt GUI Interface and Time Domain Analysis.
-# %% Heading Info
+# %% Header Info
 This version integrates modern Qt GUI interface with comprehensive Touchstone file processing
 capabilities using scikit-rf, including multiprocessing, GPU acceleration, and advanced
 time domain analysis with gating functionality.
-# %%% Author Info
+# %%% Author
 Author: William W. Wallace
 Last updated: 2025-06-28
+
+# %%% Nuitka Project Options for Optimal Compilation
+nuitka-project: --enable-plugin=pyside6
+nuitka-project: --enable-plugin=pylint-warnings
+nuitka-project: --include-package=veusz
+nuitka-project: --include-package-data=veusz
+nuitka-project: --include-package=qtpy
+nuitka-project: --include-package=numpy
+nuitka-project: --include-package=scipy
+nuitka-project: --include-package=skrf
+nuitka-project: --include-package=scikit-rf
+nuitka-project: --include-package=matplotlib
+nuitka-project: --include-package=multiprocessing
+nuitka-project: --include-package=subprocess
+nuitka-project: --include-qt-plugins=all
+nuitka-project: --nofollow-import-to=pyqt5
+nuitka-project: --nofollow-import-to=PyQt5
+nuitka-project: --nofollow-import-to=pyqt6
+nuitka-project: --nofollow-import-to=PyQt6
+nuitka-project: --nofollow-import-to=tkinter
+nuitka-project: --nofollow-import-to=tk-inter
+nuitka-project: --nofollow-import-to=Tkinter
+nuitka-project: --python-flag=no_site
+nuitka-project: --python-flag=-O
+nuitka-project: --lto=yes
+
+# %%% Nuitka Command line:
+nuitka ^
+  --mingw64 ^
+  --standalone ^
+  --onefile ^
+  --follow-imports ^
+  --enable-plugin=pyside6 ^
+  --enable-plugin=pylint-warnings ^
+  --nofollow-import-to=pyqt5 ^
+  --nofollow-import-to=PyQt5 ^
+  --nofollow-import-to=pyqt6 ^
+  --nofollow-import-to=PyQt6 ^
+  --nofollow-import-to=tkinter ^
+  --nofollow-import-to=tk-inter ^
+  --nofollow-import-to=Tkinter ^
+  --include-package=veusz ^
+  --include-package-data=veusz ^
+  --include-package=qtpy ^
+  --include-package=numpy ^
+  --include-package=scipy ^
+  --include-package=skrf ^
+  --include-package=scikit-rf ^
+  --include-package=matplotlib ^
+  --include-package=multiprocessing ^
+  --include-package=subprocess ^
+  --include-qt-plugins=all ^
+  --include-data-files="*.py=./" ^
+  --python-flag=no_site ^
+  --python-flag=-O ^
+  --lto=yes ^
+  --remove-output ^
+  --show-progress ^
+  --show-memory ^
+  --show-modules ^
+  --output-filename=TouchstoneAutoPlot ^
+  --output-dir=dist ^
+  --windows-console-mode=disable ^
+  --assume-yes-for-downloads ^
+  Touchstone_AutoPlot.py
+
+
 """
 
 # -*- coding: utf-8 -*-
+
 
 # %% Import Modules
 import multiprocessing
