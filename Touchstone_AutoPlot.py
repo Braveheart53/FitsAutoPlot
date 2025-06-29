@@ -72,6 +72,8 @@ nuitka ^
   --assume-yes-for-downloads ^
   TouchstoneAutoPlot.py
 
+# TODO: Fix Smith Chart creation and plotting in veusz and fix time domain
+plotting.
 """
 
 # -*- coding: utf-8 -*-
