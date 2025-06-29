@@ -702,6 +702,20 @@ class PlottingSuiteApplication(QApplication):
 
 # %% Utility Functions
 
+def setup_qt_plugins():
+    """
+    Setup Qt platform plugin paths for compiled applications.
+    """
+    try:
+        import PySide6
+        dirname = os.path.dirname(PySide6.__file__)
+        plugin_path = os.path.join(dirname, 'plugins', 'platforms')
+        if os.path.exists(plugin_path):
+            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
+    except ImportError:
+        pass
+
+
 def ensure_assets_directory():
     """
     Ensure assets directory exists and create placeholder files if needed.
@@ -765,6 +779,10 @@ def main():
     This function handles application initialization, splash screen display,
     and main window creation based on deployment context.
     """
+    # Call this before any Qt imports
+    if getattr(sys, 'frozen', False):  # Check if running as compiled executable
+        setup_qt_plugins()
+
     # Create application instance
     app = PlottingSuiteApplication(sys.argv)
 

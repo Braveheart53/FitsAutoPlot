@@ -2469,7 +2469,22 @@ class TouchstonePlotter:
         self.doc.Save(filename_vsz, mode='vsz')
 
 
-# %% Utility Classes
+# %%
+
+def setup_qt_plugins():
+    """
+    Setup Qt platform plugin paths for compiled applications.
+    """
+    try:
+        import PySide6
+        dirname = os.path.dirname(PySide6.__file__)
+        plugin_path = os.path.join(dirname, 'plugins', 'platforms')
+        if os.path.exists(plugin_path):
+            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
+    except ImportError:
+        pass
+
+
 class switch:
     """Creates a case or switch style statement."""
 
@@ -2561,6 +2576,9 @@ def main():
     if __name__ == '__main__':
         multiprocessing.set_start_method('spawn', force=True)
 
+    # Call this before any Qt imports
+    if getattr(sys, 'frozen', False):  # Check if running as compiled executable
+        setup_qt_plugins()
     app = QApplication(sys.argv)
 
     # Create and show main window

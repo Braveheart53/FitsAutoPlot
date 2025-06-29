@@ -509,10 +509,28 @@ class VZPlotFITS:
                 "Launch Error",
                 f"Failed to start Veusz: {str(e)}"
             )
+# %% Utiliy Functions
+
+
+def setup_qt_plugins():
+    """
+    Setup Qt platform plugin paths for compiled applications.
+    """
+    try:
+        import PySide6
+        dirname = os.path.dirname(PySide6.__file__)
+        plugin_path = os.path.join(dirname, 'plugins', 'platforms')
+        if os.path.exists(plugin_path):
+            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
+    except ImportError:
+        pass
 
 
 # %% Main Func
 if __name__ == '__main__':
+    # Call this before any Qt imports
+    if getattr(sys, 'frozen', False):  # Check if running as compiled executable
+        setup_qt_plugins()
     gui = qtGUI()
     fits_path, import_method = gui.get_fits_file_and_method()
 

@@ -1114,6 +1114,20 @@ class ATRPlotter:
 # %% Utility Functions
 
 
+def setup_qt_plugins():
+    """
+    Setup Qt platform plugin paths for compiled applications.
+    """
+    try:
+        import PySide6
+        dirname = os.path.dirname(PySide6.__file__)
+        plugin_path = os.path.join(dirname, 'plugins', 'platforms')
+        if os.path.exists(plugin_path):
+            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
+    except ImportError:
+        pass
+
+
 def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Convert Cartesian coordinates to polar coordinates.
 
@@ -1142,7 +1156,9 @@ def main():
     # Set multiprocessing start method for cross-platform compatibility
     if __name__ == '__main__':
         multiprocessing.set_start_method('spawn', force=True)
-
+        # Call this before any Qt imports
+    if getattr(sys, 'frozen', False):  # Check if running as compiled executable
+        setup_qt_plugins()
     app = QApplication(sys.argv)
 
     # Create and show main window

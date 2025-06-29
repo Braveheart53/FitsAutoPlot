@@ -72,6 +72,7 @@ nuitka ^
   --nofollow-import-to=Tkinter ^
   --include-package=veusz ^
   --include-package-data=veusz ^
+  --include-qt-plugins=platforms,sensible ^
   --include-package=qtpy ^
   --include-package=numpy ^
   --include-package=astropy ^
@@ -94,3 +95,43 @@ nuitka ^
   --windows-icon-from-ico=assets/GBT_2.ico ^
   --assume-yes-for-downloads ^
   postProcessing_Launcher.py
+
+nuitka ^
+  --mingw64 ^
+  --standalone ^
+  --onefile ^
+  --follow-imports ^
+  --enable-plugin=pyside6 ^
+  --enable-plugin=pylint-warnings ^
+  --nofollow-import-to=pyqt5 ^
+  --nofollow-import-to=PyQt5 ^
+  --nofollow-import-to=tkinter ^
+  --nofollow-import-to=tk-inter ^
+  --nofollow-import-to=Tkinter ^
+  --include-package=veusz ^
+  --include-package-data=veusz ^
+  --include-qt-plugins=platforms,styles,imageformats ^
+  --include-qt-plugins=all ^
+  --qt-plugin-dir=path/to/your/site-packages/PySide6/plugins
+  --include-package=qtpy ^
+  --include-package=numpy ^
+  --include-package=astropy ^
+  --include-package=multiprocessing ^
+  --include-package=subprocess ^
+  --include-data-dir=assets=assets ^
+  --include-data-files="ATR_AutoPlot.py=./" ^
+  --include-data-files="FITS_AutoPlot.py=./" ^
+  --include-data-files="RAndS_FSW_ASCII_Plotter.py=./" ^
+  --include-data-files="*.py=./" ^
+  --lto=yes ^
+  --remove-output ^
+  --show-progress ^
+  --show-memory ^
+  --show-modules ^
+  --output-filename=ScientificPlottingSuite ^
+  --output-dir=dist ^
+  --windows-console-mode=disable ^
+  --windows-icon-from-ico=assets/GBT_2.ico ^
+  --assume-yes-for-downloads ^
+  postProcessing_Launcher.py
+
