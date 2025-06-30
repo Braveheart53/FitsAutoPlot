@@ -53,6 +53,8 @@ mode = standalone
 macos.permissions = 
 # (str) specify any extra nuitka arguments
 # eg = extra_args = --show-modules --follow-stdlib
+# suggests --noinclude-numba-mode
+# suggests --noinclude-numba-mode=nofollow
 extra_args = 
 	--quiet
 	--noinclude-qt-translations
