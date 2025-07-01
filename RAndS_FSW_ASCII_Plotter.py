@@ -19,6 +19,16 @@ Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 
 # %% Import all required modules
 # %%% System Interface Modules
+from fastest_ascii_import import fastest_file_parser as fparser
+import veusz.embed as embed
+import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import Pool, cpu_count
+import multiprocessing as mp
+from dataclasses import dataclass
+import re
+from operator import itemgetter
+import numpy as np
 import os
 import sys
 import subprocess
@@ -34,22 +44,22 @@ import psutil  # For CPU count detection
 # )
 if getattr(sys, 'frozen', False):
     #     # Running as compiled executable - use PySide6 directly
-    #     from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    #     from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    #     from PySide6.QtWidgets import (
-    #         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    #         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-    #         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-    #         QSpinBox, QGroupBox, QListWidget, QSplitter
-    #     )
-    from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
-    from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    from PyQt6.QtWidgets import (
+    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtWidgets import (
         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
         QSpinBox, QGroupBox, QListWidget, QSplitter
     )
+    # from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
+    # from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    # from PyQt6.QtWidgets import (
+    #     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+    #     QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+    #     QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+    #     QSpinBox, QGroupBox, QListWidget, QSplitter
+    # )
 else:
     # Development environment - use QtPy
     from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
@@ -60,17 +70,12 @@ else:
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
         QSpinBox, QGroupBox, QListWidget, QSplitter
     )
+
+# System Interface Modules
+os.environ['QT_API'] = 'pyside6'
 # %%% Math and Processing Modules
-import numpy as np
-from operator import itemgetter
-import re
-from dataclasses import dataclass
 
 # %%% Parallel Processing Modules
-import multiprocessing as mp
-from multiprocessing import Pool, cpu_count
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import threading
 
 # %%% GPU Acceleration Modules
 try:
@@ -86,10 +91,8 @@ except ImportError:
     PYOPENCL_AVAILABLE = False
 
 # %%% Plotting Environment
-import veusz.embed as embed
 
 # %%% File Processing
-from fastest_ascii_import import fastest_file_parser as fparser
 
 # %% Configuration and Data Classes
 
