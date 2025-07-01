@@ -222,3 +222,34 @@ nuitka ^
   --windows-icon-from-ico=assets/GBT_2.ico ^
   --assume-yes-for-downloads ^
   postProcessing_Launcher.py
+  
+nuitka ^
+  --msvc=latest ^
+  --standalone ^
+  --follow-imports ^
+  --enable-plugin=pyqt6 ^
+  --enable-plugin=pylint-warnings ^
+  --nofollow-import-to=pyqt5 ^
+  --nofollow-import-to=PyQt5 ^
+  --nofollow-import-to=tkinter ^
+  --nofollow-import-to=tk-inter ^
+  --nofollow-import-to=Tkinter ^
+  --nofollow-import-to=pside6 ^
+  --nofollow-import-to=PySide6 ^
+  --include-package=veusz ^
+  --include-package-data=veusz ^
+  --include-qt-plugins=platforms,sensible,styles,imageformats ^
+  --include-qt-plugins=all ^
+  --include-data-dir=assets=assets ^
+  --include-data-files="ATR_AutoPlot.py=./" ^
+  --include-data-files="FITS_AutoPlot.py=./" ^
+  --include-data-files="RAndS_FSW_ASCII_Plotter.py=./" ^
+  --include-data-files="*.py=./" ^
+  --lto=yes ^
+  --show-progress ^
+  --output-filename=ScientificPlottingSuite ^
+  --output-dir=Nuitka/launcherDist ^
+  --windows-console-mode=force ^
+  --windows-icon-from-ico=assets/GBT_2.ico ^
+  --assume-yes-for-downloads ^
+  postProcessing_Launcher.py

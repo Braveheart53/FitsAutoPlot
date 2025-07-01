@@ -33,10 +33,18 @@ import psutil  # For CPU count detection
 #     QSpinBox, QGroupBox, QListWidget, QSplitter
 # )
 if getattr(sys, 'frozen', False):
-    # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    from PySide6.QtWidgets import (
+    #     # Running as compiled executable - use PySide6 directly
+    #     from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    #     from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    #     from PySide6.QtWidgets import (
+    #         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+    #         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+    #         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+    #         QSpinBox, QGroupBox, QListWidget, QSplitter
+    #     )
+    from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
+    from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PyQt6.QtWidgets import (
         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
