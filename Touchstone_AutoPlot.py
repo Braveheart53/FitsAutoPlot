@@ -848,7 +848,8 @@ class TouchstonePlotCanvas(FigureCanvas):
 
         self.draw()
 
-    def plot_time_domain(self, time, td_data, td_filtered_data=None, title="Time Domain"):
+    def plot_time_domain(self, time, td_data, td_filtered_data=None,
+                         title="Time Domain"):
         """Plot time domain data on the canvas.
 
         Parameters
@@ -867,6 +868,8 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax = self.fig.add_subplot(111)
 
         # Plot unfiltered data
+        # ax.plot(time, np.abs(td_data), 'o:', alpha=0.7, markersize=2,
+        #         label='Unfiltered', linestyle='dotted')
         ax.plot(time, np.abs(td_data), 'o:', alpha=0.7, markersize=2,
                 label='Unfiltered', linestyle='dotted')
 
