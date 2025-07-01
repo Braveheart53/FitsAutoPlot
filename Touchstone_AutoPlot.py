@@ -259,9 +259,10 @@ else:
 
 # %%% Matplotlib for embedded plots
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-
+import matplotlib
+matplotlib.use("QtAgg")
 # %% GPU Computing imports with fallback support
 try:
     import cupy as cp
