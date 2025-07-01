@@ -1,91 +1,99 @@
 [app]
-# Title of your application
+# title of your application
 title = ScientificPlottingSuite
-# Project directory - the general assumption is that project_dir is the parent directory of input_file
+# project directory. the general assumption is that project_dir is the parent directory
+# of input_file
 project_dir = .
-# Source file path
+# source file path
 input_file = postProcessing_Launcher.py
-# Directory where executable is stored
-exec_directory = dist
-# Path to .pyproject project file (if exists)
-project_file =
-# Icon file path (converted to appropriate format for platform)
-icon = assets/GBT_2.ico
+# directory where exec is stored
+exec_directory = ..\
+# path to .pyproject project file
+project_file = 
+# application icon
+icon = C:\Users\wwallace\Documents\GitHub\FitsAutoPlot\assets\GBT_2.ico
 
 [python]
-# Python path - use current environment
-python_path = python
-# Python packages to install for deployment
-# nuitka version can be specified, ordered-set improves compile performance, zstandard optimizes size
-packages = nuitka==2.6.8,ordered-set,zstandard,veusz,qtpy,numpy,astropy
-# Android packages (not needed for your use case)
-android_packages = buildozer==1.5.*,cython==0.29.*
+# python path
+python_path = C:\Users\wwallace\miniforge3\envs\Py3p8\python.exe
+# python packages to install
+# ordered-set = increase compile time performance of nuitka packaging
+# zstandard = provides final executable size optimization
+packages = nuitka==2.7.11,ordered_set,zstandard,veusz,qtpy,numpy,astropy,multiprocessing,subprocess
+# buildozer = for deploying Android application
+android_packages = buildozer==1.5.0,cython==0.29.33
 
 [qt]
-# Comma separated path to qml files (empty for your widget-based app)
-qml_files =
-# Excluded qml plugin binaries to reduce size
+# comma separated path to qml files required
+# normally all the qml files required by the project are added automatically
+qml_files = 
+# excluded qml plugin binaries
 excluded_qml_plugins = QtQuick,QtQuick3D,QtCharts,QtWebEngine,QtTest,QtSensors
-# Qt modules used by the application
+# qt modules used by the application
 modules = Core,Gui,Widgets
-# Qt plugins to include
-plugins = platforms,styles,imageformats
-# Path to pyside wheel (empty to use installed version)
-wheel_pyside =
-# Path to shiboken wheel (empty to use installed version)
-wheel_shiboken =
+# qt plugins to include
+plugins = platforms,styles,imageformats,windows
+# path to pyside wheel (empty to use installed version)
+wheel_pyside = 
+# path to shiboken wheel (empty to use installed version)
+wheel_shiboken = 
+
+[android]
+# path to pyside wheel
+wheel_pyside = 
+# path to shiboken wheel
+wheel_shiboken = 
+# plugins to be copied to libs folder of the packaged application. comma separated
+plugins = platforms_qtforandroid
 
 [nuitka]
-# Deployment mode: onefile or standalone
+# deployment mode = onefile or standalone
 mode = onefile
-# macOS permissions (not applicable for Windows)
-macos.permissions =
-# Extra Nuitka arguments - this is where your complex Nuitka options go
+# macos permissions (not applicable for windows)
+macos.permissions = 
+# (str) specify any extra nuitka arguments
+# eg = extra_args = --show-modules --follow-stdlib
 extra_args = 
-    --mingw64
-    --follow-imports
-    --enable-plugin=pylint-warnings
-    --nofollow-import-to=pyqt5
-    --nofollow-import-to=PyQt5
-    --nofollow-import-to=tkinter
-    --nofollow-import-to=tk-inter
-    --nofollow-import-to=Tkinter
-    --include-package=veusz
-    --include-package-data=veusz
-    --include-package=qtpy
-    --include-package=numpy
-    --include-package=astropy
-    --include-package=multiprocessing
-    --include-package=subprocess
-    --include-data-dir=assets=assets
-    --include-data-files=ATR_AutoPlot.py=./
-    --include-data-files=FITS_AutoPlot.py=./
-    --include-data-files=RAndS_FSW_ASCII_Plotter.py=./
-    --include-data-files=*.py=./
-    --lto=yes
-    --remove-output
-    --show-progress
-    --show-memory
-    --show-modules
-    --windows-console-mode=disable
-    --assume-yes-for-downloads
-    --quiet
-    --noinclude-qt-translations=True
+	--quiet
+	--enable-plugin=pyside6
+	--noinclude-qt-translations
+	--show-progress
+	--show-modules
+	--include-qt-plugins=platforms
+	--assume-yes-for-downloads
+	--include-data-dir=assets=assets
+	--include-data-files=ATR_AutoPlot.py=./
+	--include-data-files=FITS_AutoPlot.py=./
+	--include-data-files=RAndS_FSW_ASCII_Plotter.py=./
+	--include-data-files=fastest_ascii_import.py=./
+	--include-package=veusz
+	--include-package-data=veusz
+	--include-data-dir=assets=assets
+	--module-parameter=numba-disable-jit=no
+	--standalone
+	--onefile
+	--mingw64
+	--clang
 
 [buildozer]
-# Build mode for Android (not applicable for your use case)
+# build mode
+# possible options = [release, debug]
+# release creates an aab, while debug creates an apk
 mode = debug
-# Recipe directory path
-recipe_dir =
-# Path to extra qt android jars
-jars_dir =
-# NDK path (empty uses default)
-ndk_path =
-# SDK path (empty uses default)
-sdk_path =
-# Modules used (comma separated)
-modules =
-# Other libraries to be loaded (comma separated)
-local_libs =
-# Architecture of deployed platform
-arch =
+# contrains path to pyside6 and shiboken6 recipe dir
+recipe_dir = 
+# path to extra qt android jars to be loaded by the application
+jars_dir = 
+# if empty uses default ndk path downloaded by buildozer
+ndk_path = 
+# if empty uses default sdk path downloaded by buildozer
+sdk_path = 
+# modules used. comma separated
+modules = 
+# other libraries to be loaded. comma separated.
+# loaded at app startup
+local_libs = plugins_platforms_qtforandroid
+# architecture of deployed platform
+# possible values = ["aarch64", "armv7a", "i686", "x86_64"]
+arch = 
+
