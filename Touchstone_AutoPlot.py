@@ -82,6 +82,16 @@ if I can fix it
 
 
 # %% Import Modules
+# %%% Matplotlib for embedded plots
+import matplotlib
+matplotlib.use("QtAgg")
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+
+
+# %%% System modules
 import multiprocessing
 import os
 import subprocess
@@ -257,12 +267,7 @@ else:
     #     QToolBox, QToolButton, QCommandLinkButton, QPlainTextEdit
     # )
 
-# %%% Matplotlib for embedded plots
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-import matplotlib
-matplotlib.use("QtAgg")
+
 # %% GPU Computing imports with fallback support
 try:
     import cupy as cp
@@ -871,7 +876,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         # Plot unfiltered data
         # ax.plot(time, np.abs(td_data), 'o:', alpha=0.7, markersize=2,
         #         label='Unfiltered', linestyle='dotted')
-        ax.plot(time, np.abs(td_data), 'o:', alpha=0.7, markersize=2,
+        ax.plot(time, np.abs(td_data), alpha=0.7, markersize=2,
                 label='Unfiltered', linestyle='dotted')
 
         # Plot filtered data if available
