@@ -1441,14 +1441,18 @@ class TouchstoneMainWindow(QMainWindow):
         self.td_config.gate_start = value
         self._update_td_preview()
 
-    def _update_gate_stop(self, value):
-        """Update gate stop configuration.
+        # TODO: Add vertical line to show this on the matplotlib plot
 
+    def _update_gate_stop(self, value):
+        """Update gate stop configuration."""
+        """
         Parameters
         ----------
         value : float
             Gate stop value.
         """
+
+        # TODO: add vertical line to matplotlib plot
         self.td_config.gate_stop = value
         self._update_td_preview()
 
@@ -1576,6 +1580,7 @@ class TouchstoneMainWindow(QMainWindow):
                     # Update plot
                     plot_title = "{} - S11 Time Domain Preview".format(
                         current_file)
+                    # TODO: crashing here!
                     self.td_plot_canvas.plot_time_domain(
                         time_ns, td_unfiltered[:, 0, 0], td_filtered[:, 0, 0],
                         plot_title
