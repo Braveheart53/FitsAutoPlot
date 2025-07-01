@@ -42,10 +42,17 @@ from typing import Optional, Union
 # Qt modules - using qtpy for cross-platform compatibility
 # Force direct PySide6 usage for compiled builds
 if getattr(sys, 'frozen', False):
-    # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    from PySide6.QtWidgets import (
+    #     # Running as compiled executable - use PySide6 directly
+    #     from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    #     from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    #     from PySide6.QtWidgets import (
+    #         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    #         QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
+    #         QFrame, QSizePolicy, QSpacerItem
+    #     )
+    from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
+    from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PyQt6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
         QFrame, QSizePolicy, QSpacerItem
