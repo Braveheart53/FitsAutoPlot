@@ -7,7 +7,7 @@ project_dir = .
 # source file path
 input_file = postProcessing_Launcher.py
 # directory where exec is stored
-exec_directory = C:\Users\wwallace\Documents\GitHub\FitsAutoPlot\dist\
+exec_directory = ..\
 # path to .pyproject project file
 project_file = 
 # application icon
@@ -48,18 +48,18 @@ plugins = platforms_qtforandroid
 
 [nuitka]
 # deployment mode = onefile or standalone
-mode = standalone
+mode = onefile
 # macos permissions (not applicable for windows)
 macos.permissions = 
 # (str) specify any extra nuitka arguments
 # eg = extra_args = --show-modules --follow-stdlib
-# suggests --noinclude-numba-mode
-# suggests --noinclude-numba-mode=nofollow
 extra_args = 
 	--quiet
+	--enable-plugin=pyside6
 	--noinclude-qt-translations
 	--show-progress
 	--show-modules
+	--include-qt-plugins=platforms
 	--assume-yes-for-downloads
 	--include-data-dir=assets=assets
 	--include-data-files=ATR_AutoPlot.py=./
@@ -67,11 +67,13 @@ extra_args =
 	--include-data-files=RAndS_FSW_ASCII_Plotter.py=./
 	--include-data-files=fastest_ascii_import.py=./
 	--include-package=veusz
-    --include-package-data=veusz
-    --include-data-dir=assets=assets
+	--include-package-data=veusz
+	--include-data-dir=assets=assets
 	--module-parameter=numba-disable-jit=no
-	--noinclude-numba-mode=nofollow
-	--noinclude-numba-mode
+	--standalone
+	--onefile
+	--mingw64
+	--clang
 
 [buildozer]
 # build mode
