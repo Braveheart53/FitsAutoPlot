@@ -74,6 +74,8 @@ nuitka ^
 
 # TODO: Fix Smith Chart creation and plotting in veusz and fix time domain
 plotting.
+# TODO: currently crashes on missing GPU libraries, figure out why and see
+if I can fix it
 """
 
 # -*- coding: utf-8 -*-
@@ -113,19 +115,9 @@ from skrf.time import time_gate
 # Force direct PySide6 usage for compiled builds
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
-    # from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    # from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    # from PySide6.QtWidgets import (
-    #     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    #     QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-    #     QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-    #     QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-    #     QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-    #     QFormLayout, QFrame
-    # )
-    from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
-    from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    from PyQt6.QtWidgets import (
+    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtWidgets import (
         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
@@ -133,6 +125,16 @@ if getattr(sys, 'frozen', False):
         QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
         QFormLayout, QFrame
     )
+    # from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
+    # from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    # from PyQt6.QtWidgets import (
+    #     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+    #     QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+    #     QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+    #     QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
+    #     QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
+    #     QFormLayout, QFrame
+    # )
 else:
     # Development environment - use QtPy
     from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
@@ -2613,7 +2615,7 @@ class TouchstonePlotter:
         self.doc.Save(filename_vsz, mode='vsz')
 
 
-# %%
+# %% Utility Functions
 
 def setup_qt_plugins():
     """

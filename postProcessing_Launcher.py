@@ -43,20 +43,20 @@ from typing import Optional, Union
 # Force direct PySide6 usage for compiled builds
 if getattr(sys, 'frozen', False):
     #     # Running as compiled executable - use PySide6 directly
-    #     from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    #     from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    #     from PySide6.QtWidgets import (
-    #         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    #         QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
-    #         QFrame, QSizePolicy, QSpacerItem
-    #     )
-    from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
-    from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    from PyQt6.QtWidgets import (
+    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
+    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
         QFrame, QSizePolicy, QSpacerItem
     )
+    # from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
+    # from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    # from PyQt6.QtWidgets import (
+    #     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    #     QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
+    #     QFrame, QSizePolicy, QSpacerItem
+    # )
 else:
     # Development environment - use QtPy
     from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
@@ -66,6 +66,9 @@ else:
         QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
         QFrame, QSizePolicy, QSpacerItem
     )
+
+# System Interface Modules
+os.environ['QT_API'] = 'pyside6'
 # %% Configuration Variables
 
 # Background image configuration - easily configurable by developers
