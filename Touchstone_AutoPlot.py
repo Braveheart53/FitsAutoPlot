@@ -257,7 +257,7 @@ else:
 
 # %%% Matplotlib for embedded plots
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 # %% GPU Computing imports with fallback support
@@ -865,7 +865,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax = self.fig.add_subplot(111)
 
         # Plot unfiltered data
-        ax.plot(time, np.abs(td_data), 'o:', alpha=0.7, markersize=2,
+        ax.plot(time, np.abs(td_data), alpha=0.7, markersize=2,
                 label='Unfiltered', linestyle='dotted')
 
         # Plot filtered data if available

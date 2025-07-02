@@ -1,0 +1,30 @@
+mamba create -n Py3p8_devel ^
+	python==3.8 ^
+	spyder-kernels==3.0.5 ^
+	veusz ^
+	matplotlib ^
+	xarray ^
+	astropy ^
+	qtpy ^
+	pyside6 ^
+	hdf5 ^
+	pdir2 ^
+	rich ^
+	pandas ^
+	pywin32 ^
+	sympy ^
+	mccabe ^
+	numpy ^
+	dataclasses ^
+	typing ^
+	scikit-rf ^
+	scipy ^
+	multiprocess ^
+	pyopencl ^
+	pathlib ^
+	cupy ^
+	psutil ^
+	qt6-main ^
+	h5py
+
+	
