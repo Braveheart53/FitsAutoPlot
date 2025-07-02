@@ -10,3 +10,6 @@ Nuitka*/
 Nuitka*/*
 deployment/
 deployment/*
+ATR_AutoPlot.dist/
+ATR_AutoPlot.dist/*
+ATR_AutoPlot.dist*
