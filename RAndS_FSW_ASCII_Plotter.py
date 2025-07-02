@@ -16,6 +16,10 @@ Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 =============================================================================
 """
 # TODO: Trouble shoot processing lag and ensure file saving works
+# TODO: change status on check box change for enable or disable GPU
+# and multiprocessing
+# TODO: compare GPU based processing on this one to Touchstone
+# TODO: change state of all text boxes to be checked on start
 
 # %% Import all required modules
 # %%% System Interface Modules
