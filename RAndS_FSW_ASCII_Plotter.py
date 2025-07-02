@@ -19,16 +19,9 @@ Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 
 # %% Import all required modules
 # %%% System Interface Modules
-from fastest_ascii_import import fastest_file_parser as fparser
-import veusz.embed as embed
-import threading
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from multiprocessing import Pool, cpu_count
-import multiprocessing as mp
 from dataclasses import dataclass
 import re
 from operator import itemgetter
-import numpy as np
 import os
 import sys
 import subprocess
@@ -44,6 +37,8 @@ import psutil  # For CPU count detection
 # )
 if getattr(sys, 'frozen', False):
     #     # Running as compiled executable - use PySide6 directly
+    # System Interface Modules
+    os.environ['QT_API'] = 'pyside6'
     from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
     from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
     from PySide6.QtWidgets import (
@@ -71,12 +66,17 @@ else:
         QSpinBox, QGroupBox, QListWidget, QSplitter
     )
 
-# System Interface Modules
-os.environ['QT_API'] = 'pyside6'
+
 # %%% Math and Processing Modules
+import numpy as np
+from fastest_ascii_import import fastest_file_parser as fparser
+
 
 # %%% Parallel Processing Modules
-
+import threading
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import Pool, cpu_count
+import multiprocessing as mp
 # %%% GPU Acceleration Modules
 try:
     import cupy as cp
@@ -91,7 +91,9 @@ except ImportError:
     PYOPENCL_AVAILABLE = False
 
 # %%% Plotting Environment
-
+import veusz.embed as embed
+from veusz.windows.simplewindow import SimpleWindow
+from veusz.document import CommandInterface
 # %%% File Processing
 
 # %% Configuration and Data Classes
@@ -939,6 +941,45 @@ class VZPlotRnS:
                 None, "Launch Error",
                 f"Failed to start Veusz: {e}"
             )
+
+# %% Veusz Example for Embedding
+class VeuszWin(SimpleWindow):
+    """A veusz window displaying a sin function."""
+
+    def __init__(self, title):
+        SimpleWindow.__init__(self, title)
+
+        # send commands to this object to modify the window
+        # the commands are from the standard veusz api
+        ifc = self.interface = CommandInterface(self.document)
+
+        # a basic plot win a sin function
+        ifc.To( ifc.Add('page') )
+        ifc.To( ifc.Add('graph') )
+        ifc.Add('function', name='myfunc')
+
+        ifc.Set( 'myfunc/function', 'sin(x)' )
+        ifc.Set( 'x/max', 3.14*2 )
+
+class MainWindow(QWidget):
+    """Put veusz window in layout with push button."""
+
+    def __init__(self):
+        QWidget.__init__(self)
+
+        lt = QVBoxLayout()
+        self.veuszwin = VeuszWin("")
+        lt.addWidget(self.veuszwin)
+        self.button = QPushButton("hi there")
+        lt.addWidget(self.button)
+        self.setLayout(lt)
+        self.connect(self.button, Signal('clicked()'),
+                     self.slotClicked)
+
+    def slotClicked(self):
+        filename = 'out.png'
+        print("Writing", filename)
+        self.veuszwin.interface.Export(filename)
 # %% Utility Functions
 
 
