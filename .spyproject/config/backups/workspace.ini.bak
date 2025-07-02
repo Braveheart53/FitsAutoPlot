@@ -4,7 +4,7 @@ save_data_on_exit = True
 save_history = True
 save_non_project_files = False
 project_type = 'empty-project-type'
-recent_files = ['postProcessing_Launcher.py', 'RAndS_FSW_ASCII_Plotter.py', 'Touchstone_AutoPlot.py', 'ATR_AutoPlot.py', 'FITS_AutoPlot.py', 'Ref\\Veusz_quick_commands_Convert_dB2Linmag.py']
+recent_files = ['..\\..\\Python_Vault\\Veusz_customizations\\Veusz_plugins\\touchstone_import_plugin.py']
 
 [main]
 version = 0.2.0
