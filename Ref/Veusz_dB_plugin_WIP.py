@@ -345,6 +345,9 @@ class _pluginUtilities:
 # # -----
 class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, _pluginUtilities,
                              DatasetPlugin):
+    """Process all 1D data by tag, treat it as dB, avg in linear."""
+
+    """Create data sets of linear and dB resutls of the average. """
     # Plugin metadata
     menu = ("Signal Processing", "Process by Tag", "Average By Tag")
     name = "dB_Linear_Average"
