@@ -13,6 +13,7 @@ from veusz.plugins.datasetplugin import (
     DatasetPlugin, DatasetPluginException, Dataset1D, datasetpluginregistry,
     DatasetText
 )
+# TODO: see if loading DatasetPlugin gives access to helper and if this is needed
 # from veusz.plugins.datasetplugin import DatasetPluginHelper as helper
 from veusz.plugins import (field)
 import re
@@ -318,12 +319,16 @@ class _pluginUtilities:
     #     self._log(helper, f"Utilizing Wally Plugin Utilities!")
 
     @staticmethod
-    def tagProcessing(helper):
+    def tagProcessing(inputData):
         """Get all tags and create a dict with datasets as values."""
         # if not hasattr(self, 'tag_map'):
         #     self.tag_map = {}
         tag_map = {}
         # TODO: States this is not interatble, find out why, and fix
+        # replace helper with something
+        # helper is an object passed by veusz when the plugin is run, it is not
+        # the import as defined in the comments in that section
+        # but see if we can get the datasets and tags in a different way
         for ds_name in helper.datasets1d:
             if "freq" in ds_name.lower():
                 _ConsoleMixin._log(helper, f"[ByTag] excluded '{ds_name}'")
@@ -373,10 +378,13 @@ class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, _pluginUtilities,
                 default='Meaningless'
             )
         ]
-
-    def getDatasets(self, fields, helper):
+    # helper is an object passed at run time by veusz, getDatasets does not
+    # get his helper....
+    def getDatasets(self, fields):
         """Return empty list - datasets are created dynamically."""
-        self.tag_map = self.tagProcessing(helper)  # Call as static method
+        # TODO: see if you can use the DatasetPlugin to get all the tags
+        # and file names
+        self.tag_map = self.tagProcessing()  # Call as static method
         # TODO: create the datasets by tags
         self.dBAvgData = {}
         self.linAvgData = {}
