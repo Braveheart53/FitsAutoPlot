@@ -13,7 +13,7 @@ from veusz.plugins.datasetplugin import (
     DatasetPlugin, DatasetPluginException, Dataset1D, datasetpluginregistry,
     DatasetText
 )
-# from veusz.plugins.datasetplugin import DatasetPluginHelper as helper
+from veusz.plugins.datasetplugin import DatasetPluginHelper as helper
 from veusz.plugins import (field)
 import re
 # %% Class Definitions
@@ -375,7 +375,28 @@ class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, _pluginUtilities,
 
     def getDatasets(self, fields):
         """Return empty list - datasets are created dynamically."""
-        return []
+        self.tag_map = self.tagProcessing(helper)  # Call as static method
+        # TODO: create the datasets by tags
+        self.dBAvgData = {}
+        self.linAvgData = {}
+        for tag in self.tag_map.items():
+            try:
+                # output_name = fields['output_dataset']
+                # if not output_name.strip():
+                #     raise DatasetPluginException("Output dataset name cannot be empty")
+                # self.output = Dataset1D(output_name)
+                # return [self.output]
+                output_name_dB = str(tag) + '_avg_dB'
+                output_name_lin = str(tag) + '_avg_lin'
+
+                self.dBAvgData[tag] = Dataset1D(output_name_dB)
+
+                self.linAvgData[tag] = Dataset1D(output_name_lin)
+                # Don't Forget to Set tags of these sets
+
+            except Exception as exc:
+                self._log(helper, f"[ByTag] tag '{tag}' datasets created.")
+        return [self.dBAvgData, self.linAvgData]
 
     def updateDatasets(self, fields, helper):
         """Process datasets and create outputs."""
@@ -412,13 +433,23 @@ class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, _pluginUtilities,
                 N = max(map(len, lin))
                 avg_lin = self.average([self.pad(a, N) for a in lin])
                 avg_db = self.db_from_lin(avg_lin)
-                dBOut = helper.createDataset(f"{tag}_dB_avg", create_new=True)
-                dBOut.update(data=avg_db)
-                linOut = helper.createDataset(
-                    f"{tag}_lin_avg", create_new=True)
-                linOut.update(data=avg_lin)
-                self._log(
-                    helper, f"[ByTag] wrote '{tag}_dB_avg' & '{tag}_lin_avg'")
+
+                # self.linear_output.update(data=avg_linear)
+                # self.db_output.update(data=avg_db)
+                # Create The Data Sets and then update them
+                # helper.createDataset does not exist!
+                # dB
+                self.dBAvgData[tag].update(data=avg_db)
+                # dBOut = helper.createDataset(f"{tag}_dB_avg", create_new=True)
+                # dBOut.update(data=avg_db)
+
+                # Linaer Data set
+                self.linAvgData[tag].update(data=avg_lin)
+                # linOut = helper.createDataset(
+                #     f"{tag}_lin_avg", create_new=True)
+                # linOut.update(data=avg_lin)
+                # self._log(
+                #     helper, f"[ByTag] wrote '{tag}_dB_avg' & '{tag}_lin_avg'")
             except Exception as exc:
                 self._log(helper, f"[ByTag] tag '{tag}' -> {exc}")
 
