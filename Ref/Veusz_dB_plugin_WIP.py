@@ -267,9 +267,7 @@ class LinearTodBPlugin(DatasetPlugin):
             perr=db_perr,
             nerr=db_nerr
         )
-# ============================================================================
-# NEW PLUGINS: Process By Tag
-# ============================================================================
+# %%% Processing
 # ----------------------------------------------------------------------
 # INTERNAL HELPERS
 # ----------------------------------------------------------------------
@@ -309,19 +307,15 @@ class _MathHelpers:
     def average(arrs):
         with np.errstate(invalid='ignore', divide='ignore'):
             return np.nanmean(arrs, axis=0)
-# %%% Processing by Tag
-# # ----------------------------------------------------------------------
-# # "PROCESS BY TAG" - one result per tag
-# # ----------------------------------------------------------------------
 
 
-class _pluginUtilities(DatasetPlugin):
+class _pluginUtilities:
     """Utilies that are common to multiple processes."""
 
-    def __init__(self, helper):
-        """Set it up"""
-        # self.tag_map = {}
-        self._log(helper, f"Utilizing Wally Plugin Utilities!")
+    # def __init__(self, helper):
+    #     """Set it up"""
+    #     # self.tag_map = {}
+    #     self._log(helper, f"Utilizing Wally Plugin Utilities!")
 
     @staticmethod
     def tagProcessing(helper):
@@ -345,8 +339,12 @@ class _pluginUtilities(DatasetPlugin):
             raise DatasetPluginException("No tagged datasets found.")
         return tag_map
 
-
-class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, DatasetPlugin):
+# %%% Processing by Tag
+# # ----------------------------------------------------------------------
+# # "PROCESS BY TAG" - one result per tag
+# # -----
+class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, _pluginUtilities,
+                             DatasetPlugin):
     # Plugin metadata
     menu = ("Signal Processing", "Process by Tag", "Average By Tag")
     name = "dB_Linear_Average"
@@ -380,22 +378,22 @@ class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, DatasetPlugin):
         """Process datasets and create outputs."""
         # Build tag map as an instance variable
         # TODO: See if calling external function is the issue
-        # self.tag_map = self.tagProcessing(helper)  # Call as static method
-        self.tag_map = {}
-        for ds_name in helper.datasets1d:
-            if "freq" in ds_name.lower():
-                _ConsoleMixin._log(helper, f"[ByTag] excluded '{ds_name}'")
-            else:
-                # if it's not a frequency data container, process it
-                ds = helper.getDataset(ds_name, dimensions=1)
-                tags = helper._doc.data[ds_name].tags
-                # we have the tag, now we build a map where we have a dict of tags
-                # with the dataset names as values
-                for tag in tags:
-                    self.tag_map.setdefault(tag, []).append(ds_name)
-        # Check after loop completion
-        if not self.tag_map:
-            raise DatasetPluginException("No tagged datasets found.")
+        self.tag_map = self.tagProcessing(helper)  # Call as static method
+        # self.tag_map = {}
+        # for ds_name in helper.datasets1d:
+        #     if "freq" in ds_name.lower():
+        #         _ConsoleMixin._log(helper, f"[ByTag] excluded '{ds_name}'")
+        #     else:
+        #         # if it's not a frequency data container, process it
+        #         ds = helper.getDataset(ds_name, dimensions=1)
+        #         tags = helper._doc.data[ds_name].tags
+        #         # we have the tag, now we build a map where we have a dict of tags
+        #         # with the dataset names as values
+        #         for tag in tags:
+        #             self.tag_map.setdefault(tag, []).append(ds_name)
+        # # Check after loop completion
+        # if not self.tag_map:
+        #     raise DatasetPluginException("No tagged datasets found.")
         # Process each tag group
         for tag, group in self.tag_map.items():
             try:
