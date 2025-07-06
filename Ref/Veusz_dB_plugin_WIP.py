@@ -13,7 +13,7 @@ from veusz.plugins.datasetplugin import (
     DatasetPlugin, DatasetPluginException, Dataset1D, datasetpluginregistry,
     DatasetText
 )
-from veusz.plugins.datasetplugin import DatasetPluginHelper as helper
+# from veusz.plugins.datasetplugin import DatasetPluginHelper as helper
 from veusz.plugins import (field)
 import re
 # %% Class Definitions
@@ -323,6 +323,7 @@ class _pluginUtilities:
         # if not hasattr(self, 'tag_map'):
         #     self.tag_map = {}
         tag_map = {}
+        # TODO: States this is not interatble, find out why, and fix
         for ds_name in helper.datasets1d:
             if "freq" in ds_name.lower():
                 _ConsoleMixin._log(helper, f"[ByTag] excluded '{ds_name}'")
