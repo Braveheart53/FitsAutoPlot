@@ -13,8 +13,9 @@ from veusz.plugins.datasetplugin import (
     DatasetPlugin, DatasetPluginException, Dataset1D, datasetpluginregistry,
     DatasetText
 )
+# DatasetPluginManager,
 # TODO: see if loading DatasetPlugin gives access to helper and if this is needed
-# from veusz.plugins.datasetplugin import DatasetPluginHelper as helper
+from veusz.plugins.datasetplugin import DatasetPluginHelper as hlpr
 from veusz.plugins import (field)
 import re
 # %% Class Definitions
@@ -118,7 +119,7 @@ class dBLinearAvgPlugin(DatasetPlugin):
         with np.errstate(invalid='ignore', divide='ignore'):
             avg_db = 20.0 * np.log10(avg_linear)
         # Handle any infinite or invalid values
-        # TODO: Look at placing np.nan...
+
         avg_linear = np.where(np.isfinite(avg_linear), avg_linear, np.nan)
         avg_db = np.where(np.isfinite(avg_db), avg_db, np.nan)
         # Update output datasets
@@ -245,22 +246,22 @@ class LinearTodBPlugin(DatasetPlugin):
         db_serr = None
         db_perr = None
         db_nerr = None
-        # TODO: Test this!
+
         if input_dataset.serr is not None:
             # Error propagation: if y = 20*log10(x), then dy = 20/(x*ln(10)) * dx
             conversion_factor = 20.0 / (input_dataset.data * np.log(10))
             conversion_factor = np.where(np.isfinite(
-                conversion_factor), conversion_factor, 0.0)
+                conversion_factor), conversion_factor, np.nan)
             db_serr = np.abs(conversion_factor * input_dataset.serr)
         if input_dataset.perr is not None:
             conversion_factor = 20.0 / (input_dataset.data * np.log(10))
             conversion_factor = np.where(np.isfinite(
-                conversion_factor), conversion_factor, 0.0)
+                conversion_factor), conversion_factor, np.nan)
             db_perr = np.abs(conversion_factor * input_dataset.perr)
         if input_dataset.nerr is not None:
             conversion_factor = 20.0 / (input_dataset.data * np.log(10))
             conversion_factor = np.where(np.isfinite(
-                conversion_factor), conversion_factor, 0.0)
+                conversion_factor), conversion_factor, np.nan)
             db_nerr = -np.abs(conversion_factor * input_dataset.nerr)
         self.output.update(
             data=db_data,
@@ -319,23 +320,27 @@ class _pluginUtilities:
     #     self._log(helper, f"Utilizing Wally Plugin Utilities!")
 
     @staticmethod
-    def tagProcessing(inputData):
+    def tagProcessing(inputHelper):
         """Get all tags and create a dict with datasets as values."""
         # if not hasattr(self, 'tag_map'):
         #     self.tag_map = {}
+        from veusz.plugins.datasetplugin import DatasetPluginHelper as hlpr
         tag_map = {}
         # TODO: States this is not interatble, find out why, and fix
         # replace helper with something
         # helper is an object passed by veusz when the plugin is run, it is not
         # the import as defined in the comments in that section
         # but see if we can get the datasets and tags in a different way
-        for ds_name in helper.datasets1d:
+        for ds_name in hlpr.datasets1d:
             if "freq" in ds_name.lower():
-                _ConsoleMixin._log(helper, f"[ByTag] excluded '{ds_name}'")
+                # _ConsoleMixin._log(hlpr, f"[ByTag] excluded '{ds_name}'")
+                print(f"[ByTag] excluded '{ds_name}'")
             else:
                 # if it's not a frequency data container, process it
-                ds = helper.getDataset(ds_name, dimensions=1)
-                tags = helper._doc.data[ds_name].tags
+                ds = hlpr.getDataset(ds_name, dimensions=1)
+                # without helper this would be Root. something,
+                # TODO: Correct this... need to find access method to tags
+                tags = inputHelper._doc.data[ds_name].tags
                 # we have the tag, now we build a map where we have a dict of tags
                 # with the dataset names as values
                 for tag in tags:
