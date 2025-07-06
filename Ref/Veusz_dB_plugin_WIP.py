@@ -374,7 +374,7 @@ class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, _pluginUtilities,
             )
         ]
 
-    def getDatasets(self, fields):
+    def getDatasets(self, fields, helper):
         """Return empty list - datasets are created dynamically."""
         self.tag_map = self.tagProcessing(helper)  # Call as static method
         # TODO: create the datasets by tags
