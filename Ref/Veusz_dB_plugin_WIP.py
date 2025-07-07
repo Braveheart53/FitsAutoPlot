@@ -320,11 +320,13 @@ class _pluginUtilities:
     #     self._log(helper, f"Utilizing Wally Plugin Utilities!")
 
     @staticmethod
-    def tagProcessing(inputHelper):
+    def tagProcessing():
         """Get all tags and create a dict with datasets as values."""
         # if not hasattr(self, 'tag_map'):
         #     self.tag_map = {}
         from veusz.plugins.datasetplugin import DatasetPluginHelper as hlpr
+        # TODO: Replace this with something meaningful
+        inputHelper = []
         tag_map = {}
         # TODO: States this is not interatble, find out why, and fix
         # replace helper with something
