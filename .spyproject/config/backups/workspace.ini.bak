@@ -4,7 +4,7 @@ save_data_on_exit = True
 save_history = True
 save_non_project_files = False
 project_type = 'empty-project-type'
-recent_files = ['..\\..\\Python_Vault\\Veusz_customizations\\Veusz_plugins\\touchstone_import_plugin.py']
+recent_files = ['..\\..\\Python_Vault\\Veusz_customizations\\Veusz_plugins\\veusz_db_plugins.py', '..\\..\\Python_Vault\\Veusz_customizations\\Veusz_plugins\\archive\\veusz_db_plugins_update1.py']
 
 [main]
 version = 0.2.0
