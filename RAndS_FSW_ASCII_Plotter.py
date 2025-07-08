@@ -679,6 +679,7 @@ class VZPlotRnS:
 
     def __init__(self, config: ProcessingConfig):
         """Initialize VZPlotRnS with enhanced capabilities."""
+        self.config = config
         self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
         self.first_1d = True
         self.doc.EnableToolbar(enable=True)
