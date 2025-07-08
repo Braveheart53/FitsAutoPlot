@@ -855,14 +855,17 @@ class VZPlotRnS:
                 x_data_name = base_name + '_freq'
                 self.doc.SetData(name=x_data_name, val=freq_range)
                 self.doc.TagDatasets(base_name, [x_data_name])
+                self._datasets_by_base[base_name].append(x_data_name)
 
             # Verify data alignment
             if (data_line_numbers[index] - 1 != data_section_line_numbers[index]):
                 raise ValueError(f"Data alignment error in {filename}")
 
+
             # Set data in Veusz
             self.doc.SetData(name=dataset_name, val=data_y_values[index])
             self.doc.TagDatasets(base_name, [dataset_name])
+            self._datasets_by_base[base_name].append(dataset_name)
 
             # Update plot info and create plot
             self.plotInfo.graph_notes = data_notes
@@ -871,6 +874,9 @@ class VZPlotRnS:
                 '_', ' ')
 
             self._plot_1d(dataset_name)
+
+        # Create the averaged datasets
+        self._create_average_datasets(base_name)
 
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
