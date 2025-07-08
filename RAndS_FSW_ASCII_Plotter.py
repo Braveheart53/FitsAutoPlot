@@ -729,6 +729,70 @@ class VZPlotRnS:
             first_plot=True
         )
 
+    def _create_average_datasets(self, base_name: str):
+        """Average all datasets belonging to *base_name*."""
+        """
+        (identified by the
+        prefix ``base_name``). Excludes datasets containing “freq” or the
+        “_avg_*” suffixes. Creates two new datasets:
+
+            • <base_name>_avg_lin – linear-domain average
+            • <base_name>_avg_dB  – dB-domain   average
+
+        Uses GPU and/or multiprocessing if selected in the GUI.
+        """
+        # Retrieve list built during _process_file_data
+        candidates = [ds for ds in self._datasets_by_base[base_name]
+                      if ('freq' not in ds.lower()
+                          and not ds.endswith(('_avg_dB', '_avg_lin')))]
+
+        if len(candidates) < 2:      # nothing meaningful to average
+            return
+
+        # Pick numeric backend
+        use_gpu = self.config.enable_gpu_processing and CUPY_AVAILABLE
+        xp = cp if use_gpu else np
+
+        # Helper to convert one array
+        def _db_to_lin(arr):
+            return xp.power(10.0, arr / 10.0)
+
+        # Fetch data
+        data_arrays = [xp.asarray(self.doc.GetData(ds)) for ds in candidates]
+
+        # Optional multiprocessing on CPU if GPU not used
+        if (self.config.enable_multiprocessing and not use_gpu
+                and len(candidates) > 1 and self.config.num_processes > 1):
+            from concurrent.futures import ProcessPoolExecutor
+            with ProcessPoolExecutor(max_workers=self.config.num_processes) as exe:
+                linear_arrays = list(exe.map(
+                    lambda a: 10.0 ** (a / 10.0), data_arrays))
+            linear_stack = xp.vstack(linear_arrays)
+        else:
+            linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
+
+        avg_lin = xp.mean(linear_stack, axis=0)
+        avg_db  = 10.0 * xp.log10(avg_lin)
+
+        if use_gpu:          # move to CPU before registering in Veusz
+            avg_lin = cp.asnumpy(avg_lin)
+            avg_db  = cp.asnumpy(avg_db)
+
+        # Register in Veusz
+        lin_name = f"{base_name}_avg_lin"
+        db_name  = f"{base_name}_avg_dB"
+        self.doc.SetData(name=lin_name, val=avg_lin)
+        self.doc.SetData(name=db_name,  val=avg_db)
+
+        # Book-keeping so we don’t re-average
+        self._datasets_by_base[base_name].extend([lin_name, db_name])
+
+        # Overlay & individual average plot
+        prev_title = self.plotInfo.graph_title
+        self.plotInfo.graph_title = f"{base_name} average"
+        self._plot_1d(db_name)          # plot dB average
+        self.plotInfo.graph_title = prev_title
+
     def _process_file_data(self, filename, data_returned):
         """
         Process individual file data and create plots.
