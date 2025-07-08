@@ -24,7 +24,7 @@ Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 # %% Import all required modules
 # %%% System Interface Modules
 from dataclasses import dataclass
-import re
+# import re
 from operator import itemgetter
 from collections import defaultdict
 import os, re, sys, subprocess, psutil, math
@@ -728,6 +728,9 @@ class VZPlotRnS:
             base_name=None,
             first_plot=True
         )
+
+        # Craete a dict to track datasets for average calculation
+        self._datasets_by_base = defaultdict(list)
 
     def _create_average_datasets(self, base_name: str):
         """Average all datasets belonging to *base_name*."""
