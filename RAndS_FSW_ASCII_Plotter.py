@@ -411,7 +411,7 @@ class EnhancedMainWindow(QMainWindow):
         self.config = ProcessingConfig()
 
         # Initialize VZPlotRnS
-        self.vzplot = VZPlotRnS()
+        self.vzplot = VZPlotRnS(self.config)
 
         # Setup UI
         self._setup_ui()
