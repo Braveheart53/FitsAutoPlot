@@ -771,10 +771,16 @@ class VZPlotRnS:
         # Optional multiprocessing on CPU if GPU not used
         if (self.config.enable_multiprocessing and not use_gpu
                 and len(candidates) > 1 and self.config.num_processes > 1):
-            from concurrent.futures import ProcessPoolExecutor
-            with ProcessPoolExecutor(max_workers=self.config.num_processes) as exe:
+            # from concurrent.futures import ProcessPoolExecutor
+            # with ProcessPoolExecutor(max_workers=self.config.num_processes) as exe:
+            #     linear_arrays = list(exe.map(
+            #         lambda a: 10.0 ** (a / 10.0), data_arrays))
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(
+                    max_workers=self.config.num_processes) as exe:
                 linear_arrays = list(exe.map(
-                    lambda a: 10.0 ** (a / 10.0), data_arrays))
+                    lambda a: 10.0 ** (a / 10.0), data_arrays
+                    ))
             linear_stack = xp.vstack(linear_arrays)
         else:
             linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
