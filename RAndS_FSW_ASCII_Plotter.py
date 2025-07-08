@@ -875,7 +875,7 @@ class VZPlotRnS:
 
             self._plot_1d(dataset_name)
 
-        # Create the averaged datasets
+        # Create the averaged datasets after everything is processed
         self._create_average_datasets(base_name)
 
     def _create_page(self, dataset: str):
