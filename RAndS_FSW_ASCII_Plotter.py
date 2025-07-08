@@ -677,7 +677,7 @@ class EnhancedMainWindow(QMainWindow):
 class VZPlotRnS:
     """Enhanced Veusz plotting class with multiprocessing support."""
 
-    def __init__(self):
+    def __init__(self, config: ProcessingConfig):
         """Initialize VZPlotRnS with enhanced capabilities."""
         self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
         self.first_1d = True
