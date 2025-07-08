@@ -798,6 +798,10 @@ class VZPlotRnS:
         self.doc.SetData(name=lin_name, val=avg_lin)
         self.doc.SetData(name=db_name,  val=avg_db)
 
+        # Set the tags for the datasets
+        self.doc.TagDatasets('Avg_dB', [db_name])
+        self.doc.TagDatasets('Avg_Linear', [lin_name])
+
         # Book-keeping so we don’t re-average
         self._datasets_by_base[base_name].extend([lin_name, db_name])
 
