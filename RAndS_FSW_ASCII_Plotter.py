@@ -762,7 +762,11 @@ class VZPlotRnS:
             return xp.power(10.0, arr / 10.0)
 
         # Fetch data
-        data_arrays = [xp.asarray(self.doc.GetData(ds)) for ds in candidates]
+        # ValueError: setting an array element with a sequence. The requested
+        # array has an inhomogeneous shape after 1 dimensions. The detected
+        # shape was (4,) + inhomogeneous part.
+        # using on the Data array, not the errors!!!
+        data_arrays = [xp.asarray(self.doc.GetData(ds)[0]) for ds in candidates]
 
         # Optional multiprocessing on CPU if GPU not used
         if (self.config.enable_multiprocessing and not use_gpu
