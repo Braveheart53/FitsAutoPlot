@@ -679,8 +679,9 @@ class EnhancedMainWindow(QMainWindow):
 class VZPlotRnS:
     """Enhanced Veusz plotting class with multiprocessing support."""
 
-    def __init__(self):
+    def __init__(self, config: ProcessingConfig):
         """Initialize VZPlotRnS with enhanced capabilities."""
+        self.config = config
         self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
         self.first_1d = True
         self.doc.EnableToolbar(enable=True)
@@ -730,6 +731,52 @@ class VZPlotRnS:
             base_name=None,
             first_plot=True
         )
+
+    def _create_average_datasets(self, tag: str):
+        """Create linear and dB averages from all datasets carrying *tag*."""
+        """
+        Excludes datasets whose names contain 'freq'. Uses GPU and/or
+        multiprocessing when enabled in self.config.
+        """
+        # Collect candidate dataset names
+        datasets = [ds for ds in self.doc.Tags(tag)
+                    if ('freq' not in ds.lower()
+                        and not ds.endswith(('_avg_dB', '_avg_lin')))]
+
+        if len(datasets) < 2:        # nothing to average
+            return
+
+        # Choose backend
+        use_gpu = self.config.enable_gpu_processing and CUPY_AVAILABLE
+        xp = cp if use_gpu else np
+
+        # Accumulate linear-domain data
+        running_sum = None
+        for name in datasets:
+            arr = xp.asarray(self.doc.GetData(name))
+            lin = xp.power(10.0, arr / 10.0)        # dB → linear
+            running_sum = lin if running_sum is None else running_sum + lin
+
+        avg_lin = running_sum / len(datasets)
+        avg_db = 10.0 * xp.log10(avg_lin)
+
+        # Bring back to numpy if processed on GPU
+        if use_gpu:
+            avg_lin = cp.asnumpy(avg_lin)
+            avg_db = cp.asnumpy(avg_db)
+
+        # Register datasets in Veusz
+        lin_name = f"{tag}_avg_lin"
+        db_name = f"{tag}_avg_dB"
+        self.doc.SetData(name=lin_name, val=avg_lin)
+        self.doc.SetData(name=db_name,  val=avg_db)
+        self.doc.TagDatasets(tag, [lin_name, db_name])
+
+        # Create plot titled “average”
+        prev_title = self.plotInfo.graph_title       # preserve
+        self.plotInfo.graph_title = f"{tag} average"
+        self._plot_1d(db_name)                       # plot average (dB)
+        self.plotInfo.graph_title = prev_title
 
     def _process_file_data(self, filename, data_returned):
         """
@@ -809,6 +856,7 @@ class VZPlotRnS:
                 '_', ' ')
 
             self._plot_1d(dataset_name)
+            self._create_average_datasets(base_name)
 
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
