@@ -26,10 +26,8 @@ Version: 1.0.0 - Enhanced with multiprocessing and GPU support
 from dataclasses import dataclass
 import re
 from operator import itemgetter
-import os
-import sys
-import subprocess
-import psutil  # For CPU count detection
+from collections import defaultdict
+import os, re, sys, subprocess, psutil, math
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 # from qtpy.QtGui import *
 # from qtpy.QtCore import Qt, QSize, QThread, Signal
