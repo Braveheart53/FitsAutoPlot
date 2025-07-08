@@ -359,6 +359,9 @@ class FileProcessingThread(QThread):
                 results = self._process_files_sequential()
 
             self.processing_finished.emit(results)
+
+            # TODO: This would run best here..... or in each
+            # self._create_average_datasets(base_name)
         except Exception as e:
             self.error_occurred.emit(str(e))
 
@@ -384,6 +387,10 @@ class FileProcessingThread(QThread):
                 progress = int((completed / len(self.file_list)) * 100)
                 self.progress_updated.emit(progress)
 
+        for filename in self.file_list:
+            base_name = os.path.splitext(filename)[0]
+            self._create_average_datasets(base_name)
+
         return results
 
     def _process_files_sequential(self):
@@ -394,6 +401,7 @@ class FileProcessingThread(QThread):
                          self.sft_lines, self.config)
             result = process_file_worker(file_info)
             results.append(result)
+
             progress = int(((i + 1) / len(self.file_list)) * 100)
             self.progress_updated.emit(progress)
 
@@ -856,7 +864,8 @@ class VZPlotRnS:
                 '_', ' ')
 
             self._plot_1d(dataset_name)
-            self._create_average_datasets(base_name)
+            # wrong place
+            # self._create_average_datasets(base_name)
 
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
