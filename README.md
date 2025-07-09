@@ -12,13 +12,14 @@
 | GBO Outdoor Range Data Files | .atr | | | Working well with polar plots. May want to look at averaging patterns or normalizing during processing. This can be completed by native Veusz plugins as well. |
 
 
+# postProcessing_Launcher.py
+GUI for launching the various scripts / tools utilized. 
+This should be your starting point if you are just running the scripts for plotting data and not developing.
+
 # FITS-AutoPlot.py
 Import and autoplot in Veusz (either installed via Python or by system installation method) data within a FITS file.
 This has not been rigorously tested, in fact only the Veusz native import has been tested at all.
 
-# postProcessing_Launcher.py
-GUI for launching the various scripts / tools utilized. 
-This should be your starting point if you are just running the scripts for plotting data and not developing.
 
 # GBO_antenna_postProcessing.py
 The intent of this script is to be a combined data reduction tool with a Qt GUI.
@@ -44,4 +45,34 @@ Many updates are applied and well documented through GIT commits. If you have an
 
 # Required Python Packagse
 While the following is more than is required for running the scripts, it is the suggested environmental packages.
-Recall that this is designed for **Python Version 3.8.20**
+Recall that this is designed for **Python Version 3.8.***
+
+````bash
+spyder-kernels==3.0.5 ^
+veusz ^
+matplotlib ^
+xarray ^
+astropy ^
+qtpy ^
+pyside6 ^
+hdf5 ^
+pdir2 ^
+rich ^
+pandas ^
+pywin32 ^
+sympy ^
+mccabe ^
+numpy ^
+dataclasses ^
+typing ^
+scikit-rf ^
+scipy ^
+multiprocess ^
+pyopencl ^
+pathlib ^
+cupy ^
+psutil ^
+qt6-main
+````
+
+A [detailed google doc is available for Python Environment Creation Direction](<https://docs.google.com/document/d/1roQzx02ZDnD8I1MvyUEJWbL53ArOPD9zG1YbmjY1jFs/edit?usp=sharing>)
