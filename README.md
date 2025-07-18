@@ -10,6 +10,7 @@
 | Rhode & Schwarz Network Analyzer ASCII Files | .sft | | | Working well with averages also being created during data set creation. May look into extrema data set creation and error bars as well. |
 | Comma Separated Files | .csv | | | Not yet implemented fully into GUI format(s). Need to update. |
 | GBO Outdoor Range Data Files | .atr | | | Working well with polar plots. May want to look at averaging patterns or normalizing during processing. This can be completed by native Veusz plugins as well. |
+| Touchstone Files             | .s1p | .s2p | .s*p or .snp | Can easily import and plot all touchstone files regardless of the number of ports. The smith chart plotting and time domain filtering do not create plots correctly in veusz. This needs to be fixed. |
 
 
 # postProcessing_Launcher.py
