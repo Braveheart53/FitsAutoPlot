@@ -27,7 +27,12 @@ from dataclasses import dataclass
 # import re
 from operator import itemgetter
 from collections import defaultdict
-import os, re, sys, subprocess, psutil, math
+import os
+import re
+import sys
+import subprocess
+import psutil
+import math
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 # from qtpy.QtGui import *
 # from qtpy.QtCore import Qt, QSize, QThread, Signal
@@ -766,7 +771,8 @@ class VZPlotRnS:
         # array has an inhomogeneous shape after 1 dimensions. The detected
         # shape was (4,) + inhomogeneous part.
         # using on the Data array, not the errors!!!
-        data_arrays = [xp.asarray(self.doc.GetData(ds)[0]) for ds in candidates]
+        data_arrays = [xp.asarray(self.doc.GetData(ds)[0])
+                       for ds in candidates]
 
         # Optional multiprocessing on CPU if GPU not used
         if (self.config.enable_multiprocessing and not use_gpu
@@ -780,21 +786,21 @@ class VZPlotRnS:
                     max_workers=self.config.num_processes) as exe:
                 linear_arrays = list(exe.map(
                     lambda a: 10.0 ** (a / 10.0), data_arrays
-                    ))
+                ))
             linear_stack = xp.vstack(linear_arrays)
         else:
             linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
 
         avg_lin = xp.mean(linear_stack, axis=0)
-        avg_db  = 10.0 * xp.log10(avg_lin)
+        avg_db = 10.0 * xp.log10(avg_lin)
 
         if use_gpu:          # move to CPU before registering in Veusz
             avg_lin = cp.asnumpy(avg_lin)
-            avg_db  = cp.asnumpy(avg_db)
+            avg_db = cp.asnumpy(avg_db)
 
         # Register in Veusz
         lin_name = f"{base_name}_avg_lin"
-        db_name  = f"{base_name}_avg_dB"
+        db_name = f"{base_name}_avg_dB"
         self.doc.SetData(name=lin_name, val=avg_lin)
         self.doc.SetData(name=db_name,  val=avg_db)
 
@@ -832,6 +838,7 @@ class VZPlotRnS:
             data_returned['pattern_matches'].items()
         ))
 
+        # TODO look at this with the large time span file and >3000 plots
         if len(data_sections) != len(data_returned['data_matches']):
             raise ValueError(f"Data sections mismatch in file {filename}")
 
@@ -879,7 +886,6 @@ class VZPlotRnS:
             # Verify data alignment
             if (data_line_numbers[index] - 1 != data_section_line_numbers[index]):
                 raise ValueError(f"Data alignment error in {filename}")
-
 
             # Set data in Veusz
             self.doc.SetData(name=dataset_name, val=data_y_values[index])
@@ -1034,6 +1040,8 @@ class VZPlotRnS:
             )
 
 # %% Veusz Example for Embedding
+
+
 class VeuszWin(SimpleWindow):
     """A veusz window displaying a sin function."""
 
@@ -1045,12 +1053,13 @@ class VeuszWin(SimpleWindow):
         ifc = self.interface = CommandInterface(self.document)
 
         # a basic plot win a sin function
-        ifc.To( ifc.Add('page') )
-        ifc.To( ifc.Add('graph') )
+        ifc.To(ifc.Add('page'))
+        ifc.To(ifc.Add('graph'))
         ifc.Add('function', name='myfunc')
 
-        ifc.Set( 'myfunc/function', 'sin(x)' )
-        ifc.Set( 'x/max', 3.14*2 )
+        ifc.Set('myfunc/function', 'sin(x)')
+        ifc.Set('x/max', 3.14*2)
+
 
 class MainWindow(QWidget):
     """Put veusz window in layout with push button."""
