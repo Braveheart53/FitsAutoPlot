@@ -21,7 +21,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 Date: 2025-06-16
 # %%%%% Function Descriptions
         fastest_file_parser: parse any ASCII file per the commands passed
-        
+
 
 # %%%%% Variable Descriptions
     Define all utilized variables
@@ -152,19 +152,19 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
 
         # the following if statement only applies to R&S sft files
         # the dataline only will work if it is just floats
-        # if line_number in range(59, len(lines), 2):
-        #     print('at the place')
+        if line_number in range(59, len(lines), 2):
+            print('at the place')
         if dataline:
             # print('Found Data at Line Number ' + str(line_number))
             pattern_tracking['data_located'] += 1
-            if pattern_tracking['data_located'] == 1:
+            if pattern_tracking['data_located'] == 1 and line_number > 57:
                 pattern_name = 'data'
                 extracted_data['data_matches'][pattern_name] = {
                     'line_number': line_number,
                     'content': clean_line,
                     'extracted_value': dataline
                 }
-            else:
+            elif line_number > 57:
                 pattern_name = 'data_' + str(pattern_tracking['data_located'])
                 extracted_data['data_matches'][pattern_name] = {
                     'line_number': line_number,

@@ -723,6 +723,7 @@ class VZPlotRnS:
         }
 
         # Line targets for header parsing
+        # TODO: Look and se if this is correct or not utilized correctly
         self.sft_lines = [1, 2, 3] + list(range(5, 58, 2))
 
         # Plot info initialization
