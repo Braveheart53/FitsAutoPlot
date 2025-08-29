@@ -157,19 +157,35 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
         if dataline:
             # print('Found Data at Line Number ' + str(line_number))
             pattern_tracking['data_located'] += 1
-            if pattern_tracking['data_located'] == 1 and line_number > 57:
+            if pattern_tracking['data_located'] == 1:
                 pattern_name = 'data'
-                extracted_data['data_matches'][pattern_name] = {
-                    'line_number': line_number,
-                    'content': clean_line,
-                    'extracted_value': dataline
-                }
-            elif line_number > 57:
+                if os.path.splitext(os.path.basename(filename))[1] == "sft":
+                    if line_number > 57:
+                        extracted_data['data_matches'][pattern_name] = {
+                            'line_number': line_number,
+                            'content': clean_line,
+                            'extracted_value': dataline
+                        }
+                else:
+                    extracted_data['data_matches'][pattern_name] = {
+                        'line_number': line_number,
+                        'content': clean_line,
+                        'extracted_value': dataline
+                    }
+            else:
                 pattern_name = 'data_' + str(pattern_tracking['data_located'])
-                extracted_data['data_matches'][pattern_name] = {
-                    'line_number': line_number,
-                    'content': clean_line,
-                    'extracted_value': dataline
-                }
+                if os.path.splitext(os.path.basename(filename))[1] == "sft":
+                    if line_number > 57:
+                        extracted_data['data_matches'][pattern_name] = {
+                            'line_number': line_number,
+                            'content': clean_line,
+                            'extracted_value': dataline
+                        }
+                else:
+                    extracted_data['data_matches'][pattern_name] = {
+                        'line_number': line_number,
+                        'content': clean_line,
+                        'extracted_value': dataline
+                    }
 
     return extracted_data
