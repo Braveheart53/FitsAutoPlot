@@ -22,6 +22,13 @@ Date: 2025-06-16
 # %%%%% Function Descriptions
         fastest_file_parser: parse any ASCII file per the commands passed
 
+# %%%% 0.0.2: Script to run in consol description
+Date: 2025-09-02
+# %%%%% Function Descriptions
+        fastest_file_parser: parse any ASCII file per the commands passed
+        added some command to start sft file at line 57 to avoid data size
+        mismatches
+
 
 # %%%%% Variable Descriptions
     Define all utilized variables
