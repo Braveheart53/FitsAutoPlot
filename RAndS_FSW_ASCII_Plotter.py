@@ -33,6 +33,7 @@ import sys
 import subprocess
 import psutil
 import math
+import faulthandler
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 # from qtpy.QtGui import *
 # from qtpy.QtCore import Qt, QSize, QThread, Signal
@@ -1103,6 +1104,14 @@ def setup_qt_plugins():
 
 def main():
     """Main application entry point."""
+
+    faulthandler.enable(file="faultLog.txt")
+    faulthandler.dump_traceback_later(
+        20,
+        repeat=True,
+        file='faults_RAndS_postProcessing.txt', exit=False
+        )
+
     # Set multiprocessing start method for cross-platform compatibility
     if __name__ == '__main__':
         mp.set_start_method('spawn', force=True)
@@ -1118,6 +1127,10 @@ def main():
     # Run application
     sys.exit(app.exec_())
 
+    # Exit all the fault handling
+    # started this for issues with files with > 10k plots
+    faulthandler.cancel_dump_traceback_later()
+    faulthandler.disable()
 
 if __name__ == '__main__':
     main()
