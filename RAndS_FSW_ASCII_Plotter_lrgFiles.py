@@ -1236,7 +1236,6 @@ def setup_qt_plugins():
 
 def main():
     """Main application entry point."""
-
     # faulthandler.enable(file="faultLog.txt")
     # faulthandler.dump_traceback_later(
     #     20,
