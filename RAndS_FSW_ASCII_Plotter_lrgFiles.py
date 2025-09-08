@@ -12,14 +12,11 @@ Author Email: wwallace@nrao.edu
 Author Secondary Email: naval.antennas@gmail.com
 Author Business Phone: +1 (304) 456-2216
 
-Version: 1.0.0 - Enhanced with multiprocessing and GPU support
+Version: 1.0.1 - Enhanced with automatic batch saving for large datasets
 =============================================================================
 """
 # TODO: Trouble shoot processing lag and ensure file saving works
-# TODO: change status on check box change for enable or disable GPU
-# and multiprocessing
 # TODO: compare GPU based processing on this one to Touchstone
-# TODO: change state of all text boxes to be checked on start
 
 # %% Import all required modules
 # %%% System Interface Modules
@@ -35,6 +32,8 @@ import psutil
 import math
 # import faulthandler
 from hanging_threads import start_monitoring
+import datetime  # Added for auto-save timestamping
+
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 # from qtpy.QtGui import *
 # from qtpy.QtCore import Qt, QSize, QThread, Signal
@@ -117,6 +116,7 @@ class ProcessingConfig:
     num_processes: int = cpu_count()
     max_workers: int = cpu_count()
     chunk_size: int = 1000
+    plots_per_file: int = 1000  # NEW: Number of plots per auto-saved file
 
 
 @dataclass
@@ -299,6 +299,37 @@ def process_file_worker(file_info):
         return {
             'filename': filename,
             'data': None,
+            'success': False,
+            'error': str(e)
+        }
+
+
+# NEW: Multiprocessing worker for batch saving
+def save_batch_worker(save_info):
+    """
+    Worker function for saving batches in parallel.
+
+    Parameters
+    ----------
+    save_info : tuple
+        Tuple containing (doc, filename, mode).
+
+    Returns
+    -------
+    dict
+        Save operation result.
+    """
+    doc, filename, mode = save_info
+    try:
+        doc.Save(filename, mode=mode)
+        return {
+            'filename': filename,
+            'success': True,
+            'error': None
+        }
+    except Exception as e:
+        return {
+            'filename': filename,
             'success': False,
             'error': str(e)
         }
@@ -576,7 +607,6 @@ class EnhancedMainWindow(QMainWindow):
 
     def _get_timestamp(self):
         """Get current timestamp string."""
-        import datetime
         return datetime.datetime.now().strftime("%H:%M:%S")
 
     def _process_and_plot(self):
@@ -691,6 +721,12 @@ class VZPlotRnS:
         self.first_1d = True
         self.doc.EnableToolbar(enable=True)
 
+        # NEW: Initialize auto-save tracking variables
+        self.plot_count = 0
+        self.file_batch_number = 1
+        self.base_save_path = None
+        self.auto_save_enabled = True
+
         # Search strings for data parsing
         self.searchData_strings = {
             'version': 'VERSION',
@@ -741,12 +777,89 @@ class VZPlotRnS:
         # Craete a dict to track datasets for average calculation
         self._datasets_by_base = defaultdict(list)
 
+    # NEW: Setup automatic save path based on first processed file
+    def _setup_auto_save_path(self):
+        """Setup automatic save path based on first processed file."""
+        if self.base_save_path is None:
+            # Create auto-save directory in current working directory
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_dir = f"RnS_AutoSave_{timestamp}"
+            os.makedirs(save_dir, exist_ok=True)
+
+            # Set base path without extension (will be added during save)
+            self.base_save_path = os.path.join(save_dir, "RnS_Plots_Batch")
+            print(f"Auto-save directory created: {save_dir}")
+
+    # NEW: Automatically save file if plot count threshold is reached
+    def _auto_save_if_needed(self):
+        """Automatically save file if plot count threshold is reached."""
+        if not self.auto_save_enabled:
+            return
+
+        if self.plot_count > 0 and self.plot_count % self.config.plots_per_file == 0:
+            if self.base_save_path is None:
+                self._setup_auto_save_path()
+
+            # Generate filename with batch number
+            batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
+
+            # Use multiprocessing for save operation if enabled
+            if self.config.enable_multiprocessing:
+                self._save_batch_parallel(batch_filename)
+            else:
+                self._save_batch_sequential(batch_filename)
+
+            print(f"Auto-saved batch {self.file_batch_number} with {self.config.plots_per_file} plots to: {batch_filename}")
+
+            # Reset for next batch
+            self.file_batch_number += 1
+            self._reset_for_next_batch()
+
+    # NEW: Save current batch using parallel processing
+    def _save_batch_parallel(self, filename):
+        """Save current batch using parallel processing."""
+        try:
+            # Use threading for file I/O operations
+            def save_worker():
+                self.doc.Save(filename, mode='hdf5')
+
+            save_thread = threading.Thread(target=save_worker)
+            save_thread.start()
+            save_thread.join(timeout=30)  # 30 second timeout
+
+            if save_thread.is_alive():
+                print(f"Warning: Save operation for {filename} timed out")
+
+        except Exception as e:
+            print(f"Error during parallel save: {e}")
+            # Fallback to sequential save
+            self._save_batch_sequential(filename)
+
+    # NEW: Save current batch sequentially
+    def _save_batch_sequential(self, filename):
+        """Save current batch sequentially."""
+        try:
+            self.doc.Save(filename, mode='hdf5')
+        except Exception as e:
+            print(f"Error during sequential save: {e}")
+
+    # NEW: Reset document for next batch while preserving settings
+    def _reset_for_next_batch(self):
+        """Reset document for next batch while preserving settings."""
+        # Create new document for next batch
+        self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
+        self.doc.EnableToolbar(enable=True)
+        self.first_1d = True
+
+        # Clear dataset tracking for new batch
+        self._datasets_by_base.clear()
+
     def _create_average_datasets(self, base_name: str):
         """Average all datasets belonging to *base_name*."""
         """
         (identified by the
-        prefix ``base_name``). Excludes datasets containing “freq” or the
-        “_avg_*” suffixes. Creates two new datasets:
+        prefix ``base_name``). Excludes datasets containing "freq" or the
+        "_avg_*" suffixes. Creates two new datasets:
 
             • <base_name>_avg_lin – linear-domain average
             • <base_name>_avg_dB  – dB-domain   average
@@ -812,7 +925,7 @@ class VZPlotRnS:
         self.doc.TagDatasets('Avg_Linear', [lin_name])
         self.doc.TagDatasets(base_name, [db_name, lin_name])
 
-        # Book-keeping so we don’t re-average
+        # Book-keeping so we don't re-average
         self._datasets_by_base[base_name].extend([lin_name, db_name])
 
         # Overlay & individual average plot
@@ -834,6 +947,10 @@ class VZPlotRnS:
         """
         base_name = os.path.splitext(os.path.basename(filename))[0]
         self.plotInfo.base_name = base_name
+
+        # NEW: Setup auto-save path on first file
+        if self.base_save_path is None:
+            self._setup_auto_save_path()
 
         # Extract section data
         data_sections = dict(filter(
@@ -902,6 +1019,10 @@ class VZPlotRnS:
                 '_', ' ')
 
             self._plot_1d(dataset_name)
+
+            # NEW: Increment plot count and check for auto-save
+            self.plot_count += 1
+            self._auto_save_if_needed()
 
         # Create the averaged datasets after everything is processed
         self._create_average_datasets(base_name)
@@ -1018,6 +1139,16 @@ class VZPlotRnS:
         os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
         self.doc.Save(filename_vsz, mode='vsz')
 
+        # NEW: Save any remaining plots in current batch if auto-save is enabled
+        if self.auto_save_enabled and self.plot_count % self.config.plots_per_file != 0:
+            if self.base_save_path is not None:
+                final_batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
+                try:
+                    self.doc.Save(final_batch_filename, mode='hdf5')
+                    print(f"Final batch saved with {self.plot_count % self.config.plots_per_file} plots to: {final_batch_filename}")
+                except Exception as e:
+                    print(f"Error saving final batch: {e}")
+
     @staticmethod
     def open_veusz_gui(filename: str):
         """Launch Veusz GUI with generated project file."""
@@ -1129,7 +1260,7 @@ def main():
     sys.exit(app.exec_())
 
     # Exit all the fault handling
-    # started this for issues with files with > 10k plots
+    # started this for issues with files with >10k plots
     # faulthandler.cancel_dump_traceback_later()
     # faulthandler.disable()
     monitor.stop()
