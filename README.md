@@ -66,4 +66,6 @@ Will update in future releases...
 Symantic Revisioning with the following structure: [external or production release].[internal release for review].[draft or work in progress relases / updates]
 
 
-Building the scripts and uploading the starting point. As of this version it is not yet fully working. I am just getting the repo setup and code added to organize as needed in later revisions. All such changes will be tracked in branches with the release version if so working.
+At the moment, most of the basic bulk plotting works. I have noticed some capability issuses with the current portable release of Veusz (4.2) that do not exist in the fully installed version (not portable). 
+Touchstone time domain filtering is not yet fully operational.
+Smith Chart Plotting in Veusz is not yet fully operational.
