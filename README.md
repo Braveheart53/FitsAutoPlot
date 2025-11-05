@@ -12,7 +12,16 @@ Python 3.8 based scripts for autoplotting FITS files using Veusz and astropy. Th
 | GBO Outdoor Range Data Files | .atr | | |
 | Touchstone Files | .s1p | .s2p | |
 
-# 
+# postProcessing_Launcher.py
+This is the main launching GUI. I have noticed on windows 11 it takes a inordinate amount of time to launch each option.
+This will need some troubleshooting in the future.
+If you just want to use the program / scripts, start by executing this file.
+
+## Classes
+Will update in future releases...
+
+## Functions
+Will update in future releases...
 
 # FITS-AutoPlot.py
 Import and autoplot in Veusz (either installed via Python or by system installation method) data within a FITS file.
