@@ -77,17 +77,20 @@ SPLASH_BACKGROUND_IMAGE_PATH = "assets/load_building.png"  # Splash screen image
 
 # Application configuration
 APP_NAME = "GBO Electronics Scientific Plotting Suite"
-APP_VERSION = "0.1.3"
-WINDOW_WIDTH = 800
-WINDOW_HEIGHT = 600
+APP_VERSION = "0.1.4"
+WINDOW_WIDTH = 900
+WINDOW_HEIGHT = 700
 
 # Script paths - adjust these to your script locations
 # TODO: Add Paths and Script Keys Here
+# Script paths - Add your script filenames here
 SCRIPT_PATHS = {
-    "atr": "ATR_AutoPlot.py",
-    "fits": "FITS_AutoPlot.py",
-    "rands": "RAndS_FSW_ASCII_Plotter.py",
-    "snp": "Touchstone_AutoPlot.py"
+    'atr': 'ATR_AutoPlot.py',
+    'fits': 'FITS_AutoPlot.py',
+    'rands': 'RAndSFSWASCIIPlotter.py',
+    'snp': 'Touchstone_AutoPlot.py',
+    'csv': 'CSV_TSV_AutoPlot.py',
+    'rands_large': 'RAndS_FSW_ASCII_Plotter_lrgFiles.py'
 }
 
 # %% Splash Screen Classes
@@ -100,25 +103,42 @@ class SplashScreenThread(QThread):
     splash_finished = Signal()
 
     def __init__(self):
-        """Initialize the splash screen thread."""
+            """
+    Thread for handling splash screen progress simulation.
+
+    Signals
+    -------
+    progressUpdated : Signal(int)
+        Emitted with progress percentage (0-100).
+    splashFinished : Signal()
+        Emitted when splash screen should close.
+    """
+
+    progressUpdated = Signal(int)
+    splashFinished = Signal()
+
+    def __init__(self):
+        """
+        Initialize the splash screen thread.
+        """
         super().__init__()
-        self.progress_steps = [
-            ("Initializing application...", 20),
-            ("Loading plotting modules...", 40),
-            ("Configuring GUI components...", 60),
-            ("Preparing user interface...", 80),
-            ("Finalizing startup...", 100)
+        self.progressSteps = [
+            ('Initializing application...', 20),
+            ('Loading plotting modules...', 40),
+            ('Configuring GUI components...', 60),
+            ('Preparing user interface...', 80),
+            ('Finalizing startup...', 100)
         ]
 
     def run(self):
-        """Execute splash screen progress simulation."""
+        """
+        Execute splash screen progress simulation.
+        """
         import time
-
-        for message, progress in self.progress_steps:
+        for message, progress in self.progressSteps:
             time.sleep(0.5)  # Simulate loading time
-            self.progress_updated.emit(progress)
-
-        self.splash_finished.emit()
+            self.progressUpdated.emit(progress)
+        self.splashFinished.emit()
 
 
 class CustomSplashScreen(QSplashScreen):
@@ -402,14 +422,28 @@ class MainWindow(QMainWindow):
                 "assets/fits_icon.png"
             ),
             (
-                "Plot R&S FSW SFT Files",
+                'Plot Delimited Files',
+                'Launch the CSV/TSV file plotter for visualizing comma, tab, or '
+                'custom-separated data files with arbitrary delimiters',
+                'csv',
+                'assets/csvicon.png'
+            ),
+            (
+                'Plot Rhode and Schwarz FSW Files',
                 "Launch the Rohde & Schwarz FSW ASCII plotter\n"
                 "for spectrum analyzer data visualization",
                 "rands",
                 "assets/rands_icon.png"
             ),
             (
-                "Plot Touchfiles with Time Domain Processing "
+                'Rhode and Schwarz FSW LARGE Files',
+                'Launch the Rohde & Schwarz FSW ASCII plotter optimized for large files '
+                'for high-volume spectrum analyzer data visualization',
+                'rands_large',
+                'assets/randslrgicon.png'
+            ),
+            (
+                "Plot TouchStone Files"
                 " (under construction)",
                 "Launch the GBO Touchstone File AutoPlot GU \nI"
                 "for processing and visualizing S-parameter measurement data",

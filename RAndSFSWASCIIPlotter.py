@@ -1345,7 +1345,7 @@ def main():
     monitor = start_monitoring(seconds_frozen=20, test_interval=100)
     # Set multiprocessing start method for cross-platform compatibility
     if __name__ == '__main__':
-        mp.set_start_method('spawn', force=True)
+        mp.set_start_method("spawn", force=True)
         # Call this before any Qt imports
     if getattr(sys, 'frozen', False):  # Check if running as compiled executable
         setup_qt_plugins()
