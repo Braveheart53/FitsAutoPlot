@@ -87,7 +87,7 @@ WINDOW_HEIGHT = 700
 SCRIPT_PATHS = {
     'atr': 'ATR_AutoPlot.py',
     'fits': 'FITS_AutoPlot.py',
-    'rands': 'RAndSFSWASCIIPlotter.py',
+    'rands': 'RAndSFSWASCII_Plotter.py',
     'snp': 'Touchstone_AutoPlot.py',
     'csv': 'CSV_TSV_AutoPlot.py',
     'rands_large': 'RAndS_FSW_ASCII_Plotter_lrgFiles.py'
