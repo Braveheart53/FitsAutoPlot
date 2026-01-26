@@ -44,7 +44,7 @@ import os
 import sys
 import subprocess
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor, ascompleted
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from operator import itemgetter
 from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass
