@@ -3,22 +3,24 @@
 """
 =============================================================================
 Enhanced R&S FSW ASCII Plotter with Multiprocessing and GPU Support
+
 Created on 2025-06-28
 Enhanced version with parallel processing and GPU acceleration capabilities
+
 Author: William W. Wallace (Enhanced)
 Author Email: wwallace@nrao.edu
 Author Secondary Email: naval.antennas@gmail.com
 Author Business Phone: +1 (304) 456-2216
-Version: 1.0.3 - Corrected Average+Overlay only mode with AutoSave functionality
+
+Version: 1.0.2 - Enhanced with plotting options, batch saving, and maximum parallel processing
 =============================================================================
 """
-
 # TODO: compare GPU based processing on this one to Touchstone
 
 # %% Import all required modules
-
 # %%% System Interface Modules
 from dataclasses import dataclass
+# import re
 from operator import itemgetter
 from collections import defaultdict
 import os
@@ -27,8 +29,9 @@ import sys
 import subprocess
 import psutil
 import math
+# import faulthandler
 from hanging_threads import start_monitoring
-import datetime # Added for auto-save timestamping
+import datetime  # Added for auto-save timestamping
 import time
 import gc
 
@@ -90,20 +93,18 @@ from veusz.document import CommandInterface
 @dataclass
 class ProcessingConfig:
     """Configuration class for processing settings."""
-    enable_multiprocessing: bool = True # Default enabled for maximum performance
-    enable_gpu_processing: bool = False # User configurable
-    use_opencl: bool = True # Prefer OpenCL for cross-platform compatibility
+    enable_multiprocessing: bool = True  # Default enabled for maximum performance
+    enable_gpu_processing: bool = False  # User configurable
+    use_opencl: bool = True  # Prefer OpenCL for cross-platform compatibility
     num_processes: int = cpu_count()
     max_workers: int = cpu_count()
     chunk_size: int = min(1000, max(100, cpu_count() * 10))
-
-    # Plot mode and auto-save options
-    plot_mode: int = 0 # 0=all plots, 1=avg+overlay only, 2=avg only
+    # NEW: Plot mode and auto-save options
+    plot_mode: int = 0  # 0=all plots, 1=avg+overlay only, 2=avg only
     enable_auto_save: bool = False
     plots_per_file: int = 1000
     auto_save_base_name: str = "RnS_Plots_Batch"
-
-    # Enhanced processing options
+    # NEW: Enhanced processing options
     enable_async_processing: bool = True
     memory_optimization: bool = True
     use_shared_memory: bool = True
@@ -168,7 +169,7 @@ class GPUProcessor:
                     best_device = max(devices, key=lambda d: d.max_compute_units)
                     self.context = cl.Context(devices=[best_device])
                     self.queue = cl.CommandQueue(self.context,
-                        properties=cl.command_queue_properties.OUT_OF_ORDER_EXEC_MODE_ENABLE)
+                                               properties=cl.command_queue_properties.OUT_OF_ORDER_EXEC_MODE_ENABLE)
                     self.gpu_available = True
                     print(f"OpenCL initialized with device: {best_device.name} ({best_device.max_compute_units} CUs)")
         except Exception as e:
@@ -209,7 +210,8 @@ class GPUProcessor:
                 return self._process_batch_cupy(data_arrays_list)
         except Exception as e:
             print(f"GPU batch processing failed: {e}. Falling back to CPU.")
-            return data_arrays_list
+
+        return data_arrays_list
 
     def _process_batch_cupy(self, data_arrays_list):
         """Process batch of data using CuPy with optimized memory management."""
@@ -224,7 +226,7 @@ class GPUProcessor:
                 gpu_arrays = [cp.asarray(arr, stream=stream) for arr in batch_arrays]
 
                 # Apply processing (vectorized operations)
-                processed_gpu = [arr * 1.0 for arr in gpu_arrays] # Identity operation
+                processed_gpu = [arr * 1.0 for arr in gpu_arrays]  # Identity operation
 
                 # Transfer back to CPU
                 processed_batch = [cp.asnumpy(arr) for arr in processed_gpu]
@@ -250,7 +252,7 @@ class GPUProcessor:
             int gid = get_global_id(0);
             if (gid < size) {
                 // Enhanced processing operations
-                data[gid] = data[gid] * 1.0f; // Identity operation for now
+                data[gid] = data[gid] * 1.0f;  // Identity operation for now
                 // Add more complex operations here as needed
             }
         }
@@ -280,8 +282,8 @@ class GPUProcessor:
                     batch_processed.append(result.astype(data_array.dtype))
 
                 processed_arrays.extend(batch_processed)
+                self.queue.finish()
 
-            self.queue.finish()
         except Exception as e:
             print(f"OpenCL batch processing error: {e}")
             return data_arrays_list
@@ -329,7 +331,7 @@ def process_file_worker_enhanced(file_info):
         # Parse the file
         start_time = time.time()
         data_returned = fparser(filename, line_targets=sft_lines,
-                              string_patterns=search_strings)
+                                string_patterns=search_strings)
 
         # Initialize GPU processor if enabled
         if config.enable_gpu_processing:
@@ -362,7 +364,6 @@ def process_file_worker_enhanced(file_info):
             'error': None,
             'processing_time': processing_time
         }
-
     except Exception as e:
         return {
             'filename': filename,
@@ -387,7 +388,6 @@ def save_batch_worker_enhanced(save_info):
         Save operation result.
     """
     doc_copy, filename, mode = save_info
-
     try:
         start_time = time.time()
         doc_copy.Save(filename, mode=mode)
@@ -399,7 +399,6 @@ def save_batch_worker_enhanced(save_info):
             'error': None,
             'save_time': save_time
         }
-
     except Exception as e:
         return {
             'filename': filename,
@@ -429,7 +428,6 @@ def plot_generation_worker(plot_info):
             'success': True,
             'error': None
         }
-
     except Exception as e:
         return {
             'success': False,
@@ -498,7 +496,6 @@ class FileProcessingThread(QThread):
                 results = self._process_files_sequential_enhanced()
 
             self.processing_finished.emit(results)
-
         except Exception as e:
             self.error_occurred.emit(str(e))
 
@@ -514,6 +511,7 @@ class FileProcessingThread(QThread):
 
         # Use optimal number of workers based on system resources
         optimal_workers = min(self.config.max_workers, len(file_info_list), cpu_count() * 2)
+
         self.status_updated.emit(f"Processing {total_files} files with {optimal_workers} workers...")
 
         with ProcessPoolExecutor(max_workers=optimal_workers) as executor:
@@ -544,6 +542,7 @@ class FileProcessingThread(QThread):
 
         successful = sum(1 for r in results if r['success'])
         self.status_updated.emit(f"Completed: {successful}/{total_files} files processed successfully")
+
         return results
 
     def _process_files_sequential_enhanced(self):
@@ -553,6 +552,7 @@ class FileProcessingThread(QThread):
 
         for i, filename in enumerate(self.file_list):
             self.status_updated.emit(f"Processing file {i+1}/{total_files}: {os.path.basename(filename)}")
+
             file_info = (filename, self.search_strings, self.sft_lines, self.config)
             result = process_file_worker_enhanced(file_info)
             results.append(result)
@@ -568,12 +568,12 @@ class EnhancedMainWindow(QMainWindow):
     def __init__(self):
         """Initialize the enhanced main window."""
         super().__init__()
-        self.setWindowTitle("Enhanced R&S SFT File Plotter v1.0.3")
-        self.setGeometry(100, 100, 900, 800) # Increased size for new options
+        self.setWindowTitle("Enhanced R&S SFT File Plotter v1.0.2")
+        self.setGeometry(100, 100, 900, 800)  # Increased size for new options
 
         # Initialize configuration with defaults optimized for performance
         self.config = ProcessingConfig()
-        self.config.enable_multiprocessing = True # Enable by default
+        self.config.enable_multiprocessing = True  # Enable by default
 
         # Auto-detect and enable GPU if available
         if CUPY_AVAILABLE or PYOPENCL_AVAILABLE:
@@ -653,12 +653,13 @@ class EnhancedMainWindow(QMainWindow):
 
         main_layout.addWidget(options_group)
 
-        # Plot options section
+        # Plot options section (Option 1)
         plot_group = QGroupBox("Plot Options")
         plot_layout = QVBoxLayout(plot_group)
 
         # Radio button group for plot mode
         self.plot_mode_group = QButtonGroup()
+
         self.all_plots_radio = QRadioButton("All plots (original behavior)")
         self.all_plots_radio.setChecked(True)
         self.plot_mode_group.addButton(self.all_plots_radio, 0)
@@ -673,9 +674,10 @@ class EnhancedMainWindow(QMainWindow):
         plot_layout.addWidget(self.avg_only_radio)
 
         self.plot_mode_group.buttonClicked.connect(self._update_plot_mode)
+
         main_layout.addWidget(plot_group)
 
-        # Auto-save options section
+        # Auto-save options section (Option 2)
         autosave_group = QGroupBox("Auto-Save Options")
         autosave_layout = QVBoxLayout(autosave_group)
 
@@ -873,11 +875,11 @@ class EnhancedMainWindow(QMainWindow):
 
         if failed_results:
             error_msg = "\n".join(
-                [f"{os.path.basename(r['filename'])}: {r['error']}" for r in failed_results[:5]]) # Show first 5 errors
+                [f"{os.path.basename(r['filename'])}: {r['error']}" for r in failed_results[:5]])  # Show first 5 errors
             if len(failed_results) > 5:
                 error_msg += f"\n... and {len(failed_results) - 5} more errors"
             QMessageBox.warning(self, "Processing Errors",
-                              f"Some files failed to process:\n{error_msg}")
+                                f"Some files failed to process:\n{error_msg}")
 
         if successful_results:
             self._create_plots(successful_results)
@@ -924,7 +926,7 @@ class EnhancedMainWindow(QMainWindow):
 
             try:
                 self.vzplot._process_file_data(filename, data_returned)
-                if i % 10 == 0: # Update every 10 files
+                if i % 10 == 0:  # Update every 10 files
                     self._log_message(f"Created plots for {i+1}/{len(results)} files")
             except Exception as e:
                 self._log_message(f"Plot creation failed for {os.path.basename(filename)}: {e}")
@@ -954,7 +956,7 @@ class EnhancedMainWindow(QMainWindow):
 
             except Exception as e:
                 QMessageBox.critical(self, "Save Error",
-                                   f"Failed to save project: {e}")
+                                     f"Failed to save project: {e}")
 
 # %% Enhanced Auto Plotter Class
 
@@ -975,10 +977,6 @@ class VZPlotRnS:
         self.auto_save_enabled = False
         self.plots_per_file = 1000
 
-        # Global average tracking variables
-        self._global_datasets = []  # Track all datasets across all files
-        self._current_file_datasets = []  # Track datasets for current file
-
         # Initialize GPU processor for averaging operations
         self.gpu_processor = GPUProcessor(config) if config.enable_gpu_processing else None
 
@@ -993,7 +991,7 @@ class VZPlotRnS:
             'x-axis': 'X-AXIS',
             'start': 'START',
             'stop': 'STOP',
-            'stop_2': 'STOP', # Added for compatibility
+            'stop_2': 'STOP',  # Added for compatibility
             'ref level': 'REF LEVEL',
             'level offset': 'LEVEL OFFSET',
             'ref position': 'REF POSITION',
@@ -1031,17 +1029,6 @@ class VZPlotRnS:
         # Create a dict to track datasets for average calculation
         self._datasets_by_base = defaultdict(list)
 
-    def _close_current_document_window(self):
-        """Close current Veusz document window if it exists."""
-        try:
-            if hasattr(self.doc, 'window') and self.doc.window:
-                self.doc.window.close()
-                self.doc.window = None
-                gc.collect()  # Force garbage collection
-                print("Closed current Veusz document window")
-        except Exception as e:
-            print(f"Error closing document window: {e}")
-
     def _setup_auto_save_path(self):
         """Setup automatic save path based on configuration."""
         if self.base_save_path is None and self.auto_save_enabled:
@@ -1066,9 +1053,6 @@ class VZPlotRnS:
             # Generate filename with batch number
             batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
 
-            # Create file average before saving
-            self._create_file_average()
-
             # Use multiprocessing for save operation if enabled
             if self.config.enable_multiprocessing:
                 self._save_batch_parallel(batch_filename)
@@ -1077,8 +1061,7 @@ class VZPlotRnS:
 
             print(f"Auto-saved batch {self.file_batch_number} with {self.plots_per_file} plots to: {batch_filename}")
 
-            # Close current window and reset for next batch
-            self._close_current_document_window()
+            # Reset for next batch
             self.file_batch_number += 1
             self._reset_for_next_batch()
 
@@ -1086,6 +1069,8 @@ class VZPlotRnS:
         """Save current batch using parallel processing."""
         try:
             # Create a deep copy of the document for parallel saving
+            # Note: This is simplified - actual implementation would need proper document serialization
+
             def save_worker():
                 self.doc.Save(filename, mode='hdf5')
 
@@ -1093,7 +1078,7 @@ class VZPlotRnS:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(save_worker)
                 try:
-                    future.result(timeout=30) # 30 second timeout
+                    future.result(timeout=30)  # 30 second timeout
                 except Exception as e:
                     print(f"Parallel save failed: {e}")
                     self._save_batch_sequential(filename)
@@ -1112,282 +1097,32 @@ class VZPlotRnS:
 
     def _reset_for_next_batch(self):
         """Reset document for next batch while preserving settings."""
-        # Close current document window if it exists
-        self._close_current_document_window()
-
         # Create new document for next batch
         self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
         self.doc.EnableToolbar(enable=True)
         self.first_1d = True
 
-        # Clear dataset tracking for new batch (but keep global datasets)
+        # Clear dataset tracking for new batch
         self._datasets_by_base.clear()
-        self._current_file_datasets.clear()
 
         # Force garbage collection
         gc.collect()
-
-    def _create_file_average(self):
-        """Create average of all datasets in current file (excluding global average)."""
-        if self.config.plot_mode not in [1, 2]:  # Only for avg+overlay and avg only modes
-            return
-
-        # Get all current file datasets (excluding frequency datasets and existing averages)
-        file_data_datasets = [
-            ds for ds in self._current_file_datasets
-            if ('freq' not in ds.lower() and
-                not ds.endswith(('_avg_dB', '_avg_lin', '_global_avg_dB', '_global_avg_lin', '_file_avg_dB', '_file_avg_lin')))
-        ]
-
-        if len(file_data_datasets) < 2:
-            return
-
-        try:
-            # Use GPU or CPU for averaging
-            use_gpu = (self.config.enable_gpu_processing and
-                      self.gpu_processor and
-                      self.gpu_processor.gpu_available)
-            xp = cp if use_gpu else np
-
-            # Helper function to convert dB to linear
-            def _db_to_lin(arr):
-                return xp.power(10.0, arr / 10.0)
-
-            # Fetch data arrays for file average
-            data_arrays = [xp.asarray(self.doc.GetData(ds)[0]) for ds in file_data_datasets]
-
-            # Enhanced parallel processing
-            if use_gpu:
-                linear_arrays = [_db_to_lin(arr) for arr in data_arrays]
-                linear_stack = xp.vstack(linear_arrays)
-            elif (self.config.enable_multiprocessing and
-                  len(file_data_datasets) > 2 and
-                  self.config.num_processes > 1):
-                # Use ThreadPoolExecutor for mathematical operations
-                with ThreadPoolExecutor(max_workers=self.config.num_processes) as executor:
-                    chunk_size = max(1, len(data_arrays) // self.config.num_processes)
-                    chunks = [data_arrays[i:i + chunk_size]
-                             for i in range(0, len(data_arrays), chunk_size)]
-
-                    def process_chunk(chunk):
-                        return [10.0 ** (arr / 10.0) for arr in chunk]
-
-                    futures = [executor.submit(process_chunk, chunk) for chunk in chunks]
-                    linear_arrays = []
-                    for future in as_completed(futures):
-                        linear_arrays.extend(future.result())
-
-                    linear_stack = xp.vstack(linear_arrays)
-            else:
-                # Sequential processing
-                linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
-
-            # Compute file averages
-            file_avg_lin = xp.mean(linear_stack, axis=0)
-            file_avg_db = 10.0 * xp.log10(file_avg_lin)
-
-            # Move to CPU if needed
-            if use_gpu:
-                file_avg_lin = cp.asnumpy(file_avg_lin)
-                file_avg_db = cp.asnumpy(file_avg_db)
-
-            # Register file averages in Veusz
-            file_avg_lin_name = "File_avg_lin"
-            file_avg_db_name = "File_avg_dB"
-
-            self.doc.SetData(name=file_avg_lin_name, val=file_avg_lin)
-            self.doc.SetData(name=file_avg_db_name, val=file_avg_db)
-
-            # Tag the file average datasets
-            self.doc.TagDatasets('File_Average', [file_avg_db_name, file_avg_lin_name])
-
-            # Create file average plot
-            if self.config.plot_mode >= 1:  # avg+overlay or avg only modes
-                prev_title = self.plotInfo.graph_title
-                self.plotInfo.graph_title = "File Average"
-                self._plot_1d(file_avg_db_name)
-                self.plotInfo.graph_title = prev_title
-
-            # Add to overlay if in avg+overlay mode
-            if self.config.plot_mode == 1:
-                self._add_to_overlay(file_avg_db_name, "File Average")
-
-            print(f"Created file average from {len(file_data_datasets)} datasets")
-
-        except Exception as e:
-            print(f"Error in file average calculation: {e}")
-
-    def _create_global_average(self):
-        """Create global average of all datasets across all files."""
-        if self.config.plot_mode not in [1, 2]:  # Only for avg+overlay and avg only modes
-            return
-
-        # Get all global datasets (excluding frequency datasets and existing averages)
-        global_data_datasets = [
-            ds for ds in self._global_datasets
-            if ('freq' not in ds.lower() and
-                not ds.endswith(('_avg_dB', '_avg_lin', '_global_avg_dB', '_global_avg_lin', '_file_avg_dB', '_file_avg_lin')))
-        ]
-
-        if len(global_data_datasets) < 2:
-            return
-
-        try:
-            # Use GPU or CPU for averaging
-            use_gpu = (self.config.enable_gpu_processing and
-                      self.gpu_processor and
-                      self.gpu_processor.gpu_available)
-            xp = cp if use_gpu else np
-
-            # Helper function to convert dB to linear
-            def _db_to_lin(arr):
-                return xp.power(10.0, arr / 10.0)
-
-            # Fetch data arrays for global average
-            data_arrays = [xp.asarray(self.doc.GetData(ds)[0]) for ds in global_data_datasets]
-
-            # Enhanced parallel processing
-            if use_gpu:
-                linear_arrays = [_db_to_lin(arr) for arr in data_arrays]
-                linear_stack = xp.vstack(linear_arrays)
-            elif (self.config.enable_multiprocessing and
-                  len(global_data_datasets) > 2 and
-                  self.config.num_processes > 1):
-                # Use ThreadPoolExecutor for mathematical operations
-                with ThreadPoolExecutor(max_workers=self.config.num_processes) as executor:
-                    chunk_size = max(1, len(data_arrays) // self.config.num_processes)
-                    chunks = [data_arrays[i:i + chunk_size]
-                             for i in range(0, len(data_arrays), chunk_size)]
-
-                    def process_chunk(chunk):
-                        return [10.0 ** (arr / 10.0) for arr in chunk]
-
-                    futures = [executor.submit(process_chunk, chunk) for chunk in chunks]
-                    linear_arrays = []
-                    for future in as_completed(futures):
-                        linear_arrays.extend(future.result())
-
-                    linear_stack = xp.vstack(linear_arrays)
-            else:
-                # Sequential processing
-                linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
-
-            # Compute global averages
-            global_avg_lin = xp.mean(linear_stack, axis=0)
-            global_avg_db = 10.0 * xp.log10(global_avg_lin)
-
-            # Move to CPU if needed
-            if use_gpu:
-                global_avg_lin = cp.asnumpy(global_avg_lin)
-                global_avg_db = cp.asnumpy(global_avg_db)
-
-            # Register global averages in Veusz
-            global_avg_lin_name = "Global_avg_lin"
-            global_avg_db_name = "Global_avg_dB"
-
-            self.doc.SetData(name=global_avg_lin_name, val=global_avg_lin)
-            self.doc.SetData(name=global_avg_db_name, val=global_avg_db)
-
-            # Tag the global average datasets
-            self.doc.TagDatasets('Global_Average', [global_avg_db_name, global_avg_lin_name])
-
-            # Create global average plot
-            if self.config.plot_mode >= 1:  # avg+overlay or avg only modes
-                prev_title = self.plotInfo.graph_title
-                self.plotInfo.graph_title = "Global Average"
-                self._plot_1d(global_avg_db_name)
-                self.plotInfo.graph_title = prev_title
-
-            # Add to overlay if in avg+overlay mode
-            if self.config.plot_mode == 1:
-                self._add_to_overlay(global_avg_db_name, "Global Average")
-
-            print(f"Created global average from {len(global_data_datasets)} datasets")
-
-        except Exception as e:
-            print(f"Error in global average calculation: {e}")
-
-    def _add_to_overlay(self, dataset_name, label):
-        """Add dataset to overlay plot."""
-        try:
-            # Ensure overlay plot exists
-            if 'AllImported' not in self.doc.Root.childnames:
-                self._create_overlay_plot()
-
-            # Get overlay graph
-            overlay_graph = self.doc.Root.AllImported.grid1.Imported_Overlay
-
-            # Add dataset to overlay
-            overlay_xy = overlay_graph.Add('xy', name=f'{label}_overlay')
-            overlay_xy.yData.val = dataset_name
-
-            # Find frequency dataset for this data
-            freq_dataset = None
-            if hasattr(self, 'plotInfo') and self.plotInfo.base_name:
-                freq_dataset = self.plotInfo.base_name + '_freq'
-
-            if freq_dataset and freq_dataset in [ds for ds in self.doc.GetDatasetNames()]:
-                overlay_xy.xData.val = freq_dataset
-
-            overlay_xy.nanHandling = 'break-on'
-
-            # Style overlay plot
-            overlay_xy.marker.val = 'circle'
-            overlay_xy.markerSize.val = '3pt'
-            overlay_xy.MarkerLine.color.val = 'transparent'
-            overlay_xy.MarkerFill.color.val = 'auto'
-            overlay_xy.MarkerFill.transparency.val = 70
-            overlay_xy.PlotLine.color.val = 'auto'
-            overlay_xy.PlotLine.width.val = '2pt'
-
-        except Exception as e:
-            print(f"Error adding {label} to overlay: {e}")
-
-    def _create_overlay_plot(self):
-        """Create the main overlay plot."""
-        try:
-            # Create page for overlay
-            self.page = self.doc.Root.Add('page', name='AllImported')
-            self.page.notes.val = "All Imported and Plottable Data Overlay"
-
-            # Create grid
-            self.grid = self.page.Add('grid', columns=2)
-
-            # Create overlay graph
-            graph_all = self.grid.Add('graph', name='Imported_Overlay')
-            graph_all.Add('label', name='plotTitle')
-            graph_all.topMargin.val = '1cm'
-            graph_all.plotTitle.Text.size.val = '10pt'
-            graph_all.plotTitle.label.val = 'Overlay of All Imported'
-            graph_all.plotTitle.alignHorz.val = 'centre'
-            graph_all.plotTitle.yPos.val = 1.05
-            graph_all.plotTitle.xPos.val = 0.5
-            graph_all.notes.val = 'All imported overlay, see individual plots for specifics.'
-
-            # Set axis labels
-            graph_all.x.label.val = self.plotInfo.xAxis_label
-            graph_all.y.label.val = self.plotInfo.yAxis_label
-
-            # Set color theme
-            self.doc.Root.colorTheme.val = 'max128'
-
-        except Exception as e:
-            print(f"Error creating overlay plot: {e}")
 
     def _create_average_datasets(self, base_name: str):
         """Average all datasets belonging to *base_name* with enhanced GPU/CPU parallelization."""
         """
         Creates two new datasets:
-        • _avg_lin – linear-domain average
-        • _avg_dB – dB-domain average
+        • <base_name>_avg_lin – linear-domain average
+        • <base_name>_avg_dB  – dB-domain   average
+
         Uses GPU and/or multiprocessing for maximum performance.
         """
         # Retrieve list built during _process_file_data
         candidates = [ds for ds in self._datasets_by_base[base_name]
-                     if ('freq' not in ds.lower()
-                         and not ds.endswith(('_avg_dB', '_avg_lin', '_global_avg_dB', '_global_avg_lin', '_file_avg_dB', '_file_avg_lin')))]
+                      if ('freq' not in ds.lower()
+                          and not ds.endswith(('_avg_dB', '_avg_lin')))]
 
-        if len(candidates) < 2: # nothing meaningful to average
+        if len(candidates) < 2:      # nothing meaningful to average
             return
 
         # Pick numeric backend - prefer GPU if available
@@ -1401,16 +1136,18 @@ class VZPlotRnS:
         try:
             # Fetch data arrays
             data_arrays = [xp.asarray(self.doc.GetData(ds)[0])
-                          for ds in candidates]
+                           for ds in candidates]
 
             # Enhanced parallel processing on CPU/GPU
             if use_gpu:
                 # Use GPU for all array operations
                 linear_arrays = [_db_to_lin(arr) for arr in data_arrays]
                 linear_stack = xp.vstack(linear_arrays)
+
             elif (self.config.enable_multiprocessing and
                   len(candidates) > 2 and
                   self.config.num_processes > 1):
+
                 # Use optimized ThreadPoolExecutor for mathematical operations
                 with ThreadPoolExecutor(max_workers=self.config.num_processes) as executor:
                     # Process arrays in parallel chunks
@@ -1429,7 +1166,8 @@ class VZPlotRnS:
                     for future in as_completed(futures):
                         linear_arrays.extend(future.result())
 
-                    linear_stack = xp.vstack(linear_arrays)
+                linear_stack = xp.vstack(linear_arrays)
+
             else:
                 # Sequential processing
                 linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
@@ -1446,7 +1184,6 @@ class VZPlotRnS:
             # Register in Veusz
             lin_name = f"{base_name}_avg_lin"
             db_name = f"{base_name}_avg_dB"
-
             self.doc.SetData(name=lin_name, val=avg_lin)
             self.doc.SetData(name=db_name, val=avg_db)
 
@@ -1459,15 +1196,11 @@ class VZPlotRnS:
             self._datasets_by_base[base_name].extend([lin_name, db_name])
 
             # Create average plots based on plot mode
-            if self.config.plot_mode >= 1: # avg+overlay or avg only modes
+            if self.config.plot_mode >= 1:  # avg+overlay or avg only modes
                 prev_title = self.plotInfo.graph_title
                 self.plotInfo.graph_title = f"{base_name} average"
-                self._plot_1d(db_name) # plot dB average
+                self._plot_1d(db_name)          # plot dB average
                 self.plotInfo.graph_title = prev_title
-
-                # Add to overlay if in avg+overlay mode
-                if self.config.plot_mode == 1:
-                    self._add_to_overlay(db_name, f"{base_name} avg")
 
         except Exception as e:
             print(f"Error in average calculation: {e}")
@@ -1483,9 +1216,6 @@ class VZPlotRnS:
         if self.auto_save_enabled and self.base_save_path is None:
             self._setup_auto_save_path()
 
-        # Reset current file datasets tracking
-        self._current_file_datasets.clear()
-
         # Extract section data
         data_sections = dict(filter(
             lambda item: 'section' in item[0],
@@ -1497,13 +1227,13 @@ class VZPlotRnS:
 
         # Process data values with potential parallel processing
         data_y_values = list(map(itemgetter('extracted_value'),
-                                data_returned['data_matches'].values()))
+                                 data_returned['data_matches'].values()))
         data_line_numbers = list(map(itemgetter('line_number'),
-                                   data_returned['data_matches'].values()))
+                                     data_returned['data_matches'].values()))
         data_section_line_numbers = list(map(itemgetter('line_number'),
-                                           data_sections.values()))
+                                             data_sections.values()))
         data_section_content = list(map(itemgetter('content'),
-                                      data_sections.values()))
+                                        data_sections.values()))
 
         # Create frequency range
         data_fields = data_returned['pattern_matches']
@@ -1520,7 +1250,7 @@ class VZPlotRnS:
 
         # Use high-precision frequency range generation
         freq_range = np.linspace(freq_start, freq_stop, num=num_pts,
-                                endpoint=True, dtype=np.float64)
+                                 endpoint=True, dtype=np.float64)
 
         # Create header notes
         data_header = data_returned['line_data']
@@ -1536,18 +1266,15 @@ class VZPlotRnS:
                 self.doc.SetData(name=x_data_name, val=freq_range)
                 self.doc.TagDatasets(base_name, [x_data_name])
                 self._datasets_by_base[base_name].append(x_data_name)
-                self._current_file_datasets.append(x_data_name)
 
             # Verify data alignment
             if (data_line_numbers[index] - 1 != data_section_line_numbers[index]):
                 raise ValueError(f"Data alignment error in {filename}")
 
-            # Set data in Veusz - retain original dataset name
+            # Set data in Veusz
             self.doc.SetData(name=dataset_name, val=data_y_values[index])
             self.doc.TagDatasets(base_name, [dataset_name])
             self._datasets_by_base[base_name].append(dataset_name)
-            self._current_file_datasets.append(dataset_name)
-            self._global_datasets.append(dataset_name)  # Track for global average
 
             # Update plot info and create plot
             self.plotInfo.graph_notes = data_notes
@@ -1558,16 +1285,12 @@ class VZPlotRnS:
             if self.config.plot_mode == 0:
                 self._plot_1d(dataset_name)
 
-            # Increment plot count and check for auto-save
-            self.plot_count += 1
-            self._auto_save_if_needed()
+                # Increment plot count and check for auto-save
+                self.plot_count += 1
+                self._auto_save_if_needed()
 
         # Create the averaged datasets after everything is processed
         self._create_average_datasets(base_name)
-
-        # Create global average if we have enough datasets
-        if len(self._global_datasets) >= 2:
-            self._create_global_average()
 
     def _create_page(self, dataset: str):
         """Create a new page and grid."""
@@ -1583,36 +1306,49 @@ class VZPlotRnS:
 
             # Create overlay plot if it doesn't exist and mode allows it
             if create_overlay and 'AllImported' not in self.doc.Root.childnames:
-                self._create_overlay_plot()
+                self._create_page('AllImported')
+                self.page.notes.val = "All Imported and Plottable Data Overlay"
+
+                graph_all = self.grid.Add('graph', name='Imported_Overlay')
+                graph_all.Add('label', name='plotTitle')
+                graph_all.topMargin.val = '1cm'
+                graph_all.plotTitle.Text.size.val = '10pt'
+                graph_all.plotTitle.label.val = 'Overlay of All Imported'
+                graph_all.plotTitle.alignHorz.val = 'centre'
+                graph_all.plotTitle.yPos.val = 1.05
+                graph_all.plotTitle.xPos.val = 0.5
+                graph_all.notes.val = 'All imported overlay, see individual plots for specifics.'
+
+                # Set axis labels
+                graph_all.x.label.val = self.plotInfo.xAxis_label
+                graph_all.y.label.val = self.plotInfo.yAxis_label
+                self.doc.Root.colorTheme.val = 'max128'
             elif create_overlay:
                 self.page = self.doc.Root.AllImported
                 graph_all = self.doc.Root.AllImported.grid1.Imported_Overlay
 
             # Add overlay plot if mode allows it
             if create_overlay:
-                if 'AllImported' in self.doc.Root.childnames:
-                    graph_all = self.doc.Root.AllImported.grid1.Imported_Overlay
+                all_overlay_xy = graph_all.Add('xy', name=dataset)
+                all_overlay_xy.yData.val = dataset
+                all_overlay_xy.xData.val = self.plotInfo.base_name + '_freq'
+                all_overlay_xy.nanHandling = 'break-on'
 
-                    all_overlay_xy = graph_all.Add('xy', name=dataset)
-                    all_overlay_xy.yData.val = dataset
-                    all_overlay_xy.xData.val = self.plotInfo.base_name + '_freq'
-                    all_overlay_xy.nanHandling = 'break-on'
+                # Style overlay plot with enhanced performance settings
+                all_overlay_xy.marker.val = 'circle'
+                all_overlay_xy.markerSize.val = '2pt'
+                all_overlay_xy.MarkerLine.color.val = 'transparent'
+                all_overlay_xy.MarkerFill.color.val = 'auto'
+                all_overlay_xy.MarkerFill.transparency.val = 80
+                all_overlay_xy.MarkerFill.style.val = 'solid'
+                all_overlay_xy.FillBelow.transparency.val = 90
+                all_overlay_xy.FillBelow.style.val = 'solid'
+                all_overlay_xy.FillBelow.fillto.val = 'bottom'
+                all_overlay_xy.FillBelow.color.val = 'darkgreen'
+                all_overlay_xy.FillBelow.hide.val = True
+                all_overlay_xy.PlotLine.color.val = 'auto'
 
-                    # Style overlay plot with enhanced performance settings
-                    all_overlay_xy.marker.val = 'circle'
-                    all_overlay_xy.markerSize.val = '2pt'
-                    all_overlay_xy.MarkerLine.color.val = 'transparent'
-                    all_overlay_xy.MarkerFill.color.val = 'auto'
-                    all_overlay_xy.MarkerFill.transparency.val = 80
-                    all_overlay_xy.MarkerFill.style.val = 'solid'
-                    all_overlay_xy.FillBelow.transparency.val = 90
-                    all_overlay_xy.FillBelow.style.val = 'solid'
-                    all_overlay_xy.FillBelow.fillto.val = 'bottom'
-                    all_overlay_xy.FillBelow.color.val = 'darkgreen'
-                    all_overlay_xy.FillBelow.hide.val = True
-                    all_overlay_xy.PlotLine.color.val = 'auto'
-
-                    self.plotInfo.first_plot = False
+            self.plotInfo.first_plot = False
 
             # Create individual plot only if mode allows it
             if create_individual:
@@ -1653,23 +1389,19 @@ class VZPlotRnS:
                 xy.FillBelow.hide.val = False
                 xy.PlotLine.color.val = 'red'
 
-                if self.first_1d:
-                    self.first_1d = False
+            if self.first_1d:
+                self.first_1d = False
 
         except Exception as e:
             raise RuntimeError(f"Failed to create 1D plot: {e}")
 
     def save(self, filename: str):
         """Save Veusz document with high precision support and parallel processing."""
-        # Create global and file averages before final save
-        self._create_global_average()
-        self._create_file_average()
-
         filename_root = os.path.splitext(filename)[0]
         filename_hp = filename_root + '.vszh5'
         file_split = os.path.split(filename)
         filename_vsz = (file_split[0] + '/Beware_oldVersion/' +
-                       os.path.splitext(file_split[1])[0] + '_BEWARE.vsz')
+                        os.path.splitext(file_split[1])[0] + '_BEWARE.vsz')
 
         # Use parallel processing for saves if enabled
         if self.config.enable_multiprocessing:
@@ -1701,15 +1433,10 @@ class VZPlotRnS:
             if self.base_save_path is not None:
                 final_batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
                 try:
-                    # Create final averages before saving
-                    self._create_file_average()
                     self.doc.Save(final_batch_filename, mode='hdf5')
                     print(f"Final batch saved with {self.plot_count % self.plots_per_file} plots to: {final_batch_filename}")
                 except Exception as e:
                     print(f"Error saving final batch: {e}")
-
-        # Close window after saving
-        self._close_current_document_window()
 
     @staticmethod
     def open_veusz_gui(filename: str):
@@ -1747,10 +1474,11 @@ class VeuszWin(SimpleWindow):
         # the commands are from the standard veusz api
         ifc = self.interface = CommandInterface(self.document)
 
-        # a basic plot with a sin function
+        # a basic plot win a sin function
         ifc.To(ifc.Add('page'))
         ifc.To(ifc.Add('graph'))
         ifc.Add('function', name='myfunc')
+
         ifc.Set('myfunc/function', 'sin(x)')
         ifc.Set('x/max', 3.14*2)
 
@@ -1766,9 +1494,8 @@ class MainWindow(QWidget):
         self.button = QPushButton("hi there")
         lt.addWidget(self.button)
         self.setLayout(lt)
-
         self.connect(self.button, Signal('clicked()'),
-                    self.slotClicked)
+                     self.slotClicked)
 
     def slotClicked(self):
         filename = 'out.png'
@@ -1794,6 +1521,7 @@ def setup_qt_plugins():
 
 def main():
     """Main application entry point with enhanced performance optimizations."""
+
     # Enhanced monitoring for large file processing
     monitor = start_monitoring(seconds_frozen=30, test_interval=100)
 
@@ -1802,15 +1530,15 @@ def main():
         mp.set_start_method('spawn', force=True)
 
     # Call this before any Qt imports
-    if getattr(sys, 'frozen', False): # Check if running as compiled executable
+    if getattr(sys, 'frozen', False):  # Check if running as compiled executable
         setup_qt_plugins()
 
     app = QApplication(sys.argv)
 
     # Set application properties for better performance
     app.setAttribute(Qt.AA_UseHighDpiPixmaps)
-    app.setApplicationDisplayName("Enhanced R&S SFT File Plotter v1.0.3")
-    app.setApplicationVersion("1.0.3")
+    app.setApplicationDisplayName("Enhanced R&S SFT File Plotter v1.0.2")
+    app.setApplicationVersion("1.0.2")
 
     # Create and show main window
     window = EnhancedMainWindow()
@@ -1822,7 +1550,6 @@ def main():
     finally:
         # Cleanup
         monitor.stop()
-
         # Force cleanup of any remaining GPU memory
         if CUPY_AVAILABLE:
             try:
