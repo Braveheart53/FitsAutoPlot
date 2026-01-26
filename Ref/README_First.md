@@ -138,7 +138,7 @@ pip install scikit-rf numpy scipy pandas matplotlib pyside6 PyPDF2 veusz
 python -c "import skrf; import pandas; import matplotlib; print('OK')"
 
 # Run either application
-python TouchstoneSmithMpl.py
+python Touchstone_AutoPlot.py
 python CSV_TSV_AutoPlot.py
 ```
 

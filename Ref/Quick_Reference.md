@@ -14,7 +14,7 @@ pip install scikit-rf numpy scipy pandas matplotlib pyside6 PyPDF2 veusz
 python -c "import skrf; print('Ready!')"
 
 # Step 4: Run either script
-python TouchstoneSmithMpl.py        # Smith chart enhancement
+python Touchstone_AutoPlot.py        # Smith chart enhancement
 python CSV_TSV_AutoPlot.py           # CSV/TSV visualizer
 ```
 
