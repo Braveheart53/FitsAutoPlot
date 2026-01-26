@@ -1,0 +1,6 @@
+1. [ ] Test Smithchart generation
+2. [ ] add Option to startup splash for large R&S file reduction using 
+3. [ ] add option to startup for CSV_TSV_AutoPlot.py
+4. [ ] install PyPDF2, concurrent
+5. [ ] install inspect-recursive
+6. [ ] install pdir2
