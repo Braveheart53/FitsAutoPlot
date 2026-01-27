@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from operator import itemgetter
 
 warnings.filterwarnings('ignore', message='.*CUDA path could not be detected.*')
-from hanging_threads import start_monitoring
+from Hanging_Threads import start_monitoring
 import datetime
 
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
@@ -995,7 +995,8 @@ def setup_qt_plugins():
 # %% Main Application
 def main():
     """Main application entry point."""
-    monitor = start_monitoring(seconds_frozen=20, test_interval=100)
+    # monitor = start_monitoring(SECONDS_FROZEN=20, test_interval=100)
+    monitor = start_monitoring()
     if __name__ == '__main__':
         mp.set_start_method("spawn", force=True)
     if getattr(sys, 'frozen', False):

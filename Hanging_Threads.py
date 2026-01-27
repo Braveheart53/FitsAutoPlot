@@ -97,8 +97,8 @@ except ImportError:
 import linecache
 import time
 
-SECONDS_FROZEN = 30  # seconds
-TESTS_PER_SECOND = 5
+SECONDS_FROZEN = 20  # seconds
+TESTS_PER_SECOND = 100
 
 
 def frame2string(frame):
