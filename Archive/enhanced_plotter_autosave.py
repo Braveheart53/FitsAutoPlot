@@ -32,29 +32,18 @@ Version: 1.0.1 - Enhanced with automatic batch saving for large datasets
 
 # %%% System Interface Modules
 
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
 from dataclasses import dataclass
-
-# import re
-
 from operator import itemgetter
 
-from collections import defaultdict
-
-import os
-
-import re
-
-import sys
-
-import subprocess
-
-import psutil
-
-import math
-
-# import faulthandler
-
 from hanging_threads import start_monitoring
+
+# import re
+# import faulthandler
 
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 
@@ -82,19 +71,17 @@ if getattr(sys, 'frozen', False):
 
     os.environ['QT_API'] = 'pyside6'
 
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtCore import Qt, QThread, Signal
 
     from PySide6.QtWidgets import (
 
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
 
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QFileDialog, QLabel, QMessageBox,
 
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
 
-        QSpinBox, QGroupBox, QListWidget, QSplitter
+        QSpinBox, QGroupBox, QListWidget
 
     )
 
@@ -118,19 +105,17 @@ else:
 
     # Development environment - use QtPy
 
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtCore import Qt, QThread, Signal
 
     from qtpy.QtWidgets import (
 
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
 
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QFileDialog, QLabel, QMessageBox,
 
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
 
-        QSpinBox, QGroupBox, QListWidget, QSplitter
+        QSpinBox, QGroupBox, QListWidget
 
     )
 
@@ -142,11 +127,9 @@ from fastest_ascii_import import fastest_file_parser as fparser
 
 # %%% Parallel Processing Modules
 
-import threading
-
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 
 import multiprocessing as mp
 

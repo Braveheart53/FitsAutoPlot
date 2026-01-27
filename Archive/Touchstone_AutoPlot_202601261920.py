@@ -37,26 +37,20 @@ Usage:
     6. For PDF: optionally select "Combine to Single PDF" to create multi-page document
 """
 
+import datetime
+import multiprocessing
 # ============================================================================
 # IMPORTS - Standard Library
 # ============================================================================
 import os
 import sys
-import subprocess
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from operator import itemgetter
-from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass
-from pathlib import Path
-import datetime
+from typing import List, Dict, Tuple, Optional, Any
 
 # ============================================================================
 # IMPORTS - Scientific and Numerical Computing
 # ============================================================================
 import numpy as np
-import scipy.signal.windows as windows
-import pandas as pd
 
 # ============================================================================
 # IMPORTS - RF/Microwave Engineering and Network Analysis
@@ -76,11 +70,8 @@ import matplotlib
 
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.patches import Circle, Wedge
-from matplotlib.collections import LineCollection
-import matplotlib.patches as mpatches
+from matplotlib.patches import Circle
 
 # ============================================================================
 # IMPORTS - PDF Processing (for multi-page PDF generation)
@@ -106,15 +97,11 @@ except ImportError:
 # Try PySide6 first (for compiled builds), fall back to QtPy
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize, QRect
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush, QColor
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-        QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-        QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-        QFormLayout, QFrame, QListWidgetItem, QProgressDialog
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QMessageBox,
+        QMainWindow, QWidget, QTextEdit, QCheckBox,
+        QGroupBox, QListWidget, QTabWidget, QComboBox, QDoubleSpinBox, QFormLayout
     )
 else:
     # Development environment - use QtPy abstraction layer

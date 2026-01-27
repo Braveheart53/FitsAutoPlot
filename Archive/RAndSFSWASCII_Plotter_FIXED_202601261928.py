@@ -22,18 +22,14 @@ COMPATIBLE WITH: Python 3.8+, PySide6, QtPy
 CUDA STATUS: Optional (gracefully falls back to CPU if CUDA unavailable)
 """
 
-from dataclasses import dataclass
-from operator import itemgetter
-from collections import defaultdict
+import datetime  # Added for auto-save timestamping
 import os
 import re
-import sys
 import subprocess
-import psutil
-import math
-from Hanging_Threads import start_monitoring
-import datetime  # Added for auto-save timestamping
+import sys
 import warnings
+from dataclasses import dataclass
+from operator import itemgetter
 
 # Suppress CuPy CUDA warnings
 warnings.filterwarnings('ignore', message='.*CUDA path could not be detected.*')
@@ -42,24 +38,22 @@ warnings.filterwarnings('ignore', message='.*CUDA path could not be detected.*')
 if getattr(sys, 'frozen', False):
     # Force direct PySide6 usage for compiled builds
     os.environ['QT_API'] = 'pyside6'
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit
+        QGroupBox, QListWidget
     )
 else:
     # Development environment - use QtPy
     os.environ['QT_API'] = 'pyside6'
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtCore import Qt, QThread, Signal
     from qtpy.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit
+        QGroupBox, QListWidget
     )
 
 # Math and Processing Modules
@@ -67,10 +61,8 @@ import numpy as np
 from fastest_ascii_import import fastest_file_parser as fparser
 
 # Parallel Processing Modules
-import threading
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from multiprocessing import Pool, cpu_count
-import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import cpu_count
 
 # ============================================================================
 # GPU ACCELERATION MODULES - WITH IMPROVED CUDA ERROR HANDLING
@@ -111,8 +103,6 @@ except Exception as e:
 
 # Plotting Environment
 import veusz.embed as embed
-from veusz.windows.simplewindow import SimpleWindow
-from veusz.document import CommandInterface
 
 
 # ============================================================================

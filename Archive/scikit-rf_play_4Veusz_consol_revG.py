@@ -39,17 +39,18 @@
 # magnitude: abs(currentNet[1,2,1].s)
 # =============================================================================
 import os as os
-import skrf as rf  # sci-kit RF module
-import numpy as np
-
-# import veusz --for direct invocation
-
 # from matplotlib import pyplot as plt  # use for plotting figures
 # from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
 #                                AutoMinorLocator)
 # from pylab import *
 # from tkinter import Tk     # from tkinter import Tk for Python 3.x
 from tkinter.filedialog import askopenfilenames  # for file import dialog
+
+import numpy as np
+import skrf as rf  # sci-kit RF module
+
+
+# import veusz --for direct invocation
 
 
 # from tkinter.filedialog import askdirectory

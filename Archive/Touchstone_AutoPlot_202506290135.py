@@ -83,36 +83,30 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from operator import itemgetter
-from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass
-
-# %%% Import Math and Scientific Computing Modules
-import numpy as np
-import scipy.signal.windows as windows
-import veusz.embed as vz
-
-# %%% Import RF/Microwave Engineering Modules
-import skrf as rf
-from skrf import Network
-from skrf.time import time_gate
-
-# %%% Import GUI Modules
-from qtpy.QtGui import *
-from qtpy.QtCore import Qt, QSize, QThread, Signal, QTimer
-from qtpy.QtWidgets import (
-    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-    QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-    QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-    QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-    QFormLayout, QFrame
-)
+from typing import Dict, Tuple
 
 # %%% Matplotlib for embedded plots
 import matplotlib.pyplot as plt
+# %%% Import Math and Scientific Computing Modules
+import numpy as np
+# %%% Import RF/Microwave Engineering Modules
+import skrf as rf
+import veusz.embed as vz
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from qtpy.QtCore import Qt, QThread, Signal
+# %%% Import GUI Modules
+from qtpy.QtGui import *
+from qtpy.QtWidgets import (
+    QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+    QFileDialog, QLabel, QMessageBox,
+    QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
+    QSpinBox, QGroupBox, QListWidget, QLineEdit,
+    QTabWidget, QComboBox, QDoubleSpinBox, QFormLayout
+)
+from skrf import Network
+from skrf.time import time_gate
 
 # %% GPU Computing imports with fallback support
 try:

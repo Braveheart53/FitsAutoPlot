@@ -24,39 +24,34 @@ Last updated: 2026-01-27 (Gate Control & Color Application Fixes)
 # IMPORTS - Standard Library
 # ============================================================================
 
+import datetime
 import multiprocessing
 import os
+import shutil
 import subprocess
 import sys
-import datetime
 import tempfile
-import shutil
-
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
 from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
+
+import matplotlib
+import numpy as np
+import scipy.signal.windows as windows
+import veusz.embed as vz
+from skrf import Network
 
 # ============================================================================
 # IMPORTS - Scientific and Numerical Computing
 # ============================================================================
-
-import numpy as np
-import scipy.signal.windows as windows
-import veusz.embed as vz
-
 # ============================================================================
 # IMPORTS - RF/Microwave Engineering and Network Analysis
 # ============================================================================
-
-import skrf as rf
-from skrf import Network
-
 # ============================================================================
 # IMPORTS - Plotting and Visualization
 # ============================================================================
 
-import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -66,6 +61,7 @@ from matplotlib.figure import Figure
 try:
     import mpld3
     from mpld3 import plugins
+
     MPLD3_AVAILABLE = True
 except ImportError:
     MPLD3_AVAILABLE = False
@@ -88,23 +84,21 @@ except ImportError:
 
 if getattr(sys, 'frozen', False):
     from PySide6.QtCore import Qt, QThread, Signal
-    from PySide6.QtGui import QFont
     from PySide6.QtWidgets import (
         QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QMessageBox, QMainWindow, QWidget,
         QTextEdit, QProgressBar, QCheckBox, QSpinBox, QGroupBox,
         QListWidget, QLineEdit, QTabWidget, QComboBox, QDoubleSpinBox,
-        QFormLayout, QListWidgetItem, QSlider
+        QFormLayout
     )
 else:
     from qtpy.QtCore import Qt, QThread, Signal
-    from qtpy.QtGui import QFont
     from qtpy.QtWidgets import (
         QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QMessageBox, QMainWindow, QWidget,
         QTextEdit, QProgressBar, QCheckBox, QSpinBox, QGroupBox,
         QListWidget, QLineEdit, QTabWidget, QComboBox, QDoubleSpinBox,
-        QFormLayout, QListWidgetItem, QSlider
+        QFormLayout
     )
 
 # ============================================================================
@@ -114,22 +108,26 @@ else:
 GPU_AVAILABLE = None
 try:
     import cupy as cp
+
     GPU_AVAILABLE = "cupy"
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as cl_array
+
         GPU_AVAILABLE = "opencl"
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
+
             GPU_AVAILABLE = "taichi"
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
             GPU_AVAILABLE = None
             print("No GPU acceleration libraries detected - using CPU only")
+
 
 # ============================================================================
 # CONFIGURATION CLASSES
@@ -143,6 +141,7 @@ class ProcessingConfig:
     num_processes: int = multiprocessing.cpu_count()
     max_workers: int = multiprocessing.cpu_count()
 
+
 @dataclass
 class TimeDomainConfig:
     """Configuration for time domain analysis."""
@@ -154,6 +153,7 @@ class TimeDomainConfig:
     tunit: str = "ns"
     auto_gate: bool = True
 
+
 @dataclass
 class SmithChartConfig:
     """Configuration for Smith Chart plotting."""
@@ -161,6 +161,7 @@ class SmithChartConfig:
     draw_labels: bool = True
     draw_vswr: bool = True
     reference_impedance: float = 50.0
+
 
 # ============================================================================
 # S-PARAMETER TO COLOR MAPPING FUNCTION
@@ -192,7 +193,7 @@ def get_sparam_color(param_name: str) -> str:
         'S66': 'brown',
         'S77': 'pink',
         'S88': 'grey',
-        
+
         # Forward transmission parameters
         'S21': 'darkblue',
         'S31': 'darkgreen',
@@ -201,7 +202,7 @@ def get_sparam_color(param_name: str) -> str:
         'S61': 'olive',
         'S71': 'navy',
         'S81': 'teal',
-        
+
         # Other transmission parameters
         'S12': 'cyan',
         'S13': 'purple',
@@ -216,6 +217,7 @@ def get_sparam_color(param_name: str) -> str:
         'S82': 'lightgrey',
     }
     return color_map.get(param_name, 'auto')
+
 
 # ============================================================================
 # TIME DOMAIN PROCESSOR
@@ -406,6 +408,7 @@ class TimeDomainProcessor:
 
         return np.fft.ifft(s_data) * len(s_data)
 
+
 # ============================================================================
 # SMITH CHART PLOTTER - SCIKIT-RF NATIVE
 # ============================================================================
@@ -419,7 +422,7 @@ class SmithChartPlottermpld3:
         self.plots = {}
 
     def create_smith_chart(self, network: Network, param_name: str = "S11",
-                          chart_type: str = "z") -> Tuple[Figure, Network]:
+                           chart_type: str = "z") -> Tuple[Figure, Network]:
         """Create an interactive Smith Chart visualization.
         
         Parameters
@@ -452,7 +455,7 @@ class SmithChartPlottermpld3:
             # Customize title
             chart_label = "Impedance" if chart_type == "z" else "Admittance"
             ax.set_title(f'{param_name} - Smith Chart ({chart_label})',
-                        fontsize=14, fontweight='bold', pad=20)
+                         fontsize=14, fontweight='bold', pad=20)
 
             # Add mpld3 hover tooltips if available
             if MPLD3_AVAILABLE:
@@ -473,10 +476,10 @@ class SmithChartPlottermpld3:
                             vswr = 10.0
 
                         label = (f"{param_name}\n"
-                                f"Frequency: {freq:.2f} GHz\n"
-                                f"Magnitude: {mag:.4f}\n"
-                                f"Phase: {phase:.1f}°\n"
-                                f"VSWR: {vswr:.2f}")
+                                 f"Frequency: {freq:.2f} GHz\n"
+                                 f"Magnitude: {mag:.4f}\n"
+                                 f"Phase: {phase:.1f}°\n"
+                                 f"VSWR: {vswr:.2f}")
                         labels.append(label)
 
                     for artist in ax.get_children():
@@ -502,7 +505,7 @@ class SmithChartPlottermpld3:
             raise
 
     def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
-                          output_path: str, export_format: str) -> bool:
+                           output_path: str, export_format: str) -> bool:
         """Export a Smith chart to file.
         
         Parameters
@@ -530,7 +533,7 @@ class SmithChartPlottermpld3:
                 if not MPLD3_AVAILABLE:
                     print("Warning: mpld3 not available, saving as PNG instead")
                     fig.savefig(output_path.replace('.html', '.png'),
-                              format='png', dpi=150, bbox_inches='tight')
+                                format='png', dpi=150, bbox_inches='tight')
                     plt.close(fig)
                     return True
 
@@ -604,6 +607,7 @@ class SmithChartPlottermpld3:
         except Exception as e:
             print(f"Error creating PDF with bookmarks: {e}")
             return False
+
 
 # ============================================================================
 # TOUCHSTONE PLOTTER - VEUSZ
@@ -832,6 +836,7 @@ class TouchstonePlotter:
         """Save Veusz project."""
         self.doc.Save(filename, mode='hdf5')
 
+
 # ============================================================================
 # MATPLOTLIB CANVAS FOR PLOTS
 # ============================================================================
@@ -848,7 +853,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         self.fig.patch.set_facecolor('white')
 
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
-                        draw_labels=True, draw_vswr=True):
+                         draw_labels=True, draw_vswr=True):
         """Plot Smith chart using scikit-rf native implementation."""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
@@ -873,7 +878,7 @@ class TouchstonePlotCanvas(FigureCanvas):
                 for j in range(network.nports):
                     s_param = network.s[:, i, j]
                     ax.plot(s_param.real, s_param.imag, label=f"S{i + 1}{j + 1}",
-                           marker="o", markersize=3)
+                            marker="o", markersize=3)
 
             ax.set_xlabel("Real Part")
             ax.set_ylabel("Imaginary Part")
@@ -890,7 +895,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax = self.fig.add_subplot(111)
 
         ax.plot(time, np.abs(td_data), alpha=0.7, markersize=2,
-               label="Unfiltered", linestyle="dotted")
+                label="Unfiltered", linestyle="dotted")
 
         if td_filtered_data is not None:
             ax.plot(time, np.abs(td_filtered_data), "-", linewidth=2, label="Filtered")
@@ -902,6 +907,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax.legend()
 
         self.draw()
+
 
 # ============================================================================
 # PROCESSING THREAD
@@ -942,6 +948,7 @@ def process_single_touchstone_file(file_info: Tuple) -> Tuple[str, Optional[dict
         print(f"Error processing {filepath}: {e}")
         return os.path.basename(filepath), None
 
+
 class TouchstoneProcessingThread(QThread):
     """Thread for processing Touchstone files."""
 
@@ -963,7 +970,7 @@ class TouchstoneProcessingThread(QThread):
             if self.config.enable_multiprocessing and len(self.file_list) > 1:
                 with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
                     futures = [executor.submit(process_single_touchstone_file, (f, None))
-                              for f in self.file_list]
+                               for f in self.file_list]
 
                     completed = 0
                     for future in as_completed(futures):
@@ -983,6 +990,7 @@ class TouchstoneProcessingThread(QThread):
 
         except Exception as e:
             self.error_occurred.emit(str(e))
+
 
 # ============================================================================
 # MAIN APPLICATION WINDOW
@@ -1575,8 +1583,8 @@ class TouchstoneMainWindow(QMainWindow):
                 self._log_message(f"Displayed: {first_key}")
 
                 QMessageBox.information(self, "Success",
-                    f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
-                    "Click Export to save in selected format.")
+                                        f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
+                                        "Click Export to save in selected format.")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to prepare Smith charts: {str(e)}")
@@ -1764,6 +1772,7 @@ class TouchstoneMainWindow(QMainWindow):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.status_text.append(f"[{timestamp}] {message}")
 
+
 # ============================================================================
 # MAIN APPLICATION ENTRY POINT
 # ============================================================================
@@ -1774,6 +1783,7 @@ def main():
     window = TouchstoneMainWindow()
     window.show()
     return app.exec()
+
 
 if __name__ == "__main__":
     sys.exit(main())

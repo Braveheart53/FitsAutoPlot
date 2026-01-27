@@ -30,14 +30,30 @@
 # atr NOT working, need to corect
 # =============================================================================
 
+# %%% System Interface Modules
+import os
+import os.path as pathCheck
+import sys
 # event loop QApplication.exec_()
 # %% Import all required modules
 # %%% GUI Uses
 # %%%% Tkinter
 import tkinter as tk
-from tkinter.filedialog import askopenfilenames
 from tkinter import filedialog
 from tkinter import messagebox
+from tkinter.filedialog import askopenfilenames
+
+import mpmath as mpm
+import numpy as np
+import scipy.constants as cons
+import skrf as rf
+# %%% Plotting Environment
+import veusz.embed as vz
+# %%% Math Modules
+# import pandas as pd
+import xarray as xr
+from astropy.time import Time as tme
+
 # %%%% Py Qt imports
 # from PyQt6.QtGui import *
 # from PyQt6.QtWidgets import QApplication, QPushButton, QMainWindow, QLabel
@@ -47,44 +63,15 @@ from tkinter import messagebox
 # from PySide6.QtWidgets import QApplication, QPushButton, QMainWindow, QLabel
 # from PySide6.QtCore import Qt, QSize
 # %%%% qtpy imports
-from qtpy.QtGui import *
-from qtpy.QtWidgets import (QApplication, QPushButton, QMainWindow, QLabel,
-                            QWidget)
-from qtpy.QtCore import Qt, QSize
-
-# %%% Math Modules
-# import pandas as pd
-import xarray as xr
-import numpy as np
-import skrf as rf
-import mpmath as mpm
-import scipy.constants as cons
-from astropy.time import Time as tme
 # look up how to use data classes, this is how one can create a matlab type
 # structure, in addition to my own codes for such
-import dataclasses as dataclass
-
 # %%% Unit Conversion
 # import pint as pint
 # ureg = pint.UnitRegistry()
-
-# %%% System Interface Modules
-import os
-import os.path as pathCheck
-import time as time
-import sys
 # add something to the python sys path
 # sys.path.append(os.path.abspath("something"))
 
-
-# %%% Plotting Environment
-import veusz.embed as vz
-import pprint
-
 # %%% File type Export/Import
-import h5py as h5
-from scipy.io import savemat
-from fastest_ascii_import import fastest_file_parser as fparser
 
 # %%% Parallelization
 # from multiprocessing import Pool  # udpate when you learn it!
@@ -192,10 +179,7 @@ class AntennaFun:
 
         # good reference:
         # https://scikit-rf.readthedocs.io/en/latest/tutorials/Plotting.html
-        from skrf import plotting
         from plotting import save_all_figs
-        from matplotlib import pyplot as plt
-        from matplotlib import style
 
         UnitConversions = Antenna_unit_conversion(units_O_len, units_O_freq,
                                                   units_O_angle)

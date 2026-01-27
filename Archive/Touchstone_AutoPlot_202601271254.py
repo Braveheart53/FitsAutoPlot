@@ -31,37 +31,29 @@ Smith Chart tab now uses matplotlib instead of Veusz, with:
 # IMPORTS - Standard Library
 # ============================================================================
 
+import datetime
 import multiprocessing
 import os
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from operator import itemgetter
-from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass
-import datetime
+from typing import List, Tuple, Optional
+
+import matplotlib
+import numpy as np
+import veusz.embed as vz
+from skrf import Network
 
 # ============================================================================
 # IMPORTS - Scientific and Numerical Computing
 # ============================================================================
-
-import numpy as np
-import scipy.signal.windows as windows
-import veusz.embed as vz
-
 # ============================================================================
 # IMPORTS - RF/Microwave Engineering and Network Analysis
 # ============================================================================
-
-import skrf as rf
-from skrf import Network
-from skrf.time import time_gate
-
 # ============================================================================
 # IMPORTS - Plotting and Visualization (Matplotlib for Smith Charts)
 # ============================================================================
-
-import matplotlib
 
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
@@ -85,27 +77,23 @@ except ImportError:
 
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-        QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-        QFormLayout, QFrame
+        QSpinBox, QGroupBox, QListWidget, QLineEdit,
+        QTabWidget, QComboBox, QDoubleSpinBox, QFormLayout
     )
 else:
     # Development environment - use QtPy
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtCore import Qt, QThread, Signal
     from qtpy.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-        QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-        QFormLayout, QFrame
+        QSpinBox, QGroupBox, QListWidget, QLineEdit,
+        QTabWidget, QComboBox, QDoubleSpinBox, QFormLayout
     )
 
 # ============================================================================

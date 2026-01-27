@@ -17,45 +17,42 @@ Version: 1.0.2 - Enhanced with plotting options, batch saving, and maximum paral
 """
 # TODO: compare GPU based processing on this one to Touchstone
 
+import datetime  # Added for auto-save timestamping
+import gc
+import os
+import re
+import subprocess
+import sys
+import time
+from collections import defaultdict
 # %% Import all required modules
 # %%% System Interface Modules
 from dataclasses import dataclass
 # import re
 from operator import itemgetter
-from collections import defaultdict
-import os
-import re
-import sys
-import subprocess
-import psutil
-import math
+
 # import faulthandler
 from hanging_threads import start_monitoring
-import datetime  # Added for auto-save timestamping
-import time
-import gc
 
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
     os.environ['QT_API'] = 'pyside6'
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit
+        QSpinBox, QGroupBox, QListWidget, QLineEdit
     )
 else:
     # Development environment - use QtPy
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtCore import Qt, QThread, Signal
     from qtpy.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit
+        QSpinBox, QGroupBox, QListWidget, QLineEdit
     )
 
 # %%% Math and Processing Modules
@@ -63,12 +60,9 @@ import numpy as np
 from fastest_ascii_import import fastest_file_parser as fparser
 
 # %%% Parallel Processing Modules
-import threading
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from multiprocessing import Pool, cpu_count, shared_memory
+from multiprocessing import cpu_count
 import multiprocessing as mp
-import asyncio
-import queue
 
 # %%% GPU Acceleration Modules
 try:

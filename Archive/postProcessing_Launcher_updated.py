@@ -36,20 +36,17 @@ HOW TO EDIT OR UPDATE:
 """
 
 import os
-import sys
 import subprocess
-import tempfile
+import sys
 from pathlib import Path
-from typing import Optional, Union
 
 # Import modules based on execution context
 if getattr(sys, 'frozen', False):
     # Force direct PySide6 usage for compiled builds
     from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtGui import QPixmap, QIcon, QFont
     from PySide6.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
         QFrame, QSizePolicy, QSpacerItem
     )
     # Running as compiled executable - use PySide6 directly
@@ -57,10 +54,9 @@ else:
     # Development environment - use QtPy
     os.environ['QT_API'] = 'pyside6'
     from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtGui import QPixmap, QIcon, QFont
     from qtpy.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
         QFrame, QSizePolicy, QSpacerItem
     )
 

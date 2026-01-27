@@ -16,12 +16,13 @@ Key Changes:
 - Corrected TouchstonePlotCanvas.plot_smith_chart()
 """
 
+
 # ============================================================================
 # METHOD 1: SmithChartPlottermpld3.create_smith_chart() - CORRECTED
 # ============================================================================
 
 def create_smith_chart(self, network: Network, param_name: str = "S11",
-                      chart_type: str = "z") -> Tuple[Figure, Network]:
+                       chart_type: str = "z") -> Tuple[Figure, Network]:
     """Create an interactive Smith Chart visualization using scikit-rf native implementation.
 
     Parameters
@@ -56,7 +57,7 @@ def create_smith_chart(self, network: Network, param_name: str = "S11",
         # Customize title
         chart_label = "Impedance" if chart_type == "z" else "Admittance"
         ax.set_title(f'{param_name} - Smith Chart ({chart_label})',
-                    fontsize=14, fontweight='bold', pad=20)
+                     fontsize=14, fontweight='bold', pad=20)
 
         # Add mpld3 hover tooltips if available
         if MPLD3_AVAILABLE:
@@ -80,10 +81,10 @@ def create_smith_chart(self, network: Network, param_name: str = "S11",
                         vswr = 10.0
 
                     label = (f"{param_name}<br>"
-                            f"Frequency: {freq:.2f} GHz<br>"
-                            f"Magnitude: {mag:.4f}<br>"
-                            f"Phase: {phase:.1f}°<br>"
-                            f"VSWR: {vswr:.2f}")
+                             f"Frequency: {freq:.2f} GHz<br>"
+                             f"Magnitude: {mag:.4f}<br>"
+                             f"Phase: {phase:.1f}°<br>"
+                             f"VSWR: {vswr:.2f}")
                     labels.append(label)
 
                 # Attach tooltips to the plotted line/scatter
@@ -111,12 +112,13 @@ def create_smith_chart(self, network: Network, param_name: str = "S11",
         print(f"Error creating Smith chart: {e}")
         raise
 
+
 # ============================================================================
 # METHOD 2: SmithChartPlottermpld3.export_smith_chart() - CORRECTED
 # ============================================================================
 
 def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
-                      output_path: str, export_format: str) -> bool:
+                       output_path: str, export_format: str) -> bool:
     """Export a Smith chart directly to file in the specified format.
 
     This method creates a fresh Smith chart and exports it, ensuring proper rendering.
@@ -148,7 +150,7 @@ def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
             if not MPLD3_AVAILABLE:
                 print("Warning: mpld3 not available, saving as PNG instead")
                 fig.savefig(output_path.replace('.html', '.png'),
-                           format='png', dpi=150, bbox_inches='tight')
+                            format='png', dpi=150, bbox_inches='tight')
                 plt.close(fig)
                 return True
 
@@ -177,12 +179,13 @@ def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
         print(f"Error exporting Smith chart: {e}")
         return False
 
+
 # ============================================================================
 # METHOD 3: TouchstonePlotCanvas.plot_smith_chart() - CORRECTED
 # ============================================================================
 
 def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
-                    draw_labels=True, draw_vswr=True):
+                     draw_labels=True, draw_vswr=True):
     """Plot Smith chart on the canvas using scikit-rf native implementation.
     
     Parameters
@@ -223,7 +226,7 @@ def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
             for j in range(network.nports):
                 s_param = network.s[:, i, j]
                 ax.plot(s_param.real, s_param.imag, label=f"S{i + 1}{j + 1}",
-                       marker="o", markersize=3)
+                        marker="o", markersize=3)
 
         ax.set_xlabel("Real Part")
         ax.set_ylabel("Imaginary Part")
@@ -233,6 +236,7 @@ def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
         ax.axis("equal")
 
     self.draw()
+
 
 # ============================================================================
 # SUMMARY OF CHANGES

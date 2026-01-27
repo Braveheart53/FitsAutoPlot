@@ -97,13 +97,11 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from operator import itemgetter
-from typing import List, Dict, Tuple, Optional, Union, Any
+from typing import Dict, Tuple
 from dataclasses import dataclass
 
 # %%% Import Math and Scientific Computing Modules
 import numpy as np
-import scipy.signal.windows as windows
 import veusz.embed as vz
 
 # %%% Import RF/Microwave Engineering Modules
@@ -125,15 +123,13 @@ from skrf.time import time_gate
 # Force direct PySide6 usage for compiled builds
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-        QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-        QFormLayout, QFrame
+        QSpinBox, QGroupBox, QListWidget, QLineEdit,
+        QTabWidget, QComboBox, QDoubleSpinBox, QFormLayout
     )
     # from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
     # from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
@@ -147,15 +143,13 @@ if getattr(sys, 'frozen', False):
     # )
 else:
     # Development environment - use QtPy
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtCore import Qt, QThread, Signal
     from qtpy.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
+        QFileDialog, QLabel, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-        QTabWidget, QComboBox, QSlider, QDoubleSpinBox, QGridLayout,
-        QFormLayout, QFrame
+        QSpinBox, QGroupBox, QListWidget, QLineEdit,
+        QTabWidget, QComboBox, QDoubleSpinBox, QFormLayout
     )
 # =============================================================================
 # # Force direct PySide6 usage for compiled builds

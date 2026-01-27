@@ -20,24 +20,12 @@
 # =============================================================================
 
 # Import all required modules
-import skrf as rf
-import veusz.embed as veusz
-import time
-import numpy as np
-import h5py
-import os as os
-import pprint
 # Cupy is numpy implementation in CUDA for GPU use, need to learn more
-import cupy
 # Parallel Processing Modules
-from multiprocessing import Pool  # udpate when you learn it!
-from multiprocessing import Process
 # Enable saving to .mat files
-from scipy.io import savemat
 # Cuda for parallel processing
 from cuda import cuda, nvrtc  # need to learn this as well, see class below
 # tkinter, which is a tcl wrapper just for dialogs
-from tkinter.filedialog import askopenfilenames
 
 
 # Begin Class definitions based upon use cases for range and data

@@ -16,9 +16,8 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from operator import itemgetter
-from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass
+from typing import Dict, Tuple, Any
 
 # %%% Import Math and Plotting Modules
 import numpy as np
@@ -105,13 +104,12 @@ import veusz.embed as vz
 # Force direct PySide6 usage for compiled builds
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
-        QFrame, QSizePolicy, QSpacerItem, QFileDialog, QTextEdit,
-        QCheckBox, QSpinBox, QGroupBox, QSplitter, QLineEdit, QListWidget
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QLabel, QProgressBar, QMessageBox,
+        QFileDialog, QTextEdit,
+        QCheckBox, QSpinBox, QGroupBox, QLineEdit, QListWidget
     )
     # from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
     # from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
@@ -123,13 +121,12 @@ if getattr(sys, 'frozen', False):
     # )
 else:
     # Development environment - use QtPy
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtCore import Qt, QThread, Signal
     from qtpy.QtWidgets import (
-        QApplication, QDialog, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
-        QFrame, QSizePolicy, QSpacerItem, QFileDialog, QTextEdit,
-        QCheckBox, QSpinBox, QGroupBox, QSplitter, QLineEdit, QListWidget
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QLabel, QProgressBar, QMessageBox,
+        QFileDialog, QTextEdit,
+        QCheckBox, QSpinBox, QGroupBox, QLineEdit, QListWidget
     )
 # %%% Debugging Modules
 # from rich import inspect as richinspect

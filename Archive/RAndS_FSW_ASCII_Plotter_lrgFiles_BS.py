@@ -8,20 +8,17 @@ Author: William W. Wallace (Enhanced)
 =============================================================================
 """
 
+import datetime
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
 # Core/GUI Imports
 from dataclasses import dataclass
 from operator import itemgetter
-from collections import defaultdict
-import os
-import re
-import sys
-import subprocess
-import math
-import threading
-import datetime
+
 import numpy as np
-import gc
-from functools import partial
 
 # QtPy or PySide6 selection
 if getattr(sys, 'frozen', False):
@@ -43,7 +40,7 @@ else:
     )
 
 from fastest_ascii_import import fastest_file_parser as fparser
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
 import multiprocessing as mp
 

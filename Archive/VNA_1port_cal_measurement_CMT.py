@@ -13,9 +13,10 @@ Created on Wed May 12 14:03:26 2021
 # from the measurement of Open, Short and Load standards
 # Written by Brian Walker, Engineering Manager, Copper Mountain Technologies
 
-import visa
 import math
+
 import numpy as np
+import visa
 
 
 class S2VNA:

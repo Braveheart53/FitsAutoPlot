@@ -44,19 +44,17 @@ Usage:
     python CSV_TSV_AutoPlot.py
 """
 
+import datetime
+import multiprocessing
 # ============================================================================
 # IMPORTS - Standard Library
 # ============================================================================
 import os
-import sys
 import subprocess
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Union, Any
-from dataclasses import dataclass
-import datetime
+import sys
 import traceback
+from dataclasses import dataclass
+from typing import List, Dict, Tuple, Optional
 
 # ============================================================================
 # IMPORTS - Data Processing and Numerical Computing
@@ -75,7 +73,6 @@ except ImportError:
 import matplotlib
 
 matplotlib.use('QtAgg')
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -94,16 +91,11 @@ except ImportError:
 # ============================================================================
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize, QRect
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush, QColor
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QFileDialog, QLabel, QMessageBox, QTextEdit,
-        QProgressBar, QCheckBox, QSpinBox, QGroupBox, QListWidget,
-        QLineEdit, QTabWidget, QComboBox, QDoubleSpinBox, QGridLayout,
-        QFormLayout, QFrame, QListWidgetItem, QTableWidget, QTableWidgetItem,
-        QHeaderView, QDialog, QProgressDialog, QDialogButtonBox, QScrollArea,
-        QSplitter
+        QCheckBox, QGroupBox, QListWidget,
+        QLineEdit, QComboBox, QFormLayout, QTableWidget, QTableWidgetItem
     )
 else:
     # Development environment - use QtPy abstraction layer

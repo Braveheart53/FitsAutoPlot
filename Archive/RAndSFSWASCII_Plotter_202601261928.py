@@ -18,21 +18,20 @@ Version: 1.0.1 - Enhanced with plotting options and automatic batch saving
 # TODO: Trouble shoot processing lag and ensure file saving works
 # TODO: compare GPU based processing on this one to Touchstone
 
+import datetime  # Added for auto-save timestamping
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
 # %% Import all required modules
 # %%% System Interface Modules
 from dataclasses import dataclass
 # import re
 from operator import itemgetter
-from collections import defaultdict
-import os
-import re
-import sys
-import subprocess
-import psutil
-import math
+
 # import faulthandler
 from hanging_threads import start_monitoring
-import datetime  # Added for auto-save timestamping
 
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 # from qtpy.QtGui import *
@@ -47,13 +46,12 @@ if getattr(sys, 'frozen', False):
     #     # Running as compiled executable - use PySide6 directly
     # System Interface Modules
     os.environ['QT_API'] = 'pyside6'
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit
+        QSpinBox, QGroupBox, QListWidget, QLineEdit
     )
     # from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
     # from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
@@ -65,13 +63,12 @@ if getattr(sys, 'frozen', False):
     # )
 else:
     # Development environment - use QtPy
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
+    from qtpy.QtCore import Qt, QThread, Signal
     from qtpy.QtWidgets import (
-        QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit
+        QSpinBox, QGroupBox, QListWidget, QLineEdit
     )
 
 # %%% Math and Processing Modules
@@ -81,7 +78,7 @@ from fastest_ascii_import import fastest_file_parser as fparser
 # %%% Parallel Processing Modules
 import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 import multiprocessing as mp
 
 # %%% GPU Acceleration Modules

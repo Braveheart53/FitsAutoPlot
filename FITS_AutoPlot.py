@@ -53,11 +53,9 @@ Date: 2025-05-30
 # %% Import all required modules
 # %%% System Interface Modules
 import os
-# import time as time
-from datetime import date
-import sys
 import subprocess
-import pdir
+# import time as time
+import sys
 
 # %%% GUI Module Imports
 # %%%% QtPy
@@ -86,8 +84,6 @@ import pdir
 
 if getattr(sys, 'frozen', False):
     # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from PySide6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
     from PySide6.QtWidgets import (
         QApplication,
         QDialog,
@@ -102,8 +98,6 @@ if getattr(sys, 'frozen', False):
     )
 else:
     # Development environment - use QtPy
-    from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
-    from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
     from qtpy.QtWidgets import (
         QApplication,
         QDialog,
@@ -152,11 +146,6 @@ import numpy as np
 # =============================================================================
 
 # %%% Console Interaction Improvement
-import pdir
-from rich import inspect as richinspect
-from rich import pretty
-import inspect
-from pprint import pprint
 # %%% Plotting Environment
 import veusz.embed as embed
 
