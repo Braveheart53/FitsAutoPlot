@@ -16,8 +16,8 @@ capabilities using scikit-rf, including:
 - CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
 - FIXED: Time-gated plots support all combinations (time only, frequency only, or both)
 - FIXED: Time-gated frequency domain plots now work correctly with proper FFT frequency axis
-- FIXED: Time domain analysis button enabled when ANY plot option is selected
-- FIXED: Phase unwrapping properly applied to frequency domain plots with Y-axis adjustment
+- FIXED: Phase unwrapping now properly connected and functional
+- FIXED: Time-domain button state management now works correctly
 
 Author: William W. Wallace
 Last updated: 2026-01-27
@@ -1460,7 +1460,7 @@ class TouchstoneMainWindow(QMainWindow):
 
     def _update_mp_config(self, state: int):
         """Update multiprocessing configuration."""
-        self.config.enable_multiprocessing = (state == Qt.Checked)
+        self.config.enable_multiprocessing = (state == Qt.CheckState.Checked)
         self._log_message(f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}")
 
     def _update_cpu_config(self, value: int):
@@ -1471,14 +1471,14 @@ class TouchstoneMainWindow(QMainWindow):
 
     def _update_gpu_config(self, state: int):
         """Update GPU processing configuration."""
-        self.config.enable_gpu_processing = (state == Qt.Checked)
+        self.config.enable_gpu_processing = (state == Qt.CheckState.Checked)
         status_msg = f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}"
         self._log_message(status_msg)
 
     def _update_unwrap_phase(self, state: int):
         """Update phase unwrap configuration - USES NUMPY.UNWRAP() (FASTEST METHOD)."""
-        self.config.unwrap_phase = (state == Qt.Checked)
-        status_msg = f"Phase unwrapping (numpy.unwrap): {'ENABLED - Y-axis will show continuous phase' if self.config.unwrap_phase else 'DISABLED - Y-axis shows wrapped phase (-180 to +180)'}"
+        self.config.unwrap_phase = (state == Qt.CheckState.Checked)
+        status_msg = f"Phase unwrapping (numpy.unwrap): {'ENABLED' if self.config.unwrap_phase else 'DISABLED'}"
         self._log_message(status_msg)
 
     def _update_window_config(self, window_type: str):
@@ -1518,21 +1518,22 @@ class TouchstoneMainWindow(QMainWindow):
 
     def _update_plot_time_domain(self, state: int):
         """Update time domain plot option."""
-        self.td_config.plot_time_domain = (state == Qt.Checked)
+        self.td_config.plot_time_domain = (state == Qt.CheckState.Checked)
         self._update_timegated_button_state()
         self._log_message(f"Time domain plots: {'Enabled' if self.td_config.plot_time_domain else 'Disabled'}")
 
     def _update_plot_frequency_domain(self, state: int):
         """Update frequency domain plot option."""
-        self.td_config.plot_frequency_domain = (state == Qt.Checked)
+        self.td_config.plot_frequency_domain = (state == Qt.CheckState.Checked)
         self._update_timegated_button_state()
         self._log_message(f"Frequency domain plots (gated): {'Enabled' if self.td_config.plot_frequency_domain else 'Disabled'}")
 
     def _update_timegated_button_state(self):
-        """✅ FIXED: Enable button if ANY plot option is checked AND data available."""
-        at_least_one_checked = self.td_config.plot_time_domain or self.td_config.plot_frequency_domain
+        """✅ FIXED: Enable button if ANY plot option is checked AND data exists."""
+        both_unchecked = not self.td_config.plot_time_domain and not self.td_config.plot_frequency_domain
         has_data = len(self.processed_data) > 0
-        self.td_timegated_button.setEnabled(at_least_one_checked and has_data)
+        should_enable = not both_unchecked and has_data
+        self.td_timegated_button.setEnabled(should_enable)
 
     def _update_chart_type(self, chart_type_text: str):
         """Update Smith Chart type configuration."""
@@ -1548,12 +1549,12 @@ class TouchstoneMainWindow(QMainWindow):
 
     def _update_draw_labels(self, state: int):
         """Update draw labels configuration."""
-        self.smith_config.draw_labels = (state == Qt.Checked)
+        self.smith_config.draw_labels = (state == Qt.CheckState.Checked)
         self._update_smith_preview()
 
     def _update_draw_vswr(self, state: int):
         """Update draw VSWR configuration."""
-        self.smith_config.draw_vswr = (state == Qt.Checked)
+        self.smith_config.draw_vswr = (state == Qt.CheckState.Checked)
         self._update_smith_preview()
 
     def _update_td_preview(self):
@@ -1611,7 +1612,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.touchstone_plotter = TouchstonePlotter(
             plot_title=self.plot_title_edit.text(),
             dataset_name=self.dataset_name_edit.text(),
-            unwrap_phase=self.config.unwrap_phase
+            unwrap_phase=self.config.unwrap_phase  # ✅ PASS TO PLOTTER
         )
 
         self.processing_thread = TouchstoneProcessingThread(self.selected_files, self.config)
@@ -1638,6 +1639,8 @@ class TouchstoneMainWindow(QMainWindow):
             self._update_smith_file_combo()
             self.save_button.setEnabled(True)
             self.smith_process_button.setEnabled(True)
+            
+            # ✅ CRITICAL FIX: Call this to update button state after files are processed
             self._update_timegated_button_state()
 
             for filename, data in self.processed_data.items():
