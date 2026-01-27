@@ -10,7 +10,7 @@ capabilities using scikit-rf, including:
 - Smith Chart plotting using scikit-rf native charts (interactive with PDF bookmarks)
 - Time-gated plot generation in Veusz
 - PDF export with bookmarks for Smith charts
-- FIXED: Correct chart_type parameter (z/y) without invalid draw_admittance
+- CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
 
 Author: William W. Wallace
 Last updated: 2026-01-27
@@ -43,12 +43,12 @@ import veusz.embed as vz
 # ============================================================================
 import skrf as rf
 from skrf import Network
-from skrf.time_domain import time_gate
 
 # ============================================================================
 # IMPORTS - Plotting and Visualization
 # ============================================================================
 import matplotlib
+
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -58,6 +58,7 @@ from matplotlib.figure import Figure
 try:
     import mpld3
     from mpld3 import plugins
+
     MPLD3_AVAILABLE = True
 except ImportError:
     MPLD3_AVAILABLE = False
@@ -103,22 +104,26 @@ else:
 GPU_AVAILABLE = None
 try:
     import cupy as cp
+
     GPU_AVAILABLE = "cupy"
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as cl_array
+
         GPU_AVAILABLE = "opencl"
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
+
             GPU_AVAILABLE = "taichi"
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
             GPU_AVAILABLE = None
             print("No GPU acceleration libraries detected - using CPU only")
+
 
 # ============================================================================
 # CONFIGURATION CLASSES
@@ -132,19 +137,18 @@ class ProcessingConfig:
     num_processes: int = multiprocessing.cpu_count()
     max_workers: int = multiprocessing.cpu_count()
 
+
 @dataclass
 class TimeDomainConfig:
     """Configuration for time domain analysis."""
     window_type: str = "kaiser"
     window_param: float = 6.0
-    gate_start: float = 0.0
-    gate_stop: float = 1.0
     gate_center: float = 0.5
     gate_span: float = 0.2
     mode: str = "bandpass"
-    method: str = "fft"
     tunit: str = "ns"
     auto_gate: bool = True
+
 
 @dataclass
 class SmithChartConfig:
@@ -154,16 +158,21 @@ class SmithChartConfig:
     draw_vswr: bool = True
     reference_impedance: float = 50.0
 
+
 # ============================================================================
 # TIME DOMAIN PROCESSOR
 # ============================================================================
 
 class TimeDomainProcessor:
-    """Handles time domain analysis of S-parameter data using scikit-rf."""
+    """Handles time domain analysis of S-parameter data using scikit-rf.
+
+    Uses windowed IFFT for frequency-to-time conversion with proper scaling
+    and supports time-domain gating with configurable window types.
+    """
 
     def __init__(self, config: TimeDomainConfig = None):
         """Initialize time domain processor.
-        
+
         Parameters
         ----------
         config : TimeDomainConfig
@@ -171,54 +180,91 @@ class TimeDomainProcessor:
         """
         self.config = config or TimeDomainConfig()
 
-    def process_network(self, network: Network, apply_window: bool = False) -> dict:
-        """Process a network for time domain analysis using scikit-rf.
-        
+    def process_network(self, network: Network, apply_window: bool = True) -> dict:
+        """Process a network for time domain analysis using windowed IFFT.
+
+        Converts frequency-domain S-parameters to time-domain impulse response
+        using windowed IFFT with optional time-domain gating.
+
         Parameters
         ----------
         network : Network
-            scikit-rf Network object.
+            scikit-rf Network object with equally-spaced frequency points.
         apply_window : bool
-            Whether to apply windowing function.
-            
+            Whether to apply windowing in frequency domain before IFFT.
+
         Returns
         -------
         dict
-            Dictionary containing time domain results.
+            Dictionary with keys:
+            - 'frequency': Frequency array (Hz)
+            - 'time': Time array (ns)
+            - 'S{i}{j}_td': Time-domain unfiltered impulse response
+            - 'S{i}{j}_td_filtered': Time-domain gated impulse response
+            - 'error': Error message if processing failed, None otherwise.
         """
         results = {}
 
         try:
-            # Convert to time domain using scikit-rf's built-in time_gate
+            freq_hz = network.frequency.f
+            num_freq = len(freq_hz)
+            freq_spacing_hz = np.mean(np.diff(freq_hz))
+
+            # Calculate time axis: Δt = 1 / (N * Δf)
+            delta_t = 1.0 / (num_freq * freq_spacing_hz)
+            time_ns = np.arange(num_freq) * delta_t * 1e9
+
+            # Process each S-parameter
             for i in range(network.nports):
                 for j in range(network.nports):
                     param_name = f"S{i + 1}{j + 1}"
-                    
-                    # Create single S-parameter network
-                    single_ntwk = network.copy()
-                    single_ntwk.s = network.s[:, i, j].reshape(-1, 1, 1)
-                    
-                    # Apply time gating if auto_gate is enabled
+                    s_param = network.s[:, i, j]
+
+                    # Apply frequency-domain windowing if requested
+                    if apply_window:
+                        try:
+                            if self.config.window_type == "kaiser":
+                                window = windows.kaiser(num_freq, self.config.window_param)
+                            elif self.config.window_type == "hamming":
+                                window = windows.hamming(num_freq)
+                            elif self.config.window_type == "hann":
+                                window = windows.hann(num_freq)
+                            elif self.config.window_type == "blackman":
+                                window = windows.blackman(num_freq)
+                            else:  # boxcar
+                                window = np.ones(num_freq)
+
+                            s_windowed = s_param * window
+                        except Exception as e:
+                            print(f"Warning: Windowing failed for {param_name}: {e}")
+                            s_windowed = s_param
+                    else:
+                        s_windowed = s_param
+
+                    # Convert to time domain using IFFT with proper scaling
+                    # Scaling factor: multiply by N for energy conservation
+                    s_time_unfiltered = np.fft.ifft(s_windowed) * num_freq
+                    results[f"{param_name}_td"] = s_time_unfiltered
+
+                    # Apply time-domain gating if auto_gate enabled
                     if self.config.auto_gate:
                         try:
-                            # Use scikit-rf's time_gate function
-                            gated_ntwk = time_gate(
-                                single_ntwk,
-                                start=self.config.gate_start,
-                                stop=self.config.gate_stop,
-                                mode=self.config.mode
+                            s_time_gated = self._apply_time_gate(
+                                s_time_unfiltered,
+                                time_ns,
+                                self.config.gate_center,
+                                self.config.gate_span
                             )
-                            results[f"{param_name}_td_filtered"] = gated_ntwk.s[:, 0, 0]
+                            results[f"{param_name}_td_filtered"] = s_time_gated
                         except Exception as e:
                             print(f"Warning: Time gating failed for {param_name}: {e}")
-                            results[f"{param_name}_td_filtered"] = single_ntwk.s[:, 0, 0]
-                    
-                    # Store unfiltered S-parameter
-                    results[f"{param_name}_td"] = single_ntwk.s[:, 0, 0]
-            
-            # Get frequency and time information
-            results['frequency'] = network.frequency.f
-            results['time'] = network.frequency.t_ns  # Time in nanoseconds
+                            results[f"{param_name}_td_filtered"] = s_time_unfiltered
+                    else:
+                        results[f"{param_name}_td_filtered"] = s_time_unfiltered
+
+            # Store frequency and time information
+            results['frequency'] = freq_hz
+            results['time'] = time_ns
             results['error'] = None
 
         except Exception as e:
@@ -227,53 +273,81 @@ class TimeDomainProcessor:
 
         return results
 
-    def apply_gpu_acceleration(self, s_data: np.ndarray) -> np.ndarray:
-        """Apply GPU acceleration to S-parameter data if available.
-        
+    def _apply_time_gate(self, time_domain_data: np.ndarray, time_array: np.ndarray,
+                         gate_center: float, gate_span: float) -> np.ndarray:
+        """Apply time-domain gating with Hamming window smoothing.
+
         Parameters
         ----------
-        s_data : np.ndarray
-            S-parameter data array.
-            
+        time_domain_data : np.ndarray
+            Time-domain impulse response.
+        time_array : np.ndarray
+            Time axis in nanoseconds.
+        gate_center : float
+            Gate center time in nanoseconds.
+        gate_span : float
+            Gate span (width) in nanoseconds.
+
         Returns
         -------
         np.ndarray
-            Processed S-parameter data (GPU or CPU).
+            Gated time-domain data.
+        """
+        gate_start = gate_center - gate_span / 2
+        gate_stop = gate_center + gate_span / 2
+
+        # Find indices corresponding to gate window
+        gate_indices = np.where((time_array >= gate_start) & (time_array <= gate_stop))[0]
+
+        if len(gate_indices) < 2:
+            return time_domain_data  # Return unmodified if gate too small
+
+        # Create smooth gate with Hamming window
+        gate = np.zeros_like(time_domain_data)
+        gate[gate_indices] = windows.hamming(len(gate_indices))
+
+        return time_domain_data * gate
+
+    def apply_gpu_acceleration(self, s_data: np.ndarray) -> np.ndarray:
+        """Apply GPU-accelerated IFFT to S-parameter data if available.
+
+        Parameters
+        ----------
+        s_data : np.ndarray
+            S-parameter data array (complex).
+
+        Returns
+        -------
+        np.ndarray
+            Time-domain result (complex), GPU or CPU computed.
         """
         if not GPU_AVAILABLE:
-            return s_data
-        
+            return np.fft.ifft(s_data) * len(s_data)
+
         try:
             if GPU_AVAILABLE == "cupy":
                 import cupy as cp
-                # Transfer to GPU, perform IFFT, transfer back
-                gpu_data = cp.asarray(s_data)
-                gpu_result = cp.fft.ifft(gpu_data)
+                # Transfer to GPU, perform IFFT with scaling, transfer back
+                gpu_data = cp.asarray(s_data, dtype=cp.complex128)
+                gpu_result = cp.fft.ifft(gpu_data) * len(s_data)
                 return cp.asnumpy(gpu_result)
-            
+
             elif GPU_AVAILABLE == "opencl":
-                import pyopencl as cl
-                import pyopencl.array as cl_array
-                # OpenCL processing
-                ctx = cl.create_some_context()
-                queue = cl.CommandQueue(ctx)
-                gpu_data = cl_array.to_device(queue, s_data.astype(np.complex128))
-                # Note: Would need to implement IFFT with OpenCL
-                return cl_array.get(gpu_data).astype(s_data.dtype)
-            
+                # OpenCL doesn't have built-in FFT in standard libraries
+                # Fall back to NumPy
+                print("Note: OpenCL lacks production FFT support, using NumPy CPU")
+                return np.fft.ifft(s_data) * len(s_data)
+
             elif GPU_AVAILABLE == "taichi":
-                import taichi as ti
-                # Taichi processing
-                @ti.kernel
-                def process_kernel(data: ti.template()):
-                    for i in range(data.shape[0]):
-                        # Placeholder for GPU computation
-                        pass
-                return s_data
-                
+                # Taichi is better for custom kernels, not FFT
+                # Fall back to NumPy
+                print("Note: Taichi is designed for custom kernels, using NumPy CPU for FFT")
+                return np.fft.ifft(s_data) * len(s_data)
+
         except Exception as e:
             print(f"Warning: GPU acceleration failed, falling back to CPU: {e}")
-            return s_data
+            return np.fft.ifft(s_data) * len(s_data)
+
 
 # ============================================================================
 # SMITH CHART PLOTTER - SCIKIT-RF NATIVE
@@ -288,7 +362,7 @@ class SmithChartPlottermpld3:
         self.plots = {}
 
     def create_smith_chart(self, network: Network, param_name: str = "S11",
-                          chart_type: str = "z") -> Tuple[Figure, Network]:
+                           chart_type: str = "z") -> Tuple[Figure, Network]:
         """Create an interactive Smith Chart visualization.
 
         Parameters
@@ -321,7 +395,7 @@ class SmithChartPlottermpld3:
             # Customize title
             chart_label = "Impedance" if chart_type == "z" else "Admittance"
             ax.set_title(f'{param_name} - Smith Chart ({chart_label})',
-                        fontsize=14, fontweight='bold', pad=20)
+                         fontsize=14, fontweight='bold', pad=20)
 
             # Add mpld3 hover tooltips if available
             if MPLD3_AVAILABLE:
@@ -342,10 +416,10 @@ class SmithChartPlottermpld3:
                             vswr = 10.0
 
                         label = (f"{param_name}<br>"
-                                f"Frequency: {freq:.2f} GHz<br>"
-                                f"Magnitude: {mag:.4f}<br>"
-                                f"Phase: {phase:.1f}°<br>"
-                                f"VSWR: {vswr:.2f}")
+                                 f"Frequency: {freq:.2f} GHz<br>"
+                                 f"Magnitude: {mag:.4f}<br>"
+                                 f"Phase: {phase:.1f}°<br>"
+                                 f"VSWR: {vswr:.2f}")
                         labels.append(label)
 
                     for artist in ax.get_children():
@@ -371,7 +445,7 @@ class SmithChartPlottermpld3:
             raise
 
     def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
-                          output_path: str, export_format: str) -> bool:
+                           output_path: str, export_format: str) -> bool:
         """Export a Smith chart to file.
 
         Parameters
@@ -399,7 +473,7 @@ class SmithChartPlottermpld3:
                 if not MPLD3_AVAILABLE:
                     print("Warning: mpld3 not available, saving as PNG instead")
                     fig.savefig(output_path.replace('.html', '.png'),
-                               format='png', dpi=150, bbox_inches='tight')
+                                format='png', dpi=150, bbox_inches='tight')
                     plt.close(fig)
                     return True
 
@@ -473,6 +547,7 @@ class SmithChartPlottermpld3:
         except Exception as e:
             print(f"Error creating PDF with bookmarks: {e}")
             return False
+
 
 # ============================================================================
 # TOUCHSTONE PLOTTER - VEUSZ
@@ -695,6 +770,7 @@ class TouchstonePlotter:
         """Save Veusz project."""
         self.doc.Save(filename, mode='hdf5')
 
+
 # ============================================================================
 # MATPLOTLIB CANVAS FOR PLOTS
 # ============================================================================
@@ -711,7 +787,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         self.fig.patch.set_facecolor('white')
 
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
-                        draw_labels=True, draw_vswr=True):
+                         draw_labels=True, draw_vswr=True):
         """Plot Smith chart using scikit-rf native implementation."""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
@@ -735,7 +811,7 @@ class TouchstonePlotCanvas(FigureCanvas):
                 for j in range(network.nports):
                     s_param = network.s[:, i, j]
                     ax.plot(s_param.real, s_param.imag, label=f"S{i + 1}{j + 1}",
-                           marker="o", markersize=3)
+                            marker="o", markersize=3)
 
             ax.set_xlabel("Real Part")
             ax.set_ylabel("Imaginary Part")
@@ -752,7 +828,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax = self.fig.add_subplot(111)
 
         ax.plot(time, np.abs(td_data), alpha=0.7, markersize=2,
-               label="Unfiltered", linestyle="dotted")
+                label="Unfiltered", linestyle="dotted")
 
         if td_filtered_data is not None:
             ax.plot(time, np.abs(td_filtered_data), "-", linewidth=2, label="Filtered")
@@ -764,6 +840,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax.legend()
 
         self.draw()
+
 
 # ============================================================================
 # PROCESSING THREAD
@@ -825,7 +902,7 @@ class TouchstoneProcessingThread(QThread):
             if self.config.enable_multiprocessing and len(self.file_list) > 1:
                 with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
                     futures = [executor.submit(process_single_touchstone_file, (f, None))
-                              for f in self.file_list]
+                               for f in self.file_list]
 
                     completed = 0
                     for future in as_completed(futures):
@@ -846,6 +923,7 @@ class TouchstoneProcessingThread(QThread):
 
         except Exception as e:
             self.error_occurred.emit(str(e))
+
 
 # ============================================================================
 # MAIN APPLICATION WINDOW
@@ -1036,22 +1114,22 @@ class TouchstoneMainWindow(QMainWindow):
         self.auto_gate_checkbox.stateChanged.connect(self._update_auto_gate)
         gate_layout.addRow(self.auto_gate_checkbox)
 
-        self.gate_start_spin = QDoubleSpinBox()
-        self.gate_start_spin.setRange(-100.0, 100.0)
-        self.gate_start_spin.setValue(self.td_config.gate_start)
-        self.gate_start_spin.setSuffix(" ns")
-        self.gate_start_spin.valueChanged.connect(self._update_gate_start)
-        gate_layout.addRow("Gate Start:", self.gate_start_spin)
+        self.gate_center_spin = QDoubleSpinBox()
+        self.gate_center_spin.setRange(-100.0, 100.0)
+        self.gate_center_spin.setValue(self.td_config.gate_center)
+        self.gate_center_spin.setSuffix(" ns")
+        self.gate_center_spin.valueChanged.connect(self._update_gate_center)
+        gate_layout.addRow("Gate Center:", self.gate_center_spin)
 
-        self.gate_stop_spin = QDoubleSpinBox()
-        self.gate_stop_spin.setRange(-100.0, 100.0)
-        self.gate_stop_spin.setValue(self.td_config.gate_stop)
-        self.gate_stop_spin.setSuffix(" ns")
-        self.gate_stop_spin.valueChanged.connect(self._update_gate_stop)
-        gate_layout.addRow("Gate Stop:", self.gate_stop_spin)
+        self.gate_span_spin = QDoubleSpinBox()
+        self.gate_span_spin.setRange(0.01, 100.0)
+        self.gate_span_spin.setValue(self.td_config.gate_span)
+        self.gate_span_spin.setSuffix(" ns")
+        self.gate_span_spin.valueChanged.connect(self._update_gate_span)
+        gate_layout.addRow("Gate Span:", self.gate_span_spin)
 
-        self.gate_start_spin.setEnabled(not self.td_config.auto_gate)
-        self.gate_stop_spin.setEnabled(not self.td_config.auto_gate)
+        self.gate_center_spin.setEnabled(self.td_config.auto_gate)
+        self.gate_span_spin.setEnabled(self.td_config.auto_gate)
 
         controls_layout.addWidget(gate_group)
 
@@ -1063,12 +1141,6 @@ class TouchstoneMainWindow(QMainWindow):
         self.mode_combo.setCurrentText(self.td_config.mode)
         self.mode_combo.currentTextChanged.connect(self._update_mode)
         method_layout.addRow("Mode:", self.mode_combo)
-
-        self.method_combo = QComboBox()
-        self.method_combo.addItems(["fft", "rfft", "convolution"])
-        self.method_combo.setCurrentText(self.td_config.method)
-        self.method_combo.currentTextChanged.connect(self._update_method)
-        method_layout.addRow("Method:", self.method_combo)
 
         controls_layout.addWidget(method_group)
 
@@ -1249,26 +1321,21 @@ class TouchstoneMainWindow(QMainWindow):
         self.td_config.mode = mode
         self._update_td_preview()
 
-    def _update_method(self, method: str):
-        """Update processing method configuration."""
-        self.td_config.method = method
-        self._update_td_preview()
-
     def _update_auto_gate(self, state: int):
         """Update auto gate configuration."""
         self.td_config.auto_gate = (state == Qt.Checked)
-        self.gate_start_spin.setEnabled(not self.td_config.auto_gate)
-        self.gate_stop_spin.setEnabled(not self.td_config.auto_gate)
+        self.gate_center_spin.setEnabled(self.td_config.auto_gate)
+        self.gate_span_spin.setEnabled(self.td_config.auto_gate)
         self._update_td_preview()
 
-    def _update_gate_start(self, value: float):
-        """Update gate start configuration."""
-        self.td_config.gate_start = value
+    def _update_gate_center(self, value: float):
+        """Update gate center configuration."""
+        self.td_config.gate_center = value
         self._update_td_preview()
 
-    def _update_gate_stop(self, value: float):
-        """Update gate stop configuration."""
-        self.td_config.gate_stop = value
+    def _update_gate_span(self, value: float):
+        """Update gate span configuration."""
+        self.td_config.gate_span = value
         self._update_td_preview()
 
     def _update_chart_type(self, chart_type_text: str):
@@ -1303,12 +1370,14 @@ class TouchstoneMainWindow(QMainWindow):
                 td_result = self.td_processor.process_network(network)
                 self.td_results[current_file] = td_result
 
-                s_param = network.s[:, 0, 0]
-                time_data = np.fft.ifft(s_param)
-                time_array = np.arange(len(time_data))
+                time_data = td_result.get('time', np.array([]))
+                td_data = td_result.get('S11_td', np.array([]))
+                td_filtered = td_result.get('S11_td_filtered', np.array([]))
 
                 plot_title = f"{current_file} - Time Domain"
-                self.td_plot_canvas.plot_time_domain(time_array, np.abs(time_data), title=plot_title)
+                self.td_plot_canvas.plot_time_domain(
+                    time_data, td_data, td_filtered, title=plot_title
+                )
 
             except Exception as e:
                 self._log_message(f"Time domain preview error: {e}")
@@ -1448,8 +1517,8 @@ class TouchstoneMainWindow(QMainWindow):
                 self._log_message(f"Displayed: {first_key}")
 
                 QMessageBox.information(self, "Success",
-                    f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
-                    "Click Export to save in selected format.")
+                                        f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
+                                        "Click Export to save in selected format.")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to prepare Smith charts: {str(e)}")
@@ -1644,6 +1713,7 @@ class TouchstoneMainWindow(QMainWindow):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.status_text.append(f"[{timestamp}] {message}")
 
+
 # ============================================================================
 # MAIN APPLICATION ENTRY POINT
 # ============================================================================
@@ -1654,6 +1724,7 @@ def main():
     window = TouchstoneMainWindow()
     window.show()
     return app.exec()
+
 
 if __name__ == "__main__":
     sys.exit(main())
