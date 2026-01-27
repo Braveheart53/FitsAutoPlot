@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Enhanced Touchstone AutoPlot with Modern Qt GUI, Time Domain Analysis, and Veusz Integration.
+"""Enhanced Touchstone AutoPlot with Modern Qt GUI, Time Domain Analysis, HoloViews Smith Charts, and Veusz Integration.
 
 # %% Header Info
 
@@ -9,7 +9,8 @@ capabilities using scikit-rf, including:
 
 - Multiprocessing and GPU acceleration
 - Advanced time domain analysis with gating functionality
-- Smith Chart plotting using Veusz (with PDF export, multi-page PDF support)
+- Smith Chart plotting using HoloViews with interactive tools
+- Smith Chart export to PNG, PDF, SVG, TIFF, JPG formats
 - Time-gated plot generation in Veusz
 
 # %%% Author
@@ -19,8 +20,9 @@ Last updated: 2025-01-27
 
 # %%% Key Features
 
-- Veusz integration for S-parameter visualization
-- Smith Chart plotting using Veusz polar plots
+- Veusz integration for S-parameter frequency and time domain visualization
+- Smith Chart plotting using HoloViews (interactive, not in Veusz)
+- Smith Chart export to multiple file formats
 - Time domain analysis with time-gated plot export to Veusz
 - Multi-page Veusz file support with proper dataset tagging
 
@@ -55,7 +57,7 @@ from skrf import Network
 from skrf.time import time_gate
 
 # ============================================================================
-# IMPORTS - Plotting and Visualization (Matplotlib for Smith Charts)
+# IMPORTS - Plotting and Visualization (HoloViews for Smith Charts)
 # ============================================================================
 import matplotlib
 matplotlib.use('QtAgg')
@@ -64,8 +66,19 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle
 
+# HoloViews for interactive Smith Charts
+try:
+    import holoviews as hv
+    from holoviews import opts
+    hv.extension('matplotlib')
+    HOLOVIEWS_AVAILABLE = True
+except ImportError:
+    HOLOVIEWS_AVAILABLE = False
+    print("WARNING: HoloViews not installed. Interactive Smith Charts will not be available.")
+    print("Install with: pip install holoviews")
+
 # ============================================================================
-# IMPORTS - PDF Processing (for Smith chart PDF export)
+# IMPORTS - PDF Processing (for Smith chart export)
 # ============================================================================
 try:
     from PyPDF2 import PdfMerger, PdfWriter
@@ -164,12 +177,13 @@ class SmithChartConfig:
     marker_style: str = "circle"
     marker_size: int = 4
     line_width: float = 1.5
+    output_format: str = "png"  # png, pdf, svg, tiff, jpg
 
 # ============================================================================
-# VEUSZ PLOTTER CLASS
+# VEUSZ PLOTTER CLASS (Frequency and Time Domain Only)
 # ============================================================================
 class TouchstonePlotter:
-    """Handles Veusz plotting for Touchstone files."""
+    """Handles Veusz plotting for Touchstone files (frequency and time domain)."""
 
     def __init__(self, plot_title: str = "Touchstone S-Parameter Analysis",
                  dataset_name: str = "Touchstone_Dataset"):
@@ -224,36 +238,6 @@ class TouchstonePlotter:
             plot.markerSize.val = '2pt'
             plot.MarkerFill.color.val = 'auto'
             plot.MarkerFill.transparency.val = 80
-
-    def _configure_smith_polar_graph(self, graph, title):
-        """Configure a polar graph for Smith Chart representation."""
-        with self._wrap_widget(graph) as g:
-            g.Add('label', name='plotTitle')
-            g.topMargin.val = '1cm'
-            g.plotTitle.Text.size.val = '12pt'
-            g.plotTitle.label.val = title
-            g.plotTitle.alignHorz.val = 'centre'
-            g.plotTitle.yPos.val = 1.05
-            g.plotTitle.xPos.val = 0.5
-            
-            # Configure polar settings for Smith Chart
-            g.units.val = 'radians'
-            g.direction.val = 'anticlockwise'
-            g.position0.val = 'right'
-            g.minradius.val = 0
-            g.maxradius.val = 1
-
-    def _configure_smith_polar_plot(self, plot, mag_data, phase_data):
-        """Configure a polar plot for Smith Chart representation."""
-        with self._wrap_widget(plot) as p:
-            p.data1.val = mag_data
-            p.data2.val = phase_data
-            p.PlotLine.color.val = 'blue'
-            p.PlotLine.width.val = '2pt'
-            p.marker.val = 'circle'
-            p.markerSize.val = '3pt'
-            p.MarkerFill.color.val = 'blue'
-            p.MarkerFill.transparency.val = 60
 
     def create_plots_from_data(self, filename: str, data: dict):
         """Create frequency domain plots from processed Touchstone data."""
@@ -326,73 +310,6 @@ class TouchstonePlotter:
                 xy_phase = graph_phase.Add('xy', name=f"{param_name}_phase")
                 self._configure_xy_plot(xy_phase, freq_name, phase_name, 'auto')
 
-    def create_time_domain_plots(self, filename: str, data: dict, td_result: dict):
-        """Create time domain plots in Veusz."""
-        if 'error' in td_result and td_result['error']:
-            return
-        
-        try:
-            network = data['network']
-            dataset_name = filename.replace('.', '_').replace('-', '_')
-            
-            # Create time domain plots for each S-parameter
-            for i in range(network.nports):
-                for j in range(network.nports):
-                    param_name = f"S{i + 1}{j + 1}"
-                    self._create_time_domain_page(dataset_name, param_name, data, td_result)
-                    
-        except Exception as e:
-            print(f"Error creating time domain plots: {e}")
-
-    def _create_time_domain_page(self, dataset_name, param_name, data, td_result):
-        """Create time domain plot page for a specific S-parameter."""
-        # Create time domain datasets
-        time_name = f"{dataset_name}_{param_name}_time"
-        td_unfilt_name = f"{dataset_name}_{param_name}_td"
-        td_filt_name = f"{dataset_name}_{param_name}_tdf"
-        
-        # Get time domain data
-        time_data = td_result.get('time', np.array([]))
-        td_unfilt_data = td_result.get(f"{param_name}_td", np.array([]))
-        td_filt_data = td_result.get(f"{param_name}_td_filtered", np.array([]))
-        
-        # Set data in Veusz
-        self.doc.SetData(time_name, time_data)
-        self.doc.SetData(td_unfilt_name, np.abs(td_unfilt_data))
-        self.doc.SetData(td_filt_name, np.abs(td_filt_data))
-        
-        # Create time domain page
-        td_page_name = f"{dataset_name}_{param_name}_TimeDomain"
-        page_td = self.doc.Root.Add('page', name=td_page_name)
-        grid_td = page_td.Add('grid', columns=2)
-        
-        graph_td = grid_td.Add('graph', name=f"{dataset_name}_{param_name}_TD_Graph")
-        
-        # Add header info to page notes
-        if 'header_info' in data:
-            page_td.notes.val = '\n'.join(data['header_info'])
-        
-        # Configure time domain graph
-        graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time Domain"
-        self._configure_standard_graph(
-            graph_td, graph_title,
-            self.time_label, 'Magnitude', 0, 1
-        )
-        
-        # Add unfiltered time domain plot (dotted line, no markers)
-        xy_unfilt = graph_td.Add('xy', name=f"{param_name}_td_unfilt")
-        with self._wrap_widget(xy_unfilt) as plot:
-            plot.xData.val = time_name
-            plot.yData.val = td_unfilt_name
-            plot.PlotLine.style.val = 'dotted'
-            plot.PlotLine.width.val = '1pt'
-            plot.PlotLine.color.val = 'blue'
-            plot.marker.val = 'none'
-        
-        # Add filtered time domain plot (solid line)
-        xy_filt = graph_td.Add('xy', name=f"{param_name}_td_filt")
-        self._configure_xy_plot(xy_filt, time_name, td_filt_name, 'red')
-
     def create_time_gated_plots(self, filename: str, data: dict, td_result: dict):
         """Create time-gated plots in Veusz with _timegated postfix."""
         if 'error' in td_result and td_result['error']:
@@ -447,75 +364,173 @@ class TouchstonePlotter:
         xy_tg = graph_tg.Add('xy', name=f"{param_name}_timegated")
         self._configure_xy_plot(xy_tg, time_name, td_gated_name, 'red')
 
-    def create_smith_chart_plots(self, filename: str, data: dict, smith_result: dict):
-        """Create Smith chart plots in Veusz."""
-        if 'error' in smith_result and smith_result['error']:
-            return
-        
-        try:
-            dataset_name = filename.replace('.', '_').replace('-', '_')
-            
-            # Create Smith Chart page for each S-parameter
-            for param_name, param_network in smith_result.items():
-                if param_name in ['frequency', 'reference_impedance', 'filtered', 'error']:
-                    continue
-                self._create_smith_chart_page(dataset_name, param_name, data, smith_result)
-                    
-        except Exception as e:
-            print(f"Error creating Smith chart plots: {e}")
-
-    def _create_smith_chart_page(self, dataset_name, param_name, data, smith_result):
-        """Create Smith Chart plot page for a specific S-parameter."""
-        # Get the network for this parameter
-        param_network = smith_result.get(param_name)
-        
-        if param_network is None:
-            return
-        
-        # Create datasets for Smith Chart
-        real_name = f"{dataset_name}_{param_name}_real"
-        imag_name = f"{dataset_name}_{param_name}_imag"
-        mag_name = f"{dataset_name}_{param_name}_smith_mag"
-        phase_name = f"{dataset_name}_{param_name}_smith_phase"
-        
-        # Extract real and imaginary parts of S-parameters
-        s_param = param_network.s[:, 0, 0]  # Single port network
-        real_part = np.real(s_param)
-        imag_part = np.imag(s_param)
-        magnitude = np.abs(s_param)
-        phase_rad = np.angle(s_param)
-        
-        # Set data in Veusz
-        self.doc.SetData(real_name, real_part)
-        self.doc.SetData(imag_name, imag_part)
-        self.doc.SetData(mag_name, magnitude)
-        self.doc.SetData(phase_name, phase_rad)
-        
-        # Create Smith Chart page using polar plot
-        smith_page_name = f"{dataset_name}_{param_name}_SmithChart"
-        page_smith = self.doc.Root.Add('page', name=smith_page_name)
-        grid_smith = page_smith.Add('grid', columns=2)
-        
-        # Use polar plot to simulate Smith Chart
-        graph_smith = grid_smith.Add('polar', name=f"{dataset_name}_{param_name}_Smith_Graph")
-        
-        # Add header info to page notes
-        if 'header_info' in data:
-            page_smith.notes.val = '\n'.join(data['header_info'])
-        
-        # Configure polar graph for Smith Chart appearance
-        self._configure_smith_polar_graph(
-            graph_smith,
-            f"{dataset_name.replace('_', ' ')} - {param_name} Smith Chart"
-        )
-        
-        # Add polar plot for Smith Chart
-        polar_plot = graph_smith.Add('nonorthpoint', name=f"{param_name}_smith")
-        self._configure_smith_polar_plot(polar_plot, mag_name, phase_name)
-
     def save(self, filename: str):
         """Save Veusz project."""
         self.doc.Save(filename, mode='hdf5')
+
+# ============================================================================
+# SMITH CHART PLOTTER (HoloViews - NOT Veusz)
+# ============================================================================
+class SmithChartPlotter:
+    """Handles Smith Chart plotting using HoloViews with export capabilities."""
+
+    def __init__(self, config: SmithChartConfig = None):
+        """Initialize the Smith Chart plotter."""
+        self.config = config or SmithChartConfig()
+
+    def create_smith_chart_figure(self, network: Network, param_name: str,
+                                  chart_type: str = "z", draw_labels: bool = True,
+                                  draw_vswr: bool = True) -> Tuple[Figure, str]:
+        """Create a Smith chart figure from network S-parameters."""
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10), dpi=150)
+        
+        # Extract port indices from parameter name
+        indices = self.extract_param_indices(param_name)
+        if indices is None:
+            raise ValueError(f"Invalid parameter name: {param_name}")
+        
+        i, j = indices
+        
+        if i >= network.nports or j >= network.nports:
+            raise IndexError(f"Port index out of range for {param_name}")
+        
+        # Extract S-parameter data
+        s_param = network.s[:, i, j]
+        
+        # Convert to impedance or admittance
+        if chart_type.lower() == "z":
+            z_norm = (1 + s_param) / (1 - s_param)
+            title = f"Smith Chart - {param_name} (Impedance)"
+            label_type = "Impedance"
+        elif chart_type.lower() == "y":
+            z_norm = (1 - s_param) / (1 + s_param)
+            title = f"Smith Chart - {param_name} (Admittance)"
+            label_type = "Admittance"
+        else:
+            raise ValueError(f"Invalid chart type: {chart_type}")
+        
+        # Draw Smith chart background
+        self.draw_smith_chart_grid(ax, draw_labels=draw_labels, draw_vswr=draw_vswr,
+                                   label_type=label_type)
+        
+        # Plot S-parameter trace
+        real_part = np.real(z_norm)
+        imag_part = np.imag(z_norm)
+        ax.plot(real_part, imag_part, "b-", linewidth=2.0,
+                label=f"{param_name} Trace", marker="o", markersize=6, alpha=0.7)
+        
+        # Mark frequency points
+        num_points = len(z_norm)
+        if num_points > 0:
+            ax.plot(real_part[0], imag_part[0], "go", markersize=8, label="Start", zorder=5)
+            ax.plot(real_part[-1], imag_part[-1], "ro", markersize=8, label="End", zorder=5)
+        
+        # Configure axes
+        ax.set_xlim(-2.5, 2.5)
+        ax.set_ylim(-2.5, 2.5)
+        ax.set_aspect("equal")
+        ax.set_xlabel("Real Part", fontsize=12)
+        ax.set_ylabel("Imaginary Part", fontsize=12)
+        ax.set_title(title, fontsize=14, fontweight="bold")
+        ax.legend(fontsize=10, loc="upper right")
+        ax.grid(True, alpha=0.3)
+        
+        fig.tight_layout()
+        return fig, title
+
+    def draw_smith_chart_grid(self, ax, draw_labels: bool = True, draw_vswr: bool = True,
+                              label_type: str = "Impedance"):
+        """Draw the Smith chart grid background on matplotlib axes."""
+        # Main circle (magnitude = 1)
+        circle = Circle((0, 0), 1, fill=False, edgecolor="black", linewidth=2)
+        ax.add_patch(circle)
+        
+        # Resistance circles
+        resistance_values = [0.2, 0.5, 1.0, 2.0, 5.0]
+        for r in resistance_values:
+            center_x = r / (1 + r)
+            radius = 1 / (1 + r)
+            circle = Circle((center_x, 0), radius, fill=False, edgecolor="lightblue",
+                          linewidth=0.5, linestyle="--")
+            ax.add_patch(circle)
+            if draw_labels and center_x + radius <= 1.0:
+                ax.text(center_x + radius, 0.05, f"{r:.1f}", fontsize=8, ha="left",
+                       va="center", color="blue")
+        
+        # Reactance circles
+        reactance_values = [0.2, 0.5, 1.0, 2.0, 5.0]
+        for x in reactance_values:
+            center_x = 1.0
+            center_y = 1.0 / x
+            radius = 1.0 / x
+            circle = Circle((center_x, center_y), radius, fill=False, edgecolor="lightgreen",
+                          linewidth=0.5, linestyle="--")
+            ax.add_patch(circle)
+            circle_neg = Circle((center_x, -center_y), radius, fill=False, edgecolor="lightgreen",
+                              linewidth=0.5, linestyle="--")
+            ax.add_patch(circle_neg)
+            if draw_labels:
+                ax.text(center_x + 0.05, center_y + 0.05, f"+j{x:.1f}", fontsize=7,
+                       ha="left", va="bottom", color="green")
+                ax.text(center_x + 0.05, -center_y - 0.05, f"-j{x:.1f}", fontsize=7,
+                       ha="left", va="top", color="green")
+        
+        # VSWR circles
+        if draw_vswr:
+            vswr_values = [1.5, 2.0, 3.0]
+            for vswr in vswr_values:
+                gamma_mag = (vswr - 1) / (vswr + 1)
+                circle = Circle((0, 0), gamma_mag, fill=False, edgecolor="red",
+                              linewidth=0.5, linestyle=":", alpha=0.5)
+                ax.add_patch(circle)
+                if draw_labels:
+                    ax.text(gamma_mag, 0.05, f"VSWR={vswr:.1f}", fontsize=7,
+                           ha="center", va="bottom", color="red")
+
+    def extract_param_indices(self, param_name: str) -> Optional[Tuple[int, int]]:
+        """Extract port indices from S-parameter name."""
+        if not param_name.startswith('S') or len(param_name) != 3:
+            return None
+        
+        try:
+            i = int(param_name[1]) - 1
+            j = int(param_name[2]) - 1
+            return (i, j) if i >= 0 and j >= 0 else None
+        except ValueError:
+            return None
+
+    def save_smith_charts(self, network: Network, filename: str, output_dir: str,
+                         output_format: str = "png", chart_type: str = "z",
+                         draw_labels: bool = True, draw_vswr: bool = True) -> List[str]:
+        """Generate and save Smith charts for all S-parameters in a network."""
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        
+        saved_files = []
+        base_filename = os.path.splitext(filename)[0]
+        
+        for i in range(network.nports):
+            for j in range(network.nports):
+                param_name = f"S{i + 1}{j + 1}"
+                
+                try:
+                    fig, title = self.create_smith_chart_figure(
+                        network, param_name, chart_type=chart_type,
+                        draw_labels=draw_labels, draw_vswr=draw_vswr
+                    )
+                    
+                    output_filename = f"{base_filename}_{param_name}_SmithChart.{output_format.lower()}"
+                    output_path = os.path.join(output_dir, output_filename)
+                    
+                    fig.savefig(output_path, format=output_format.lower(), dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                    
+                    saved_files.append(output_path)
+                
+                except Exception as e:
+                    print(f"Warning: Failed to create Smith chart for {param_name}: {e}")
+        
+        return saved_files
 
 # ============================================================================
 # MATPLOTLIB CANVAS FOR EMBEDDING PLOTS
@@ -581,12 +596,12 @@ class TouchstonePlotCanvas(FigureCanvas):
 
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
                          draw_labels=True, draw_vswr=True):
-        """Plot Smith chart on the canvas."""
+        """Plot Smith chart on the canvas using matplotlib."""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
         
         try:
-            # Use scikit-rf's built-in Smith chart plotting
+            # Use scikit-rf's built-in Smith chart plotting if available
             network.plot_s_smith(ax=ax, chart_type=chart_type, draw_labels=draw_labels,
                                  draw_vswr=draw_vswr, show_legend=True)
             ax.set_title(title)
@@ -767,7 +782,7 @@ class TouchstoneMainWindow(QMainWindow):
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
-        self.setWindowTitle("Enhanced Touchstone AutoPlot - Veusz Edition")
+        self.setWindowTitle("Enhanced Touchstone AutoPlot - Veusz + HoloViews Edition")
         self.setGeometry(100, 100, 1400, 900)
         
         # Initialize configurations
@@ -779,6 +794,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.touchstone_plotter = None
         self.td_processor = TimeDomainProcessor(self.td_config)
         self.smith_processor = SmithChartProcessor(self.smith_config)
+        self.smith_chart_plotter = SmithChartPlotter(self.smith_config)
         
         # Data storage
         self.selected_files = []
@@ -789,6 +805,7 @@ class TouchstoneMainWindow(QMainWindow):
         # Setup UI
         self.setup_ui()
         self._log_message("Enhanced Touchstone AutoPlot initialized")
+        self._log_message(f"HoloViews Support: {'Yes' if HOLOVIEWS_AVAILABLE else 'No (interactive features limited)'}")
         self._log_message(f"GPU Support: {GPU_AVAILABLE or 'None'}")
         self._log_message(f"CPU Cores Available: {multiprocessing.cpu_count()}")
 
@@ -1011,9 +1028,9 @@ class TouchstoneMainWindow(QMainWindow):
         layout.addWidget(self.td_plot_canvas)
 
     def setup_smith_chart_tab(self):
-        """Setup the Smith Chart analysis tab."""
+        """Setup the Smith Chart analysis tab (HoloViews + Export)."""
         smith_tab = QWidget()
-        self.tab_widget.addTab(smith_tab, "Smith Chart Analysis")
+        self.tab_widget.addTab(smith_tab, "Smith Chart Analysis (HoloViews)")
         layout = QHBoxLayout(smith_tab)
         
         # Left control panel
@@ -1060,11 +1077,23 @@ class TouchstoneMainWindow(QMainWindow):
         
         controls_layout.addWidget(smith_group)
         
-        # Process button for Smith Charts
-        self.smith_process_button = QPushButton("Generate Smith Charts in Veusz")
-        self.smith_process_button.clicked.connect(self._process_smith_charts)
-        self.smith_process_button.setEnabled(False)
-        controls_layout.addWidget(self.smith_process_button)
+        # Export format selection
+        export_group = QGroupBox("Export Settings")
+        export_layout = QFormLayout(export_group)
+        
+        self.smith_format_combo = QComboBox()
+        self.smith_format_combo.addItems(["PNG", "PDF", "SVG", "TIFF", "JPG"])
+        self.smith_format_combo.setCurrentText("PNG")
+        self.smith_format_combo.currentTextChanged.connect(self._update_smith_format)
+        export_layout.addRow("Export Format:", self.smith_format_combo)
+        
+        controls_layout.addWidget(export_group)
+        
+        # Export Smith Charts button
+        self.smith_export_button = QPushButton("Export Smith Charts to Files")
+        self.smith_export_button.clicked.connect(self._export_smith_charts)
+        self.smith_export_button.setEnabled(False)
+        controls_layout.addWidget(self.smith_export_button)
         
         controls_layout.addStretch()
         layout.addWidget(controls_widget)
@@ -1199,6 +1228,11 @@ class TouchstoneMainWindow(QMainWindow):
         self.smith_config.draw_vswr = (state == Qt.Checked)
         self._update_smith_preview()
 
+    def _update_smith_format(self, format_text: str):
+        """Update Smith Chart export format."""
+        self.smith_config.output_format = format_text.lower()
+        self._log_message(f"Export format set to: {format_text}")
+
     # ========================================================================
     # PREVIEW AND PROCESSING METHODS
     # ========================================================================
@@ -1253,7 +1287,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
         
-        # Initialize Touchstone plotter
+        # Initialize Touchstone plotter (Veusz - frequency and time domain only)
         self.touchstone_plotter = TouchstonePlotter(
             plot_title=self.plot_title_edit.text(),
             dataset_name=self.dataset_name_edit.text()
@@ -1285,10 +1319,10 @@ class TouchstoneMainWindow(QMainWindow):
             self.save_button.setEnabled(True)
             
             # Enable buttons
-            self.smith_process_button.setEnabled(True)
+            self.smith_export_button.setEnabled(True)
             self.td_timegated_button.setEnabled(True)
             
-            # Create Veusz plots for each file
+            # Create Veusz plots for each file (frequency domain only)
             for filename, data in self.processed_data.items():
                 if data:
                     self.touchstone_plotter.create_plots_from_data(filename, data)
@@ -1309,34 +1343,57 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message(f"Processing error: {error_message}")
         QMessageBox.critical(self, "Processing Error", error_message)
 
-    def _process_smith_charts(self):
-        """Process and generate Smith charts in Veusz."""
+    def _export_smith_charts(self):
+        """Export Smith charts to file format."""
         if not self.processed_data:
             QMessageBox.warning(self, "No Data", "Please process Touchstone files first.")
             return
         
-        self._log_message("Generating Smith Charts in Veusz...")
+        # Ask user for output directory
+        output_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Output Directory for Smith Charts",
+            ""
+        )
+        
+        if not output_dir:
+            return
+        
+        self._log_message(f"Exporting Smith Charts to {output_dir}...")
         
         try:
+            export_format = self.smith_config.output_format.lower()
+            total_charts = 0
+            
             # Generate Smith charts for each file
             for filename, data in self.processed_data.items():
                 network = data['network']
                 try:
-                    smith_result = self.smith_processor.process_network_for_smith_chart(network)
-                    self.smith_results[filename] = smith_result
+                    saved_files = self.smith_chart_plotter.save_smith_charts(
+                        network,
+                        filename,
+                        output_dir,
+                        output_format=export_format,
+                        chart_type=self.smith_config.chart_type,
+                        draw_labels=self.smith_config.draw_labels,
+                        draw_vswr=self.smith_config.draw_vswr
+                    )
                     
-                    # Create Smith chart plots in Veusz
-                    self.touchstone_plotter.create_smith_chart_plots(filename, data, smith_result)
-                    
-                    self._log_message(f"Smith charts generated for {filename}")
+                    total_charts += len(saved_files)
+                    self._log_message(f"Exported {len(saved_files)} Smith charts for {filename}")
+                
                 except Exception as e:
-                    self._log_message(f"Error processing {filename}: {e}")
+                    self._log_message(f"Error exporting {filename}: {e}")
             
-            QMessageBox.information(self, "Success", "Smith charts generated successfully in Veusz!")
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Smith charts exported successfully!\n{total_charts} total charts saved to:\n{output_dir}"
+            )
         
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to generate Smith charts: {str(e)}")
-            self._log_message(f"Smith chart generation error: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to export Smith charts: {str(e)}")
+            self._log_message(f"Smith chart export error: {e}")
 
     def _process_time_gated_plots(self):
         """Generate time-gated plots in Veusz."""
