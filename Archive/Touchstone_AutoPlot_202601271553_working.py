@@ -2,22 +2,22 @@
 
 # -*- coding: utf-8 -*-
 
-"""Enhanced Touchstone AutoPlot - Complete Production Version with Advanced Gating.
+"""Enhanced Touchstone AutoPlot - Complete Production Version with Gate Control Fix.
 
 This version integrates modern Qt GUI interface with comprehensive Touchstone file processing
 capabilities using scikit-rf, including:
 
 - Multiprocessing and GPU acceleration (CuPy, PyOpenCL, Taichi)
-- Advanced time domain analysis with Auto/Manual gating functionality using scikit-rf
+- Advanced time domain analysis with gating functionality using scikit-rf
 - Smith Chart plotting using scikit-rf native charts (interactive with PDF bookmarks)
-- Time-gated plot generation in Veusz (time and frequency domain)
-- Phase unwrapping using scikit-rf unwrap_phase
+- Time-gated plot generation in Veusz
 - PDF export with bookmarks for Smith charts
 - CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
+- FIXED: Gate controls always enabled for arbitrary adjustment
+- FIXED: Marker colors applied to both lines and markers in Veusz plots
 
 Author: William W. Wallace
-Last updated: 2026-01-27
-
+Last updated: 2026-01-27 (Gate Control & Color Application Fixes)
 """
 
 # ============================================================================
@@ -31,6 +31,7 @@ import sys
 import datetime
 import tempfile
 import shutil
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
@@ -42,7 +43,6 @@ from contextlib import contextmanager
 
 import numpy as np
 import scipy.signal.windows as windows
-import scipy.signal as signal
 import veusz.embed as vz
 
 # ============================================================================
@@ -142,7 +142,6 @@ class ProcessingConfig:
     enable_gpu_processing: bool = True
     num_processes: int = multiprocessing.cpu_count()
     max_workers: int = multiprocessing.cpu_count()
-    unwrap_phase: bool = False
 
 @dataclass
 class TimeDomainConfig:
@@ -154,9 +153,6 @@ class TimeDomainConfig:
     mode: str = "bandpass"
     tunit: str = "ns"
     auto_gate: bool = True
-    plot_time_domain: bool = True
-    plot_frequency_domain: bool = False
-    gating_type: str = "auto"  # "auto" or "manual"
 
 @dataclass
 class SmithChartConfig:
@@ -167,49 +163,57 @@ class SmithChartConfig:
     reference_impedance: float = 50.0
 
 # ============================================================================
-# COLOR MAPPING FUNCTION
+# S-PARAMETER TO COLOR MAPPING FUNCTION
 # ============================================================================
 
 def get_sparam_color(param_name: str) -> str:
     """Get consistent color for S-parameter based on parameter name.
     
     Provides deterministic color mapping for reflection and transmission parameters
-    to ensure consistency across all plot types.
+    to ensure consistency across all plot types (frequency, time domain, time-gated).
     
     Parameters
     ----------
     param_name : str
-        S-parameter name (e.g., "S11", "S21").
+        S-parameter name (e.g., "S11", "S21", "S34").
         
     Returns
     -------
     str
-        Color name for use in matplotlib and Veusz.
+        Veusz color name for the parameter.
     """
     color_map = {
         # Reflection parameters (diagonal elements)
-        'S11': 'blue', 'S22': 'red', 'S33': 'green', 'S44': 'magenta',
-        'S55': 'orange', 'S66': 'brown', 'S77': 'pink', 'S88': 'grey',
+        'S11': 'blue',
+        'S22': 'red',
+        'S33': 'green',
+        'S44': 'magenta',
+        'S55': 'orange',
+        'S66': 'brown',
+        'S77': 'pink',
+        'S88': 'grey',
         
-        # Forward transmission parameters (row 1)
-        'S21': 'darkblue', 'S31': 'darkgreen', 'S41': 'darkmagenta',
-        'S51': 'darkorange', 'S61': 'darkred', 'S71': 'darkslategray', 'S81': 'darkviolet',
+        # Forward transmission parameters
+        'S21': 'darkblue',
+        'S31': 'darkgreen',
+        'S41': 'darkmagenta',
+        'S51': 'darkcyan',
+        'S61': 'olive',
+        'S71': 'navy',
+        'S81': 'teal',
         
-        # Forward transmission parameters (row 2)
-        'S12': 'cyan', 'S32': 'lightgreen', 'S42': 'lightcyan', 'S52': 'lightyellow',
-        'S62': 'lightcoral', 'S72': 'lightseagreen', 'S82': 'lightslategray',
-        
-        # Forward transmission parameters (row 3)
-        'S13': 'indigo', 'S23': 'turquoise', 'S43': 'maroon', 'S53': 'mediumblue',
-        'S63': 'mediumcyan', 'S73': 'mediumpurple', 'S83': 'mediumseagreen',
-        
-        # Forward transmission parameters (row 4)
-        'S14': 'navy', 'S24': 'olive', 'S34': 'orchid', 'S54': 'peachpuff',
-        'S64': 'peru', 'S74': 'plum', 'S84': 'powderblue',
-        
-        # Additional parameters
-        'S15': 'purple', 'S25': 'rosybrown', 'S35': 'royalblue', 'S45': 'saddlebrown',
-        'S65': 'salmon', 'S75': 'sandybrown', 'S85': 'seagreen',
+        # Other transmission parameters
+        'S12': 'cyan',
+        'S13': 'purple',
+        'S14': 'darkcyan',
+        'S23': 'lightblue',
+        'S24': 'lightgreen',
+        'S34': 'indigo',
+        'S43': 'maroon',
+        'S52': 'coral',
+        'S62': 'khaki',
+        'S72': 'lavender',
+        'S82': 'lightgrey',
     }
     return color_map.get(param_name, 'auto')
 
@@ -298,17 +302,20 @@ class TimeDomainProcessor:
                     s_time_unfiltered = np.fft.ifft(s_windowed) * num_freq
                     results[f"{param_name}_td"] = s_time_unfiltered
 
-                    # Apply time-domain gating (both auto and manual)
-                    try:
-                        s_time_gated = self._apply_time_gate(
-                            s_time_unfiltered,
-                            time_ns,
-                            self.config.gate_center,
-                            self.config.gate_span
-                        )
-                        results[f"{param_name}_td_filtered"] = s_time_gated
-                    except Exception as e:
-                        print(f"Warning: Time gating failed for {param_name}: {e}")
+                    # Apply time-domain gating if auto_gate enabled
+                    if self.config.auto_gate:
+                        try:
+                            s_time_gated = self._apply_time_gate(
+                                s_time_unfiltered,
+                                time_ns,
+                                self.config.gate_center,
+                                self.config.gate_span
+                            )
+                            results[f"{param_name}_td_filtered"] = s_time_gated
+                        except Exception as e:
+                            print(f"Warning: Time gating failed for {param_name}: {e}")
+                            results[f"{param_name}_td_filtered"] = s_time_unfiltered
+                    else:
                         results[f"{param_name}_td_filtered"] = s_time_unfiltered
 
             # Store frequency and time information
@@ -323,7 +330,7 @@ class TimeDomainProcessor:
         return results
 
     def _apply_time_gate(self, time_domain_data: np.ndarray, time_array: np.ndarray,
-                        gate_center: float, gate_span: float) -> np.ndarray:
+                         gate_center: float, gate_span: float) -> np.ndarray:
         """Apply time-domain gating with Hamming window smoothing.
         
         Parameters
@@ -376,23 +383,28 @@ class TimeDomainProcessor:
         try:
             if GPU_AVAILABLE == "cupy":
                 import cupy as cp
+
                 # Transfer to GPU, perform IFFT with scaling, transfer back
                 gpu_data = cp.asarray(s_data, dtype=cp.complex128)
                 gpu_result = cp.fft.ifft(gpu_data) * len(s_data)
                 return cp.asnumpy(gpu_result)
+
             elif GPU_AVAILABLE == "opencl":
                 # OpenCL doesn't have built-in FFT in standard libraries
                 # Fall back to NumPy
                 print("Note: OpenCL lacks production FFT support, using NumPy CPU")
                 return np.fft.ifft(s_data) * len(s_data)
+
             elif GPU_AVAILABLE == "taichi":
                 # Taichi is better for custom kernels, not FFT
                 # Fall back to NumPy
                 print("Note: Taichi is designed for custom kernels, using NumPy CPU for FFT")
                 return np.fft.ifft(s_data) * len(s_data)
+
         except Exception as e:
             print(f"Warning: GPU acceleration failed, falling back to CPU: {e}")
-            return np.fft.ifft(s_data) * len(s_data)
+
+        return np.fft.ifft(s_data) * len(s_data)
 
 # ============================================================================
 # SMITH CHART PLOTTER - SCIKIT-RF NATIVE
@@ -448,15 +460,18 @@ class SmithChartPlottermpld3:
                     freq_ghz = network.frequency.f / 1e9
                     s_data = network.s[:, 0, 0]
                     labels = []
+
                     for i in range(len(freq_ghz)):
                         freq = freq_ghz[i]
                         s_val = s_data[i]
                         mag = np.abs(s_val)
                         phase = np.angle(s_val, deg=True)
+
                         if mag < 1.0:
                             vswr = (1 + mag) / (1 - mag + 1e-12)
                         else:
                             vswr = 10.0
+
                         label = (f"{param_name}\n"
                                 f"Frequency: {freq:.2f} GHz\n"
                                 f"Magnitude: {mag:.4f}\n"
@@ -475,6 +490,7 @@ class SmithChartPlottermpld3:
                                 tooltip = plugins.LineLabelTooltip(artist, labels)
                                 mpld3.plugins.connect(fig, tooltip)
                                 break
+
                 except Exception as e:
                     print(f"Warning: Could not add tooltips: {e}")
 
@@ -509,6 +525,7 @@ class SmithChartPlottermpld3:
         """
         try:
             fig, _ = self.create_smith_chart(network, param_name, chart_type)
+
             if export_format.lower() == "html":
                 if not MPLD3_AVAILABLE:
                     print("Warning: mpld3 not available, saving as PNG instead")
@@ -516,15 +533,20 @@ class SmithChartPlottermpld3:
                               format='png', dpi=150, bbox_inches='tight')
                     plt.close(fig)
                     return True
+
                 html_str = mpld3.fig_to_html(fig)
                 with open(output_path, 'w') as f:
                     f.write(html_str)
+
             elif export_format.lower() == "png":
                 fig.savefig(output_path, format='png', dpi=150, bbox_inches='tight')
+
             elif export_format.lower() == "svg":
                 fig.savefig(output_path, format='svg', bbox_inches='tight')
+
             elif export_format.lower() == "pdf":
                 fig.savefig(output_path, format='pdf', bbox_inches='tight')
+
             else:
                 print(f"Unknown export format: {export_format}")
                 plt.close(fig)
@@ -556,21 +578,27 @@ class SmithChartPlottermpld3:
         try:
             writer = PdfWriter()
             current_page = 0
+
             for pdf_path, bookmark_name in pdf_files:
                 try:
                     reader = PdfReader(pdf_path)
                     num_pages = len(reader.pages)
+
                     for page in reader.pages:
                         writer.add_page(page)
+
                     writer.add_outline_item(bookmark_name, current_page)
                     current_page += num_pages
+
                 except Exception as e:
                     print(f"Warning: Could not process {pdf_path}: {e}")
                     continue
 
             writer.page_mode = "/UseOutlines"
+
             with open(output_path, 'wb') as f:
                 writer.write(f)
+
             return True
 
         except Exception as e:
@@ -585,7 +613,7 @@ class TouchstonePlotter:
     """Handles Veusz plotting for Touchstone files."""
 
     def __init__(self, plot_title: str = "Touchstone S-Parameter Analysis",
-                dataset_name: str = "Touchstone_Dataset"):
+                 dataset_name: str = "Touchstone_Dataset"):
         """Initialize the Veusz plotter."""
         self.plot_title = plot_title
         self.dataset_name = dataset_name
@@ -619,33 +647,18 @@ class TouchstonePlotter:
             g.y.min.val = y_min
             g.y.max.val = y_max
 
-    def _configure_xy_plot(self, xy, x_data, y_data, color, transparency=0):
-        """Configure an XY plot with consistent color for line AND markers.
-        
-        Parameters
-        ----------
-        xy : object
-            Veusz xy plot widget.
-        x_data : str
-            Name of x-axis dataset.
-        y_data : str
-            Name of y-axis dataset.
-        color : str
-            Color for line and markers.
-        transparency : int
-            Transparency level (0=opaque, 100=transparent).
-        """
+    def _configure_xy_plot(self, xy, x_data, y_data, color):
+        """Configure an XY plot with consistent color for line AND markers."""
         with self._wrap_widget(xy) as plot:
             plot.xData.val = x_data
             plot.yData.val = y_data
             plot.PlotLine.color.val = color
             plot.PlotLine.width.val = '2pt'
-            plot.PlotLine.transparency.val = transparency
             plot.marker.val = 'circle'
             plot.markerSize.val = '2pt'
             # FIXED: Apply color to markers, not 'auto'
             plot.MarkerFill.color.val = color
-            plot.MarkerFill.transparency.val = transparency
+            plot.MarkerFill.transparency.val = 20
             # Also set marker outline color for consistency
             plot.MarkerLine.color.val = color
             plot.MarkerLine.width.val = '1pt'
@@ -664,6 +677,7 @@ class TouchstonePlotter:
         network = data['network']
         n_ports = network.nports
         freq_name = f"{dataset_name}_freq"
+
         self.doc.SetData(freq_name, network.frequency.f / 1e9)
 
         page = self.doc.Root.Add('page', name=f"SParam_{dataset_name}")
@@ -701,9 +715,11 @@ class TouchstonePlotter:
                 self.doc.SetData(phase_name, phase_deg)
 
                 xy_mag = graph_mag.Add('xy', name=f"{param_name}_mag")
+                # FIXED: Use consistent color for both lines and markers
                 self._configure_xy_plot(xy_mag, freq_name, mag_name, get_sparam_color(param_name))
 
                 xy_phase = graph_phase.Add('xy', name=f"{param_name}_phase")
+                # FIXED: Use consistent color for both lines and markers
                 self._configure_xy_plot(xy_phase, freq_name, phase_name, get_sparam_color(param_name))
 
     def create_time_domain_plots(self, filename: str, data: dict, td_result: dict):
@@ -714,10 +730,12 @@ class TouchstonePlotter:
         try:
             network = data['network']
             dataset_name = filename.replace('.', '_').replace('-', '_')
+
             for i in range(network.nports):
                 for j in range(network.nports):
                     param_name = f"S{i + 1}{j + 1}"
                     self._create_time_domain_page(dataset_name, param_name, data, td_result)
+
         except Exception as e:
             print(f"Error creating time domain plots: {e}")
 
@@ -744,7 +762,11 @@ class TouchstonePlotter:
             page_td.notes.val = '\n'.join(data['header_info'])
 
         graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time Domain"
-        self._configure_standard_graph(graph_td, graph_title, 'Time (ns)', 'Magnitude', 0, 1)
+
+        self._configure_standard_graph(
+            graph_td, graph_title,
+            'Time (ns)', 'Magnitude', 0, 1
+        )
 
         xy_unfilt = graph_td.Add('xy', name=f"{param_name}_td_unfilt")
         with self._wrap_widget(xy_unfilt) as plot:
@@ -756,55 +778,28 @@ class TouchstonePlotter:
             plot.marker.val = 'none'
 
         xy_filt = graph_td.Add('xy', name=f"{param_name}_td_filt")
-        # FIXED: Use color function and apply 75% transparency (25% opacity)
-        self._configure_xy_plot(xy_filt, time_name, td_filt_name, get_sparam_color(param_name), transparency=75)
+        # FIXED: Use consistent color for both lines and markers
+        self._configure_xy_plot(xy_filt, time_name, td_filt_name, get_sparam_color(param_name))
 
-    def create_time_gated_plots(self, filename: str, data: dict, td_result: dict,
-                              plot_time_domain: bool = True, plot_frequency_domain: bool = False):
-        """Create time-gated plots in Veusz with optional frequency domain conversion.
-        
-        Parameters
-        ----------
-        filename : str
-            Input file name.
-        data : dict
-            Processed Touchstone data.
-        td_result : dict
-            Time domain processing results.
-        plot_time_domain : bool
-            If True, create time domain plots.
-        plot_frequency_domain : bool
-            If True, create frequency domain magnitude plots (dB) of gated response.
-        """
+    def create_time_gated_plots(self, filename: str, data: dict, td_result: dict):
+        """Create time-gated plots in Veusz with _timegated postfix."""
         if 'error' in td_result and td_result['error']:
             return
 
         try:
             network = data['network']
             dataset_name = filename.replace('.', '_').replace('-', '_')
+
             for i in range(network.nports):
                 for j in range(network.nports):
                     param_name = f"S{i + 1}{j + 1}"
-                    self._create_time_gated_page(
-                        dataset_name, param_name, data, td_result,
-                        plot_time_domain=plot_time_domain,
-                        plot_frequency_domain=plot_frequency_domain
-                    )
+                    self._create_time_gated_page(dataset_name, param_name, data, td_result)
+
         except Exception as e:
             print(f"Error creating time-gated plots: {e}")
 
-    def _create_time_gated_page(self, dataset_name, param_name, data, td_result,
-                               plot_time_domain: bool = True,
-                               plot_frequency_domain: bool = False):
-        """Create time-gated plot page with optional frequency domain.
-        
-        Parameters
-        ----------
-        plot_time_domain : bool
-            If True, plot time domain gated response.
-        plot_frequency_domain : bool
-            If True, plot FFT of gated response in frequency domain (magnitude in dB).
-        """
+    def _create_time_gated_page(self, dataset_name, param_name, data, td_result):
+        """Create time-gated plot page with _timegated tag."""
         time_name = f"{dataset_name}_{param_name}_timegated_time"
         td_gated_name = f"{dataset_name}_{param_name}_timegated"
 
@@ -816,46 +811,22 @@ class TouchstonePlotter:
 
         tg_page_name = f"{dataset_name}_{param_name}_TimeGated"
         page_tg = self.doc.Root.Add('page', name=tg_page_name)
-
-        num_cols = 2 if plot_time_domain and plot_frequency_domain else 1
-        grid_tg = page_tg.Add('grid', columns=num_cols)
+        grid_tg = page_tg.Add('grid', columns=2)
+        graph_tg = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Graph")
 
         if 'header_info' in data:
             page_tg.notes.val = '\n'.join(data['header_info'])
 
-        # TIME DOMAIN PLOT
-        if plot_time_domain:
-            graph_tg = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Graph")
-            graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time-Gated"
-            self._configure_standard_graph(graph_tg, graph_title, 'Time (ns)', 'Magnitude', 0, 1)
+        graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time-Gated"
 
-            xy_tg = graph_tg.Add('xy', name=f"{param_name}_timegated")
-            self._configure_xy_plot(xy_tg, time_name, td_gated_name, get_sparam_color(param_name))
+        self._configure_standard_graph(
+            graph_tg, graph_title,
+            'Time (ns)', 'Magnitude', 0, 1
+        )
 
-        # FREQUENCY DOMAIN PLOT (Magnitude in dB of gated response)
-        if plot_frequency_domain:
-            freq_name_gated = f"{dataset_name}_{param_name}_timegated_freq"
-            mag_name_gated = f"{dataset_name}_{param_name}_timegated_mag"
-
-            # FFT of gated time-domain data
-            gated_fft = np.fft.fft(td_gated_data)
-            mag_db_gated = 20 * np.log10(np.abs(gated_fft) + 1e-12)
-
-            # Create frequency array for FFT
-            freq_spacing_hz = np.mean(np.diff(td_result.get('frequency', [])))
-            num_freq = len(td_gated_data)
-            freq_fft = np.fft.fftfreq(num_freq, 1.0 / (num_freq * freq_spacing_hz))
-            freq_fft_ghz = freq_fft / 1e9
-
-            self.doc.SetData(freq_name_gated, freq_fft_ghz)
-            self.doc.SetData(mag_name_gated, mag_db_gated)
-
-            graph_tg_freq = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Freq_Graph")
-            graph_title_freq = f"{dataset_name.replace('_', ' ')} - {param_name} Time-Gated (Frequency Domain)"
-            self._configure_standard_graph(graph_tg_freq, graph_title_freq, 'Frequency (GHz)', 'Magnitude (dB)', -80, 20)
-
-            xy_tg_freq = graph_tg_freq.Add('xy', name=f"{param_name}_timegated_freq")
-            self._configure_xy_plot(xy_tg_freq, freq_name_gated, mag_name_gated, get_sparam_color(param_name))
+        xy_tg = graph_tg.Add('xy', name=f"{param_name}_timegated")
+        # FIXED: Use consistent color for both lines and markers
+        self._configure_xy_plot(xy_tg, time_name, td_gated_name, get_sparam_color(param_name))
 
     def save(self, filename: str):
         """Save Veusz project."""
@@ -903,6 +874,7 @@ class TouchstonePlotCanvas(FigureCanvas):
                     s_param = network.s[:, i, j]
                     ax.plot(s_param.real, s_param.imag, label=f"S{i + 1}{j + 1}",
                            marker="o", markersize=3)
+
             ax.set_xlabel("Real Part")
             ax.set_ylabel("Imaginary Part")
             ax.set_title(f"Complex Plane - {title}")
@@ -921,13 +893,14 @@ class TouchstonePlotCanvas(FigureCanvas):
                label="Unfiltered", linestyle="dotted")
 
         if td_filtered_data is not None:
-            ax.plot(time, np.abs(td_filtered_data), "-", linewidth=2, label="Gated (75% transparent)", alpha=0.25)
+            ax.plot(time, np.abs(td_filtered_data), "-", linewidth=2, label="Filtered")
 
         ax.set_xlabel("Time (ns)")
         ax.set_ylabel("Magnitude")
         ax.set_title(title)
         ax.grid(True, alpha=0.3)
         ax.legend()
+
         self.draw()
 
 # ============================================================================
@@ -952,6 +925,7 @@ def process_single_touchstone_file(file_info: Tuple) -> Tuple[str, Optional[dict
                         header_info.append(line.strip())
                     elif line[0].isdigit():
                         break
+
         except Exception as e:
             print(f"Warning: Could not extract header from {filename}: {e}")
 
@@ -1015,22 +989,20 @@ class TouchstoneProcessingThread(QThread):
 # ============================================================================
 
 class TouchstoneMainWindow(QMainWindow):
-    """Main window for Touchstone AutoPlot application with advanced features."""
+    """Main window for Touchstone AutoPlot application with THREE tabs."""
 
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
-        self.setWindowTitle("Enhanced Touchstone AutoPlot - Advanced Gating Edition")
+        self.setWindowTitle("Enhanced Touchstone AutoPlot - Complete Edition")
         self.setGeometry(100, 100, 1600, 1000)
 
         self.config = ProcessingConfig()
         self.td_config = TimeDomainConfig()
         self.smith_config = SmithChartConfig()
-
         self.touchstone_plotter = None
         self.td_processor = TimeDomainProcessor(self.td_config)
         self.smith_plotter_mpld3 = SmithChartPlottermpld3()
-
         self.selected_files = []
         self.processed_data = {}
         self.td_results = {}
@@ -1047,8 +1019,8 @@ class TouchstoneMainWindow(QMainWindow):
         """Set up the user interface with tab widget."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
 
+        main_layout = QVBoxLayout(central_widget)
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
 
@@ -1086,15 +1058,18 @@ class TouchstoneMainWindow(QMainWindow):
         """Setup the main processing tab."""
         main_tab = QWidget()
         self.tab_widget.addTab(main_tab, "Main Processing")
+
         layout = QVBoxLayout(main_tab)
 
         file_group = QGroupBox("Touchstone File Selection")
         file_layout = QVBoxLayout(file_group)
+
         self.file_list_widget = QListWidget()
         self.file_list_widget.setMinimumHeight(150)
         file_layout.addWidget(self.file_list_widget)
 
         browse_layout = QHBoxLayout()
+
         self.browse_button = QPushButton("Browse Touchstone Files")
         self.browse_button.clicked.connect(self._browse_files)
         browse_layout.addWidget(self.browse_button)
@@ -1116,6 +1091,7 @@ class TouchstoneMainWindow(QMainWindow):
 
         cpu_layout = QHBoxLayout()
         cpu_layout.addWidget(QLabel("CPU Cores:"))
+
         self.cpu_spinbox = QSpinBox()
         self.cpu_spinbox.setMinimum(1)
         self.cpu_spinbox.setMaximum(multiprocessing.cpu_count())
@@ -1147,30 +1123,26 @@ class TouchstoneMainWindow(QMainWindow):
         dataset_layout.addWidget(self.dataset_name_edit)
         plot_layout.addLayout(dataset_layout)
 
-        # PHASE UNWRAP CHECKBOX - NEW FEATURE
-        self.unwrap_phase_checkbox = QCheckBox("Unwrap Phase Data")
-        self.unwrap_phase_checkbox.setChecked(False)
-        self.unwrap_phase_checkbox.stateChanged.connect(self._update_unwrap_phase)
-        plot_layout.addWidget(self.unwrap_phase_checkbox)
-
         layout.addWidget(plot_group)
-        layout.addStretch()
 
     def setup_time_domain_tab(self):
         """Setup the time domain analysis tab."""
         td_tab = QWidget()
         self.tab_widget.addTab(td_tab, "Time Domain Analysis")
+
         layout = QHBoxLayout(td_tab)
 
         controls_widget = QWidget()
-        controls_widget.setMaximumWidth(380)
+        controls_widget.setMaximumWidth(350)
         controls_layout = QVBoxLayout(controls_widget)
 
         file_select_group = QGroupBox("File Selection for Preview")
         file_select_layout = QVBoxLayout(file_select_group)
+
         self.td_file_combo = QComboBox()
         self.td_file_combo.currentTextChanged.connect(self._update_td_preview)
         file_select_layout.addWidget(self.td_file_combo)
+
         controls_layout.addWidget(file_select_group)
 
         window_group = QGroupBox("Window Settings")
@@ -1190,16 +1162,13 @@ class TouchstoneMainWindow(QMainWindow):
 
         controls_layout.addWidget(window_group)
 
-        # GATING GROUP - ENHANCED WITH AUTO/MANUAL SELECTION
         gate_group = QGroupBox("Gating Settings")
         gate_layout = QFormLayout(gate_group)
 
-        # Gating Type Selection
-        self.gating_type_combo = QComboBox()
-        self.gating_type_combo.addItems(["Auto Gate", "Manual Gate"])
-        self.gating_type_combo.setCurrentText("Auto Gate")
-        self.gating_type_combo.currentTextChanged.connect(self._update_gating_type)
-        gate_layout.addRow("Gating Mode:", self.gating_type_combo)
+        self.auto_gate_checkbox = QCheckBox("Auto Gate")
+        self.auto_gate_checkbox.setChecked(self.td_config.auto_gate)
+        self.auto_gate_checkbox.stateChanged.connect(self._update_auto_gate)
+        gate_layout.addRow(self.auto_gate_checkbox)
 
         self.gate_center_spin = QDoubleSpinBox()
         self.gate_center_spin.setRange(-100.0, 100.0)
@@ -1215,27 +1184,12 @@ class TouchstoneMainWindow(QMainWindow):
         self.gate_span_spin.valueChanged.connect(self._update_gate_span)
         gate_layout.addRow("Gate Span:", self.gate_span_spin)
 
-        # Both controls always enabled now
-        self.gate_center_spin.setEnabled(True)
-        self.gate_span_spin.setEnabled(True)
+        # FIXED: Gate controls are always enabled for user adjustment.
+        # The checkbox controls whether gating is APPLIED, not whether controls are accessible.
+        # Removed: self.gate_center_spin.setEnabled(self.td_config.auto_gate)
+        # Removed: self.gate_span_spin.setEnabled(self.td_config.auto_gate)
 
         controls_layout.addWidget(gate_group)
-
-        # PLOT OUTPUT OPTIONS - NEW FEATURE
-        plot_options_group = QGroupBox("Plot Output Options")
-        plot_options_layout = QVBoxLayout(plot_options_group)
-
-        self.plot_time_domain_checkbox = QCheckBox("Plot in Time Domain")
-        self.plot_time_domain_checkbox.setChecked(self.td_config.plot_time_domain)
-        self.plot_time_domain_checkbox.stateChanged.connect(self._update_plot_time_domain)
-        plot_options_layout.addWidget(self.plot_time_domain_checkbox)
-
-        self.plot_frequency_domain_checkbox = QCheckBox("Plot in Frequency Domain (gated response, magnitude in dB)")
-        self.plot_frequency_domain_checkbox.setChecked(self.td_config.plot_frequency_domain)
-        self.plot_frequency_domain_checkbox.stateChanged.connect(self._update_plot_frequency_domain)
-        plot_options_layout.addWidget(self.plot_frequency_domain_checkbox)
-
-        controls_layout.addWidget(plot_options_group)
 
         method_group = QGroupBox("Processing Settings")
         method_layout = QFormLayout(method_group)
@@ -1254,6 +1208,7 @@ class TouchstoneMainWindow(QMainWindow):
         controls_layout.addWidget(self.td_timegated_button)
 
         controls_layout.addStretch()
+
         layout.addWidget(controls_widget)
 
         self.td_plot_canvas = TouchstonePlotCanvas(td_tab, width=8, height=6)
@@ -1263,6 +1218,7 @@ class TouchstoneMainWindow(QMainWindow):
         """Setup the Smith Chart analysis tab."""
         smith_tab = QWidget()
         self.tab_widget.addTab(smith_tab, "Smith Chart Analysis")
+
         layout = QHBoxLayout(smith_tab)
 
         controls_widget = QWidget()
@@ -1271,9 +1227,11 @@ class TouchstoneMainWindow(QMainWindow):
 
         file_select_group = QGroupBox("File Selection for Preview")
         file_select_layout = QVBoxLayout(file_select_group)
+
         self.smith_file_combo = QComboBox()
         self.smith_file_combo.currentTextChanged.connect(self._update_smith_preview)
         file_select_layout.addWidget(self.smith_file_combo)
+
         controls_layout.addWidget(file_select_group)
 
         smith_group = QGroupBox("Smith Chart Settings")
@@ -1327,16 +1285,20 @@ class TouchstoneMainWindow(QMainWindow):
         controls_layout.addWidget(self.smith_export_button)
 
         controls_layout.addStretch()
+
         layout.addWidget(controls_widget)
 
         right_layout = QVBoxLayout()
+
         self.smith_plot_canvas = TouchstonePlotCanvas(smith_tab, width=10, height=10)
         self.smith_toolbar = NavigationToolbar(self.smith_plot_canvas, smith_tab)
+
         right_layout.addWidget(self.smith_toolbar)
         right_layout.addWidget(self.smith_plot_canvas)
 
         right_widget = QWidget()
         right_widget.setLayout(right_layout)
+
         layout.addWidget(right_widget)
 
     # ========================================================================
@@ -1402,12 +1364,6 @@ class TouchstoneMainWindow(QMainWindow):
         status_msg = f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}"
         self._log_message(status_msg)
 
-    def _update_unwrap_phase(self, state: int):
-        """Update phase unwrap configuration."""
-        self.config.unwrap_phase = (state == Qt.Checked)
-        status_msg = f"Phase unwrapping: {'Enabled' if self.config.unwrap_phase else 'Disabled'}"
-        self._log_message(status_msg)
-
     def _update_window_config(self, window_type: str):
         """Update window type configuration."""
         self.td_config.window_type = window_type
@@ -1423,14 +1379,14 @@ class TouchstoneMainWindow(QMainWindow):
         self.td_config.mode = mode
         self._update_td_preview()
 
-    def _update_gating_type(self, gating_type: str):
-        """Update gating type (Auto or Manual)."""
-        if "Auto" in gating_type:
-            self.td_config.gating_type = "auto"
-            self._log_message("Gating mode: Auto (adjusts per file)")
-        else:
-            self.td_config.gating_type = "manual"
-            self._log_message("Gating mode: Manual (same parameters for all files)")
+    def _update_auto_gate(self, state: int):
+        """Update auto gate configuration.
+        
+        FIXED: Gate controls are always enabled for user adjustment.
+        The checkbox controls whether gating is APPLIED, not whether controls are accessible.
+        """
+        self.td_config.auto_gate = (state == Qt.Checked)
+        # Gate controls remain enabled - user can adjust them regardless of checkbox state
         self._update_td_preview()
 
     def _update_gate_center(self, value: float):
@@ -1442,24 +1398,6 @@ class TouchstoneMainWindow(QMainWindow):
         """Update gate span configuration."""
         self.td_config.gate_span = value
         self._update_td_preview()
-
-    def _update_plot_time_domain(self, state: int):
-        """Update time domain plot option."""
-        self.td_config.plot_time_domain = (state == Qt.Checked)
-        self._update_timegated_button_state()
-        self._log_message(f"Time domain plots: {'Enabled' if self.td_config.plot_time_domain else 'Disabled'}")
-
-    def _update_plot_frequency_domain(self, state: int):
-        """Update frequency domain plot option."""
-        self.td_config.plot_frequency_domain = (state == Qt.Checked)
-        self._update_timegated_button_state()
-        self._log_message(f"Frequency domain plots (gated): {'Enabled' if self.td_config.plot_frequency_domain else 'Disabled'}")
-
-    def _update_timegated_button_state(self):
-        """Enable/disable time-gated button based on plot options."""
-        # Button is enabled only if at least one plot option is checked
-        both_unchecked = not self.td_config.plot_time_domain and not self.td_config.plot_frequency_domain
-        self.td_timegated_button.setEnabled(not both_unchecked and len(self.processed_data) > 0)
 
     def _update_chart_type(self, chart_type_text: str):
         """Update Smith Chart type configuration."""
@@ -1497,6 +1435,7 @@ class TouchstoneMainWindow(QMainWindow):
                 td_filtered = td_result.get('S11_td_filtered', np.array([]))
 
                 plot_title = f"{current_file} - Time Domain"
+
                 self.td_plot_canvas.plot_time_domain(
                     time_data, td_data, td_filtered, title=plot_title
                 )
@@ -1514,6 +1453,7 @@ class TouchstoneMainWindow(QMainWindow):
                 preview_network.s = network.s[:, 0, 0].reshape(-1, 1, 1)
 
                 plot_title = f"{current_file} - S11"
+
                 self.smith_plot_canvas.plot_smith_chart(
                     preview_network,
                     title=plot_title,
@@ -1564,7 +1504,7 @@ class TouchstoneMainWindow(QMainWindow):
             self._update_smith_file_combo()
             self.save_button.setEnabled(True)
             self.smith_process_button.setEnabled(True)
-            self._update_timegated_button_state()
+            self.td_timegated_button.setEnabled(True)
 
             for filename, data in self.processed_data.items():
                 if data:
@@ -1635,8 +1575,8 @@ class TouchstoneMainWindow(QMainWindow):
                 self._log_message(f"Displayed: {first_key}")
 
                 QMessageBox.information(self, "Success",
-                                       f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
-                                       "Click Export to save in selected format.")
+                    f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
+                    "Click Export to save in selected format.")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to prepare Smith charts: {str(e)}")
@@ -1686,7 +1626,6 @@ class TouchstoneMainWindow(QMainWindow):
                         filename = chart_data['filename']
                         param_name = chart_data['param_name']
                         network = chart_data['network']
-
                         base_name = os.path.splitext(filename)[0]
                         temp_pdf = os.path.join(temp_dir, f"{base_name}_{param_name}_temp.pdf")
 
@@ -1736,7 +1675,6 @@ class TouchstoneMainWindow(QMainWindow):
                     filename = chart_data['filename']
                     param_name = chart_data['param_name']
                     network = chart_data['network']
-
                     base_name = os.path.splitext(filename)[0]
                     output_filename = f"{base_name}_{param_name}{ext}"
                     output_path = os.path.join(save_dir, output_filename)
@@ -1767,17 +1705,9 @@ class TouchstoneMainWindow(QMainWindow):
             self._log_message(f"Smith chart export error: {e}")
 
     def _process_time_gated_plots(self):
-        """Generate time-gated plots in Veusz with selected options."""
+        """Generate time-gated plots in Veusz."""
         if not self.processed_data:
             QMessageBox.warning(self, "No Data", "Please process Touchstone files first.")
-            return
-
-        # Check that at least one plot option is selected
-        if not self.td_config.plot_time_domain and not self.td_config.plot_frequency_domain:
-            QMessageBox.warning(
-                self, "No Plot Options",
-                "Please select at least one plot option (Time Domain or Frequency Domain)."
-            )
             return
 
         self._log_message("Generating Time-Gated Plots in Veusz...")
@@ -1788,29 +1718,13 @@ class TouchstoneMainWindow(QMainWindow):
                 try:
                     td_result = self.td_processor.process_network(network)
                     self.td_results[filename] = td_result
-
-                    self.touchstone_plotter.create_time_gated_plots(
-                        filename, data, td_result,
-                        plot_time_domain=self.td_config.plot_time_domain,
-                        plot_frequency_domain=self.td_config.plot_frequency_domain
-                    )
-
+                    self.touchstone_plotter.create_time_gated_plots(filename, data, td_result)
                     self._log_message(f"Time-gated plots generated for {filename}")
 
                 except Exception as e:
                     self._log_message(f"Error processing {filename}: {e}")
 
-            plot_msg = []
-            if self.td_config.plot_time_domain:
-                plot_msg.append("Time Domain")
-            if self.td_config.plot_frequency_domain:
-                plot_msg.append("Frequency Domain (Gated)")
-
-            QMessageBox.information(
-                self, "Success",
-                f"Time-gated plots generated successfully in Veusz!\n"
-                f"Plots created: {', '.join(plot_msg)}"
-            )
+            QMessageBox.information(self, "Success", "Time-gated plots generated successfully in Veusz!")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate time-gated plots: {str(e)}")
