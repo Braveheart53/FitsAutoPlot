@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Enhanced Touchstone AutoPlot with Modern Qt GUI, Time Domain Analysis, HoloViews Smith Charts, and Veusz Integration.
+"""Enhanced Touchstone AutoPlot with Modern Qt GUI, Time Domain Analysis, Veusz, and Interactive Smith Charts.
 
 # %% Header Info
 
@@ -9,22 +9,23 @@ capabilities using scikit-rf, including:
 
 - Multiprocessing and GPU acceleration
 - Advanced time domain analysis with gating functionality
-- Smith Chart plotting using HoloViews with interactive tools
-- Smith Chart export to PNG, PDF, SVG, TIFF, JPG formats
+- Smith Chart plotting using mpld3 (interactive with PDF bookmarks)
 - Time-gated plot generation in Veusz
+- PDF export with bookmarks for Smith charts
 
 # %%% Author
 
 Author: William W. Wallace
-Last updated: 2025-01-27
+Last updated: 2026-01-27
 
 # %%% Key Features
 
-- Veusz integration for S-parameter frequency and time domain visualization
-- Smith Chart plotting using HoloViews (interactive, not in Veusz)
-- Smith Chart export to multiple file formats
+- Veusz integration for S-parameter and time domain visualization
+- Interactive Smith Chart plotting using mpld3 (D3.js based)
+- Hover tooltips with Frequency, Impedance, and VSWR data
+- Smith Chart PDF export with navigable bookmarks
 - Time domain analysis with time-gated plot export to Veusz
-- Multi-page Veusz file support with proper dataset tagging
+- NavigationToolbar2QT for interactive plot navigation
 
 """
 
@@ -36,6 +37,7 @@ import os
 import subprocess
 import sys
 import datetime
+import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from operator import itemgetter
 from typing import List, Dict, Tuple, Optional, Union, Any
@@ -57,31 +59,34 @@ from skrf import Network
 from skrf.time import time_gate
 
 # ============================================================================
-# IMPORTS - Plotting and Visualization (HoloViews for Smith Charts)
+# IMPORTS - Plotting and Visualization (Matplotlib and mpld3)
 # ============================================================================
 import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle
 
-# HoloViews for interactive Smith Charts
 try:
-    import holoviews as hv
-    from holoviews import opts
-    hv.extension('matplotlib')
-    HOLOVIEWS_AVAILABLE = True
+    import mpld3
+    from mpld3 import plugins
+    MPLD3_AVAILABLE = True
 except ImportError:
-    HOLOVIEWS_AVAILABLE = False
-    print("WARNING: HoloViews not installed. Interactive Smith Charts will not be available.")
-    print("Install with: pip install holoviews")
+    MPLD3_AVAILABLE = False
+    print("WARNING: mpld3 not installed. Interactive Smith charts will not be available.")
+    print("Install with: pip install mpld3")
+
+import holoviews as hv
+from holoviews import opts
+hv.extension('bokeh')
 
 # ============================================================================
-# IMPORTS - PDF Processing (for Smith chart export)
+# IMPORTS - PDF Processing (for Smith chart PDF export with bookmarks)
 # ============================================================================
 try:
-    from PyPDF2 import PdfMerger, PdfWriter
+    from PyPDF2 import PdfMerger, PdfWriter, PdfReader
 except ImportError:
     print("WARNING: PyPDF2 not installed. PDF merging will not be available.")
     print("Install with: pip install PyPDF2")
@@ -177,13 +182,430 @@ class SmithChartConfig:
     marker_style: str = "circle"
     marker_size: int = 4
     line_width: float = 1.5
-    output_format: str = "png"  # png, pdf, svg, tiff, jpg
 
 # ============================================================================
-# VEUSZ PLOTTER CLASS (Frequency and Time Domain Only)
+# SMITH CHART PLOTTER - MPLD3 INTERACTIVE VERSION
 # ============================================================================
+class SmithChartPlottermpld3:
+    """Handles interactive Smith Chart plotting using mpld3 and matplotlib."""
+
+    def __init__(self, reference_impedance: float = 50.0):
+        """Initialize the mpld3 Smith Chart plotter."""
+        self.reference_impedance = reference_impedance
+        self.plots = {}
+
+    def create_smith_chart(self, frequency: np.ndarray, s_param: np.ndarray,
+                          param_name: str = "S11") -> Tuple[Figure, np.ndarray, np.ndarray, np.ndarray]:
+        """Create an interactive Smith Chart visualization.
+        
+        Parameters
+        ----------
+        frequency : np.ndarray.
+            Frequency array in Hz.
+        s_param : np.ndarray.
+            Complex S-parameter data.
+        param_name : str.
+            Parameter name for labeling (e.g., "S11", "S21").
+            
+        Returns
+        -------
+        Tuple[Figure, np.ndarray, np.ndarray, np.ndarray].
+            (matplotlib figure, real_part, imag_part, vswr).
+        """
+        freq_ghz = frequency / 1e9
+        
+        # Extract impedance from S-parameters
+        real_part = np.real(s_param)
+        imag_part = np.imag(s_param)
+        magnitude = np.abs(s_param)
+        
+        # Calculate VSWR from S11 (reflection coefficient)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            vswr = (1 + magnitude) / (1 - magnitude + 1e-12)
+            vswr = np.where(np.isfinite(vswr), vswr, 10.0)  # Cap unreasonable values
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(8, 8))
+        
+        # Plot unit circle (Smith chart reference)
+        theta = np.linspace(0, 2*np.pi, 100)
+        ax.plot(np.cos(theta), np.sin(theta), 'k--', linewidth=0.5, alpha=0.3, label='Unit Circle')
+        
+        # Plot data points colored by frequency
+        scatter = ax.scatter(real_part, imag_part, c=freq_ghz, cmap='viridis', 
+                            s=50, alpha=0.7, edgecolors='black', linewidth=0.5)
+        
+        # Add colorbar
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('Frequency (GHz)', rotation=270, labelpad=20)
+        
+        # Labels and formatting
+        ax.set_xlabel('Real Part (Reflection Coefficient)', fontsize=11)
+        ax.set_ylabel('Imaginary Part (Reflection Coefficient)', fontsize=11)
+        ax.set_title(f'{param_name} - Smith Chart (Complex Plane)', fontsize=13, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.set_aspect('equal')
+        ax.legend(loc='upper right')
+        
+        # Add hover tooltips with mpld3
+        if MPLD3_AVAILABLE:
+            labels = []
+            for i in range(len(freq_ghz)):
+                label = f"Freq: {freq_ghz[i]:.2f} GHz\nZ = {real_part[i]:.3f} {chr(177)} j{abs(imag_part[i]):.3f}\nVSWR: {vswr[i]:.2f}"
+                labels.append(label)
+            
+            tooltip = plugins.PointHTMLTooltip(scatter, labels, voffset=10, hoffset=10)
+            mpld3.plugins.connect(fig, tooltip)
+        
+        self.plots[param_name] = fig
+        return fig, real_part, imag_part, vswr
+
+    def export_to_html(self, fig: Figure, filepath: str, param_name: str = "Smith Chart") -> bool:
+        """Export matplotlib figure to interactive HTML using mpld3.
+        
+        Parameters
+        ----------
+        fig : Figure.
+            Matplotlib figure object.
+        filepath : str.
+            Output HTML file path.
+        param_name : str.
+            Parameter name for title.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        if not MPLD3_AVAILABLE:
+            return False
+        
+        try:
+            html_str = mpld3.fig_to_html(fig)
+            with open(filepath, 'w') as f:
+                f.write(html_str)
+            return True
+        except Exception as e:
+            print(f"Error exporting to HTML: {e}")
+            return False
+
+    def export_to_png(self, fig: Figure, filepath: str) -> bool:
+        """Export matplotlib figure to PNG.
+        
+        Parameters
+        ----------
+        fig : Figure.
+            Matplotlib figure object.
+        filepath : str.
+            Output PNG file path.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            fig.savefig(filepath, format='png', dpi=150, bbox_inches='tight')
+            return True
+        except Exception as e:
+            print(f"Error exporting to PNG: {e}")
+            return False
+
+    def export_to_svg(self, fig: Figure, filepath: str) -> bool:
+        """Export matplotlib figure to SVG.
+        
+        Parameters
+        ----------
+        fig : Figure.
+            Matplotlib figure object.
+        filepath : str.
+            Output SVG file path.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            fig.savefig(filepath, format='svg', bbox_inches='tight')
+            return True
+        except Exception as e:
+            print(f"Error exporting to SVG: {e}")
+            return False
+
+    def export_to_pdf(self, fig: Figure, filepath: str) -> bool:
+        """Export matplotlib figure to PDF.
+        
+        Parameters
+        ----------
+        fig : Figure.
+            Matplotlib figure object.
+        filepath : str.
+            Output PDF file path.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            fig.savefig(filepath, format='pdf', bbox_inches='tight')
+            return True
+        except Exception as e:
+            print(f"Error exporting to PDF: {e}")
+            return False
+
+    @staticmethod
+    def create_pdf_with_bookmarks(pdf_files: List[Tuple[str, str]], output_path: str) -> bool:
+        """Merge PDFs and add bookmarks for navigation.
+        
+        Parameters
+        ----------
+        pdf_files : List[Tuple[str, str]].
+            List of (filepath, bookmark_name) tuples.
+        output_path : str.
+            Output PDF path with bookmarks.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            writer = PdfWriter()
+            current_page = 0
+            
+            for pdf_path, bookmark_name in pdf_files:
+                try:
+                    reader = PdfReader(pdf_path)
+                    for page in reader.pages:
+                        writer.add_page(page)
+                        current_page += 1
+                    
+                    # Add bookmark pointing to first page of this PDF
+                    writer.add_outline_item(bookmark_name, current_page - len(reader.pages))
+                except Exception as e:
+                    print(f"Warning: Could not process {pdf_path}: {e}")
+                    continue
+            
+            # Enable bookmark pane on PDF open
+            writer.page_mode = "/UseOutlines"
+            
+            # Write output PDF
+            with open(output_path, 'wb') as f:
+                writer.write(f)
+            
+            return True
+        except Exception as e:
+            print(f"Error creating PDF with bookmarks: {e}")
+            return False
+
+# ============================================================================
+# VEUSZ PLOTTER CLASS
+# ============================================================================
+class SmithChartPlotterHoloViews:
+    """Handles interactive Smith Chart plotting using HoloViews and Bokeh."""
+
+    def __init__(self, reference_impedance: float = 50.0):
+        """Initialize the HoloViews Smith Chart plotter."""
+        self.reference_impedance = reference_impedance
+        self.plots = {}
+
+    def create_smith_chart(self, frequency: np.ndarray, s_param: np.ndarray,
+                          param_name: str = "S11", plot_type: str = "complex") -> hv.Overlay:
+        """Create an interactive Smith Chart visualization.
+        
+        Parameters
+        ----------
+        frequency : np.ndarray.
+            Frequency array in Hz.
+        s_param : np.ndarray.
+            Complex S-parameter data.
+        param_name : str.
+            Parameter name for labeling (e.g., "S11", "S21").
+        plot_type : str.
+            "complex" for real/imag plane, "mag_phase" for magnitude/phase.
+            
+        Returns
+        -------
+        hv.Overlay.
+            Interactive HoloViews overlay plot.
+        """
+        freq_ghz = frequency / 1e9
+        
+        if plot_type == "complex":
+            real_part = np.real(s_param)
+            imag_part = np.imag(s_param)
+            
+            data = {
+                'Real': real_part,
+                'Imaginary': imag_part,
+                'Frequency (GHz)': freq_ghz,
+                'Magnitude': np.abs(s_param),
+                'Phase (deg)': np.angle(s_param, deg=True)
+            }
+            
+            points = hv.Points(
+                data,
+                kdims=['Real', 'Imaginary'],
+                vdims=['Frequency (GHz)', 'Magnitude', 'Phase (deg)'],
+                label=param_name
+            ).opts(
+                opts.Points(
+                    size=4,
+                    color='Magnitude',
+                    cmap='viridis',
+                    alpha=0.7,
+                    tools=['hover', 'box_zoom', 'wheel_zoom', 'pan', 'reset', 'save'],
+                    toolbar_location='right',
+                    width=600,
+                    height=600,
+                    aspect='equal'
+                )
+            )
+            
+            theta = np.linspace(0, 2 * np.pi, 100)
+            circle_x = np.cos(theta)
+            circle_y = np.sin(theta)
+            circle = hv.Curve((circle_x, circle_y), label='Unit Circle').opts(
+                opts.Curve(color='gray', line_width=1, line_dash='dashed')
+            )
+            
+            plot = (circle * points).opts(
+                opts.Overlay(
+                    title=f'{param_name} - Complex Plane',
+                    xlabel='Real Part',
+                    ylabel='Imaginary Part'
+                )
+            )
+            
+        else:  # mag_phase
+            magnitude = np.abs(s_param)
+            phase_deg = np.angle(s_param, deg=True)
+            
+            data = {
+                'Phase (degrees)': phase_deg,
+                'Magnitude': magnitude,
+                'Frequency (GHz)': freq_ghz
+            }
+            
+            plot = hv.Points(
+                data,
+                kdims=['Phase (degrees)'],
+                vdims=['Magnitude', 'Frequency (GHz)'],
+                label=param_name
+            ).opts(
+                opts.Points(
+                    size=4,
+                    color='Frequency (GHz)',
+                    cmap='plasma',
+                    alpha=0.7,
+                    tools=['hover', 'box_zoom', 'wheel_zoom', 'pan', 'reset', 'save'],
+                    toolbar_location='right',
+                    width=600,
+                    height=400
+                )
+            ).opts(
+                opts.Overlay(
+                    title=f'{param_name} - Magnitude vs Phase',
+                    xlabel='Phase (degrees)',
+                    ylabel='Magnitude'
+                )
+            )
+        
+        self.plots[param_name] = plot
+        return plot
+
+    def export_to_html(self, plot: hv.Overlay, filepath: str) -> bool:
+        """Export HoloViews plot to interactive HTML file.
+        
+        Parameters
+        ----------
+        plot : hv.Overlay.
+            HoloViews plot object.
+        filepath : str.
+            Output file path.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            hv.save(plot, filepath, fmt='html', backend='bokeh')
+            return True
+        except Exception as e:
+            print(f"Error exporting to HTML: {e}")
+            return False
+
+    def export_to_png(self, plot: hv.Overlay, filepath: str) -> bool:
+        """Export HoloViews plot to PNG file.
+        
+        Parameters
+        ----------
+        plot : hv.Overlay.
+            HoloViews plot object.
+        filepath : str.
+            Output file path.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            hv.save(plot, filepath, fmt='png', backend='matplotlib')
+            return True
+        except Exception as e:
+            print(f"Error exporting to PNG: {e}")
+            return False
+
+    def export_to_svg(self, plot: hv.Overlay, filepath: str) -> bool:
+        """Export HoloViews plot to SVG file.
+        
+        Parameters
+        ----------
+        plot : hv.Overlay.
+            HoloViews plot object.
+        filepath : str.
+            Output file path.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            hv.save(plot, filepath, fmt='svg', backend='matplotlib')
+            return True
+        except Exception as e:
+            print(f"Error exporting to SVG: {e}")
+            return False
+
+    def export_to_pdf(self, plot: hv.Overlay, filepath: str) -> bool:
+        """Export HoloViews plot to PDF file.
+        
+        Parameters
+        ----------
+        plot : hv.Overlay.
+            HoloViews plot object.
+        filepath : str.
+            Output file path.
+            
+        Returns
+        -------
+        bool.
+            True if successful, False otherwise.
+        """
+        try:
+            hv.save(plot, filepath, fmt='pdf', backend='matplotlib')
+            return True
+        except Exception as e:
+            print(f"Error exporting to PDF: {e}")
+            return False
+
 class TouchstonePlotter:
-    """Handles Veusz plotting for Touchstone files (frequency and time domain)."""
+    """Handles Veusz plotting for Touchstone files (Frequency and Time Domain)."""
 
     def __init__(self, plot_title: str = "Touchstone S-Parameter Analysis",
                  dataset_name: str = "Touchstone_Dataset"):
@@ -311,6 +733,73 @@ class TouchstonePlotter:
                 xy_phase = graph_phase.Add('xy', name=f"{param_name}_phase")
                 self._configure_xy_plot(xy_phase, freq_name, phase_name, 'auto')
 
+    def create_time_domain_plots(self, filename: str, data: dict, td_result: dict):
+        """Create time domain plots in Veusz."""
+        if 'error' in td_result and td_result['error']:
+            return
+        
+        try:
+            network = data['network']
+            dataset_name = filename.replace('.', '_').replace('-', '_')
+            
+            # Create time domain plots for each S-parameter
+            for i in range(network.nports):
+                for j in range(network.nports):
+                    param_name = f"S{i + 1}{j + 1}"
+                    self._create_time_domain_page(dataset_name, param_name, data, td_result)
+                    
+        except Exception as e:
+            print(f"Error creating time domain plots: {e}")
+
+    def _create_time_domain_page(self, dataset_name, param_name, data, td_result):
+        """Create time domain plot page for a specific S-parameter."""
+        # Create time domain datasets
+        time_name = f"{dataset_name}_{param_name}_time"
+        td_unfilt_name = f"{dataset_name}_{param_name}_td"
+        td_filt_name = f"{dataset_name}_{param_name}_tdf"
+        
+        # Get time domain data
+        time_data = td_result.get('time', np.array([]))
+        td_unfilt_data = td_result.get(f"{param_name}_td", np.array([]))
+        td_filt_data = td_result.get(f"{param_name}_td_filtered", np.array([]))
+        
+        # Set data in Veusz
+        self.doc.SetData(time_name, time_data)
+        self.doc.SetData(td_unfilt_name, np.abs(td_unfilt_data))
+        self.doc.SetData(td_filt_name, np.abs(td_filt_data))
+        
+        # Create time domain page
+        td_page_name = f"{dataset_name}_{param_name}_TimeDomain"
+        page_td = self.doc.Root.Add('page', name=td_page_name)
+        grid_td = page_td.Add('grid', columns=2)
+        
+        graph_td = grid_td.Add('graph', name=f"{dataset_name}_{param_name}_TD_Graph")
+        
+        # Add header info to page notes
+        if 'header_info' in data:
+            page_td.notes.val = '\n'.join(data['header_info'])
+        
+        # Configure time domain graph
+        graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time Domain"
+        self._configure_standard_graph(
+            graph_td, graph_title,
+            self.time_label, 'Magnitude', 0, 1
+        )
+        
+        # Add unfiltered time domain plot (dotted line, no markers)
+        xy_unfilt = graph_td.Add('xy', name=f"{param_name}_td_unfilt")
+        with self._wrap_widget(xy_unfilt) as plot:
+            plot.xData.val = time_name
+            plot.yData.val = td_unfilt_name
+            plot.PlotLine.style.val = 'dotted'
+            plot.PlotLine.width.val = '1pt'
+            plot.PlotLine.color.val = 'blue'
+            plot.marker.val = 'none'
+        
+        # Add filtered time domain plot (solid line)
+        xy_filt = graph_td.Add('xy', name=f"{param_name}_td_filt")
+        self._configure_xy_plot(xy_filt, time_name, td_filt_name, 'red')
+
     def create_time_gated_plots(self, filename: str, data: dict, td_result: dict):
         """Create time-gated plots in Veusz with _timegated postfix."""
         if 'error' in td_result and td_result['error']:
@@ -368,170 +857,6 @@ class TouchstonePlotter:
     def save(self, filename: str):
         """Save Veusz project."""
         self.doc.Save(filename, mode='hdf5')
-
-# ============================================================================
-# SMITH CHART PLOTTER (HoloViews - NOT Veusz)
-# ============================================================================
-class SmithChartPlotter:
-    """Handles Smith Chart plotting using HoloViews with export capabilities."""
-
-    def __init__(self, config: SmithChartConfig = None):
-        """Initialize the Smith Chart plotter."""
-        self.config = config or SmithChartConfig()
-
-    def create_smith_chart_figure(self, network: Network, param_name: str,
-                                  chart_type: str = "z", draw_labels: bool = True,
-                                  draw_vswr: bool = True) -> Tuple[Figure, str]:
-        """Create a Smith chart figure from network S-parameters."""
-        fig, ax = plt.subplots(1, 1, figsize=(10, 10), dpi=150)
-        
-        # Extract port indices from parameter name
-        indices = self.extract_param_indices(param_name)
-        if indices is None:
-            raise ValueError(f"Invalid parameter name: {param_name}")
-        
-        i, j = indices
-        
-        if i >= network.nports or j >= network.nports:
-            raise IndexError(f"Port index out of range for {param_name}")
-        
-        # Extract S-parameter data
-        s_param = network.s[:, i, j]
-        
-        # Convert to impedance or admittance
-        if chart_type.lower() == "z":
-            z_norm = (1 + s_param) / (1 - s_param)
-            title = f"Smith Chart - {param_name} (Impedance)"
-            label_type = "Impedance"
-        elif chart_type.lower() == "y":
-            z_norm = (1 - s_param) / (1 + s_param)
-            title = f"Smith Chart - {param_name} (Admittance)"
-            label_type = "Admittance"
-        else:
-            raise ValueError(f"Invalid chart type: {chart_type}")
-        
-        # Draw Smith chart background
-        self.draw_smith_chart_grid(ax, draw_labels=draw_labels, draw_vswr=draw_vswr,
-                                   label_type=label_type)
-        
-        # Plot S-parameter trace
-        real_part = np.real(z_norm)
-        imag_part = np.imag(z_norm)
-        ax.plot(real_part, imag_part, "b-", linewidth=2.0,
-                label=f"{param_name} Trace", marker="o", markersize=6, alpha=0.7)
-        
-        # Mark frequency points
-        num_points = len(z_norm)
-        if num_points > 0:
-            ax.plot(real_part[0], imag_part[0], "go", markersize=8, label="Start", zorder=5)
-            ax.plot(real_part[-1], imag_part[-1], "ro", markersize=8, label="End", zorder=5)
-        
-        # Configure axes
-        ax.set_xlim(-2.5, 2.5)
-        ax.set_ylim(-2.5, 2.5)
-        ax.set_aspect("equal")
-        ax.set_xlabel("Real Part", fontsize=12)
-        ax.set_ylabel("Imaginary Part", fontsize=12)
-        ax.set_title(title, fontsize=14, fontweight="bold")
-        ax.legend(fontsize=10, loc="upper right")
-        ax.grid(True, alpha=0.3)
-        
-        fig.tight_layout()
-        return fig, title
-
-    def draw_smith_chart_grid(self, ax, draw_labels: bool = True, draw_vswr: bool = True,
-                              label_type: str = "Impedance"):
-        """Draw the Smith chart grid background on matplotlib axes."""
-        # Main circle (magnitude = 1)
-        circle = Circle((0, 0), 1, fill=False, edgecolor="black", linewidth=2)
-        ax.add_patch(circle)
-        
-        # Resistance circles
-        resistance_values = [0.2, 0.5, 1.0, 2.0, 5.0]
-        for r in resistance_values:
-            center_x = r / (1 + r)
-            radius = 1 / (1 + r)
-            circle = Circle((center_x, 0), radius, fill=False, edgecolor="lightblue",
-                          linewidth=0.5, linestyle="--")
-            ax.add_patch(circle)
-            if draw_labels and center_x + radius <= 1.0:
-                ax.text(center_x + radius, 0.05, f"{r:.1f}", fontsize=8, ha="left",
-                       va="center", color="blue")
-        
-        # Reactance circles
-        reactance_values = [0.2, 0.5, 1.0, 2.0, 5.0]
-        for x in reactance_values:
-            center_x = 1.0
-            center_y = 1.0 / x
-            radius = 1.0 / x
-            circle = Circle((center_x, center_y), radius, fill=False, edgecolor="lightgreen",
-                          linewidth=0.5, linestyle="--")
-            ax.add_patch(circle)
-            circle_neg = Circle((center_x, -center_y), radius, fill=False, edgecolor="lightgreen",
-                              linewidth=0.5, linestyle="--")
-            ax.add_patch(circle_neg)
-            if draw_labels:
-                ax.text(center_x + 0.05, center_y + 0.05, f"+j{x:.1f}", fontsize=7,
-                       ha="left", va="bottom", color="green")
-                ax.text(center_x + 0.05, -center_y - 0.05, f"-j{x:.1f}", fontsize=7,
-                       ha="left", va="top", color="green")
-        
-        # VSWR circles
-        if draw_vswr:
-            vswr_values = [1.5, 2.0, 3.0]
-            for vswr in vswr_values:
-                gamma_mag = (vswr - 1) / (vswr + 1)
-                circle = Circle((0, 0), gamma_mag, fill=False, edgecolor="red",
-                              linewidth=0.5, linestyle=":", alpha=0.5)
-                ax.add_patch(circle)
-                if draw_labels:
-                    ax.text(gamma_mag, 0.05, f"VSWR={vswr:.1f}", fontsize=7,
-                           ha="center", va="bottom", color="red")
-
-    def extract_param_indices(self, param_name: str) -> Optional[Tuple[int, int]]:
-        """Extract port indices from S-parameter name."""
-        if not param_name.startswith('S') or len(param_name) != 3:
-            return None
-        
-        try:
-            i = int(param_name[1]) - 1
-            j = int(param_name[2]) - 1
-            return (i, j) if i >= 0 and j >= 0 else None
-        except ValueError:
-            return None
-
-    def save_smith_charts(self, network: Network, filename: str, output_dir: str,
-                         output_format: str = "png", chart_type: str = "z",
-                         draw_labels: bool = True, draw_vswr: bool = True) -> List[str]:
-        """Generate and save Smith charts for all S-parameters in a network."""
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
-        
-        saved_files = []
-        base_filename = os.path.splitext(filename)[0]
-        
-        for i in range(network.nports):
-            for j in range(network.nports):
-                param_name = f"S{i + 1}{j + 1}"
-                
-                try:
-                    fig, title = self.create_smith_chart_figure(
-                        network, param_name, chart_type=chart_type,
-                        draw_labels=draw_labels, draw_vswr=draw_vswr
-                    )
-                    
-                    output_filename = f"{base_filename}_{param_name}_SmithChart.{output_format.lower()}"
-                    output_path = os.path.join(output_dir, output_filename)
-                    
-                    fig.savefig(output_path, format=output_format.lower(), dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-                    
-                    saved_files.append(output_path)
-                
-                except Exception as e:
-                    print(f"Warning: Failed to create Smith chart for {param_name}: {e}")
-        
-        return saved_files
 
 # ============================================================================
 # MATPLOTLIB CANVAS FOR EMBEDDING PLOTS
@@ -597,12 +922,12 @@ class TouchstonePlotCanvas(FigureCanvas):
 
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
                          draw_labels=True, draw_vswr=True):
-        """Plot Smith chart on the canvas using matplotlib."""
+        """Plot Smith chart on the canvas."""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
         
         try:
-            # Use scikit-rf's built-in Smith chart plotting if available
+            # Use scikit-rf's built-in Smith chart plotting
             network.plot_s_smith(ax=ax, chart_type=chart_type, draw_labels=draw_labels,
                                  draw_vswr=draw_vswr, show_legend=True)
             ax.set_title(title)
@@ -783,7 +1108,7 @@ class TouchstoneMainWindow(QMainWindow):
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
-        self.setWindowTitle("Enhanced Touchstone AutoPlot - Veusz + HoloViews Edition")
+        self.setWindowTitle("Enhanced Touchstone AutoPlot - Veusz Edition")
         self.setGeometry(100, 100, 1400, 900)
         
         # Initialize configurations
@@ -795,20 +1120,21 @@ class TouchstoneMainWindow(QMainWindow):
         self.touchstone_plotter = None
         self.td_processor = TimeDomainProcessor(self.td_config)
         self.smith_processor = SmithChartProcessor(self.smith_config)
-        self.smith_chart_plotter = SmithChartPlotter(self.smith_config)
+        self.smith_plotter_mpld3 = SmithChartPlottermpld3()
         
         # Data storage
         self.selected_files = []
         self.processed_data = {}
         self.td_results = {}
         self.smith_results = {}
+        self.smith_figures = {}  # Store generated figures for export
         
         # Setup UI
         self.setup_ui()
         self._log_message("Enhanced Touchstone AutoPlot initialized")
-        self._log_message(f"HoloViews Support: {'Yes' if HOLOVIEWS_AVAILABLE else 'No (interactive features limited)'}")
         self._log_message(f"GPU Support: {GPU_AVAILABLE or 'None'}")
         self._log_message(f"CPU Cores Available: {multiprocessing.cpu_count()}")
+        self._log_message(f"mpld3 Support: {'Available' if MPLD3_AVAILABLE else 'Not installed'}")
 
     def setup_ui(self):
         """Set up the user interface with tab widget."""
@@ -1029,14 +1355,14 @@ class TouchstoneMainWindow(QMainWindow):
         layout.addWidget(self.td_plot_canvas)
 
     def setup_smith_chart_tab(self):
-        """Setup the Smith Chart analysis tab (HoloViews + Export)."""
+        """Setup the Smith Chart analysis tab with interactive mpld3 plots."""
         smith_tab = QWidget()
-        self.tab_widget.addTab(smith_tab, "Smith Chart Analysis (HoloViews)")
+        self.tab_widget.addTab(smith_tab, "Smith Chart Analysis")
         layout = QHBoxLayout(smith_tab)
         
         # Left control panel
         controls_widget = QWidget()
-        controls_widget.setMaximumWidth(400)
+        controls_widget.setMaximumWidth(380)
         controls_layout = QVBoxLayout(controls_widget)
         
         # File selection for preview
@@ -1078,20 +1404,29 @@ class TouchstoneMainWindow(QMainWindow):
         
         controls_layout.addWidget(smith_group)
         
-        # Export format selection
+        # Export settings
         export_group = QGroupBox("Export Settings")
         export_layout = QFormLayout(export_group)
         
-        self.smith_format_combo = QComboBox()
-        self.smith_format_combo.addItems(["PNG", "PDF", "SVG", "TIFF", "JPG"])
-        self.smith_format_combo.setCurrentText("PNG")
-        self.smith_format_combo.currentTextChanged.connect(self._update_smith_format)
-        export_layout.addRow("Export Format:", self.smith_format_combo)
+        self.export_format_combo = QComboBox()
+        self.export_format_combo.addItems(["HTML (Interactive)", "PNG", "SVG", "PDF"])
+        export_layout.addRow("Format:", self.export_format_combo)
+        
+        self.pdf_bookmarks_checkbox = QCheckBox("PDF with Bookmarks")
+        self.pdf_bookmarks_checkbox.setChecked(False)
+        self.pdf_bookmarks_checkbox.setEnabled(True)
+        export_layout.addRow(self.pdf_bookmarks_checkbox)
         
         controls_layout.addWidget(export_group)
         
-        # Export Smith Charts button
-        self.smith_export_button = QPushButton("Export Smith Charts to Files")
+        # Process button for Smith Charts
+        self.smith_process_button = QPushButton("Generate Smith Charts")
+        self.smith_process_button.clicked.connect(self._process_smith_charts_mpld3)
+        self.smith_process_button.setEnabled(False)
+        controls_layout.addWidget(self.smith_process_button)
+        
+        # Export button
+        self.smith_export_button = QPushButton("Export Smith Charts")
         self.smith_export_button.clicked.connect(self._export_smith_charts)
         self.smith_export_button.setEnabled(False)
         controls_layout.addWidget(self.smith_export_button)
@@ -1099,9 +1434,18 @@ class TouchstoneMainWindow(QMainWindow):
         controls_layout.addStretch()
         layout.addWidget(controls_widget)
         
-        # Right panel for plot
-        self.smith_plot_canvas = TouchstonePlotCanvas(smith_tab, width=8, height=6)
-        layout.addWidget(self.smith_plot_canvas)
+        # Right panel for plot with toolbar
+        right_layout = QVBoxLayout()
+        
+        self.smith_plot_canvas = TouchstonePlotCanvas(smith_tab, width=8, height=8)
+        self.smith_toolbar = NavigationToolbar(self.smith_plot_canvas, smith_tab)
+        
+        right_layout.addWidget(self.smith_toolbar)
+        right_layout.addWidget(self.smith_plot_canvas)
+        
+        right_widget = QWidget()
+        right_widget.setLayout(right_layout)
+        layout.addWidget(right_widget)
 
     # ========================================================================
     # CALLBACK METHODS - File Operations
@@ -1125,6 +1469,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.processed_data.clear()
         self.td_results.clear()
         self.smith_results.clear()
+        self.smith_figures.clear()
         self._update_file_list()
         self._update_td_file_combo()
         self._update_smith_file_combo()
@@ -1229,11 +1574,6 @@ class TouchstoneMainWindow(QMainWindow):
         self.smith_config.draw_vswr = (state == Qt.Checked)
         self._update_smith_preview()
 
-    def _update_smith_format(self, format_text: str):
-        """Update Smith Chart export format."""
-        self.smith_config.output_format = format_text.lower()
-        self._log_message(f"Export format set to: {format_text}")
-
     # ========================================================================
     # PREVIEW AND PROCESSING METHODS
     # ========================================================================
@@ -1257,7 +1597,7 @@ class TouchstoneMainWindow(QMainWindow):
                 self._log_message(f"Time domain preview error: {e}")
 
     def _update_smith_preview(self):
-        """Update Smith chart preview."""
+        """Update Smith chart preview using matplotlib."""
         current_file = self.smith_file_combo.currentText()
         if current_file and current_file in self.processed_data:
             try:
@@ -1288,7 +1628,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
         
-        # Initialize Touchstone plotter (Veusz - frequency and time domain only)
+        # Initialize Touchstone plotter
         self.touchstone_plotter = TouchstonePlotter(
             plot_title=self.plot_title_edit.text(),
             dataset_name=self.dataset_name_edit.text()
@@ -1320,10 +1660,10 @@ class TouchstoneMainWindow(QMainWindow):
             self.save_button.setEnabled(True)
             
             # Enable buttons
-            self.smith_export_button.setEnabled(True)
+            self.smith_process_button.setEnabled(True)
             self.td_timegated_button.setEnabled(True)
             
-            # Create Veusz plots for each file (frequency domain only)
+            # Create Veusz plots for each file
             for filename, data in self.processed_data.items():
                 if data:
                     self.touchstone_plotter.create_plots_from_data(filename, data)
@@ -1344,56 +1684,143 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message(f"Processing error: {error_message}")
         QMessageBox.critical(self, "Processing Error", error_message)
 
-    def _export_smith_charts(self):
-        """Export Smith charts to file format."""
+    def _process_smith_charts_mpld3(self):
+        """Generate interactive Smith charts using mpld3."""
         if not self.processed_data:
             QMessageBox.warning(self, "No Data", "Please process Touchstone files first.")
             return
         
-        # Ask user for output directory
-        output_dir = QFileDialog.getExistingDirectory(
-            self,
-            "Select Output Directory for Smith Charts",
-            ""
-        )
-        
-        if not output_dir:
+        if not MPLD3_AVAILABLE:
+            QMessageBox.warning(self, "Warning", "mpld3 not installed. Interactive plots unavailable.\nInstall with: pip install mpld3")
             return
         
-        self._log_message(f"Exporting Smith Charts to {output_dir}...")
+        self._log_message("Generating interactive Smith Charts with mpld3...")
         
         try:
-            export_format = self.smith_config.output_format.lower()
-            total_charts = 0
+            self.smith_figures.clear()
             
             # Generate Smith charts for each file
             for filename, data in self.processed_data.items():
                 network = data['network']
                 try:
-                    saved_files = self.smith_chart_plotter.save_smith_charts(
-                        network,
-                        filename,
-                        output_dir,
-                        output_format=export_format,
-                        chart_type=self.smith_config.chart_type,
-                        draw_labels=self.smith_config.draw_labels,
-                        draw_vswr=self.smith_config.draw_vswr
-                    )
+                    # Create charts for each S-parameter
+                    for i in range(network.nports):
+                        for j in range(network.nports):
+                            param_name = f"S{i + 1}{j + 1}"
+                            s_param = network.s[:, i, j]
+                            
+                            fig, real, imag, vswr = self.smith_plotter_mpld3.create_smith_chart(
+                                network.frequency.f, s_param, param_name
+                            )
+                            
+                            # Store figure with filename and param key
+                            key = f"{filename}_{param_name}"
+                            self.smith_figures[key] = {
+                                'fig': fig,
+                                'param_name': param_name,
+                                'filename': filename,
+                                'real': real,
+                                'imag': imag,
+                                'vswr': vswr
+                            }
                     
-                    total_charts += len(saved_files)
-                    self._log_message(f"Exported {len(saved_files)} Smith charts for {filename}")
-                
+                    self._log_message(f"Smith charts generated for {filename}")
                 except Exception as e:
-                    self._log_message(f"Error exporting {filename}: {e}")
+                    self._log_message(f"Error processing {filename}: {e}")
             
-            QMessageBox.information(
-                self,
-                "Success",
-                f"Smith charts exported successfully!\n{total_charts} total charts saved to:\n{output_dir}"
-            )
+            # Display first chart
+            if self.smith_figures:
+                first_key = list(self.smith_figures.keys())[0]
+                first_fig = self.smith_figures[first_key]['fig']
+                self.smith_plot_canvas.fig = first_fig
+                self.smith_plot_canvas.draw()
+                
+                self.smith_export_button.setEnabled(True)
+                self._log_message(f"Displayed: {first_key}")
+                QMessageBox.information(self, "Success", 
+                    f"Generated {len(self.smith_figures)} interactive Smith charts.\n"
+                    "Use Export button to save in selected format.")
         
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to export Smith charts: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to generate Smith charts: {str(e)}")
+            self._log_message(f"Smith chart generation error: {e}")
+
+    def _export_smith_charts(self):
+        """Export Smith charts in selected format."""
+        if not self.smith_figures:
+            QMessageBox.warning(self, "No Charts", "Please generate Smith charts first.")
+            return
+        
+        export_format = self.export_format_combo.currentText()
+        use_pdf_bookmarks = self.pdf_bookmarks_checkbox.isChecked()
+        
+        # Determine file extension
+        if "HTML" in export_format:
+            ext = ".html"
+        elif "PNG" in export_format:
+            ext = ".png"
+        elif "SVG" in export_format:
+            ext = ".svg"
+        else:  # PDF
+            ext = ".pdf"
+        
+        # Get save directory
+        save_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select directory to save Smith charts"
+        )
+        
+        if not save_dir:
+            return
+        
+        try:
+            pdf_files = []  # For bookmarking
+            exported_count = 0
+            
+            for key, chart_data in self.smith_figures.items():
+                filename = chart_data['filename']
+                param_name = chart_data['param_name']
+                fig = chart_data['fig']
+                
+                # Create output filename
+                base_name = os.path.splitext(filename)[0]
+                output_filename = f"{base_name}_{param_name}{ext}"
+                output_path = os.path.join(save_dir, output_filename)
+                
+                # Export based on format
+                success = False
+                if "HTML" in export_format:
+                    success = self.smith_plotter_mpld3.export_to_html(fig, output_path, param_name)
+                elif "PNG" in export_format:
+                    success = self.smith_plotter_mpld3.export_to_png(fig, output_path)
+                elif "SVG" in export_format:
+                    success = self.smith_plotter_mpld3.export_to_svg(fig, output_path)
+                else:  # PDF
+                    success = self.smith_plotter_mpld3.export_to_pdf(fig, output_path)
+                    if success and use_pdf_bookmarks:
+                        pdf_files.append((output_path, f"{param_name}"))
+                
+                if success:
+                    exported_count += 1
+                    self._log_message(f"Exported: {output_filename}")
+                else:
+                    self._log_message(f"Failed to export: {output_filename}")
+                
+                plt.close(fig)
+            
+            # Create PDF with bookmarks if requested
+            if use_pdf_bookmarks and pdf_files and "PDF" in export_format:
+                pdf_output = os.path.join(save_dir, "SmithCharts_All.pdf")
+                if SmithChartPlottermpld3.create_pdf_with_bookmarks(pdf_files, pdf_output):
+                    self._log_message(f"Created bookmarked PDF: SmithCharts_All.pdf")
+                    exported_count += 1
+            
+            QMessageBox.information(self, "Export Complete", 
+                f"Successfully exported {exported_count} Smith charts to:\n{save_dir}")
+            self._log_message(f"Smith chart export completed: {exported_count} files")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export Smith charts:\n{e}")
             self._log_message(f"Smith chart export error: {e}")
 
     def _process_time_gated_plots(self):
