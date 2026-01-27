@@ -1061,7 +1061,7 @@ class TouchstoneMainWindow(QMainWindow):
         main_layout.addWidget(self.progress_bar)
 
         self.status_text = QTextEdit()
-        self.status_text.setMaximumHeight(120)
+        self.status_text.setMaximumHeight(200)
         self.status_text.setReadOnly(True)
         main_layout.addWidget(self.status_text)
 
@@ -1091,7 +1091,7 @@ class TouchstoneMainWindow(QMainWindow):
         file_group = QGroupBox("Touchstone File Selection")
         file_layout = QVBoxLayout(file_group)
         self.file_list_widget = QListWidget()
-        self.file_list_widget.setMinimumHeight(150)
+        self.file_list_widget.setMinimumHeight(253)
         file_layout.addWidget(self.file_list_widget)
 
         browse_layout = QHBoxLayout()
