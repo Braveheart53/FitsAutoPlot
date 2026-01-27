@@ -117,17 +117,20 @@ from matplotlib.figure import Figure
 # %% GPU Computing imports with fallback support
 try:
     import cupy as cp
+
     GPU_AVAILABLE = "cupy"
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as cl_array
+
         GPU_AVAILABLE = "opencl"
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
+
             GPU_AVAILABLE = "taichi"
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
@@ -535,11 +538,11 @@ class TimeDomainProcessor:
                         )
 
                     # Store results
-                    param_name = "S{}{}".format(i+1, j+1)
+                    param_name = "S{}{}".format(i + 1, j + 1)
                     results["{}_original".format(param_name)] = temp_network
                     results["{}_gated".format(param_name)] = gated_network
                     results["{}_td".format(param_name)
-                            ] = temp_network.s_time_db
+                    ] = temp_network.s_time_db
                     results["{}_td_filtered".format(
                         param_name)] = gated_network.s_time_db
 
@@ -594,7 +597,7 @@ class SmithChartProcessor:
                     # Create filtered networks for each S-parameter
                     for i in range(network.nports):
                         for j in range(network.nports):
-                            param_name = "S{}{}".format(i+1, j+1)
+                            param_name = "S{}{}".format(i + 1, j + 1)
                             gated_key = "{}_gated".format(param_name)
                             if gated_key in td_results:
                                 results[param_name] = td_results[gated_key]
@@ -606,7 +609,7 @@ class SmithChartProcessor:
                 # Use original S-parameter data
                 for i in range(network.nports):
                     for j in range(network.nports):
-                        param_name = "S{}{}".format(i+1, j+1)
+                        param_name = "S{}{}".format(i + 1, j + 1)
                         # Create single S-parameter network
                         temp_network = network.copy()
                         temp_network.s = network.s[:, i, j].reshape(-1, 1, 1)
@@ -676,7 +679,7 @@ class TouchstonePlotCanvas(FigureCanvas):
                 idx = i * n_ports + j
                 mag_db = 20 * np.log10(np.abs(s_data[:, idx]) + 1e-12)
                 ax1.plot(frequency / 1e9, mag_db,
-                         label='S{}{}'.format(i+1, j+1))
+                         label='S{}{}'.format(i + 1, j + 1))
 
         ax1.set_xlabel('Frequency (GHz)')
         ax1.set_ylabel('Magnitude (dB)')
@@ -690,7 +693,7 @@ class TouchstonePlotCanvas(FigureCanvas):
                 idx = i * n_ports + j
                 phase_deg = np.angle(s_data[:, idx], deg=True)
                 ax2.plot(frequency / 1e9, phase_deg,
-                         label='S{}{}'.format(i+1, j+1))
+                         label='S{}{}'.format(i + 1, j + 1))
 
         ax2.set_xlabel('Frequency (GHz)')
         ax2.set_ylabel('Phase (degrees)')
@@ -776,7 +779,7 @@ class TouchstonePlotCanvas(FigureCanvas):
                 for j in range(network.nports):
                     s_param = network.s[:, i, j]
                     ax.plot(s_param.real, s_param.imag,
-                            label='S{}{}'.format(i+1, j+1),
+                            label='S{}{}'.format(i + 1, j + 1),
                             marker='o', markersize=3)
 
             ax.set_xlabel('Real Part')
@@ -1895,7 +1898,7 @@ class TouchstonePlotter:
 
         for i in range(n_ports):
             for j in range(n_ports):
-                param_name = "S{}{}".format(i+1, j+1)
+                param_name = "S{}{}".format(i + 1, j + 1)
                 td_key = "{}_td".format(param_name)
                 tdf_key = "{}_td_filtered".format(param_name)
 
@@ -1928,7 +1931,7 @@ class TouchstonePlotter:
 
         for i in range(n_ports):
             for j in range(n_ports):
-                param_name = "S{}{}".format(i+1, j+1)
+                param_name = "S{}{}".format(i + 1, j + 1)
                 if param_name in smith_result:
                     self._create_smith_chart_page(
                         dataset_name, param_name, data, smith_result
@@ -2029,7 +2032,7 @@ class TouchstonePlotter:
         for i in range(n_ports):
             for j in range(n_ports):
                 # S-parameter names
-                param_name = "S{}{}".format(i+1, j+1)
+                param_name = "S{}{}".format(i + 1, j + 1)
                 mag_name = "{}_{}_mag".format(dataset_name, param_name)
                 phase_name = "{}_{}_phase".format(dataset_name, param_name)
 
@@ -2086,7 +2089,7 @@ class TouchstonePlotter:
         freq_name = "{}_freq".format(dataset_name)
         for i in range(n_ports):
             for j in range(n_ports):
-                param_name = "S{}{}".format(i+1, j+1)
+                param_name = "S{}{}".format(i + 1, j + 1)
                 mag_name = "{}_{}_mag".format(dataset_name, param_name)
 
                 xy_mag = graph_mag.Add('xy', name="{}_mag".format(param_name))
@@ -2112,7 +2115,7 @@ class TouchstonePlotter:
         # Add S-parameter plots to phase graph
         for i in range(n_ports):
             for j in range(n_ports):
-                param_name = "S{}{}".format(i+1, j+1)
+                param_name = "S{}{}".format(i + 1, j + 1)
                 phase_name = "{}_{}_phase".format(dataset_name, param_name)
 
                 xy_phase = graph_phase.Add(
@@ -2397,7 +2400,7 @@ class TouchstonePlotter:
             # Add each S-parameter to overlays
             for i in range(n_ports):
                 for j in range(n_ports):
-                    param_name = "S{}{}".format(i+1, j+1)
+                    param_name = "S{}{}".format(i + 1, j + 1)
                     mag_name = "{}_{}_mag".format(dataset_name, param_name)
                     phase_name = "{}_{}_phase".format(dataset_name, param_name)
 
@@ -2430,6 +2433,7 @@ class TouchstonePlotter:
         WidgetWrapper
             Context manager for the widget.
         """
+
         class WidgetWrapper:
             def __init__(self, widget):
                 self.widget = widget
@@ -2455,8 +2459,8 @@ class TouchstonePlotter:
         file_split = os.path.split(filename)
         beware_dir = file_split[0] + '/Beware_oldVersion/'
         filename_vsz = (
-            beware_dir +
-            os.path.splitext(file_split[1])[0] + '_BEWARE.vsz'
+                beware_dir +
+                os.path.splitext(file_split[1])[0] + '_BEWARE.vsz'
         )
 
         # Save high precision version

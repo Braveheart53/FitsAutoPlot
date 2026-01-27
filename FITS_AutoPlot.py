@@ -58,6 +58,7 @@ from datetime import date
 import sys
 import subprocess
 import pdir
+
 # %%% GUI Module Imports
 # %%%% QtPy
 # from qtpy.QtGui import *
@@ -158,6 +159,7 @@ import inspect
 from pprint import pprint
 # %%% Plotting Environment
 import veusz.embed as embed
+
 # %%% File type Export/Import
 # =============================================================================
 # import h5py as h5
@@ -180,6 +182,7 @@ import veusz.embed as embed
 # %% Internal Functional Variables
 createLinkedFits = True
 createArbitraryXaxis = True
+
 
 # %% Class and Function Definitons
 
@@ -471,42 +474,42 @@ class VZPlotFITS:
         try:
             graph = self.grid.Add('graph')
             # the following is from _plot_1d... adjust as needed for nd
-# =============================================================================
-#             xy = graph.Add('xy')
-#             xy.yData.val = dataset
-#             # if 'date' in dataset:
-#             #     # get the dataset from Veusz and change it to a datetime list
-#             #     # need to figure out exactly the time string format utilized
-#             #     # self.doc.SetDataDateTime, likely will overwrite or need to
-#             #     # use this earlier in the script
-#             #     pass
-#             xy.marker.val = 'none'
-#             xy.PlotLine.color.val = 'red'
-#             if createArbitraryXaxis:
-#                 # xy.xData.val = set x axis data
-#                 currentYDataTuple = self.doc.GetData(xy.yData.val)
-#                 if isinstance(currentYDataTuple[0], np.ndarray):
-#                     if currentYDataTuple[0].ndim == 1:
-#                         length = currentYDataTuple[0].size
-#                         xy.xData.val = range(length)
-#                     else:
-#                         QMessageBox.critical(
-#                             None,
-#                             "Length of Data Array is non-integer",
-#                             "This should not happen. \n"
-#                             "Contact the Author and inform him of this error."
-#                         )
-#                         return
-#                 else:
-#                     QMessageBox.warning(
-#                         None,
-#                         "The Data array is non-numeric \n",
-#                         "X axis value not defined."
-#                     )
-#
-#             if self.first_1d:
-#                 self.first_1d = False
-# =============================================================================
+        # =============================================================================
+        #             xy = graph.Add('xy')
+        #             xy.yData.val = dataset
+        #             # if 'date' in dataset:
+        #             #     # get the dataset from Veusz and change it to a datetime list
+        #             #     # need to figure out exactly the time string format utilized
+        #             #     # self.doc.SetDataDateTime, likely will overwrite or need to
+        #             #     # use this earlier in the script
+        #             #     pass
+        #             xy.marker.val = 'none'
+        #             xy.PlotLine.color.val = 'red'
+        #             if createArbitraryXaxis:
+        #                 # xy.xData.val = set x axis data
+        #                 currentYDataTuple = self.doc.GetData(xy.yData.val)
+        #                 if isinstance(currentYDataTuple[0], np.ndarray):
+        #                     if currentYDataTuple[0].ndim == 1:
+        #                         length = currentYDataTuple[0].size
+        #                         xy.xData.val = range(length)
+        #                     else:
+        #                         QMessageBox.critical(
+        #                             None,
+        #                             "Length of Data Array is non-integer",
+        #                             "This should not happen. \n"
+        #                             "Contact the Author and inform him of this error."
+        #                         )
+        #                         return
+        #                 else:
+        #                     QMessageBox.warning(
+        #                         None,
+        #                         "The Data array is non-numeric \n",
+        #                         "X axis value not defined."
+        #                     )
+        #
+        #             if self.first_1d:
+        #                 self.first_1d = False
+        # =============================================================================
 
         except Exception as e:
             QMessageBox.critical(
@@ -543,6 +546,8 @@ class VZPlotFITS:
                 "Launch Error",
                 f"Failed to start Veusz: {str(e)}"
             )
+
+
 # %% Utiliy Functions
 
 

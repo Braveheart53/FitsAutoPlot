@@ -43,6 +43,7 @@ import tkinter as tk
 from tkinter import simpledialog
 import numpy as np
 
+
 # from tkinter.ttk import tk  # from tkinter import Tk for Python 3.x
 # from tkinter.filedialog import askopenfilename
 
@@ -109,7 +110,7 @@ class MultiSelectBox:
         self.label = tk.Label(
             self.master,
             text="Select the datasets to convert "
-            + "to average (in linear domain):  ",
+                 + "to average (in linear domain):  ",
             font=("Times New Roman", 10),
             padx=10,
             pady=10,
@@ -272,7 +273,7 @@ class MultiSelectBox:
             # also storing initial dB  data if you one wants
             # self.datadBMag[i] = GetData(self.selectedInList[0][i])[0]
             self.datalinMag[i] = 10 ** (
-                GetData(self.selectedInList[0][i])[0] / 20
+                    GetData(self.selectedInList[0][i])[0] / 20
             )
 
             i = i + 1

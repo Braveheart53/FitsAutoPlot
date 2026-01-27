@@ -126,7 +126,7 @@ else:
     from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize
     from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
     from qtpy.QtWidgets import (
-        QApplication,  QDialog, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QApplication, QDialog, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
         QFrame, QSizePolicy, QSpacerItem, QFileDialog, QTextEdit,
         QCheckBox, QSpinBox, QGroupBox, QSplitter, QLineEdit, QListWidget
@@ -139,17 +139,20 @@ else:
 
 try:
     import cupy as cp
+
     GPU_AVAILABLE = "cupy"
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as cl_array
+
         GPU_AVAILABLE = "opencl"
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
+
             GPU_AVAILABLE = "taichi"
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
@@ -158,6 +161,7 @@ except ImportError:
 
 # System Interface Modules
 os.environ['QT_API'] = 'pyside6'
+
 
 # %% Configuration Classes
 
@@ -171,6 +175,7 @@ class ProcessingConfig:
     num_processes: int = multiprocessing.cpu_count()
     max_workers: int = multiprocessing.cpu_count()
     chunk_size: int = 1000
+
 
 # %% GPU Acceleration Classes
 
@@ -326,6 +331,7 @@ class GPUAccelerator:
 
         return output_field.to_numpy()
 
+
 # %% Worker Functions
 
 
@@ -349,7 +355,7 @@ def process_single_atr_file(file_info: Tuple[str, int, object]) -> Tuple[str, Di
     try:
         # Read file with optimized approach based on size
         filesize = os.path.getsize(file_path)
-        if filesize < 10**7:  # < 10MB
+        if filesize < 10 ** 7:  # < 10MB
             with open(file_path, 'rb') as file:
                 content = file.read().decode('ascii')
                 lines = content.splitlines()
@@ -399,6 +405,7 @@ def process_single_atr_file(file_info: Tuple[str, int, object]) -> Tuple[str, Di
     except Exception as e:
         print(f"Error processing file {file_path}: {str(e)}")
         return os.path.basename(file_path), {}
+
 
 # %% Threading Classes
 
@@ -483,6 +490,7 @@ class ATRProcessingThread(QThread):
 
         return results
 
+
 # %% Utility Classes
 
 
@@ -518,6 +526,7 @@ class Wrap4With:
         if hasattr(self._resource, 'close'):
             self._resource.close()
         return None
+
 
 # %% Enhanced Main Window Class
 
@@ -855,6 +864,7 @@ class EnhancedATRMainWindow(QMainWindow):
             QMessageBox.critical(
                 self, "Launch Error", f"Failed to start Veusz: {str(e)}"
             )
+
 
 # %% ATR Plotter Class
 
@@ -1197,8 +1207,8 @@ class ATRPlotter:
         filename_hp = filename_root + '.vszh5'
         file_split = os.path.split(filename)
         filename_vsz = (
-            file_split[0] + '/Beware_oldVersion/' +
-            os.path.splitext(file_split[1])[0] + '_BEWARE.vsz'
+                file_split[0] + '/Beware_oldVersion/' +
+                os.path.splitext(file_split[1])[0] + '_BEWARE.vsz'
         )
 
         # Save high precision version
@@ -1207,6 +1217,7 @@ class ATRPlotter:
         # Save legacy version
         os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
         self.doc.Save(filename_vsz, mode='vsz')
+
 
 # %% Utility Functions
 
@@ -1244,6 +1255,7 @@ def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.nda
     r = np.hypot(x, y)
     theta = np.arctan2(y, x)
     return r, theta
+
 
 # %% Main Execution
 

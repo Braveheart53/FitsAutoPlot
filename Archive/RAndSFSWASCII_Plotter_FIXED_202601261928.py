@@ -78,6 +78,7 @@ import multiprocessing as mp
 
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
     # Verify CUDA device is actually accessible
     try:
@@ -100,6 +101,7 @@ except Exception as e:
 
 try:
     import pyopencl as cl
+
     PYOPENCL_AVAILABLE = True
 except ImportError:
     PYOPENCL_AVAILABLE = False
@@ -111,6 +113,7 @@ except Exception as e:
 import veusz.embed as embed
 from veusz.windows.simplewindow import SimpleWindow
 from veusz.document import CommandInterface
+
 
 # ============================================================================
 # CONFIGURATION AND DATA CLASSES

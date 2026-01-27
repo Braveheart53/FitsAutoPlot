@@ -62,6 +62,7 @@ from skrf.time import time_gate
 # ============================================================================
 
 import matplotlib
+
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -114,22 +115,26 @@ else:
 GPU_AVAILABLE = None
 try:
     import cupy as cp
+
     GPU_AVAILABLE = "cupy"
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as cl_array
+
         GPU_AVAILABLE = "opencl"
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
+
             GPU_AVAILABLE = "taichi"
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
             GPU_AVAILABLE = None
             print("No GPU acceleration libraries available - using CPU only")
+
 
 # ============================================================================
 # CONFIGURATION AND DATA CLASSES
@@ -190,6 +195,7 @@ class SmithChartMatplotlibConfig:
     combine_to_pdf: bool = False
     output_format: str = "png"  # png, pdf, tiff, bmp, svg, jpg
 
+
 # ============================================================================
 # SMITH CHART MATPLOTLIB PLOTTER CLASS
 # ============================================================================
@@ -218,7 +224,7 @@ class SmithChartMatplotlibPlotter:
         self.figures = []
         self.file_paths = []
 
-    def create_smith_chart_figure(self, network: Network, param_name: str, 
+    def create_smith_chart_figure(self, network: Network, param_name: str,
                                   chart_type: str = "z", draw_labels: bool = True,
                                   draw_vswr: bool = True) -> Tuple[Figure, str]:
         """
@@ -312,13 +318,13 @@ class SmithChartMatplotlibPlotter:
             center_x = r / (1 + r)
             radius = 1 / (1 + r)
             circle = Circle((center_x, 0), radius, fill=False, edgecolor="lightblue",
-                          linewidth=0.5, linestyle="--")
+                            linewidth=0.5, linestyle="--")
             ax.add_patch(circle)
 
             if draw_labels and center_x + radius <= 1.0:
                 label_text = f"{r:.1f}" if r != 1.0 else f"{r:.1f}"
                 ax.text(center_x + radius, 0.05, label_text, fontsize=8, ha="left",
-                       va="center", color="blue")
+                        va="center", color="blue")
 
         # Reactance circles
         reactance_values = [0.2, 0.5, 1.0, 2.0, 5.0]
@@ -328,18 +334,18 @@ class SmithChartMatplotlibPlotter:
             radius = 1.0 / x
 
             circle = Circle((center_x, center_y), radius, fill=False, edgecolor="lightgreen",
-                          linewidth=0.5, linestyle="--")
+                            linewidth=0.5, linestyle="--")
             ax.add_patch(circle)
 
             circle_neg = Circle((center_x, -center_y), radius, fill=False, edgecolor="lightgreen",
-                              linewidth=0.5, linestyle="--")
+                                linewidth=0.5, linestyle="--")
             ax.add_patch(circle_neg)
 
             if draw_labels:
                 ax.text(center_x + 0.05, center_y + 0.05, f"+j{x:.1f}", fontsize=7,
-                       ha="left", va="bottom", color="green")
+                        ha="left", va="bottom", color="green")
                 ax.text(center_x + 0.05, -center_y - 0.05, f"-j{x:.1f}", fontsize=7,
-                       ha="left", va="top", color="green")
+                        ha="left", va="top", color="green")
 
         # VSWR circles
         if draw_vswr:
@@ -347,12 +353,12 @@ class SmithChartMatplotlibPlotter:
             for vswr in vswr_values:
                 gamma_mag = (vswr - 1) / (vswr + 1)
                 circle = Circle((0, 0), gamma_mag, fill=False, edgecolor="red",
-                              linewidth=0.5, linestyle=":", alpha=0.5)
+                                linewidth=0.5, linestyle=":", alpha=0.5)
                 ax.add_patch(circle)
 
                 if draw_labels:
                     ax.text(gamma_mag, 0.05, f"VSWR={vswr:.1f}", fontsize=7,
-                           ha="center", va="bottom", color="red")
+                            ha="center", va="bottom", color="red")
 
     def extract_param_indices(self, param_name: str) -> Optional[Tuple[int, int]]:
         """
@@ -378,9 +384,9 @@ class SmithChartMatplotlibPlotter:
             return None
 
     def save_smith_charts(self, network: Network, filename: str, output_dir: str,
-                         output_format: str = "png", chart_type: str = "z",
-                         combine_pdf: bool = False, draw_labels: bool = True,
-                         draw_vswr: bool = True) -> List[str]:
+                          output_format: str = "png", chart_type: str = "z",
+                          combine_pdf: bool = False, draw_labels: bool = True,
+                          draw_vswr: bool = True) -> List[str]:
         """
         Generate and save Smith charts for all S-parameters in a network.
 
@@ -417,7 +423,7 @@ class SmithChartMatplotlibPlotter:
 
         for i in range(network.nports):
             for j in range(network.nports):
-                param_name = f"S{i+1}{j+1}"
+                param_name = f"S{i + 1}{j + 1}"
                 try:
                     fig, title = self.create_smith_chart_figure(
                         network, param_name, chart_type=chart_type,
@@ -454,6 +460,7 @@ class SmithChartMatplotlibPlotter:
 
         return saved_files
 
+
 # ============================================================================
 # PROCESSING THREAD CLASSES
 # ============================================================================
@@ -472,12 +479,12 @@ class TimeDomainProcessor:
             # Convert to time domain using IFFT
             for i in range(network.nports):
                 for j in range(network.nports):
-                    param_name = f"S{i+1}{j+1}"
+                    param_name = f"S{i + 1}{j + 1}"
                     s_param = network.s[:, i, j]
-                    
+
                     # Simple IFFT conversion
                     time_data = np.fft.ifft(s_param)
-                    
+
                     results[param_name] = np.abs(time_data)
 
             results['network'] = network
@@ -515,6 +522,7 @@ class SmithChartProcessor:
 
         return results
 
+
 # ============================================================================
 # VEUSZ PLOTTER CLASS
 # ============================================================================
@@ -541,7 +549,7 @@ class TouchstonePlotter:
             # Add S-parameter data to Veusz
             for i in range(network.nports):
                 for j in range(network.nports):
-                    param_name = f"S{i+1}{j+1}"
+                    param_name = f"S{i + 1}{j + 1}"
                     # Add dataset
                     self.doc.AddDataset(
                         param_name,
@@ -574,6 +582,7 @@ class TouchstonePlotter:
         """Save Veusz project."""
         self.doc.Save(filename, mode='hdf5')
 
+
 # ============================================================================
 # MATPLOTLIB CANVAS FOR EMBEDDING PLOTS
 # ============================================================================
@@ -601,10 +610,10 @@ class TouchstonePlotCanvas(FigureCanvas):
             for j in range(n_ports):
                 idx = i * n_ports + j
                 mag_db = 20 * np.log10(np.abs(s_data[:, idx]) + 1e-12)
-                ax1.plot(frequency / 1e9, mag_db, label=f"S{i+1}{j+1}")
+                ax1.plot(frequency / 1e9, mag_db, label=f"S{i + 1}{j + 1}")
 
                 phase_deg = np.angle(s_data[:, idx], deg=True)
-                ax2.plot(frequency / 1e9, phase_deg, label=f"S{i+1}{j+1}")
+                ax2.plot(frequency / 1e9, phase_deg, label=f"S{i + 1}{j + 1}")
 
         ax1.set_xlabel("Frequency (GHz)")
         ax1.set_ylabel("Magnitude (dB)")
@@ -626,7 +635,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax = self.fig.add_subplot(111)
 
         ax.plot(time, np.abs(td_data), alpha=0.7, markersize=2,
-               label="Unfiltered", linestyle="dotted")
+                label="Unfiltered", linestyle="dotted")
 
         if td_filtered_data is not None:
             ax.plot(time, np.abs(td_filtered_data), "-", linewidth=2, label="Filtered")
@@ -640,7 +649,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         self.draw()
 
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
-                        draw_labels=True, draw_vswr=True):
+                         draw_labels=True, draw_vswr=True):
         """Plot Smith chart on the canvas."""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
@@ -648,7 +657,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         try:
             # Use scikit-rf's built-in Smith chart plotting
             network.plot_s_smith(ax=ax, chart_type=chart_type, draw_labels=draw_labels,
-                                draw_vswr=draw_vswr, show_legend=True)
+                                 draw_vswr=draw_vswr, show_legend=True)
             ax.set_title(title)
         except Exception as e:
             # Fallback to basic complex plane plot
@@ -656,8 +665,8 @@ class TouchstonePlotCanvas(FigureCanvas):
             for i in range(network.nports):
                 for j in range(network.nports):
                     s_param = network.s[:, i, j]
-                    ax.plot(s_param.real, s_param.imag, label=f"S{i+1}{j+1}",
-                           marker="o", markersize=3)
+                    ax.plot(s_param.real, s_param.imag, label=f"S{i + 1}{j + 1}",
+                            marker="o", markersize=3)
 
             ax.set_xlabel("Real Part")
             ax.set_ylabel("Imaginary Part")
@@ -667,6 +676,7 @@ class TouchstonePlotCanvas(FigureCanvas):
             ax.axis("equal")
 
         self.draw()
+
 
 # ============================================================================
 # TOUCHSTONE PROCESSING THREAD
@@ -709,7 +719,7 @@ class TouchstoneProcessingThread(QThread):
             if self.config.enable_multiprocessing and len(self.file_list) > 1:
                 with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
                     futures = [executor.submit(process_single_touchstone_file, (f, None))
-                              for f in self.file_list]
+                               for f in self.file_list]
                     completed = 0
                     for future in as_completed(futures):
                         filename, data = future.result()
@@ -728,6 +738,7 @@ class TouchstoneProcessingThread(QThread):
 
         except Exception as e:
             self.error_occurred.emit(str(e))
+
 
 # ============================================================================
 # MAIN APPLICATION WINDOW

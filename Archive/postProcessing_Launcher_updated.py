@@ -86,6 +86,7 @@ SCRIPTPATHS = {
     'rands_large': 'RAndS_FSW_ASCII_Plotter_lrgFiles.py'
 }
 
+
 # ============================================================================
 # SPLASH SCREEN THREAD - For handling progress during startup
 # ============================================================================
@@ -144,10 +145,10 @@ class CustomSplashScreen(QSplashScreen):
             Background image for the splash screen.
         """
         super().__init__(pixmap, Qt.WindowStaysOnTopHint)
-        
+
         # Configure splash screen appearance
         self.setMask(pixmap.mask())
-        
+
         # Create progress bar
         self.progressBar = QProgressBar(self)
         self.progressBar.setGeometry(50, pixmap.height() - 50, pixmap.width() - 100, 20)
@@ -165,7 +166,7 @@ class CustomSplashScreen(QSplashScreen):
                 border-radius: 3px;
             }
         """)
-        
+
         # Create status label
         self.statusLabel = QLabel(self)
         self.statusLabel.setGeometry(50, pixmap.height() - 80, pixmap.width() - 100, 25)
@@ -191,7 +192,7 @@ class CustomSplashScreen(QSplashScreen):
             Progress percentage (0-100).
         """
         self.progressBar.setValue(value)
-        
+
         # Update status message based on progress
         if value <= 20:
             self.statusLabel.setText('Initializing application...')
@@ -242,7 +243,7 @@ class ScriptLauncher:
                     f'Please ensure the script exists and the path is correct.'
                 )
                 return False
-            
+
             # Launch the script in a separate process
             subprocess.Popen(
                 [sys.executable, scriptPath],
@@ -274,12 +275,12 @@ class MainWindow(QMainWindow):
         """
         super().__init__()
         self.scriptLauncher = ScriptLauncher()
-        
+
         # Using sys.executable ensures we use the same Python interpreter
-        self.setupWindow()      # Configure main window
-        self.setupUI()          # Set up the user interface
+        self.setupWindow()  # Configure main window
+        self.setupUI()  # Set up the user interface
         self.setupBackground()  # Apply background image if available
-        self.applyStyling()     # Apply modern styling
+        self.applyStyling()  # Apply modern styling
 
     def setupWindow(self):
         """
@@ -288,9 +289,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f'{APPNAME} v{APPVERSION}')
         self.setMinimumSize(WINDOWWIDTH, WINDOWHEIGHT)
         self.setFixedSize(WINDOWWIDTH, WINDOWHEIGHT)
-        
+
         self.centerWindow()  # Center window on screen
-        
+
         # Set window icon if available
         iconPath = 'assets/appicon.png'
         if os.path.exists(iconPath):
@@ -313,18 +314,18 @@ class MainWindow(QMainWindow):
         # Create central widget
         centralWidget = QWidget()
         self.setCentralWidget(centralWidget)
-        
+
         # Create main layout
         mainLayout = QVBoxLayout(centralWidget)
         mainLayout.setSpacing(30)
         mainLayout.setContentsMargins(50, 50, 50, 50)
-        
+
         # Add title label
         self.createTitleSection(mainLayout)
-        
+
         # Add main buttons section
         self.createButtonsSection(mainLayout)
-        
+
         # Add footer section
         self.createFooterSection(mainLayout)
 
@@ -350,7 +351,7 @@ class MainWindow(QMainWindow):
                 padding: 15px;
             }
         """)
-        
+
         subtitleLabel = QLabel('Professional Scientific Data Visualization Suite')
         subtitleLabel.setAlignment(Qt.AlignCenter)
         subtitleLabel.setStyleSheet("""
@@ -363,7 +364,7 @@ class MainWindow(QMainWindow):
                 padding: 10px;
             }
         """)
-        
+
         parentLayout.addWidget(titleLabel)
         parentLayout.addWidget(subtitleLabel)
 
@@ -388,10 +389,10 @@ class MainWindow(QMainWindow):
                 padding: 0px;
             }
         """)
-        
+
         buttonsLayout = QVBoxLayout(buttonsFrame)
         buttonsLayout.setSpacing(10)
-        
+
         # Define button configurations: (text, tooltip, scriptkey, iconpath)
         buttonConfigs = [
             (
@@ -437,20 +438,20 @@ class MainWindow(QMainWindow):
                 'assets/snpicon.png'
             )
         ]
-        
+
         # Create buttons with enhanced styling
         self.buttons = {}
         for text, tooltip, scriptKey, iconPath in buttonConfigs:
             button = self.createStyledButton(text, tooltip, iconPath)
-            
+
             # Connect button to appropriate launch method
             button.clicked.connect(
                 lambda checked, key=scriptKey: self.launchApplication(key)
             )
-            
+
             self.buttons[scriptKey] = button
             buttonsLayout.addWidget(button)
-        
+
         parentLayout.addWidget(buttonsFrame)
 
     def createStyledButton(self, text: str, tooltip: str, iconPath: str) -> QPushButton:
@@ -475,13 +476,13 @@ class MainWindow(QMainWindow):
         button.setToolTip(tooltip)
         button.setMinimumHeight(50)
         button.setMaximumHeight(70)
-        
+
         # Set icon if available
         if os.path.exists(iconPath):
             icon = QIcon(iconPath)
             button.setIcon(icon)
             button.setIconSize(QSize(32, 32))
-        
+
         # Apply modern button styling
         button.setStyleSheet("""
             QPushButton {
@@ -517,7 +518,7 @@ class MainWindow(QMainWindow):
                 color: #7f8c8d;
             }
         """)
-        
+
         return button
 
     def createFooterSection(self, parentLayout: QVBoxLayout):
@@ -532,7 +533,7 @@ class MainWindow(QMainWindow):
         # Add spacer to push footer to bottom
         spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
         parentLayout.addItem(spacer)
-        
+
         # Create footer label
         footerLabel = QLabel(
             f'Version {APPVERSION} | Scientific Computing Suite\n'
@@ -579,7 +580,7 @@ class MainWindow(QMainWindow):
                 font-size: 12px;
             }
         """)
-        
+
         # Configure window properties for modern appearance
         font = QFont('Segoe UI', 10)  # Modern font choice
         self.setFont(font)
@@ -598,7 +599,7 @@ class MainWindow(QMainWindow):
             'rands', 'rands_large', 'snp').
         """
         scriptPath = SCRIPTPATHS.get(scriptKey)
-        
+
         if not scriptPath:
             QMessageBox.warning(
                 self,
@@ -606,10 +607,10 @@ class MainWindow(QMainWindow):
                 f'No script path configured for: {scriptKey}'
             )
             return
-        
+
         # Launch the script
         success = self.scriptLauncher.launchScript(scriptPath)
-        
+
         if success:
             QMessageBox.information(
                 self,
@@ -617,12 +618,12 @@ class MainWindow(QMainWindow):
                 f'Successfully launched: {scriptPath}\n\n'
                 f'The application should appear shortly.'
             )
-            
+
             # Disable button temporarily
             if scriptKey in self.buttons:
                 button = self.buttons[scriptKey]
                 button.setEnabled(False)
-                
+
                 # Restore button state after 2 seconds
                 QTimer.singleShot(
                     2000,
@@ -674,7 +675,7 @@ class PlottingSuiteApplication(QApplication):
         self.setApplicationName(APPNAME)
         self.setApplicationVersion(APPVERSION)
         self.setOrganizationName('Scientific Computing')
-        
+
         # Set application style
         self.setStyle('Fusion')  # Modern cross-platform style
 
@@ -695,19 +696,19 @@ class PlottingSuiteApplication(QApplication):
             pixmap.fill(Qt.darkBlue)
             print(f'Warning: Splash image not found at {SPLASHBACKGROUNDIMAGEPATH}')
             print('Using default splash screen')
-        
+
         self.splash = CustomSplashScreen(pixmap)
         self.splash.show()
-        
+
         # Process events to ensure splash screen is visible
         self.processEvents()
-        
+
         # Start splash screen thread
         self.splashThread = SplashScreenThread()
         self.splashThread.progressUpdated.connect(self.splash.updateProgress)
         self.splashThread.splashFinished.connect(self.onSplashFinished)
         self.splashThread.start()
-        
+
         return True
 
     def onSplashFinished(self):
@@ -759,7 +760,7 @@ def ensureAssetsDirectory():
     """
     assetsDir = Path('assets')
     assetsDir.mkdir(exist_ok=True)
-    
+
     # Create placeholder text files to guide developers
     placeholderFiles = [
         ('mainbackground.jpg', 'Place main window background image here'),
@@ -772,7 +773,7 @@ def ensureAssetsDirectory():
         ('randslrgicon.png', 'Place Rhode and Schwarz large files icon here'),
         ('snpicon.png', 'Place Touchstone plotter icon here'),
     ]
-    
+
     for filename, description in placeholderFiles:
         placeholderPath = assetsDir / f'{filename}.placeholder'
         if not placeholderPath.exists() and not (assetsDir / filename).exists():
@@ -794,14 +795,14 @@ def checkScriptDependencies() -> bool:
     for scriptName, scriptPath in SCRIPTPATHS.items():
         if not os.path.exists(scriptPath):
             missingScripts.append((scriptName, scriptPath))
-    
+
     if missingScripts:
         print('Warning: Missing script files:')
         for name, path in missingScripts:
             print(f'  - {name}: {path}')
         print('\nPlease ensure all script files are in the correct location.')
         return False
-    
+
     return True
 
 
@@ -819,20 +820,20 @@ def main():
     # Call this before any Qt imports if running as compiled executable
     if getattr(sys, 'frozen', False):
         setupQtPlugins()
-    
+
     # Ensure assets directory exists
     ensureAssetsDirectory()
-    
+
     # Create application instance
     app = PlottingSuiteApplication(sys.argv)
-    
+
     # Show splash screen if compiled with Nuitka or if explicitly requested
     showSplash = (
-        getattr(sys, 'frozen', False) or
-        '--splash' in sys.argv or  # Nuitka compiled
-        os.path.exists(SPLASHBACKGROUNDIMAGEPATH)  # Image available
+            getattr(sys, 'frozen', False) or
+            '--splash' in sys.argv or  # Nuitka compiled
+            os.path.exists(SPLASHBACKGROUNDIMAGEPATH)  # Image available
     )
-    
+
     if showSplash:
         app.showSplashScreen()
         app.mainWindow = MainWindow()

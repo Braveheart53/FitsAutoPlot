@@ -93,6 +93,7 @@ SCRIPT_PATHS = {
     'rands_large': 'RAndS_FSW_ASCII_Plotter_lrgFiles.py'
 }
 
+
 # %% Splash Screen Classes
 
 
@@ -103,16 +104,16 @@ class SplashScreenThread(QThread):
     splash_finished = Signal()
 
     def __init__(self):
-            """
-    Thread for handling splash screen progress simulation.
+        """
+Thread for handling splash screen progress simulation.
 
-    Signals
-    -------
-    progressUpdated : Signal(int)
-        Emitted with progress percentage (0-100).
-    splashFinished : Signal()
-        Emitted when splash screen should close.
-    """
+Signals
+-------
+progressUpdated : Signal(int)
+    Emitted with progress percentage (0-100).
+splashFinished : Signal()
+    Emitted when splash screen should close.
+"""
 
     progressUpdated = Signal(int)
     splashFinished = Signal()
@@ -850,9 +851,9 @@ def main():
     # Determine if we should show splash screen
     # Show splash screen if compiled with Nuitka or if explicitly requested
     show_splash = (
-        getattr(sys, 'frozen', False) or  # Nuitka compiled
-        '--splash' in sys.argv or         # Explicit request
-        os.path.exists(SPLASH_BACKGROUND_IMAGE_PATH)  # Image available
+            getattr(sys, 'frozen', False) or  # Nuitka compiled
+            '--splash' in sys.argv or  # Explicit request
+            os.path.exists(SPLASH_BACKGROUND_IMAGE_PATH)  # Image available
     )
 
     if show_splash:

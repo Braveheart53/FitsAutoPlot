@@ -73,12 +73,14 @@ import queue
 # %%% GPU Acceleration Modules
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
 
 try:
     import pyopencl as cl
+
     PYOPENCL_AVAILABLE = True
 except ImportError:
     PYOPENCL_AVAILABLE = False
@@ -87,6 +89,7 @@ except ImportError:
 import veusz.embed as embed
 from veusz.windows.simplewindow import SimpleWindow
 from veusz.document import CommandInterface
+
 
 # %% Configuration and Data Classes
 
@@ -110,6 +113,7 @@ class ProcessingConfig:
     use_shared_memory: bool = True
     batch_plot_generation: bool = True
 
+
 @dataclass
 class plotDescInfo:
     """Setting up general plot info class to update as needed."""
@@ -119,6 +123,7 @@ class plotDescInfo:
     graph_title: str
     base_name: str
     first_plot: bool
+
 
 # %% Enhanced GPU Processing Classes
 
@@ -168,8 +173,8 @@ class GPUProcessor:
                     # Select device with most compute units
                     best_device = max(devices, key=lambda d: d.max_compute_units)
                     self.context = cl.Context(devices=[best_device])
-                    self.queue = cl.CommandQueue(self.context, 
-                                               properties=cl.command_queue_properties.OUT_OF_ORDER_EXEC_MODE_ENABLE)
+                    self.queue = cl.CommandQueue(self.context,
+                                                 properties=cl.command_queue_properties.OUT_OF_ORDER_EXEC_MODE_ENABLE)
                     self.gpu_available = True
                     print(f"OpenCL initialized with device: {best_device.name} ({best_device.max_compute_units} CUs)")
         except Exception as e:
@@ -216,36 +221,36 @@ class GPUProcessor:
     def _process_batch_cupy(self, data_arrays_list):
         """Process batch of data using CuPy with optimized memory management."""
         processed_arrays = []
-        
+
         with cp.cuda.Stream() as stream:
             for batch_start in range(0, len(data_arrays_list), self.batch_size):
                 batch_end = min(batch_start + self.batch_size, len(data_arrays_list))
                 batch_arrays = data_arrays_list[batch_start:batch_end]
-                
+
                 # Process batch on GPU
                 gpu_arrays = [cp.asarray(arr, stream=stream) for arr in batch_arrays]
-                
+
                 # Apply processing (vectorized operations)
                 processed_gpu = [arr * 1.0 for arr in gpu_arrays]  # Identity operation
-                
+
                 # Transfer back to CPU
                 processed_batch = [cp.asnumpy(arr) for arr in processed_gpu]
                 processed_arrays.extend(processed_batch)
-                
+
                 # Clear GPU memory for this batch
                 del gpu_arrays, processed_gpu
                 stream.synchronize()
-                
+
         # Force memory cleanup
         if self.memory_pool:
             self.memory_pool.free_all_blocks()
-            
+
         return processed_arrays
 
     def _process_batch_opencl(self, data_arrays_list):
         """Process batch of data using OpenCL with enhanced kernels."""
         processed_arrays = []
-        
+
         # Enhanced kernel with multiple operations
         kernel_source = """
         __kernel void process_data_batch(__global float* data, const int size) {
@@ -257,37 +262,37 @@ class GPUProcessor:
             }
         }
         """
-        
+
         try:
             program = cl.Program(self.context, kernel_source).build()
             kernel = program.process_data_batch
-            
+
             for batch_start in range(0, len(data_arrays_list), self.batch_size):
                 batch_end = min(batch_start + self.batch_size, len(data_arrays_list))
                 batch_arrays = data_arrays_list[batch_start:batch_end]
-                
+
                 batch_processed = []
                 for data_array in batch_arrays:
                     # Create OpenCL buffer
                     mf = cl.mem_flags
                     data_buffer = cl.Buffer(self.context, mf.READ_WRITE | mf.COPY_HOST_PTR,
-                                          hostbuf=data_array.astype(np.float32))
-                    
+                                            hostbuf=data_array.astype(np.float32))
+
                     # Execute kernel
                     kernel(self.queue, (len(data_array),), None, data_buffer, np.int32(len(data_array)))
-                    
+
                     # Read back results
                     result = np.empty_like(data_array, dtype=np.float32)
                     cl.enqueue_copy(self.queue, result, data_buffer)
                     batch_processed.append(result.astype(data_array.dtype))
-                
+
                 processed_arrays.extend(batch_processed)
                 self.queue.finish()
-                
+
         except Exception as e:
             print(f"OpenCL batch processing error: {e}")
             return data_arrays_list
-            
+
         return processed_arrays
 
     def process_array_gpu(self, data_array):
@@ -308,6 +313,7 @@ class GPUProcessor:
             return data_array
 
         return self.process_batch_arrays_gpu([data_array])[0]
+
 
 # %% Enhanced Multiprocessing Worker Functions
 
@@ -340,23 +346,23 @@ def process_file_worker_enhanced(file_info):
             # Collect all data arrays for batch processing
             data_arrays = []
             keys_order = []
-            
+
             for key, data_match in data_returned['data_matches'].items():
                 if 'extracted_value' in data_match:
                     data_array = np.array(data_match['extracted_value'])
                     data_arrays.append(data_array)
                     keys_order.append(key)
-            
+
             if data_arrays:
                 # Process all arrays in batch on GPU
                 processed_arrays = gpu_processor.process_batch_arrays_gpu(data_arrays)
-                
+
                 # Update the data structure
                 for i, key in enumerate(keys_order):
                     data_returned['data_matches'][key]['extracted_value'] = processed_arrays[i].tolist()
 
         processing_time = time.time() - start_time
-        
+
         return {
             'filename': filename,
             'data': data_returned,
@@ -372,6 +378,7 @@ def process_file_worker_enhanced(file_info):
             'error': str(e),
             'processing_time': 0
         }
+
 
 def save_batch_worker_enhanced(save_info):
     """
@@ -392,7 +399,7 @@ def save_batch_worker_enhanced(save_info):
         start_time = time.time()
         doc_copy.Save(filename, mode=mode)
         save_time = time.time() - start_time
-        
+
         return {
             'filename': filename,
             'success': True,
@@ -406,6 +413,7 @@ def save_batch_worker_enhanced(save_info):
             'error': str(e),
             'save_time': 0
         }
+
 
 def plot_generation_worker(plot_info):
     """
@@ -434,6 +442,7 @@ def plot_generation_worker(plot_info):
             'error': str(e)
         }
 
+
 def extract_with_regex(inputText: str, delim: str = ';'):
     """
     Extract all substrings enclosed by the same delimiter using regex.
@@ -453,6 +462,7 @@ def extract_with_regex(inputText: str, delim: str = ';'):
     esc = re.escape(delim)
     pattern = rf"{esc}(.*?){esc}"
     return re.findall(pattern, inputText)
+
 
 # %% Enhanced Qt GUI Classes
 
@@ -489,7 +499,7 @@ class FileProcessingThread(QThread):
         """Execute file processing in separate thread with maximum parallelization."""
         try:
             self.status_updated.emit("Initializing parallel processing...")
-            
+
             if self.config.enable_multiprocessing and len(self.file_list) > 1:
                 results = self._process_files_parallel_enhanced()
             else:
@@ -508,10 +518,10 @@ class FileProcessingThread(QThread):
 
         results = []
         total_files = len(file_info_list)
-        
+
         # Use optimal number of workers based on system resources
         optimal_workers = min(self.config.max_workers, len(file_info_list), cpu_count() * 2)
-        
+
         self.status_updated.emit(f"Processing {total_files} files with {optimal_workers} workers...")
 
         with ProcessPoolExecutor(max_workers=optimal_workers) as executor:
@@ -523,18 +533,18 @@ class FileProcessingThread(QThread):
 
             completed = 0
             total_processing_time = 0
-            
+
             for future in as_completed(future_to_file):
                 result = future.result()
                 results.append(result)
                 completed += 1
-                
+
                 if result['success']:
                     total_processing_time += result.get('processing_time', 0)
-                
+
                 progress = int((completed / total_files) * 100)
                 self.progress_updated.emit(progress)
-                
+
                 # Update status with performance metrics
                 avg_time = total_processing_time / max(1, completed) if completed > 0 else 0
                 eta_seconds = avg_time * (total_files - completed)
@@ -542,25 +552,26 @@ class FileProcessingThread(QThread):
 
         successful = sum(1 for r in results if r['success'])
         self.status_updated.emit(f"Completed: {successful}/{total_files} files processed successfully")
-        
+
         return results
 
     def _process_files_sequential_enhanced(self):
         """Process files sequentially with performance monitoring."""
         results = []
         total_files = len(self.file_list)
-        
+
         for i, filename in enumerate(self.file_list):
-            self.status_updated.emit(f"Processing file {i+1}/{total_files}: {os.path.basename(filename)}")
-            
+            self.status_updated.emit(f"Processing file {i + 1}/{total_files}: {os.path.basename(filename)}")
+
             file_info = (filename, self.search_strings, self.sft_lines, self.config)
             result = process_file_worker_enhanced(file_info)
             results.append(result)
-            
+
             progress = int(((i + 1) / total_files) * 100)
             self.progress_updated.emit(progress)
 
         return results
+
 
 class EnhancedMainWindow(QMainWindow):
     """Enhanced main window with modern Qt interface and advanced processing options."""
@@ -574,7 +585,7 @@ class EnhancedMainWindow(QMainWindow):
         # Initialize configuration with defaults optimized for performance
         self.config = ProcessingConfig()
         self.config.enable_multiprocessing = True  # Enable by default
-        
+
         # Auto-detect and enable GPU if available
         if CUPY_AVAILABLE or PYOPENCL_AVAILABLE:
             self.config.enable_gpu_processing = True
@@ -656,36 +667,36 @@ class EnhancedMainWindow(QMainWindow):
         # Plot options section (Option 1)
         plot_group = QGroupBox("Plot Options")
         plot_layout = QVBoxLayout(plot_group)
-        
+
         # Radio button group for plot mode
         self.plot_mode_group = QButtonGroup()
-        
+
         self.all_plots_radio = QRadioButton("All plots (original behavior)")
         self.all_plots_radio.setChecked(True)
         self.plot_mode_group.addButton(self.all_plots_radio, 0)
         plot_layout.addWidget(self.all_plots_radio)
-        
+
         self.avg_overlay_radio = QRadioButton("Average + Overlay only (no individual plots)")
         self.plot_mode_group.addButton(self.avg_overlay_radio, 1)
         plot_layout.addWidget(self.avg_overlay_radio)
-        
+
         self.avg_only_radio = QRadioButton("Average only (no individual or overlay plots)")
         self.plot_mode_group.addButton(self.avg_only_radio, 2)
         plot_layout.addWidget(self.avg_only_radio)
-        
+
         self.plot_mode_group.buttonClicked.connect(self._update_plot_mode)
-        
+
         main_layout.addWidget(plot_group)
 
         # Auto-save options section (Option 2)
         autosave_group = QGroupBox("Auto-Save Options")
         autosave_layout = QVBoxLayout(autosave_group)
-        
+
         # Enable auto-save checkbox
         self.enable_autosave_checkbox = QCheckBox("Enable automatic batch saving")
         self.enable_autosave_checkbox.stateChanged.connect(self._update_autosave_config)
         autosave_layout.addWidget(self.enable_autosave_checkbox)
-        
+
         # Plots per file setting
         plots_layout = QHBoxLayout()
         plots_layout.addWidget(QLabel("Plots per file:"))
@@ -695,7 +706,7 @@ class EnhancedMainWindow(QMainWindow):
         plots_layout.addWidget(self.plots_per_file_edit)
         plots_layout.addStretch()
         autosave_layout.addLayout(plots_layout)
-        
+
         # Base filename setting
         filename_layout = QHBoxLayout()
         filename_layout.addWidget(QLabel("Base filename:"))
@@ -705,7 +716,7 @@ class EnhancedMainWindow(QMainWindow):
         filename_layout.addWidget(self.base_filename_edit)
         filename_layout.addStretch()
         autosave_layout.addLayout(filename_layout)
-        
+
         main_layout.addWidget(autosave_group)
 
         # Progress bar
@@ -927,7 +938,7 @@ class EnhancedMainWindow(QMainWindow):
             try:
                 self.vzplot._process_file_data(filename, data_returned)
                 if i % 10 == 0:  # Update every 10 files
-                    self._log_message(f"Created plots for {i+1}/{len(results)} files")
+                    self._log_message(f"Created plots for {i + 1}/{len(results)} files")
             except Exception as e:
                 self._log_message(f"Plot creation failed for {os.path.basename(filename)}: {e}")
 
@@ -957,6 +968,7 @@ class EnhancedMainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Save Error",
                                      f"Failed to save project: {e}")
+
 
 # %% Enhanced Auto Plotter Class
 
@@ -1036,7 +1048,7 @@ class VZPlotRnS:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             save_dir = f"RnS_AutoSave_{timestamp}"
             os.makedirs(save_dir, exist_ok=True)
-            
+
             # Set base path without extension (will be added during save)
             self.base_save_path = os.path.join(save_dir, self.config.auto_save_base_name)
             print(f"Auto-save directory created: {save_dir}")
@@ -1045,22 +1057,22 @@ class VZPlotRnS:
         """Automatically save file if plot count threshold is reached."""
         if not self.auto_save_enabled:
             return
-            
+
         if self.plot_count > 0 and self.plot_count % self.plots_per_file == 0:
             if self.base_save_path is None:
                 self._setup_auto_save_path()
-            
+
             # Generate filename with batch number
             batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
-            
+
             # Use multiprocessing for save operation if enabled
             if self.config.enable_multiprocessing:
                 self._save_batch_parallel(batch_filename)
             else:
                 self._save_batch_sequential(batch_filename)
-            
+
             print(f"Auto-saved batch {self.file_batch_number} with {self.plots_per_file} plots to: {batch_filename}")
-            
+
             # Reset for next batch
             self.file_batch_number += 1
             self._reset_for_next_batch()
@@ -1070,10 +1082,10 @@ class VZPlotRnS:
         try:
             # Create a deep copy of the document for parallel saving
             # Note: This is simplified - actual implementation would need proper document serialization
-            
+
             def save_worker():
                 self.doc.Save(filename, mode='hdf5')
-                
+
             # Use threading for I/O bound save operation
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(save_worker)
@@ -1082,7 +1094,7 @@ class VZPlotRnS:
                 except Exception as e:
                     print(f"Parallel save failed: {e}")
                     self._save_batch_sequential(filename)
-            
+
         except Exception as e:
             print(f"Error during parallel save: {e}")
             # Fallback to sequential save
@@ -1101,10 +1113,10 @@ class VZPlotRnS:
         self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
         self.doc.EnableToolbar(enable=True)
         self.first_1d = True
-        
+
         # Clear dataset tracking for new batch
         self._datasets_by_base.clear()
-        
+
         # Force garbage collection
         gc.collect()
 
@@ -1122,7 +1134,7 @@ class VZPlotRnS:
                       if ('freq' not in ds.lower()
                           and not ds.endswith(('_avg_dB', '_avg_lin')))]
 
-        if len(candidates) < 2:      # nothing meaningful to average
+        if len(candidates) < 2:  # nothing meaningful to average
             return
 
         # Pick numeric backend - prefer GPU if available
@@ -1143,31 +1155,31 @@ class VZPlotRnS:
                 # Use GPU for all array operations
                 linear_arrays = [_db_to_lin(arr) for arr in data_arrays]
                 linear_stack = xp.vstack(linear_arrays)
-                
-            elif (self.config.enable_multiprocessing and 
-                  len(candidates) > 2 and 
+
+            elif (self.config.enable_multiprocessing and
+                  len(candidates) > 2 and
                   self.config.num_processes > 1):
-                
+
                 # Use optimized ThreadPoolExecutor for mathematical operations
                 with ThreadPoolExecutor(max_workers=self.config.num_processes) as executor:
                     # Process arrays in parallel chunks
                     chunk_size = max(1, len(data_arrays) // self.config.num_processes)
-                    chunks = [data_arrays[i:i + chunk_size] 
-                             for i in range(0, len(data_arrays), chunk_size)]
-                    
+                    chunks = [data_arrays[i:i + chunk_size]
+                              for i in range(0, len(data_arrays), chunk_size)]
+
                     def process_chunk(chunk):
                         return [10.0 ** (arr / 10.0) for arr in chunk]
-                    
+
                     # Submit chunk processing tasks
                     futures = [executor.submit(process_chunk, chunk) for chunk in chunks]
-                    
+
                     # Collect results
                     linear_arrays = []
                     for future in as_completed(futures):
                         linear_arrays.extend(future.result())
-                        
+
                 linear_stack = xp.vstack(linear_arrays)
-                
+
             else:
                 # Sequential processing
                 linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
@@ -1199,7 +1211,7 @@ class VZPlotRnS:
             if self.config.plot_mode >= 1:  # avg+overlay or avg only modes
                 prev_title = self.plotInfo.graph_title
                 self.plotInfo.graph_title = f"{base_name} average"
-                self._plot_1d(db_name)          # plot dB average
+                self._plot_1d(db_name)  # plot dB average
                 self.plotInfo.graph_title = prev_title
 
         except Exception as e:
@@ -1284,7 +1296,7 @@ class VZPlotRnS:
             # Create individual plots only in mode 0 (all plots)
             if self.config.plot_mode == 0:
                 self._plot_1d(dataset_name)
-                
+
                 # Increment plot count and check for auto-save
                 self.plot_count += 1
                 self._auto_save_if_needed()
@@ -1303,7 +1315,7 @@ class VZPlotRnS:
             # Check if we should create overlay based on plot mode
             create_overlay = (self.config.plot_mode == 0) or (self.config.plot_mode == 1)
             create_individual = (self.config.plot_mode == 0)
-            
+
             # Create overlay plot if it doesn't exist and mode allows it
             if create_overlay and 'AllImported' not in self.doc.Root.childnames:
                 self._create_page('AllImported')
@@ -1408,11 +1420,11 @@ class VZPlotRnS:
             with ThreadPoolExecutor(max_workers=2) as executor:
                 # Submit both save operations
                 hdf5_future = executor.submit(self.doc.Save, filename_hp, 'hdf5')
-                
+
                 # Create legacy directory and submit legacy save
                 os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
                 vsz_future = executor.submit(self.doc.Save, filename_vsz, 'vsz')
-                
+
                 # Wait for completion
                 try:
                     hdf5_future.result(timeout=60)
@@ -1434,7 +1446,8 @@ class VZPlotRnS:
                 final_batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
                 try:
                     self.doc.Save(final_batch_filename, mode='hdf5')
-                    print(f"Final batch saved with {self.plot_count % self.plots_per_file} plots to: {final_batch_filename}")
+                    print(
+                        f"Final batch saved with {self.plot_count % self.plots_per_file} plots to: {final_batch_filename}")
                 except Exception as e:
                     print(f"Error saving final batch: {e}")
 
@@ -1462,6 +1475,7 @@ class VZPlotRnS:
                 f"Failed to start Veusz: {e}"
             )
 
+
 # %% Veusz Example for Embedding
 
 class VeuszWin(SimpleWindow):
@@ -1480,7 +1494,8 @@ class VeuszWin(SimpleWindow):
         ifc.Add('function', name='myfunc')
 
         ifc.Set('myfunc/function', 'sin(x)')
-        ifc.Set('x/max', 3.14*2)
+        ifc.Set('x/max', 3.14 * 2)
+
 
 class MainWindow(QWidget):
     """Put veusz window in layout with push button."""
@@ -1502,6 +1517,7 @@ class MainWindow(QWidget):
         print("Writing", filename)
         self.veuszwin.interface.Export(filename)
 
+
 # %% Utility Functions
 
 def setup_qt_plugins():
@@ -1517,33 +1533,34 @@ def setup_qt_plugins():
     except ImportError:
         pass
 
+
 # %% Main Application
 
 def main():
     """Main application entry point with enhanced performance optimizations."""
-    
+
     # Enhanced monitoring for large file processing
     monitor = start_monitoring(seconds_frozen=30, test_interval=100)
-    
+
     # Set multiprocessing start method for cross-platform compatibility
     if __name__ == '__main__':
         mp.set_start_method('spawn', force=True)
-        
+
     # Call this before any Qt imports
     if getattr(sys, 'frozen', False):  # Check if running as compiled executable
         setup_qt_plugins()
-        
+
     app = QApplication(sys.argv)
-    
+
     # Set application properties for better performance
     app.setAttribute(Qt.AA_UseHighDpiPixmaps)
     app.setApplicationDisplayName("Enhanced R&S SFT File Plotter v1.0.2")
     app.setApplicationVersion("1.0.2")
-    
+
     # Create and show main window
     window = EnhancedMainWindow()
     window.show()
-    
+
     # Run application
     try:
         sys.exit(app.exec_())
@@ -1556,6 +1573,7 @@ def main():
                 cp.get_default_memory_pool().free_all_blocks()
             except:
                 pass
+
 
 if __name__ == '__main__':
     main()
