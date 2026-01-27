@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
+
 # -*- coding: utf-8 -*-
 
-"""Enhanced Touchstone AutoPlot - Complete Production Version with Consistent Color Scheme.
+"""Enhanced Touchstone AutoPlot - Complete Production Version with Gate Control Fix.
 
 This version integrates modern Qt GUI interface with comprehensive Touchstone file processing
 capabilities using scikit-rf, including:
+
 - Multiprocessing and GPU acceleration (CuPy, PyOpenCL, Taichi)
 - Advanced time domain analysis with gating functionality using scikit-rf
 - Smith Chart plotting using scikit-rf native charts (interactive with PDF bookmarks)
 - Time-gated plot generation in Veusz
 - PDF export with bookmarks for Smith charts
 - CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
-- ADDED: Consistent color scheme for S-parameters across all Veusz plots
+- FIXED: Gate controls always enabled for arbitrary adjustment
+- FIXED: Marker colors applied to both lines and markers in Veusz plots
 
 Author: William W. Wallace
-Last updated: 2026-01-27 (Color consistency added)
+Last updated: 2026-01-27 (Gate Control & Color Application Fixes)
 """
 
 # ============================================================================
 # IMPORTS - Standard Library
 # ============================================================================
+
 import multiprocessing
 import os
 import subprocess
@@ -27,6 +31,7 @@ import sys
 import datetime
 import tempfile
 import shutil
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
@@ -35,6 +40,7 @@ from contextlib import contextmanager
 # ============================================================================
 # IMPORTS - Scientific and Numerical Computing
 # ============================================================================
+
 import numpy as np
 import scipy.signal.windows as windows
 import veusz.embed as vz
@@ -42,14 +48,15 @@ import veusz.embed as vz
 # ============================================================================
 # IMPORTS - RF/Microwave Engineering and Network Analysis
 # ============================================================================
+
 import skrf as rf
 from skrf import Network
 
 # ============================================================================
 # IMPORTS - Plotting and Visualization
 # ============================================================================
-import matplotlib
 
+import matplotlib
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -59,7 +66,6 @@ from matplotlib.figure import Figure
 try:
     import mpld3
     from mpld3 import plugins
-
     MPLD3_AVAILABLE = True
 except ImportError:
     MPLD3_AVAILABLE = False
@@ -69,6 +75,7 @@ except ImportError:
 # ============================================================================
 # IMPORTS - PDF Processing
 # ============================================================================
+
 try:
     from PyPDF2 import PdfWriter, PdfReader
 except ImportError:
@@ -78,6 +85,7 @@ except ImportError:
 # ============================================================================
 # IMPORTS - Qt Framework
 # ============================================================================
+
 if getattr(sys, 'frozen', False):
     from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtGui import QFont
@@ -102,33 +110,31 @@ else:
 # ============================================================================
 # GPU Acceleration Detection
 # ============================================================================
+
 GPU_AVAILABLE = None
 try:
     import cupy as cp
-
     GPU_AVAILABLE = "cupy"
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as cl_array
-
         GPU_AVAILABLE = "opencl"
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
-
             GPU_AVAILABLE = "taichi"
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
             GPU_AVAILABLE = None
             print("No GPU acceleration libraries detected - using CPU only")
 
-
 # ============================================================================
 # CONFIGURATION CLASSES
 # ============================================================================
+
 @dataclass
 class ProcessingConfig:
     """Configuration for file processing."""
@@ -136,7 +142,6 @@ class ProcessingConfig:
     enable_gpu_processing: bool = True
     num_processes: int = multiprocessing.cpu_count()
     max_workers: int = multiprocessing.cpu_count()
-
 
 @dataclass
 class TimeDomainConfig:
@@ -149,7 +154,6 @@ class TimeDomainConfig:
     tunit: str = "ns"
     auto_gate: bool = True
 
-
 @dataclass
 class SmithChartConfig:
     """Configuration for Smith Chart plotting."""
@@ -158,30 +162,28 @@ class SmithChartConfig:
     draw_vswr: bool = True
     reference_impedance: float = 50.0
 
+# ============================================================================
+# S-PARAMETER TO COLOR MAPPING FUNCTION
+# ============================================================================
 
-# ============================================================================
-# COLOR SCHEME MAPPING FOR S-PARAMETERS
-# ============================================================================
 def get_sparam_color(param_name: str) -> str:
     """Get consistent color for S-parameter based on parameter name.
-
-    This ensures S11, S22, S21, S34, etc. always use the same color
-    across all Veusz plots.
-
+    
+    Provides deterministic color mapping for reflection and transmission parameters
+    to ensure consistency across all plot types (frequency, time domain, time-gated).
+    
     Parameters
     ----------
     param_name : str
-        S-parameter name like 'S11', 'S21', 'S34', etc.
-
+        S-parameter name (e.g., "S11", "S21", "S34").
+        
     Returns
     -------
     str
-        Veusz color name
+        Veusz color name for the parameter.
     """
-    # Define a comprehensive color palette for S-parameters
-    # These colors are chosen to be distinct and visually appealing
     color_map = {
-        # Reflection parameters (diagonal)
+        # Reflection parameters (diagonal elements)
         'S11': 'blue',
         'S22': 'red',
         'S33': 'green',
@@ -190,69 +192,30 @@ def get_sparam_color(param_name: str) -> str:
         'S66': 'brown',
         'S77': 'pink',
         'S88': 'grey',
-
-        # Transmission parameters (off-diagonal)
-        'S12': 'cyan',
+        
+        # Forward transmission parameters
         'S21': 'darkblue',
-        'S13': 'purple',
         'S31': 'darkgreen',
-        'S14': 'darkcyan',
         'S41': 'darkmagenta',
-        'S23': 'lime',
-        'S32': 'olive',
-        'S24': 'teal',
-        'S42': 'navy',
-        'S34': 'maroon',
-        'S43': 'indigo',
-        'S15': 'gold',
-        'S51': 'coral',
-        'S16': 'violet',
-        'S61': 'sienna',
-        'S25': 'turquoise',
-        'S52': 'salmon',
-        'S26': 'khaki',
-        'S62': 'plum',
-        'S35': 'orchid',
-        'S53': 'tan',
-        'S36': 'beige',
-        'S63': 'mint',
-        'S45': 'lavender',
-        'S54': 'crimson',
-        'S46': 'azure',
-        'S64': 'ivory',
-        'S56': 'snow',
-        'S65': 'wheat',
-        'S17': 'linen',
-        'S71': 'peru',
-        'S18': 'seashell',
-        'S81': 'bisque',
-        'S27': 'honeydew',
-        'S72': 'aliceblue',
-        'S28': 'mistyrose',
-        'S82': 'papayawhip',
-        'S37': 'moccasin',
-        'S73': 'navajowhite',
-        'S38': 'peachpuff',
-        'S83': 'palegreen',
-        'S47': 'palegoldenrod',
-        'S74': 'paleturquoise',
-        'S48': 'palevioletred',
-        'S84': 'lightblue',
-        'S57': 'lightcoral',
-        'S75': 'lightcyan',
-        'S58': 'lightgoldenrodyellow',
-        'S85': 'lightgray',
-        'S67': 'lightgreen',
-        'S76': 'lightpink',
-        'S68': 'lightsalmon',
-        'S86': 'lightseagreen',
-        'S78': 'lightskyblue',
-        'S87': 'lightslategray',
+        'S51': 'darkcyan',
+        'S61': 'olive',
+        'S71': 'navy',
+        'S81': 'teal',
+        
+        # Other transmission parameters
+        'S12': 'cyan',
+        'S13': 'purple',
+        'S14': 'darkcyan',
+        'S23': 'lightblue',
+        'S24': 'lightgreen',
+        'S34': 'indigo',
+        'S43': 'maroon',
+        'S52': 'coral',
+        'S62': 'khaki',
+        'S72': 'lavender',
+        'S82': 'lightgrey',
     }
-
-    # Return the mapped color, or default to 'auto' if not in map
     return color_map.get(param_name, 'auto')
-
 
 # ============================================================================
 # TIME DOMAIN PROCESSOR
@@ -260,14 +223,14 @@ def get_sparam_color(param_name: str) -> str:
 
 class TimeDomainProcessor:
     """Handles time domain analysis of S-parameter data using scikit-rf.
-
+    
     Uses windowed IFFT for frequency-to-time conversion with proper scaling
     and supports time-domain gating with configurable window types.
     """
 
     def __init__(self, config: TimeDomainConfig = None):
         """Initialize time domain processor.
-
+        
         Parameters
         ----------
         config : TimeDomainConfig
@@ -277,17 +240,17 @@ class TimeDomainProcessor:
 
     def process_network(self, network: Network, apply_window: bool = True) -> dict:
         """Process a network for time domain analysis using windowed IFFT.
-
+        
         Converts frequency-domain S-parameters to time-domain impulse response
         using windowed IFFT with optional time-domain gating.
-
+        
         Parameters
         ----------
         network : Network
             scikit-rf Network object with equally-spaced frequency points.
         apply_window : bool
             Whether to apply windowing in frequency domain before IFFT.
-
+            
         Returns
         -------
         dict
@@ -299,7 +262,6 @@ class TimeDomainProcessor:
             - 'error': Error message if processing failed, None otherwise.
         """
         results = {}
-
         try:
             freq_hz = network.frequency.f
             num_freq = len(freq_hz)
@@ -328,7 +290,6 @@ class TimeDomainProcessor:
                                 window = windows.blackman(num_freq)
                             else:  # boxcar
                                 window = np.ones(num_freq)
-
                             s_windowed = s_param * window
                         except Exception as e:
                             print(f"Warning: Windowing failed for {param_name}: {e}")
@@ -371,7 +332,7 @@ class TimeDomainProcessor:
     def _apply_time_gate(self, time_domain_data: np.ndarray, time_array: np.ndarray,
                          gate_center: float, gate_span: float) -> np.ndarray:
         """Apply time-domain gating with Hamming window smoothing.
-
+        
         Parameters
         ----------
         time_domain_data : np.ndarray
@@ -382,7 +343,7 @@ class TimeDomainProcessor:
             Gate center time in nanoseconds.
         gate_span : float
             Gate span (width) in nanoseconds.
-
+            
         Returns
         -------
         np.ndarray
@@ -405,12 +366,12 @@ class TimeDomainProcessor:
 
     def apply_gpu_acceleration(self, s_data: np.ndarray) -> np.ndarray:
         """Apply GPU-accelerated IFFT to S-parameter data if available.
-
+        
         Parameters
         ----------
         s_data : np.ndarray
             S-parameter data array (complex).
-
+            
         Returns
         -------
         np.ndarray
@@ -422,6 +383,7 @@ class TimeDomainProcessor:
         try:
             if GPU_AVAILABLE == "cupy":
                 import cupy as cp
+
                 # Transfer to GPU, perform IFFT with scaling, transfer back
                 gpu_data = cp.asarray(s_data, dtype=cp.complex128)
                 gpu_result = cp.fft.ifft(gpu_data) * len(s_data)
@@ -441,8 +403,8 @@ class TimeDomainProcessor:
 
         except Exception as e:
             print(f"Warning: GPU acceleration failed, falling back to CPU: {e}")
-            return np.fft.ifft(s_data) * len(s_data)
 
+        return np.fft.ifft(s_data) * len(s_data)
 
 # ============================================================================
 # SMITH CHART PLOTTER - SCIKIT-RF NATIVE
@@ -457,9 +419,9 @@ class SmithChartPlottermpld3:
         self.plots = {}
 
     def create_smith_chart(self, network: Network, param_name: str = "S11",
-                           chart_type: str = "z") -> Tuple[Figure, Network]:
+                          chart_type: str = "z") -> Tuple[Figure, Network]:
         """Create an interactive Smith Chart visualization.
-
+        
         Parameters
         ----------
         network : Network
@@ -468,7 +430,7 @@ class SmithChartPlottermpld3:
             Parameter name for labeling (e.g., "S11", "S21").
         chart_type : str
             Chart type: "z" for impedance, "y" for admittance.
-
+            
         Returns
         -------
         Tuple[Figure, Network]
@@ -490,15 +452,15 @@ class SmithChartPlottermpld3:
             # Customize title
             chart_label = "Impedance" if chart_type == "z" else "Admittance"
             ax.set_title(f'{param_name} - Smith Chart ({chart_label})',
-                         fontsize=14, fontweight='bold', pad=20)
+                        fontsize=14, fontweight='bold', pad=20)
 
             # Add mpld3 hover tooltips if available
             if MPLD3_AVAILABLE:
                 try:
                     freq_ghz = network.frequency.f / 1e9
                     s_data = network.s[:, 0, 0]
-
                     labels = []
+
                     for i in range(len(freq_ghz)):
                         freq = freq_ghz[i]
                         s_val = s_data[i]
@@ -510,11 +472,11 @@ class SmithChartPlottermpld3:
                         else:
                             vswr = 10.0
 
-                        label = (f"{param_name}<br>"
-                                 f"Frequency: {freq:.2f} GHz<br>"
-                                 f"Magnitude: {mag:.4f}<br>"
-                                 f"Phase: {phase:.1f}°<br>"
-                                 f"VSWR: {vswr:.2f}")
+                        label = (f"{param_name}\n"
+                                f"Frequency: {freq:.2f} GHz\n"
+                                f"Magnitude: {mag:.4f}\n"
+                                f"Phase: {phase:.1f}°\n"
+                                f"VSWR: {vswr:.2f}")
                         labels.append(label)
 
                     for artist in ax.get_children():
@@ -540,9 +502,9 @@ class SmithChartPlottermpld3:
             raise
 
     def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
-                           output_path: str, export_format: str) -> bool:
+                          output_path: str, export_format: str) -> bool:
         """Export a Smith chart to file.
-
+        
         Parameters
         ----------
         network : Network
@@ -555,7 +517,7 @@ class SmithChartPlottermpld3:
             Output file path.
         export_format : str
             Format: "html", "png", "svg", or "pdf".
-
+            
         Returns
         -------
         bool
@@ -568,7 +530,7 @@ class SmithChartPlottermpld3:
                 if not MPLD3_AVAILABLE:
                     print("Warning: mpld3 not available, saving as PNG instead")
                     fig.savefig(output_path.replace('.html', '.png'),
-                                format='png', dpi=150, bbox_inches='tight')
+                              format='png', dpi=150, bbox_inches='tight')
                     plt.close(fig)
                     return True
 
@@ -600,14 +562,14 @@ class SmithChartPlottermpld3:
     @staticmethod
     def create_pdf_with_bookmarks(pdf_files: List[Tuple[str, str]], output_path: str) -> bool:
         """Merge PDFs with bookmarks for navigation.
-
+        
         Parameters
         ----------
         pdf_files : List[Tuple[str, str]]
             List of (filepath, bookmark_name) tuples.
         output_path : str
             Output PDF path.
-
+            
         Returns
         -------
         bool
@@ -643,7 +605,6 @@ class SmithChartPlottermpld3:
             print(f"Error creating PDF with bookmarks: {e}")
             return False
 
-
 # ============================================================================
 # TOUCHSTONE PLOTTER - VEUSZ
 # ============================================================================
@@ -677,20 +638,17 @@ class TouchstonePlotter:
             g.plotTitle.alignHorz.val = 'centre'
             g.plotTitle.yPos.val = 1.05
             g.plotTitle.xPos.val = 0.5
-
             g.x.label.val = x_label
             g.y.label.val = y_label
-
             g.x.GridLines.hide.val = False
             g.y.GridLines.hide.val = False
             g.x.MinorGridLines.hide.val = False
             g.y.MinorGridLines.hide.val = False
-
             g.y.min.val = y_min
             g.y.max.val = y_max
 
     def _configure_xy_plot(self, xy, x_data, y_data, color):
-        """Configure an XY plot."""
+        """Configure an XY plot with consistent color for line AND markers."""
         with self._wrap_widget(xy) as plot:
             plot.xData.val = x_data
             plot.yData.val = y_data
@@ -698,8 +656,12 @@ class TouchstonePlotter:
             plot.PlotLine.width.val = '2pt'
             plot.marker.val = 'circle'
             plot.markerSize.val = '2pt'
-            plot.MarkerFill.color.val = 'auto'
-            plot.MarkerFill.transparency.val = 80
+            # FIXED: Apply color to markers, not 'auto'
+            plot.MarkerFill.color.val = color
+            plot.MarkerFill.transparency.val = 20
+            # Also set marker outline color for consistency
+            plot.MarkerLine.color.val = color
+            plot.MarkerLine.width.val = '1pt'
 
     def create_plots_from_data(self, filename: str, data: dict):
         """Create frequency domain plots from Touchstone data."""
@@ -707,7 +669,6 @@ class TouchstonePlotter:
             network = data['network']
             dataset_name = filename.replace('.', '_').replace('-', '_')
             self._create_frequency_page(dataset_name, data)
-
         except Exception as e:
             print(f"Error creating plots: {e}")
 
@@ -715,8 +676,8 @@ class TouchstonePlotter:
         """Create frequency domain plot page."""
         network = data['network']
         n_ports = network.nports
-
         freq_name = f"{dataset_name}_freq"
+
         self.doc.SetData(freq_name, network.frequency.f / 1e9)
 
         page = self.doc.Root.Add('page', name=f"SParam_{dataset_name}")
@@ -754,10 +715,12 @@ class TouchstonePlotter:
                 self.doc.SetData(phase_name, phase_deg)
 
                 xy_mag = graph_mag.Add('xy', name=f"{param_name}_mag")
-                self._configure_xy_plot(xy_mag, freq_name, mag_name, 'auto')
+                # FIXED: Use consistent color for both lines and markers
+                self._configure_xy_plot(xy_mag, freq_name, mag_name, get_sparam_color(param_name))
 
                 xy_phase = graph_phase.Add('xy', name=f"{param_name}_phase")
-                self._configure_xy_plot(xy_phase, freq_name, phase_name, 'auto')
+                # FIXED: Use consistent color for both lines and markers
+                self._configure_xy_plot(xy_phase, freq_name, phase_name, get_sparam_color(param_name))
 
     def create_time_domain_plots(self, filename: str, data: dict, td_result: dict):
         """Create time domain plots in Veusz."""
@@ -799,6 +762,7 @@ class TouchstonePlotter:
             page_td.notes.val = '\n'.join(data['header_info'])
 
         graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time Domain"
+
         self._configure_standard_graph(
             graph_td, graph_title,
             'Time (ns)', 'Magnitude', 0, 1
@@ -814,7 +778,8 @@ class TouchstonePlotter:
             plot.marker.val = 'none'
 
         xy_filt = graph_td.Add('xy', name=f"{param_name}_td_filt")
-        self._configure_xy_plot(xy_filt, time_name, td_filt_name, 'red')
+        # FIXED: Use consistent color for both lines and markers
+        self._configure_xy_plot(xy_filt, time_name, td_filt_name, get_sparam_color(param_name))
 
     def create_time_gated_plots(self, filename: str, data: dict, td_result: dict):
         """Create time-gated plots in Veusz with _timegated postfix."""
@@ -853,18 +818,19 @@ class TouchstonePlotter:
             page_tg.notes.val = '\n'.join(data['header_info'])
 
         graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time-Gated"
+
         self._configure_standard_graph(
             graph_tg, graph_title,
             'Time (ns)', 'Magnitude', 0, 1
         )
 
         xy_tg = graph_tg.Add('xy', name=f"{param_name}_timegated")
-        self._configure_xy_plot(xy_tg, time_name, td_gated_name, 'red')
+        # FIXED: Use consistent color for both lines and markers
+        self._configure_xy_plot(xy_tg, time_name, td_gated_name, get_sparam_color(param_name))
 
     def save(self, filename: str):
         """Save Veusz project."""
         self.doc.Save(filename, mode='hdf5')
-
 
 # ============================================================================
 # MATPLOTLIB CANVAS FOR PLOTS
@@ -882,7 +848,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         self.fig.patch.set_facecolor('white')
 
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
-                         draw_labels=True, draw_vswr=True):
+                        draw_labels=True, draw_vswr=True):
         """Plot Smith chart using scikit-rf native implementation."""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
@@ -901,12 +867,13 @@ class TouchstonePlotCanvas(FigureCanvas):
 
         except Exception as e:
             print(f"Smith chart plotting error: {e}")
+
             # Fallback to complex plane
             for i in range(network.nports):
                 for j in range(network.nports):
                     s_param = network.s[:, i, j]
                     ax.plot(s_param.real, s_param.imag, label=f"S{i + 1}{j + 1}",
-                            marker="o", markersize=3)
+                           marker="o", markersize=3)
 
             ax.set_xlabel("Real Part")
             ax.set_ylabel("Imaginary Part")
@@ -923,7 +890,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax = self.fig.add_subplot(111)
 
         ax.plot(time, np.abs(td_data), alpha=0.7, markersize=2,
-                label="Unfiltered", linestyle="dotted")
+               label="Unfiltered", linestyle="dotted")
 
         if td_filtered_data is not None:
             ax.plot(time, np.abs(td_filtered_data), "-", linewidth=2, label="Filtered")
@@ -936,7 +903,6 @@ class TouchstonePlotCanvas(FigureCanvas):
 
         self.draw()
 
-
 # ============================================================================
 # PROCESSING THREAD
 # ============================================================================
@@ -948,8 +914,8 @@ def process_single_touchstone_file(file_info: Tuple) -> Tuple[str, Optional[dict
     try:
         network = Network(filepath)
         filename = os.path.basename(filepath)
-
         header_info = []
+
         try:
             with open(filepath, 'r', encoding='ascii', errors='ignore') as f:
                 for line in f:
@@ -959,6 +925,7 @@ def process_single_touchstone_file(file_info: Tuple) -> Tuple[str, Optional[dict
                         header_info.append(line.strip())
                     elif line[0].isdigit():
                         break
+
         except Exception as e:
             print(f"Warning: Could not extract header from {filename}: {e}")
 
@@ -974,7 +941,6 @@ def process_single_touchstone_file(file_info: Tuple) -> Tuple[str, Optional[dict
     except Exception as e:
         print(f"Error processing {filepath}: {e}")
         return os.path.basename(filepath), None
-
 
 class TouchstoneProcessingThread(QThread):
     """Thread for processing Touchstone files."""
@@ -997,7 +963,7 @@ class TouchstoneProcessingThread(QThread):
             if self.config.enable_multiprocessing and len(self.file_list) > 1:
                 with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
                     futures = [executor.submit(process_single_touchstone_file, (f, None))
-                               for f in self.file_list]
+                              for f in self.file_list]
 
                     completed = 0
                     for future in as_completed(futures):
@@ -1006,7 +972,6 @@ class TouchstoneProcessingThread(QThread):
                         completed += 1
                         progress = int((completed / len(self.file_list)) * 100)
                         self.progress_updated.emit(progress)
-
             else:
                 for i, filepath in enumerate(self.file_list):
                     filename, data = process_single_touchstone_file((filepath, None))
@@ -1018,7 +983,6 @@ class TouchstoneProcessingThread(QThread):
 
         except Exception as e:
             self.error_occurred.emit(str(e))
-
 
 # ============================================================================
 # MAIN APPLICATION WINDOW
@@ -1036,11 +1000,9 @@ class TouchstoneMainWindow(QMainWindow):
         self.config = ProcessingConfig()
         self.td_config = TimeDomainConfig()
         self.smith_config = SmithChartConfig()
-
         self.touchstone_plotter = None
         self.td_processor = TimeDomainProcessor(self.td_config)
         self.smith_plotter_mpld3 = SmithChartPlottermpld3()
-
         self.selected_files = []
         self.processed_data = {}
         self.td_results = {}
@@ -1059,7 +1021,6 @@ class TouchstoneMainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         main_layout = QVBoxLayout(central_widget)
-
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
 
@@ -1223,8 +1184,10 @@ class TouchstoneMainWindow(QMainWindow):
         self.gate_span_spin.valueChanged.connect(self._update_gate_span)
         gate_layout.addRow("Gate Span:", self.gate_span_spin)
 
-        self.gate_center_spin.setEnabled(self.td_config.auto_gate)
-        self.gate_span_spin.setEnabled(self.td_config.auto_gate)
+        # FIXED: Gate controls are always enabled for user adjustment.
+        # The checkbox controls whether gating is APPLIED, not whether controls are accessible.
+        # Removed: self.gate_center_spin.setEnabled(self.td_config.auto_gate)
+        # Removed: self.gate_span_spin.setEnabled(self.td_config.auto_gate)
 
         controls_layout.addWidget(gate_group)
 
@@ -1417,10 +1380,13 @@ class TouchstoneMainWindow(QMainWindow):
         self._update_td_preview()
 
     def _update_auto_gate(self, state: int):
-        """Update auto gate configuration."""
+        """Update auto gate configuration.
+        
+        FIXED: Gate controls are always enabled for user adjustment.
+        The checkbox controls whether gating is APPLIED, not whether controls are accessible.
+        """
         self.td_config.auto_gate = (state == Qt.Checked)
-        self.gate_center_spin.setEnabled(self.td_config.auto_gate)
-        self.gate_span_spin.setEnabled(self.td_config.auto_gate)
+        # Gate controls remain enabled - user can adjust them regardless of checkbox state
         self._update_td_preview()
 
     def _update_gate_center(self, value: float):
@@ -1458,7 +1424,6 @@ class TouchstoneMainWindow(QMainWindow):
     def _update_td_preview(self):
         """Update time domain preview."""
         current_file = self.td_file_combo.currentText()
-
         if current_file and current_file in self.processed_data:
             try:
                 network = self.processed_data[current_file]['network']
@@ -1470,6 +1435,7 @@ class TouchstoneMainWindow(QMainWindow):
                 td_filtered = td_result.get('S11_td_filtered', np.array([]))
 
                 plot_title = f"{current_file} - Time Domain"
+
                 self.td_plot_canvas.plot_time_domain(
                     time_data, td_data, td_filtered, title=plot_title
                 )
@@ -1480,15 +1446,14 @@ class TouchstoneMainWindow(QMainWindow):
     def _update_smith_preview(self):
         """Update Smith chart preview."""
         current_file = self.smith_file_combo.currentText()
-
         if current_file and current_file in self.processed_data:
             try:
                 network = self.processed_data[current_file]['network']
-
                 preview_network = network.copy()
                 preview_network.s = network.s[:, 0, 0].reshape(-1, 1, 1)
 
                 plot_title = f"{current_file} - S11"
+
                 self.smith_plot_canvas.plot_smith_chart(
                     preview_network,
                     title=plot_title,
@@ -1574,12 +1539,10 @@ class TouchstoneMainWindow(QMainWindow):
 
             for filename, data in self.processed_data.items():
                 network = data['network']
-
                 try:
                     for i in range(network.nports):
                         for j in range(network.nports):
                             param_name = f"S{i + 1}{j + 1}"
-
                             single_param_network = network.copy()
                             single_param_network.s = network.s[:, i, j].reshape(-1, 1, 1)
 
@@ -1612,8 +1575,8 @@ class TouchstoneMainWindow(QMainWindow):
                 self._log_message(f"Displayed: {first_key}")
 
                 QMessageBox.information(self, "Success",
-                                        f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
-                                        "Click Export to save in selected format.")
+                    f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
+                    "Click Export to save in selected format.")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to prepare Smith charts: {str(e)}")
@@ -1663,7 +1626,6 @@ class TouchstoneMainWindow(QMainWindow):
                         filename = chart_data['filename']
                         param_name = chart_data['param_name']
                         network = chart_data['network']
-
                         base_name = os.path.splitext(filename)[0]
                         temp_pdf = os.path.join(temp_dir, f"{base_name}_{param_name}_temp.pdf")
 
@@ -1685,12 +1647,10 @@ class TouchstoneMainWindow(QMainWindow):
                     if pdf_files:
                         if SmithChartPlottermpld3.create_pdf_with_bookmarks(pdf_files, pdf_output):
                             self._log_message(f"Created bookmarked PDF: {os.path.basename(pdf_output)}")
-
                             QMessageBox.information(
                                 self, "Export Complete",
                                 f"Successfully created combined PDF with {exported_count} bookmarked pages:\n{pdf_output}"
                             )
-
                             self._log_message(f"Smith chart PDF export completed: {pdf_output}")
                         else:
                             QMessageBox.critical(self, "Error", "Failed to merge PDFs with bookmarks")
@@ -1715,7 +1675,6 @@ class TouchstoneMainWindow(QMainWindow):
                     filename = chart_data['filename']
                     param_name = chart_data['param_name']
                     network = chart_data['network']
-
                     base_name = os.path.splitext(filename)[0]
                     output_filename = f"{base_name}_{param_name}{ext}"
                     output_path = os.path.join(save_dir, output_filename)
@@ -1756,13 +1715,10 @@ class TouchstoneMainWindow(QMainWindow):
         try:
             for filename, data in self.processed_data.items():
                 network = data['network']
-
                 try:
                     td_result = self.td_processor.process_network(network)
                     self.td_results[filename] = td_result
-
                     self.touchstone_plotter.create_time_gated_plots(filename, data, td_result)
-
                     self._log_message(f"Time-gated plots generated for {filename}")
 
                 except Exception as e:
@@ -1808,7 +1764,6 @@ class TouchstoneMainWindow(QMainWindow):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.status_text.append(f"[{timestamp}] {message}")
 
-
 # ============================================================================
 # MAIN APPLICATION ENTRY POINT
 # ============================================================================
@@ -1819,7 +1774,6 @@ def main():
     window = TouchstoneMainWindow()
     window.show()
     return app.exec()
-
 
 if __name__ == "__main__":
     sys.exit(main())
