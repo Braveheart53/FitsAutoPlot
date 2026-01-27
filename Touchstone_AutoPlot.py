@@ -285,70 +285,26 @@ class SmithChartPlottermpld3:
             
         except Exception as e:
             print(f"Error creating Smith chart: {e}")
-            # Fallback: create basic complex plane plot
-            fig = plt.figure(figsize=(10, 10))
-            ax = fig.add_subplot(111)
-            
-            try:
-                s_data = network.s[:, 0, 0]
-                ax.plot(s_data.real, s_data.imag, 'o-', markersize=6, linewidth=2, label=param_name)
-                
-                # Draw unit circle
-                theta = np.linspace(0, 2*np.pi, 100)
-                ax.plot(np.cos(theta), np.sin(theta), 'k--', linewidth=0.5, alpha=0.3, label='Unit Circle')
-                
-                ax.set_xlabel('Real Part', fontsize=12)
-                ax.set_ylabel('Imaginary Part', fontsize=12)
-                ax.set_title(f'{param_name} - Complex Plane (Fallback)', fontsize=14, fontweight='bold')
-                ax.grid(True, alpha=0.3)
-                ax.set_aspect('equal')
-                ax.legend(loc='upper right')
-                ax.axhline(y=0, color='k', linewidth=0.5)
-                ax.axvline(x=0, color='k', linewidth=0.5)
-            except Exception as e2:
-                print(f"Fallback plot also failed: {e2}")
-                ax.text(0.5, 0.5, 'Error creating plot', ha='center', va='center')
-            
-            return fig, network
+            raise
 
-    def export_to_html(self, fig: Figure, filepath: str, param_name: str = "Smith Chart") -> bool:
-        """Export matplotlib figure to interactive HTML using mpld3.
+    def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
+                          output_path: str, export_format: str) -> bool:
+        """Export a Smith chart directly to file in the specified format.
+        
+        This method creates a fresh Smith chart and exports it, ensuring proper rendering.
         
         Parameters
         ----------
-        fig : Figure.
-            Matplotlib figure object.
-        filepath : str.
-            Output HTML file path.
+        network : Network.
+            Single S-parameter network (1x1).
         param_name : str.
-            Parameter name for title.
-            
-        Returns
-        -------
-        bool.
-            True if successful, False otherwise.
-        """
-        if not MPLD3_AVAILABLE:
-            return False
-        
-        try:
-            html_str = mpld3.fig_to_html(fig)
-            with open(filepath, 'w') as f:
-                f.write(html_str)
-            return True
-        except Exception as e:
-            print(f"Error exporting to HTML: {e}")
-            return False
-
-    def export_to_png(self, fig: Figure, filepath: str) -> bool:
-        """Export matplotlib figure to PNG.
-        
-        Parameters
-        ----------
-        fig : Figure.
-            Matplotlib figure object.
-        filepath : str.
-            Output PNG file path.
+            Parameter name (e.g., "S11").
+        chart_type : str.
+            "z" for impedance, "y" for admittance.
+        output_path : str.
+            Output file path.
+        export_format : str.
+            Export format: "html", "png", "svg", or "pdf".
             
         Returns
         -------
@@ -356,54 +312,34 @@ class SmithChartPlottermpld3:
             True if successful, False otherwise.
         """
         try:
-            fig.savefig(filepath, format='png', dpi=150, bbox_inches='tight')
-            return True
-        except Exception as e:
-            print(f"Error exporting to PNG: {e}")
-            return False
-
-    def export_to_svg(self, fig: Figure, filepath: str) -> bool:
-        """Export matplotlib figure to SVG.
-        
-        Parameters
-        ----------
-        fig : Figure.
-            Matplotlib figure object.
-        filepath : str.
-            Output SVG file path.
+            # Create fresh figure with Smith chart
+            fig, _ = self.create_smith_chart(network, param_name, chart_type)
             
-        Returns
-        -------
-        bool.
-            True if successful, False otherwise.
-        """
-        try:
-            fig.savefig(filepath, format='svg', bbox_inches='tight')
-            return True
-        except Exception as e:
-            print(f"Error exporting to SVG: {e}")
-            return False
-
-    def export_to_pdf(self, fig: Figure, filepath: str) -> bool:
-        """Export matplotlib figure to PDF.
-        
-        Parameters
-        ----------
-        fig : Figure.
-            Matplotlib figure object.
-        filepath : str.
-            Output PDF file path.
+            # Export based on format
+            if export_format.lower() == "html":
+                if not MPLD3_AVAILABLE:
+                    print("Warning: mpld3 not available, saving as PNG instead")
+                    fig.savefig(output_path.replace('.html', '.png'), 
+                               format='png', dpi=150, bbox_inches='tight')
+                    return True
+                html_str = mpld3.fig_to_html(fig)
+                with open(output_path, 'w') as f:
+                    f.write(html_str)
+            elif export_format.lower() == "png":
+                fig.savefig(output_path, format='png', dpi=150, bbox_inches='tight')
+            elif export_format.lower() == "svg":
+                fig.savefig(output_path, format='svg', bbox_inches='tight')
+            elif export_format.lower() == "pdf":
+                fig.savefig(output_path, format='pdf', bbox_inches='tight')
+            else:
+                print(f"Unknown export format: {export_format}")
+                return False
             
-        Returns
-        -------
-        bool.
-            True if successful, False otherwise.
-        """
-        try:
-            fig.savefig(filepath, format='pdf', bbox_inches='tight')
+            plt.close(fig)
             return True
+            
         except Exception as e:
-            print(f"Error exporting to PDF: {e}")
+            print(f"Error exporting Smith chart: {e}")
             return False
 
     @staticmethod
@@ -466,6 +402,7 @@ class TouchstonePlotter:
         self.plot_title = plot_title
         self.dataset_name = dataset_name
         self.doc = vz.Embedded("Touchstone_AutoPlot")
+        self.doc.EnableToolbar()
         self.freq_label = "Frequency (GHz)"
         self.time_label = "Time (ns)"
 
@@ -785,8 +722,8 @@ class TouchstonePlotCanvas(FigureCanvas):
             chart_label = "Impedance" if chart_type == "z" else "Admittance"
             ax.set_title(f"{title} - Smith Chart ({chart_label})", fontweight='bold', fontsize=12)
         except Exception as e:
+            print(f"Smith chart plotting error: {e}")
             # Fallback to basic complex plane plot
-            print(f"Smith chart plotting failed: {e}. Using complex plot.")
             for i in range(network.nports):
                 for j in range(network.nports):
                     s_param = network.s[:, i, j]
@@ -975,12 +912,12 @@ class TouchstoneMainWindow(QMainWindow):
         self.smith_processor = SmithChartProcessor(self.smith_config)
         self.smith_plotter_mpld3 = SmithChartPlottermpld3()
         
-        # Data storage
+        # Data storage - CHANGE: Store networks instead of figures
         self.selected_files = []
         self.processed_data = {}
         self.td_results = {}
         self.smith_results = {}
-        self.smith_figures = {}  # Store generated figures for export
+        self.smith_networks = {}  # Store networks for export instead of figures
         
         # Setup UI
         self.setup_ui()
@@ -1322,7 +1259,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.processed_data.clear()
         self.td_results.clear()
         self.smith_results.clear()
-        self.smith_figures.clear()
+        self.smith_networks.clear()  # Clear networks
         self._update_file_list()
         self._update_td_file_combo()
         self._update_smith_file_combo()
@@ -1543,16 +1480,16 @@ class TouchstoneMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "Please process Touchstone files first.")
             return
         
-        self._log_message("Generating Smith Charts with proper axes...")
+        self._log_message("Generating Smith Charts...")
         
         try:
-            self.smith_figures.clear()
+            self.smith_networks.clear()  # Clear stored networks
             
-            # Generate Smith charts for each file
+            # Store networks for each S-parameter (for later export)
             for filename, data in self.processed_data.items():
                 network = data['network']
                 try:
-                    # Create charts for each S-parameter
+                    # Create networks for each S-parameter
                     for i in range(network.nports):
                         for j in range(network.nports):
                             param_name = f"S{i + 1}{j + 1}"
@@ -1561,58 +1498,64 @@ class TouchstoneMainWindow(QMainWindow):
                             single_param_network = network.copy()
                             single_param_network.s = network.s[:, i, j].reshape(-1, 1, 1)
                             
-                            fig, net = self.smith_plotter_mpld3.create_smith_chart(
-                                single_param_network, param_name, self.smith_config.chart_type
-                            )
-                            
-                            # Store figure with filename and param key
+                            # Store network with filename and param key
                             key = f"{filename}_{param_name}"
-                            self.smith_figures[key] = {
-                                'fig': fig,
+                            self.smith_networks[key] = {
+                                'network': single_param_network,
                                 'param_name': param_name,
-                                'filename': filename,
-                                'network': single_param_network
+                                'filename': filename
                             }
                     
-                    self._log_message(f"Smith charts generated for {filename}")
+                    self._log_message(f"Smith chart networks prepared for {filename}")
                 except Exception as e:
                     self._log_message(f"Error processing {filename}: {e}")
             
             # Display first chart
-            if self.smith_figures:
-                first_key = list(self.smith_figures.keys())[0]
-                first_fig = self.smith_figures[first_key]['fig']
-                self.smith_plot_canvas.fig = first_fig
-                self.smith_plot_canvas.draw()
+            if self.smith_networks:
+                first_key = list(self.smith_networks.keys())[0]
+                first_network = self.smith_networks[first_key]['network']
+                first_param = self.smith_networks[first_key]['param_name']
+                
+                self.smith_plot_canvas.plot_smith_chart(
+                    first_network,
+                    title=f"{self.smith_networks[first_key]['filename']} - {first_param}",
+                    chart_type=self.smith_config.chart_type,
+                    draw_labels=self.smith_config.draw_labels,
+                    draw_vswr=self.smith_config.draw_vswr
+                )
                 
                 self.smith_export_button.setEnabled(True)
                 self._log_message(f"Displayed: {first_key}")
                 QMessageBox.information(self, "Success", 
-                    f"Generated {len(self.smith_figures)} Smith charts.\n"
+                    f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
                     "Click Export to save in selected format.")
         
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to generate Smith charts: {str(e)}")
-            self._log_message(f"Smith chart generation error: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to prepare Smith charts: {str(e)}")
+            self._log_message(f"Smith chart preparation error: {e}")
 
     def _export_smith_charts(self):
         """Export Smith charts in selected format with proper Smith chart axes."""
-        if not self.smith_figures:
+        if not self.smith_networks:
             QMessageBox.warning(self, "No Charts", "Please generate Smith charts first.")
             return
         
         export_format = self.export_format_combo.currentText()
         use_pdf_bookmarks = self.pdf_bookmarks_checkbox.isChecked()
         
-        # Determine file extension
+        # Determine file extension and format name
         if "PNG" in export_format:
             ext = ".png"
+            fmt = "png"
         elif "SVG" in export_format:
             ext = ".svg"
+            fmt = "svg"
         elif "PDF" in export_format:
             ext = ".pdf"
+            fmt = "pdf"
         else:  # HTML
             ext = ".html"
+            fmt = "html"
         
         # Get save directory
         save_dir = QFileDialog.getExistingDirectory(
@@ -1627,39 +1570,37 @@ class TouchstoneMainWindow(QMainWindow):
             pdf_files = []  # For bookmarking
             exported_count = 0
             
-            for key, chart_data in self.smith_figures.items():
+            # Export each Smith chart network
+            for key, chart_data in self.smith_networks.items():
                 filename = chart_data['filename']
                 param_name = chart_data['param_name']
-                fig = chart_data['fig']
+                network = chart_data['network']  # Get the network
                 
                 # Create output filename
                 base_name = os.path.splitext(filename)[0]
                 output_filename = f"{base_name}_{param_name}{ext}"
                 output_path = os.path.join(save_dir, output_filename)
                 
-                # Export based on format - all use the same figure with Smith chart axes
-                success = False
-                if "HTML" in export_format:
-                    success = self.smith_plotter_mpld3.export_to_html(fig, output_path, param_name)
-                elif "PNG" in export_format:
-                    success = self.smith_plotter_mpld3.export_to_png(fig, output_path)
-                elif "SVG" in export_format:
-                    success = self.smith_plotter_mpld3.export_to_svg(fig, output_path)
-                else:  # PDF
-                    success = self.smith_plotter_mpld3.export_to_pdf(fig, output_path)
-                    if success and use_pdf_bookmarks:
-                        pdf_files.append((output_path, f"{param_name}"))
+                # Export using the plotter's export method (creates fresh Smith chart)
+                success = self.smith_plotter_mpld3.export_smith_chart(
+                    network, 
+                    param_name, 
+                    self.smith_config.chart_type,
+                    output_path, 
+                    fmt
+                )
                 
                 if success:
                     exported_count += 1
                     self._log_message(f"Exported: {output_filename}")
+                    
+                    if fmt == "pdf" and use_pdf_bookmarks:
+                        pdf_files.append((output_path, f"{param_name}"))
                 else:
                     self._log_message(f"Failed to export: {output_filename}")
-                
-                plt.close(fig)
             
             # Create PDF with bookmarks if requested
-            if use_pdf_bookmarks and pdf_files and "PDF" in export_format:
+            if use_pdf_bookmarks and pdf_files and fmt == "pdf":
                 pdf_output = os.path.join(save_dir, "SmithCharts_All.pdf")
                 if SmithChartPlottermpld3.create_pdf_with_bookmarks(pdf_files, pdf_output):
                     self._log_message(f"Created bookmarked PDF: SmithCharts_All.pdf")
