@@ -1094,7 +1094,7 @@ class TouchstoneMainWindow(QMainWindow):
         """Open file dialog to select Touchstone files."""
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        file_dialog.setNameFilter("Touchstone Files (*.sp)")
+        file_dialog.setNameFilter("Touchstone Files (*.s*p)")
         file_dialog.setWindowTitle("Select Touchstone Files")
 
         if file_dialog.exec() == QFileDialog.Accepted:

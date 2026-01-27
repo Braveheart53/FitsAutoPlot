@@ -788,7 +788,7 @@ def ensure_assets_directory():
         ("app_icon.png", "Place application icon here"),
         ("atr_icon.png", "Place ATR plotter icon here"),
         ("fits_icon.png", "Place FITS plotter icon here"),
-        ("rands_icon.png", "Place R&S plotter icon here"),
+        ("rands_icon.png", "Place R\&S plotter icon here"),
     ]
 
     for filename, description in placeholder_files:
