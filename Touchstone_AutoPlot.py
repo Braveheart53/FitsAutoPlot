@@ -64,9 +64,9 @@ import pandas as pd
 try:
     import skrf as rf
     from skrf import Network
-    from skrf.time import timegate
+    from skrf.time import time_gate
 except ImportError:
-    print("ERROR: scikit-rf not installed. Install with: pip install scikit-rf")
+    print("ERROR: scikit-rf not installed. Install with: pip install scikit-rf or conda install scikit-rf")
     sys.exit(1)
 
 # ============================================================================
