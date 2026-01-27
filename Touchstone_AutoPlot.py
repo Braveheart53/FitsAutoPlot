@@ -1091,7 +1091,7 @@ class TouchstoneMainWindow(QMainWindow):
         file_group = QGroupBox("Touchstone File Selection")
         file_layout = QVBoxLayout(file_group)
         self.file_list_widget = QListWidget()
-        self.file_list_widget.setMinimumHeight(253)
+        self.file_list_widget.setMinimumHeight(180)
         file_layout.addWidget(self.file_list_widget)
 
         browse_layout = QHBoxLayout()
@@ -1154,7 +1154,7 @@ class TouchstoneMainWindow(QMainWindow):
         plot_layout.addWidget(self.unwrap_phase_checkbox)
 
         layout.addWidget(plot_group)
-        layout.addStretch()
+        # layout.addStretch()
 
     def setup_time_domain_tab(self):
         """Setup the time domain analysis tab."""
