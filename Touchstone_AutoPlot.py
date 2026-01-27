@@ -11,9 +11,10 @@ capabilities using scikit-rf, including:
 - Advanced time domain analysis with Auto/Manual gating functionality using scikit-rf
 - Smith Chart plotting using scikit-rf native charts (interactive with PDF bookmarks)
 - Time-gated plot generation in Veusz (time and frequency domain)
-- Phase unwrapping using numpy.unwrap() for continuous phase plots
+- Phase unwrapping using scikit-rf native s_deg_unwrap() method
 - PDF export with bookmarks for Smith charts
 - CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
+- FIXED: Time-gated plots support all combinations (time only, frequency only, or both)
 
 Author: William W. Wallace
 Last updated: 2026-01-27
@@ -165,41 +166,6 @@ class SmithChartConfig:
     draw_labels: bool = True
     draw_vswr: bool = True
     reference_impedance: float = 50.0
-
-# ============================================================================
-# PHASE UNWRAPPING UTILITY FUNCTIONS
-# ============================================================================
-
-def unwrap_phase_degrees(phase_deg: np.ndarray) -> np.ndarray:
-    """Unwrap phase data given in degrees using numpy.unwrap.
-    
-    Converts degrees to radians, unwraps using numpy.unwrap, then converts back.
-    This removes ±180° discontinuities to create continuous phase curves.
-    
-    Parameters
-    ----------
-    phase_deg : np.ndarray
-        Phase data in degrees [-180, +180].
-        
-    Returns
-    -------
-    np.ndarray
-        Unwrapped phase data in degrees (continuous, may exceed ±180).
-    """
-    try:
-        # Convert to radians
-        phase_rad = np.deg2rad(phase_deg)
-        
-        # Unwrap in radians (removes 2π jumps)
-        phase_unwrapped_rad = np.unwrap(phase_rad)
-        
-        # Convert back to degrees
-        phase_unwrapped_deg = np.rad2deg(phase_unwrapped_rad)
-        
-        return phase_unwrapped_deg
-    except Exception as e:
-        print(f"Warning: Phase unwrapping failed: {e}. Returning original phase.")
-        return phase_deg
 
 # ============================================================================
 # COLOR MAPPING FUNCTION
@@ -630,7 +596,7 @@ class TouchstonePlotter:
         dataset_name : str
             Base name for datasets.
         unwrap_phase : bool
-            Whether to unwrap phase data in plots.
+            Whether to unwrap phase data in plots using scikit-rf s_deg_unwrap.
         """
         self.plot_title = plot_title
         self.dataset_name = dataset_name
@@ -706,7 +672,7 @@ class TouchstonePlotter:
             print(f"Error creating plots: {e}")
 
     def _create_frequency_page(self, dataset_name, data):
-        """Create frequency domain plot page with optional phase unwrapping."""
+        """Create frequency domain plot page with scikit-rf phase unwrapping."""
         network = data['network']
         n_ports = network.nports
         freq_name = f"{dataset_name}_freq"
@@ -744,9 +710,20 @@ class TouchstonePlotter:
                 mag_db = 20 * np.log10(np.abs(s_param) + 1e-12)
                 phase_deg = np.angle(s_param, deg=True)
 
-                # APPLY PHASE UNWRAPPING IF ENABLED
+                # ✅ APPLY PHASE UNWRAPPING USING SCIKIT-RF METHOD
                 if self.unwrap_phase:
-                    phase_deg = unwrap_phase_degrees(phase_deg)
+                    try:
+                        # Create single-parameter network for unwrapping
+                        single_param_net = network.copy()
+                        single_param_net.s = s_param.reshape(-1, 1, 1)
+                        
+                        # Use scikit-rf's native s_deg_unwrap method
+                        unwrapped_phase_net = single_param_net.s_deg_unwrap
+                        phase_deg = unwrapped_phase_net[:, 0, 0]
+                    except Exception as e:
+                        print(f"Warning: scikit-rf unwrapping failed for {param_name}: {e}")
+                        # Fallback to wrapped phase
+                        phase_deg = np.angle(s_param, deg=True)
 
                 self.doc.SetData(mag_name, mag_db)
                 self.doc.SetData(phase_name, phase_deg)
@@ -812,7 +789,14 @@ class TouchstonePlotter:
 
     def create_time_gated_plots(self, filename: str, data: dict, td_result: dict,
                               plot_time_domain: bool = True, plot_frequency_domain: bool = False):
-        """Create time-gated plots in Veusz with optional frequency domain conversion.
+        """Create time-gated plots in Veusz with BOTH unfiltered and gated responses.
+        
+        ✅ FIXED: Now supports:
+        - Time domain only
+        - Frequency domain only  
+        - Both on same graph
+        
+        Both unfiltered and gated responses plotted on same graph for comparison.
         
         Parameters
         ----------
@@ -847,7 +831,9 @@ class TouchstonePlotter:
     def _create_time_gated_page(self, dataset_name, param_name, data, td_result,
                                plot_time_domain: bool = True,
                                plot_frequency_domain: bool = False):
-        """Create time-gated plot page with optional frequency domain.
+        """Create time-gated plot page with both unfiltered and gated responses.
+        
+        ✅ FIXED: Shows both unfiltered and gated on same graph.
         
         Parameters
         ----------
@@ -857,56 +843,91 @@ class TouchstonePlotter:
             If True, plot FFT of gated response in frequency domain (magnitude in dB).
         """
         time_name = f"{dataset_name}_{param_name}_timegated_time"
-        td_gated_name = f"{dataset_name}_{param_name}_timegated"
+        td_unfilt_name = f"{dataset_name}_{param_name}_timegated_unfilt"
+        td_gated_name = f"{dataset_name}_{param_name}_timegated_gated"
 
         time_data = td_result.get('time', np.array([]))
+        td_unfilt_data = td_result.get(f"{param_name}_td", np.array([]))
         td_gated_data = td_result.get(f"{param_name}_td_filtered", np.array([]))
 
         self.doc.SetData(time_name, time_data)
+        self.doc.SetData(td_unfilt_name, np.abs(td_unfilt_data))
         self.doc.SetData(td_gated_name, np.abs(td_gated_data))
 
         tg_page_name = f"{dataset_name}_{param_name}_TimeGated"
         page_tg = self.doc.Root.Add('page', name=tg_page_name)
 
-        num_cols = 2 if plot_time_domain and plot_frequency_domain else 1
+        # Determine grid layout based on what's being plotted
+        num_cols = 1
+        if plot_time_domain and plot_frequency_domain:
+            num_cols = 2
+        
         grid_tg = page_tg.Add('grid', columns=num_cols)
 
         if 'header_info' in data:
             page_tg.notes.val = '\n'.join(data['header_info'])
 
-        # TIME DOMAIN PLOT
+        # TIME DOMAIN PLOT - ✅ FIXED: Include both unfiltered and gated
         if plot_time_domain:
             graph_tg = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Graph")
             graph_title = f"{dataset_name.replace('_', ' ')} - {param_name} Time-Gated"
             self._configure_standard_graph(graph_tg, graph_title, 'Time (ns)', 'Magnitude', 0, 1)
 
-            xy_tg = graph_tg.Add('xy', name=f"{param_name}_timegated")
-            self._configure_xy_plot(xy_tg, time_name, td_gated_name, get_sparam_color(param_name))
+            # Plot unfiltered response (dotted line)
+            xy_unfilt = graph_tg.Add('xy', name=f"{param_name}_timegated_unfilt")
+            with self._wrap_widget(xy_unfilt) as plot:
+                plot.xData.val = time_name
+                plot.yData.val = td_unfilt_name
+                plot.PlotLine.style.val = 'dotted'
+                plot.PlotLine.width.val = '2pt'
+                plot.PlotLine.color.val = 'blue'
+                plot.marker.val = 'none'
 
-        # FREQUENCY DOMAIN PLOT (Magnitude in dB of gated response)
+            # Plot gated response (solid line, 75% transparent)
+            xy_gated = graph_tg.Add('xy', name=f"{param_name}_timegated_gated")
+            self._configure_xy_plot(xy_gated, time_name, td_gated_name, get_sparam_color(param_name), transparency=75)
+
+        # FREQUENCY DOMAIN PLOT - ✅ FIXED: Include both unfiltered and gated
         if plot_frequency_domain:
-            freq_name_gated = f"{dataset_name}_{param_name}_timegated_freq"
-            mag_name_gated = f"{dataset_name}_{param_name}_timegated_mag"
+            freq_name_unfilt = f"{dataset_name}_{param_name}_timegated_freq_unfilt"
+            freq_name_gated = f"{dataset_name}_{param_name}_timegated_freq_gated"
+            mag_name_unfilt = f"{dataset_name}_{param_name}_timegated_mag_unfilt"
+            mag_name_gated = f"{dataset_name}_{param_name}_timegated_mag_gated"
 
-            # FFT of gated time-domain data
+            # FFT of both unfiltered and gated time-domain data
+            unfilt_fft = np.fft.fft(td_unfilt_data)
             gated_fft = np.fft.fft(td_gated_data)
+            mag_db_unfilt = 20 * np.log10(np.abs(unfilt_fft) + 1e-12)
             mag_db_gated = 20 * np.log10(np.abs(gated_fft) + 1e-12)
 
             # Create frequency array for FFT
             freq_spacing_hz = np.mean(np.diff(td_result.get('frequency', [])))
-            num_freq = len(td_gated_data)
+            num_freq = len(td_unfilt_data)
             freq_fft = np.fft.fftfreq(num_freq, 1.0 / (num_freq * freq_spacing_hz))
             freq_fft_ghz = freq_fft / 1e9
 
+            self.doc.SetData(freq_name_unfilt, freq_fft_ghz)
             self.doc.SetData(freq_name_gated, freq_fft_ghz)
+            self.doc.SetData(mag_name_unfilt, mag_db_unfilt)
             self.doc.SetData(mag_name_gated, mag_db_gated)
 
             graph_tg_freq = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Freq_Graph")
-            graph_title_freq = f"{dataset_name.replace('_', ' ')} - {param_name} Time-Gated (Frequency Domain)"
+            graph_title_freq = f"{dataset_name.replace('_', ' ')} - {param_name} Gated Frequency Domain"
             self._configure_standard_graph(graph_tg_freq, graph_title_freq, 'Frequency (GHz)', 'Magnitude (dB)', -80, 20)
 
-            xy_tg_freq = graph_tg_freq.Add('xy', name=f"{param_name}_timegated_freq")
-            self._configure_xy_plot(xy_tg_freq, freq_name_gated, mag_name_gated, get_sparam_color(param_name))
+            # Plot unfiltered FFT (dotted line)
+            xy_unfilt_freq = graph_tg_freq.Add('xy', name=f"{param_name}_timegated_unfilt_freq")
+            with self._wrap_widget(xy_unfilt_freq) as plot:
+                plot.xData.val = freq_name_unfilt
+                plot.yData.val = mag_name_unfilt
+                plot.PlotLine.style.val = 'dotted'
+                plot.PlotLine.width.val = '2pt'
+                plot.PlotLine.color.val = 'blue'
+                plot.marker.val = 'none'
+
+            # Plot gated FFT (solid line)
+            xy_gated_freq = graph_tg_freq.Add('xy', name=f"{param_name}_timegated_gated_freq")
+            self._configure_xy_plot(xy_gated_freq, freq_name_gated, mag_name_gated, get_sparam_color(param_name))
 
     def save(self, filename: str):
         """Save Veusz project."""
@@ -1198,8 +1219,8 @@ class TouchstoneMainWindow(QMainWindow):
         dataset_layout.addWidget(self.dataset_name_edit)
         plot_layout.addLayout(dataset_layout)
 
-        # PHASE UNWRAP CHECKBOX - FULLY FUNCTIONAL
-        self.unwrap_phase_checkbox = QCheckBox("Unwrap Phase Data")
+        # ✅ PHASE UNWRAP CHECKBOX - USING SCIKIT-RF METHOD
+        self.unwrap_phase_checkbox = QCheckBox("Unwrap Phase Data (using scikit-rf s_deg_unwrap)")
         self.unwrap_phase_checkbox.setChecked(False)
         self.unwrap_phase_checkbox.stateChanged.connect(self._update_unwrap_phase)
         plot_layout.addWidget(self.unwrap_phase_checkbox)
@@ -1271,7 +1292,7 @@ class TouchstoneMainWindow(QMainWindow):
 
         controls_layout.addWidget(gate_group)
 
-        # PLOT OUTPUT OPTIONS
+        # ✅ PLOT OUTPUT OPTIONS - FIXED: Button now enabled when any option checked
         plot_options_group = QGroupBox("Plot Output Options")
         plot_options_layout = QVBoxLayout(plot_options_group)
 
@@ -1453,9 +1474,9 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message(status_msg)
 
     def _update_unwrap_phase(self, state: int):
-        """Update phase unwrap configuration - NOW FULLY INTEGRATED."""
+        """Update phase unwrap configuration - USES SCIKIT-RF METHOD."""
         self.config.unwrap_phase = (state == Qt.Checked)
-        status_msg = f"Phase unwrapping: {'ENABLED - Phase plots will be continuous' if self.config.unwrap_phase else 'DISABLED - Phase plots will show wrapping'}"
+        status_msg = f"Phase unwrapping (scikit-rf s_deg_unwrap): {'ENABLED' if self.config.unwrap_phase else 'DISABLED'}"
         self._log_message(status_msg)
 
     def _update_window_config(self, window_type: str):
@@ -1506,7 +1527,7 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message(f"Frequency domain plots (gated): {'Enabled' if self.td_config.plot_frequency_domain else 'Disabled'}")
 
     def _update_timegated_button_state(self):
-        """Enable/disable time-gated button based on plot options."""
+        """✅ FIXED: Enable button if ANY plot option is checked."""
         both_unchecked = not self.td_config.plot_time_domain and not self.td_config.plot_frequency_domain
         self.td_timegated_button.setEnabled(not both_unchecked and len(self.processed_data) > 0)
 
@@ -1587,7 +1608,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.touchstone_plotter = TouchstonePlotter(
             plot_title=self.plot_title_edit.text(),
             dataset_name=self.dataset_name_edit.text(),
-            unwrap_phase=self.config.unwrap_phase  # PASS UNWRAP SETTING TO PLOTTER
+            unwrap_phase=self.config.unwrap_phase  # ✅ PASS TO PLOTTER
         )
 
         self.processing_thread = TouchstoneProcessingThread(self.selected_files, self.config)
@@ -1620,7 +1641,7 @@ class TouchstoneMainWindow(QMainWindow):
                 if data:
                     self.touchstone_plotter.create_plots_from_data(filename, data)
 
-            phase_status = "UNWRAPPED" if self.config.unwrap_phase else "wrapped"
+            phase_status = "UNWRAPPED (scikit-rf)" if self.config.unwrap_phase else "wrapped"
             self._log_message(f"✓ Veusz frequency domain plots created (Phase: {phase_status})")
 
         if failed_files > 0:
@@ -1818,12 +1839,12 @@ class TouchstoneMainWindow(QMainWindow):
             self._log_message(f"Smith chart export error: {e}")
 
     def _process_time_gated_plots(self):
-        """Generate time-gated plots in Veusz with selected options."""
+        """✅ FIXED: Generate time-gated plots with support for all combinations."""
         if not self.processed_data:
             QMessageBox.warning(self, "No Data", "Please process Touchstone files first.")
             return
 
-        # Check that at least one plot option is selected
+        # ✅ Check that at least one plot option is selected
         if not self.td_config.plot_time_domain and not self.td_config.plot_frequency_domain:
             QMessageBox.warning(
                 self, "No Plot Options",
@@ -1859,8 +1880,9 @@ class TouchstoneMainWindow(QMainWindow):
 
             QMessageBox.information(
                 self, "Success",
-                f"Time-gated plots generated successfully in Veusz!\n"
-                f"Plots created: {', '.join(plot_msg)}"
+                f"✅ Time-gated plots generated successfully in Veusz!\n"
+                f"Plots created: {', '.join(plot_msg)}\n"
+                f"Both unfiltered and gated responses shown on same graphs."
             )
 
         except Exception as e:
