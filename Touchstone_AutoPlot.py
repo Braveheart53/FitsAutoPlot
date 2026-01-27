@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Enhanced Touchstone AutoPlot - Complete Production Version.
+
+"""Enhanced Touchstone AutoPlot - Complete Production Version with Consistent Color Scheme.
 
 This version integrates modern Qt GUI interface with comprehensive Touchstone file processing
 capabilities using scikit-rf, including:
-
 - Multiprocessing and GPU acceleration (CuPy, PyOpenCL, Taichi)
 - Advanced time domain analysis with gating functionality using scikit-rf
 - Smith Chart plotting using scikit-rf native charts (interactive with PDF bookmarks)
 - Time-gated plot generation in Veusz
 - PDF export with bookmarks for Smith charts
 - CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
+- ADDED: Consistent color scheme for S-parameters across all Veusz plots
 
 Author: William W. Wallace
-Last updated: 2026-01-27
+Last updated: 2026-01-27 (Color consistency added)
 """
 
 # ============================================================================
@@ -128,7 +129,6 @@ except ImportError:
 # ============================================================================
 # CONFIGURATION CLASSES
 # ============================================================================
-
 @dataclass
 class ProcessingConfig:
     """Configuration for file processing."""
@@ -157,6 +157,101 @@ class SmithChartConfig:
     draw_labels: bool = True
     draw_vswr: bool = True
     reference_impedance: float = 50.0
+
+
+# ============================================================================
+# COLOR SCHEME MAPPING FOR S-PARAMETERS
+# ============================================================================
+def get_sparam_color(param_name: str) -> str:
+    """Get consistent color for S-parameter based on parameter name.
+
+    This ensures S11, S22, S21, S34, etc. always use the same color
+    across all Veusz plots.
+
+    Parameters
+    ----------
+    param_name : str
+        S-parameter name like 'S11', 'S21', 'S34', etc.
+
+    Returns
+    -------
+    str
+        Veusz color name
+    """
+    # Define a comprehensive color palette for S-parameters
+    # These colors are chosen to be distinct and visually appealing
+    color_map = {
+        # Reflection parameters (diagonal)
+        'S11': 'blue',
+        'S22': 'red',
+        'S33': 'green',
+        'S44': 'magenta',
+        'S55': 'orange',
+        'S66': 'brown',
+        'S77': 'pink',
+        'S88': 'grey',
+
+        # Transmission parameters (off-diagonal)
+        'S12': 'cyan',
+        'S21': 'darkblue',
+        'S13': 'purple',
+        'S31': 'darkgreen',
+        'S14': 'darkcyan',
+        'S41': 'darkmagenta',
+        'S23': 'lime',
+        'S32': 'olive',
+        'S24': 'teal',
+        'S42': 'navy',
+        'S34': 'maroon',
+        'S43': 'indigo',
+        'S15': 'gold',
+        'S51': 'coral',
+        'S16': 'violet',
+        'S61': 'sienna',
+        'S25': 'turquoise',
+        'S52': 'salmon',
+        'S26': 'khaki',
+        'S62': 'plum',
+        'S35': 'orchid',
+        'S53': 'tan',
+        'S36': 'beige',
+        'S63': 'mint',
+        'S45': 'lavender',
+        'S54': 'crimson',
+        'S46': 'azure',
+        'S64': 'ivory',
+        'S56': 'snow',
+        'S65': 'wheat',
+        'S17': 'linen',
+        'S71': 'peru',
+        'S18': 'seashell',
+        'S81': 'bisque',
+        'S27': 'honeydew',
+        'S72': 'aliceblue',
+        'S28': 'mistyrose',
+        'S82': 'papayawhip',
+        'S37': 'moccasin',
+        'S73': 'navajowhite',
+        'S38': 'peachpuff',
+        'S83': 'palegreen',
+        'S47': 'palegoldenrod',
+        'S74': 'paleturquoise',
+        'S48': 'palevioletred',
+        'S84': 'lightblue',
+        'S57': 'lightcoral',
+        'S75': 'lightcyan',
+        'S58': 'lightgoldenrodyellow',
+        'S85': 'lightgray',
+        'S67': 'lightgreen',
+        'S76': 'lightpink',
+        'S68': 'lightsalmon',
+        'S86': 'lightseagreen',
+        'S78': 'lightskyblue',
+        'S87': 'lightslategray',
+    }
+
+    # Return the mapped color, or default to 'auto' if not in map
+    return color_map.get(param_name, 'auto')
 
 
 # ============================================================================
