@@ -191,6 +191,7 @@ class TouchstonePlotter:
         self.plot_title = plot_title
         self.dataset_name = dataset_name
         self.doc = vz.Embedded("Touchstone_AutoPlot")
+        self.doc.EnableToolbar(enable=True)
         self.freq_label = "Frequency (GHz)"
         self.time_label = "Time (ns)"
 
