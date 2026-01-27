@@ -11,7 +11,7 @@ capabilities using scikit-rf, including:
 - Advanced time domain analysis with Auto/Manual gating functionality using scikit-rf
 - Smith Chart plotting using scikit-rf native charts (interactive with PDF bookmarks)
 - Time-gated plot generation in Veusz (time and frequency domain)
-- Phase unwrapping using numpy.unwrap() for continuous phase plots
+- Phase unwrapping using scikit-rf unwrap_phase
 - PDF export with bookmarks for Smith charts
 - CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
 
@@ -165,41 +165,6 @@ class SmithChartConfig:
     draw_labels: bool = True
     draw_vswr: bool = True
     reference_impedance: float = 50.0
-
-# ============================================================================
-# PHASE UNWRAPPING UTILITY FUNCTIONS
-# ============================================================================
-
-def unwrap_phase_degrees(phase_deg: np.ndarray) -> np.ndarray:
-    """Unwrap phase data given in degrees using numpy.unwrap.
-    
-    Converts degrees to radians, unwraps using numpy.unwrap, then converts back.
-    This removes ±180° discontinuities to create continuous phase curves.
-    
-    Parameters
-    ----------
-    phase_deg : np.ndarray
-        Phase data in degrees [-180, +180].
-        
-    Returns
-    -------
-    np.ndarray
-        Unwrapped phase data in degrees (continuous, may exceed ±180).
-    """
-    try:
-        # Convert to radians
-        phase_rad = np.deg2rad(phase_deg)
-        
-        # Unwrap in radians (removes 2π jumps)
-        phase_unwrapped_rad = np.unwrap(phase_rad)
-        
-        # Convert back to degrees
-        phase_unwrapped_deg = np.rad2deg(phase_unwrapped_rad)
-        
-        return phase_unwrapped_deg
-    except Exception as e:
-        print(f"Warning: Phase unwrapping failed: {e}. Returning original phase.")
-        return phase_deg
 
 # ============================================================================
 # COLOR MAPPING FUNCTION
@@ -620,21 +585,10 @@ class TouchstonePlotter:
     """Handles Veusz plotting for Touchstone files."""
 
     def __init__(self, plot_title: str = "Touchstone S-Parameter Analysis",
-                dataset_name: str = "Touchstone_Dataset", unwrap_phase: bool = False):
-        """Initialize the Veusz plotter.
-        
-        Parameters
-        ----------
-        plot_title : str
-            Title for plots.
-        dataset_name : str
-            Base name for datasets.
-        unwrap_phase : bool
-            Whether to unwrap phase data in plots.
-        """
+                dataset_name: str = "Touchstone_Dataset"):
+        """Initialize the Veusz plotter."""
         self.plot_title = plot_title
         self.dataset_name = dataset_name
-        self.unwrap_phase = unwrap_phase
         self.doc = vz.Embedded("Touchstone_AutoPlot")
         self.doc.EnableToolbar()
 
@@ -689,7 +643,7 @@ class TouchstonePlotter:
             plot.PlotLine.transparency.val = transparency
             plot.marker.val = 'circle'
             plot.markerSize.val = '2pt'
-            # Apply color to markers
+            # FIXED: Apply color to markers, not 'auto'
             plot.MarkerFill.color.val = color
             plot.MarkerFill.transparency.val = transparency
             # Also set marker outline color for consistency
@@ -706,7 +660,7 @@ class TouchstonePlotter:
             print(f"Error creating plots: {e}")
 
     def _create_frequency_page(self, dataset_name, data):
-        """Create frequency domain plot page with optional phase unwrapping."""
+        """Create frequency domain plot page."""
         network = data['network']
         n_ports = network.nports
         freq_name = f"{dataset_name}_freq"
@@ -727,11 +681,10 @@ class TouchstonePlotter:
             'Frequency (GHz)', 'Magnitude (dB)', -80, 20
         )
 
-        phase_title = f"{dataset_name.replace('_', ' ')} - Phase{'(Unwrapped)' if self.unwrap_phase else ''}"
         self._configure_standard_graph(
             graph_phase,
-            phase_title,
-            'Frequency (GHz)', 'Phase (degrees)', -360 if self.unwrap_phase else -180, 360 if self.unwrap_phase else 180
+            f"{dataset_name.replace('_', ' ')} - Phase",
+            'Frequency (GHz)', 'Phase (degrees)', -180, 180
         )
 
         for i in range(n_ports):
@@ -743,10 +696,6 @@ class TouchstonePlotter:
                 s_param = network.s[:, i, j]
                 mag_db = 20 * np.log10(np.abs(s_param) + 1e-12)
                 phase_deg = np.angle(s_param, deg=True)
-
-                # APPLY PHASE UNWRAPPING IF ENABLED
-                if self.unwrap_phase:
-                    phase_deg = unwrap_phase_degrees(phase_deg)
 
                 self.doc.SetData(mag_name, mag_db)
                 self.doc.SetData(phase_name, phase_deg)
@@ -807,7 +756,7 @@ class TouchstonePlotter:
             plot.marker.val = 'none'
 
         xy_filt = graph_td.Add('xy', name=f"{param_name}_td_filt")
-        # Apply 75% transparency (25% opacity)
+        # FIXED: Use color function and apply 75% transparency (25% opacity)
         self._configure_xy_plot(xy_filt, time_name, td_filt_name, get_sparam_color(param_name), transparency=75)
 
     def create_time_gated_plots(self, filename: str, data: dict, td_result: dict,
@@ -1112,7 +1061,7 @@ class TouchstoneMainWindow(QMainWindow):
         main_layout.addWidget(self.progress_bar)
 
         self.status_text = QTextEdit()
-        self.status_text.setMaximumHeight(120)
+        self.status_text.setMaximumHeight(200)
         self.status_text.setReadOnly(True)
         main_layout.addWidget(self.status_text)
 
@@ -1142,7 +1091,7 @@ class TouchstoneMainWindow(QMainWindow):
         file_group = QGroupBox("Touchstone File Selection")
         file_layout = QVBoxLayout(file_group)
         self.file_list_widget = QListWidget()
-        self.file_list_widget.setMinimumHeight(150)
+        self.file_list_widget.setMinimumHeight(180)
         file_layout.addWidget(self.file_list_widget)
 
         browse_layout = QHBoxLayout()
@@ -1198,13 +1147,14 @@ class TouchstoneMainWindow(QMainWindow):
         dataset_layout.addWidget(self.dataset_name_edit)
         plot_layout.addLayout(dataset_layout)
 
-        # PHASE UNWRAP CHECKBOX - FULLY FUNCTIONAL
+        # PHASE UNWRAP CHECKBOX - NEW FEATURE
         self.unwrap_phase_checkbox = QCheckBox("Unwrap Phase Data")
         self.unwrap_phase_checkbox.setChecked(False)
         self.unwrap_phase_checkbox.stateChanged.connect(self._update_unwrap_phase)
         plot_layout.addWidget(self.unwrap_phase_checkbox)
 
         layout.addWidget(plot_group)
+        # layout.addStretch()
 
     def setup_time_domain_tab(self):
         """Setup the time domain analysis tab."""
@@ -1265,13 +1215,13 @@ class TouchstoneMainWindow(QMainWindow):
         self.gate_span_spin.valueChanged.connect(self._update_gate_span)
         gate_layout.addRow("Gate Span:", self.gate_span_spin)
 
-        # Both controls always enabled
+        # Both controls always enabled now
         self.gate_center_spin.setEnabled(True)
         self.gate_span_spin.setEnabled(True)
 
         controls_layout.addWidget(gate_group)
 
-        # PLOT OUTPUT OPTIONS
+        # PLOT OUTPUT OPTIONS - NEW FEATURE
         plot_options_group = QGroupBox("Plot Output Options")
         plot_options_layout = QVBoxLayout(plot_options_group)
 
@@ -1453,9 +1403,9 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message(status_msg)
 
     def _update_unwrap_phase(self, state: int):
-        """Update phase unwrap configuration - NOW FULLY INTEGRATED."""
+        """Update phase unwrap configuration."""
         self.config.unwrap_phase = (state == Qt.Checked)
-        status_msg = f"Phase unwrapping: {'ENABLED - Phase plots will be continuous' if self.config.unwrap_phase else 'DISABLED - Phase plots will show wrapping'}"
+        status_msg = f"Phase unwrapping: {'Enabled' if self.config.unwrap_phase else 'Disabled'}"
         self._log_message(status_msg)
 
     def _update_window_config(self, window_type: str):
@@ -1507,6 +1457,7 @@ class TouchstoneMainWindow(QMainWindow):
 
     def _update_timegated_button_state(self):
         """Enable/disable time-gated button based on plot options."""
+        # Button is enabled only if at least one plot option is checked
         both_unchecked = not self.td_config.plot_time_domain and not self.td_config.plot_frequency_domain
         self.td_timegated_button.setEnabled(not both_unchecked and len(self.processed_data) > 0)
 
@@ -1586,8 +1537,7 @@ class TouchstoneMainWindow(QMainWindow):
 
         self.touchstone_plotter = TouchstonePlotter(
             plot_title=self.plot_title_edit.text(),
-            dataset_name=self.dataset_name_edit.text(),
-            unwrap_phase=self.config.unwrap_phase  # PASS UNWRAP SETTING TO PLOTTER
+            dataset_name=self.dataset_name_edit.text()
         )
 
         self.processing_thread = TouchstoneProcessingThread(self.selected_files, self.config)
@@ -1620,8 +1570,7 @@ class TouchstoneMainWindow(QMainWindow):
                 if data:
                     self.touchstone_plotter.create_plots_from_data(filename, data)
 
-            phase_status = "UNWRAPPED" if self.config.unwrap_phase else "wrapped"
-            self._log_message(f"✓ Veusz frequency domain plots created (Phase: {phase_status})")
+            self._log_message("Veusz frequency domain plots created")
 
         if failed_files > 0:
             QMessageBox.warning(
