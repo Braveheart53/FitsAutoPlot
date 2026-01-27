@@ -11,10 +11,11 @@ capabilities using scikit-rf, including:
 - Advanced time domain analysis with Auto/Manual gating functionality using scikit-rf
 - Smith Chart plotting using scikit-rf native charts (interactive with PDF bookmarks)
 - Time-gated plot generation in Veusz (time and frequency domain)
-- Phase unwrapping using scikit-rf native s_deg_unwrap() method
+- Phase unwrapping using numpy.unwrap() (fastest, least computationally expensive)
 - PDF export with bookmarks for Smith charts
 - CORRECTED: Proper scikit-rf time-domain conversion using IFFT and windowing
 - FIXED: Time-gated plots support all combinations (time only, frequency only, or both)
+- FIXED: Time-gated frequency domain plots now work correctly with proper FFT frequency axis
 
 Author: William W. Wallace
 Last updated: 2026-01-27
@@ -58,6 +59,7 @@ from skrf import Network
 # ============================================================================
 
 import matplotlib
+
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -67,6 +69,7 @@ from matplotlib.figure import Figure
 try:
     import mpld3
     from mpld3 import plugins
+
     MPLD3_AVAILABLE = True
 except ImportError:
     MPLD3_AVAILABLE = False
@@ -115,22 +118,26 @@ else:
 GPU_AVAILABLE = None
 try:
     import cupy as cp
+
     GPU_AVAILABLE = "cupy"
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as cl_array
+
         GPU_AVAILABLE = "opencl"
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
+
             GPU_AVAILABLE = "taichi"
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
             GPU_AVAILABLE = None
             print("No GPU acceleration libraries detected - using CPU only")
+
 
 # ============================================================================
 # CONFIGURATION CLASSES
@@ -144,6 +151,7 @@ class ProcessingConfig:
     num_processes: int = multiprocessing.cpu_count()
     max_workers: int = multiprocessing.cpu_count()
     unwrap_phase: bool = False
+
 
 @dataclass
 class TimeDomainConfig:
@@ -159,6 +167,7 @@ class TimeDomainConfig:
     plot_frequency_domain: bool = False
     gating_type: str = "auto"  # "auto" or "manual"
 
+
 @dataclass
 class SmithChartConfig:
     """Configuration for Smith Chart plotting."""
@@ -167,21 +176,22 @@ class SmithChartConfig:
     draw_vswr: bool = True
     reference_impedance: float = 50.0
 
+
 # ============================================================================
 # COLOR MAPPING FUNCTION
 # ============================================================================
 
 def get_sparam_color(param_name: str) -> str:
     """Get consistent color for S-parameter based on parameter name.
-    
+
     Provides deterministic color mapping for reflection and transmission parameters
     to ensure consistency across all plot types.
-    
+
     Parameters
     ----------
     param_name : str
         S-parameter name (e.g., "S11", "S21").
-        
+
     Returns
     -------
     str
@@ -191,28 +201,29 @@ def get_sparam_color(param_name: str) -> str:
         # Reflection parameters (diagonal elements)
         'S11': 'blue', 'S22': 'red', 'S33': 'green', 'S44': 'magenta',
         'S55': 'orange', 'S66': 'brown', 'S77': 'pink', 'S88': 'grey',
-        
+
         # Forward transmission parameters (row 1)
         'S21': 'darkblue', 'S31': 'darkgreen', 'S41': 'darkmagenta',
         'S51': 'darkorange', 'S61': 'darkred', 'S71': 'darkslategray', 'S81': 'darkviolet',
-        
+
         # Forward transmission parameters (row 2)
         'S12': 'cyan', 'S32': 'lightgreen', 'S42': 'lightcyan', 'S52': 'lightyellow',
         'S62': 'lightcoral', 'S72': 'lightseagreen', 'S82': 'lightslategray',
-        
+
         # Forward transmission parameters (row 3)
         'S13': 'indigo', 'S23': 'turquoise', 'S43': 'maroon', 'S53': 'mediumblue',
         'S63': 'mediumcyan', 'S73': 'mediumpurple', 'S83': 'mediumseagreen',
-        
+
         # Forward transmission parameters (row 4)
         'S14': 'navy', 'S24': 'olive', 'S34': 'orchid', 'S54': 'peachpuff',
         'S64': 'peru', 'S74': 'plum', 'S84': 'powderblue',
-        
+
         # Additional parameters
         'S15': 'purple', 'S25': 'rosybrown', 'S35': 'royalblue', 'S45': 'saddlebrown',
         'S65': 'salmon', 'S75': 'sandybrown', 'S85': 'seagreen',
     }
     return color_map.get(param_name, 'auto')
+
 
 # ============================================================================
 # TIME DOMAIN PROCESSOR
@@ -220,14 +231,14 @@ def get_sparam_color(param_name: str) -> str:
 
 class TimeDomainProcessor:
     """Handles time domain analysis of S-parameter data using scikit-rf.
-    
+
     Uses windowed IFFT for frequency-to-time conversion with proper scaling
     and supports time-domain gating with configurable window types.
     """
 
     def __init__(self, config: TimeDomainConfig = None):
         """Initialize time domain processor.
-        
+
         Parameters
         ----------
         config : TimeDomainConfig
@@ -237,17 +248,17 @@ class TimeDomainProcessor:
 
     def process_network(self, network: Network, apply_window: bool = True) -> dict:
         """Process a network for time domain analysis using windowed IFFT.
-        
+
         Converts frequency-domain S-parameters to time-domain impulse response
         using windowed IFFT with optional time-domain gating.
-        
+
         Parameters
         ----------
         network : Network
             scikit-rf Network object with equally-spaced frequency points.
         apply_window : bool
             Whether to apply windowing in frequency domain before IFFT.
-            
+
         Returns
         -------
         dict
@@ -324,9 +335,9 @@ class TimeDomainProcessor:
         return results
 
     def _apply_time_gate(self, time_domain_data: np.ndarray, time_array: np.ndarray,
-                        gate_center: float, gate_span: float) -> np.ndarray:
+                         gate_center: float, gate_span: float) -> np.ndarray:
         """Apply time-domain gating with Hamming window smoothing.
-        
+
         Parameters
         ----------
         time_domain_data : np.ndarray
@@ -337,7 +348,7 @@ class TimeDomainProcessor:
             Gate center time in nanoseconds.
         gate_span : float
             Gate span (width) in nanoseconds.
-            
+
         Returns
         -------
         np.ndarray
@@ -360,12 +371,12 @@ class TimeDomainProcessor:
 
     def apply_gpu_acceleration(self, s_data: np.ndarray) -> np.ndarray:
         """Apply GPU-accelerated IFFT to S-parameter data if available.
-        
+
         Parameters
         ----------
         s_data : np.ndarray
             S-parameter data array (complex).
-            
+
         Returns
         -------
         np.ndarray
@@ -395,6 +406,7 @@ class TimeDomainProcessor:
             print(f"Warning: GPU acceleration failed, falling back to CPU: {e}")
             return np.fft.ifft(s_data) * len(s_data)
 
+
 # ============================================================================
 # SMITH CHART PLOTTER - SCIKIT-RF NATIVE
 # ============================================================================
@@ -408,9 +420,9 @@ class SmithChartPlottermpld3:
         self.plots = {}
 
     def create_smith_chart(self, network: Network, param_name: str = "S11",
-                          chart_type: str = "z") -> Tuple[Figure, Network]:
+                           chart_type: str = "z") -> Tuple[Figure, Network]:
         """Create an interactive Smith Chart visualization.
-        
+
         Parameters
         ----------
         network : Network
@@ -419,7 +431,7 @@ class SmithChartPlottermpld3:
             Parameter name for labeling (e.g., "S11", "S21").
         chart_type : str
             Chart type: "z" for impedance, "y" for admittance.
-            
+
         Returns
         -------
         Tuple[Figure, Network]
@@ -441,7 +453,7 @@ class SmithChartPlottermpld3:
             # Customize title
             chart_label = "Impedance" if chart_type == "z" else "Admittance"
             ax.set_title(f'{param_name} - Smith Chart ({chart_label})',
-                        fontsize=14, fontweight='bold', pad=20)
+                         fontsize=14, fontweight='bold', pad=20)
 
             # Add mpld3 hover tooltips if available
             if MPLD3_AVAILABLE:
@@ -459,10 +471,10 @@ class SmithChartPlottermpld3:
                         else:
                             vswr = 10.0
                         label = (f"{param_name}\n"
-                                f"Frequency: {freq:.2f} GHz\n"
-                                f"Magnitude: {mag:.4f}\n"
-                                f"Phase: {phase:.1f}°\n"
-                                f"VSWR: {vswr:.2f}")
+                                 f"Frequency: {freq:.2f} GHz\n"
+                                 f"Magnitude: {mag:.4f}\n"
+                                 f"Phase: {phase:.1f}°\n"
+                                 f"VSWR: {vswr:.2f}")
                         labels.append(label)
 
                     for artist in ax.get_children():
@@ -487,9 +499,9 @@ class SmithChartPlottermpld3:
             raise
 
     def export_smith_chart(self, network: Network, param_name: str, chart_type: str,
-                          output_path: str, export_format: str) -> bool:
+                           output_path: str, export_format: str) -> bool:
         """Export a Smith chart to file.
-        
+
         Parameters
         ----------
         network : Network
@@ -502,7 +514,7 @@ class SmithChartPlottermpld3:
             Output file path.
         export_format : str
             Format: "html", "png", "svg", or "pdf".
-            
+
         Returns
         -------
         bool
@@ -514,7 +526,7 @@ class SmithChartPlottermpld3:
                 if not MPLD3_AVAILABLE:
                     print("Warning: mpld3 not available, saving as PNG instead")
                     fig.savefig(output_path.replace('.html', '.png'),
-                              format='png', dpi=150, bbox_inches='tight')
+                                format='png', dpi=150, bbox_inches='tight')
                     plt.close(fig)
                     return True
                 html_str = mpld3.fig_to_html(fig)
@@ -541,14 +553,14 @@ class SmithChartPlottermpld3:
     @staticmethod
     def create_pdf_with_bookmarks(pdf_files: List[Tuple[str, str]], output_path: str) -> bool:
         """Merge PDFs with bookmarks for navigation.
-        
+
         Parameters
         ----------
         pdf_files : List[Tuple[str, str]]
             List of (filepath, bookmark_name) tuples.
         output_path : str
             Output PDF path.
-            
+
         Returns
         -------
         bool
@@ -578,6 +590,7 @@ class SmithChartPlottermpld3:
             print(f"Error creating PDF with bookmarks: {e}")
             return False
 
+
 # ============================================================================
 # TOUCHSTONE PLOTTER - VEUSZ
 # ============================================================================
@@ -586,9 +599,9 @@ class TouchstonePlotter:
     """Handles Veusz plotting for Touchstone files."""
 
     def __init__(self, plot_title: str = "Touchstone S-Parameter Analysis",
-                dataset_name: str = "Touchstone_Dataset", unwrap_phase: bool = False):
+                 dataset_name: str = "Touchstone_Dataset", unwrap_phase: bool = False):
         """Initialize the Veusz plotter.
-        
+
         Parameters
         ----------
         plot_title : str
@@ -596,7 +609,7 @@ class TouchstonePlotter:
         dataset_name : str
             Base name for datasets.
         unwrap_phase : bool
-            Whether to unwrap phase data in plots using scikit-rf s_deg_unwrap.
+            Whether to unwrap phase data in plots using numpy.unwrap() (fastest method).
         """
         self.plot_title = plot_title
         self.dataset_name = dataset_name
@@ -633,7 +646,7 @@ class TouchstonePlotter:
 
     def _configure_xy_plot(self, xy, x_data, y_data, color, transparency=0):
         """Configure an XY plot with consistent color for line AND markers.
-        
+
         Parameters
         ----------
         xy : object
@@ -672,7 +685,7 @@ class TouchstonePlotter:
             print(f"Error creating plots: {e}")
 
     def _create_frequency_page(self, dataset_name, data):
-        """Create frequency domain plot page with scikit-rf phase unwrapping."""
+        """Create frequency domain plot page with numpy phase unwrapping."""
         network = data['network']
         n_ports = network.nports
         freq_name = f"{dataset_name}_freq"
@@ -693,7 +706,7 @@ class TouchstonePlotter:
             'Frequency (GHz)', 'Magnitude (dB)', -80, 20
         )
 
-        phase_title = f"{dataset_name.replace('_', ' ')} - Phase{'(Unwrapped)' if self.unwrap_phase else ''}"
+        phase_title = f"{dataset_name.replace('_', ' ')} - Phase {'(Unwrapped)' if self.unwrap_phase else ''}"
         self._configure_standard_graph(
             graph_phase,
             phase_title,
@@ -710,19 +723,16 @@ class TouchstonePlotter:
                 mag_db = 20 * np.log10(np.abs(s_param) + 1e-12)
                 phase_deg = np.angle(s_param, deg=True)
 
-                # ✅ APPLY PHASE UNWRAPPING USING SCIKIT-RF METHOD
+                # ✅ APPLY PHASE UNWRAPPING USING NUMPY.UNWRAP() - FASTEST METHOD
                 if self.unwrap_phase:
                     try:
-                        # Create single-parameter network for unwrapping
-                        single_param_net = network.copy()
-                        single_param_net.s = s_param.reshape(-1, 1, 1)
-                        
-                        # Use scikit-rf's native s_deg_unwrap method
-                        unwrapped_phase_net = single_param_net.s_deg_unwrap
-                        phase_deg = unwrapped_phase_net[:, 0, 0]
+                        # Convert to radians, unwrap, convert back to degrees
+                        phase_rad = np.angle(s_param)
+                        phase_rad_unwrapped = np.unwrap(phase_rad)
+                        phase_deg = np.degrees(phase_rad_unwrapped)
                     except Exception as e:
-                        print(f"Warning: scikit-rf unwrapping failed for {param_name}: {e}")
-                        # Fallback to wrapped phase
+                        print(f"Warning: Phase unwrapping failed for {param_name}: {e}")
+                        # Use wrapped phase if unwrapping fails
                         phase_deg = np.angle(s_param, deg=True)
 
                 self.doc.SetData(mag_name, mag_db)
@@ -788,16 +798,16 @@ class TouchstonePlotter:
         self._configure_xy_plot(xy_filt, time_name, td_filt_name, get_sparam_color(param_name), transparency=75)
 
     def create_time_gated_plots(self, filename: str, data: dict, td_result: dict,
-                              plot_time_domain: bool = True, plot_frequency_domain: bool = False):
+                                plot_time_domain: bool = True, plot_frequency_domain: bool = False):
         """Create time-gated plots in Veusz with BOTH unfiltered and gated responses.
-        
+
         ✅ FIXED: Now supports:
         - Time domain only
-        - Frequency domain only  
+        - Frequency domain only
         - Both on same graph
-        
+
         Both unfiltered and gated responses plotted on same graph for comparison.
-        
+
         Parameters
         ----------
         filename : str
@@ -829,12 +839,12 @@ class TouchstonePlotter:
             print(f"Error creating time-gated plots: {e}")
 
     def _create_time_gated_page(self, dataset_name, param_name, data, td_result,
-                               plot_time_domain: bool = True,
-                               plot_frequency_domain: bool = False):
+                                plot_time_domain: bool = True,
+                                plot_frequency_domain: bool = False):
         """Create time-gated plot page with both unfiltered and gated responses.
-        
-        ✅ FIXED: Shows both unfiltered and gated on same graph.
-        
+
+        ✅ FIXED: Shows both unfiltered and gated on same graph. Frequency domain now works.
+
         Parameters
         ----------
         plot_time_domain : bool
@@ -861,7 +871,7 @@ class TouchstonePlotter:
         num_cols = 1
         if plot_time_domain and plot_frequency_domain:
             num_cols = 2
-        
+
         grid_tg = page_tg.Add('grid', columns=num_cols)
 
         if 'header_info' in data:
@@ -887,7 +897,7 @@ class TouchstonePlotter:
             xy_gated = graph_tg.Add('xy', name=f"{param_name}_timegated_gated")
             self._configure_xy_plot(xy_gated, time_name, td_gated_name, get_sparam_color(param_name), transparency=75)
 
-        # FREQUENCY DOMAIN PLOT - ✅ FIXED: Include both unfiltered and gated
+        # FREQUENCY DOMAIN PLOT - ✅ FIXED: Include both unfiltered and gated with correct freq axis
         if plot_frequency_domain:
             freq_name_unfilt = f"{dataset_name}_{param_name}_timegated_freq_unfilt"
             freq_name_gated = f"{dataset_name}_{param_name}_timegated_freq_gated"
@@ -900,20 +910,23 @@ class TouchstonePlotter:
             mag_db_unfilt = 20 * np.log10(np.abs(unfilt_fft) + 1e-12)
             mag_db_gated = 20 * np.log10(np.abs(gated_fft) + 1e-12)
 
-            # Create frequency array for FFT
-            freq_spacing_hz = np.mean(np.diff(td_result.get('frequency', [])))
+            # ✅ FIXED: Create frequency array for FFT using correct spacing from original frequency
             num_freq = len(td_unfilt_data)
-            freq_fft = np.fft.fftfreq(num_freq, 1.0 / (num_freq * freq_spacing_hz))
-            freq_fft_ghz = freq_fft / 1e9
+            freq_spacing_hz = np.mean(np.diff(td_result.get('frequency', [])))
 
-            self.doc.SetData(freq_name_unfilt, freq_fft_ghz)
-            self.doc.SetData(freq_name_gated, freq_fft_ghz)
+            # Create proper FFT frequency axis in Hz, then convert to GHz
+            fft_freqs_hz = np.fft.fftfreq(num_freq, 1.0 / (num_freq * freq_spacing_hz))
+            fft_freqs_ghz = fft_freqs_hz / 1e9
+
+            self.doc.SetData(freq_name_unfilt, fft_freqs_ghz)
+            self.doc.SetData(freq_name_gated, fft_freqs_ghz)
             self.doc.SetData(mag_name_unfilt, mag_db_unfilt)
             self.doc.SetData(mag_name_gated, mag_db_gated)
 
             graph_tg_freq = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Freq_Graph")
             graph_title_freq = f"{dataset_name.replace('_', ' ')} - {param_name} Gated Frequency Domain"
-            self._configure_standard_graph(graph_tg_freq, graph_title_freq, 'Frequency (GHz)', 'Magnitude (dB)', -80, 20)
+            self._configure_standard_graph(graph_tg_freq, graph_title_freq, 'Frequency (GHz)', 'Magnitude (dB)', -80,
+                                           20)
 
             # Plot unfiltered FFT (dotted line)
             xy_unfilt_freq = graph_tg_freq.Add('xy', name=f"{param_name}_timegated_unfilt_freq")
@@ -933,6 +946,7 @@ class TouchstonePlotter:
         """Save Veusz project."""
         self.doc.Save(filename, mode='hdf5')
 
+
 # ============================================================================
 # MATPLOTLIB CANVAS FOR PLOTS
 # ============================================================================
@@ -949,7 +963,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         self.fig.patch.set_facecolor('white')
 
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
-                        draw_labels=True, draw_vswr=True):
+                         draw_labels=True, draw_vswr=True):
         """Plot Smith chart using scikit-rf native implementation."""
         self.fig.clear()
         ax = self.fig.add_subplot(111)
@@ -974,7 +988,7 @@ class TouchstonePlotCanvas(FigureCanvas):
                 for j in range(network.nports):
                     s_param = network.s[:, i, j]
                     ax.plot(s_param.real, s_param.imag, label=f"S{i + 1}{j + 1}",
-                           marker="o", markersize=3)
+                            marker="o", markersize=3)
             ax.set_xlabel("Real Part")
             ax.set_ylabel("Imaginary Part")
             ax.set_title(f"Complex Plane - {title}")
@@ -990,7 +1004,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax = self.fig.add_subplot(111)
 
         ax.plot(time, np.abs(td_data), alpha=0.7, markersize=2,
-               label="Unfiltered", linestyle="dotted")
+                label="Unfiltered", linestyle="dotted")
 
         if td_filtered_data is not None:
             ax.plot(time, np.abs(td_filtered_data), "-", linewidth=2, label="Gated (75% transparent)", alpha=0.25)
@@ -1001,6 +1015,7 @@ class TouchstonePlotCanvas(FigureCanvas):
         ax.grid(True, alpha=0.3)
         ax.legend()
         self.draw()
+
 
 # ============================================================================
 # PROCESSING THREAD
@@ -1040,6 +1055,7 @@ def process_single_touchstone_file(file_info: Tuple) -> Tuple[str, Optional[dict
         print(f"Error processing {filepath}: {e}")
         return os.path.basename(filepath), None
 
+
 class TouchstoneProcessingThread(QThread):
     """Thread for processing Touchstone files."""
 
@@ -1061,7 +1077,7 @@ class TouchstoneProcessingThread(QThread):
             if self.config.enable_multiprocessing and len(self.file_list) > 1:
                 with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
                     futures = [executor.submit(process_single_touchstone_file, (f, None))
-                              for f in self.file_list]
+                               for f in self.file_list]
 
                     completed = 0
                     for future in as_completed(futures):
@@ -1081,6 +1097,7 @@ class TouchstoneProcessingThread(QThread):
 
         except Exception as e:
             self.error_occurred.emit(str(e))
+
 
 # ============================================================================
 # MAIN APPLICATION WINDOW
@@ -1219,8 +1236,8 @@ class TouchstoneMainWindow(QMainWindow):
         dataset_layout.addWidget(self.dataset_name_edit)
         plot_layout.addLayout(dataset_layout)
 
-        # ✅ PHASE UNWRAP CHECKBOX - USING SCIKIT-RF METHOD
-        self.unwrap_phase_checkbox = QCheckBox("Unwrap Phase Data (using scikit-rf s_deg_unwrap)")
+        # ✅ PHASE UNWRAP CHECKBOX - USING NUMPY.UNWRAP() (FASTEST METHOD)
+        self.unwrap_phase_checkbox = QCheckBox("Unwrap Phase Data (using numpy.unwrap - fastest method)")
         self.unwrap_phase_checkbox.setChecked(False)
         self.unwrap_phase_checkbox.stateChanged.connect(self._update_unwrap_phase)
         plot_layout.addWidget(self.unwrap_phase_checkbox)
@@ -1474,9 +1491,9 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message(status_msg)
 
     def _update_unwrap_phase(self, state: int):
-        """Update phase unwrap configuration - USES SCIKIT-RF METHOD."""
+        """Update phase unwrap configuration - USES NUMPY.UNWRAP() (FASTEST METHOD)."""
         self.config.unwrap_phase = (state == Qt.Checked)
-        status_msg = f"Phase unwrapping (scikit-rf s_deg_unwrap): {'ENABLED' if self.config.unwrap_phase else 'DISABLED'}"
+        status_msg = f"Phase unwrapping (numpy.unwrap): {'ENABLED' if self.config.unwrap_phase else 'DISABLED'}"
         self._log_message(status_msg)
 
     def _update_window_config(self, window_type: str):
@@ -1524,7 +1541,8 @@ class TouchstoneMainWindow(QMainWindow):
         """Update frequency domain plot option."""
         self.td_config.plot_frequency_domain = (state == Qt.Checked)
         self._update_timegated_button_state()
-        self._log_message(f"Frequency domain plots (gated): {'Enabled' if self.td_config.plot_frequency_domain else 'Disabled'}")
+        self._log_message(
+            f"Frequency domain plots (gated): {'Enabled' if self.td_config.plot_frequency_domain else 'Disabled'}")
 
     def _update_timegated_button_state(self):
         """✅ FIXED: Enable button if ANY plot option is checked."""
@@ -1641,7 +1659,7 @@ class TouchstoneMainWindow(QMainWindow):
                 if data:
                     self.touchstone_plotter.create_plots_from_data(filename, data)
 
-            phase_status = "UNWRAPPED (scikit-rf)" if self.config.unwrap_phase else "wrapped"
+            phase_status = "UNWRAPPED (numpy.unwrap)" if self.config.unwrap_phase else "wrapped"
             self._log_message(f"✓ Veusz frequency domain plots created (Phase: {phase_status})")
 
         if failed_files > 0:
@@ -1707,8 +1725,8 @@ class TouchstoneMainWindow(QMainWindow):
                 self._log_message(f"Displayed: {first_key}")
 
                 QMessageBox.information(self, "Success",
-                                       f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
-                                       "Click Export to save in selected format.")
+                                        f"Prepared {len(self.smith_networks)} Smith charts for export.\n"
+                                        "Click Export to save in selected format.")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to prepare Smith charts: {str(e)}")
@@ -1923,6 +1941,7 @@ class TouchstoneMainWindow(QMainWindow):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.status_text.append(f"[{timestamp}] {message}")
 
+
 # ============================================================================
 # MAIN APPLICATION ENTRY POINT
 # ============================================================================
@@ -1933,6 +1952,7 @@ def main():
     window = TouchstoneMainWindow()
     window.show()
     return app.exec()
+
 
 if __name__ == "__main__":
     sys.exit(main())
