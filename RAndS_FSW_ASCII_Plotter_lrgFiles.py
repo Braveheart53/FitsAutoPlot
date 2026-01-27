@@ -68,11 +68,27 @@ import asyncio
 import queue
 
 # %%% GPU Acceleration Modules
+CUPY_AVAILABLE = True
 try:
     import cupy as cp
     CUPY_AVAILABLE = True
+    # Verify CUDA device is actually accessible
+    try:
+        cp.cuda.Device(0).use()
+        CUPY_AVAILABLE_VERIFIED = True
+    except Exception as cuda_error:
+        print(f"Warning: CuPy detected but CUDA device not accessible: {cuda_error}")
+        print("Falling back to CPU processing (NumPy only)")
+        CUPY_AVAILABLE = False
+        CUPY_AVAILABLE_VERIFIED = False
 except ImportError:
     CUPY_AVAILABLE = False
+    CUPY_AVAILABLE_VERIFIED = False
+except Exception as e:
+    print(f"Warning: CuPy initialization failed: {e}")
+    print("Falling back to CPU processing (NumPy only)")
+    CUPY_AVAILABLE = False
+    CUPY_AVAILABLE_VERIFIED = False
 
 try:
     import pyopencl as cl
@@ -176,14 +192,40 @@ class GPUProcessor:
 
     def _initialize_cupy(self):
         """Initialize CuPy for NVIDIA GPU acceleration with memory pool."""
-        try:
-            cp.cuda.Device(0).use()
-            # Initialize memory pool for efficient GPU memory management
-            self.memory_pool = cp.get_default_memory_pool()
-            self.gpu_available = True
-            print("CuPy initialized successfully with memory pool")
-        except Exception as e:
-            print(f"CuPy initialization failed: {e}")
+        # try:
+        #     cp.cuda.Device(0).use()
+        #     # Initialize memory pool for efficient GPU memory management
+        #     self.memory_pool = cp.get_default_memory_pool()
+        #     self.gpu_available = True
+        #     print("CuPy initialized successfully with memory pool")
+        # except Exception as e:
+        #     print(f"CuPy initialization failed: {e}")
+        def initialize_cupy(self):
+            """Initialize CuPy for NVIDIA GPU acceleration with proper CUDA detection."""
+            try:
+                if not CUPY_AVAILABLE:
+                    print("CuPy not available - skipping GPU initialization")
+                    self.gpu_available = False
+                    return
+
+                # Verify CUDA device is accessible
+                cp.cuda.Device(0).use()
+
+                # Get memory pool for efficient GPU memory management
+                self.memory_pool = cp.get_default_memory_pool()
+                self.gpu_available = True
+                print("CuPy initialized successfully with CUDA device")
+
+            except RuntimeError as cuda_runtime_error:
+                print(f"Warning: CUDA device not found or not accessible: {cuda_runtime_error}")
+                print("Falling back to CPU processing")
+                self.gpu_available = False
+                CUPY_AVAILABLE = False
+
+            except Exception as e:
+                print(f"Warning: CuPy initialization failed: {e}")
+                print("Falling back to CPU processing")
+                self.gpu_available = False
 
     def process_batch_arrays_gpu(self, data_arrays_list):
         """
