@@ -87,10 +87,9 @@ WINDOW_HEIGHT = 700
 SCRIPT_PATHS = {
     'atr': 'ATR_AutoPlot.py',
     'fits': 'FITS_AutoPlot.py',
-    'rands': 'RAndSFSWASCII_Plotter.py',
+    'rands': 'RAndS_FSW_ASCII_Plotter.py',
     'snp': 'Touchstone_AutoPlot.py',
     'csv': 'CSV_TSV_AutoPlot.py',
-    'rands_large': 'RAndS_FSW_ASCII_Plotter_lrgFiles.py'
 }
 
 
@@ -437,13 +436,6 @@ class MainWindow(QMainWindow):
                 "assets/rands_icon.png"
             ),
             (
-                'Rhode and Schwarz FSW LARGE Files',
-                'Launch the Rohde & Schwarz FSW ASCII plotter optimized for large files '
-                'for high-volume spectrum analyzer data visualization',
-                'rands_large',
-                'assets/randslrgicon.png'
-            ),
-            (
                 "Plot TouchStone Files"
                 " (under construction)",
                 "Launch the GBO Touchstone File AutoPlot GU \nI"
@@ -653,10 +645,17 @@ class MainWindow(QMainWindow):
         button.setEnabled(True)
 
         # Restore original button text
+        # 'atr': 'ATR_AutoPlot.py',
+        # 'fits': 'FITS_AutoPlot.py',
+        # 'rands': 'RAndS_FSW_ASCII_Plotter.py',
+        # 'snp': 'Touchstone_AutoPlot.py',
+        # 'csv': 'CSV_TSV_AutoPlot.py',
         original_texts = {
             "atr": "Plot GBO Outdoor ATR Files",
             "fits": "Plot FITS Files",
-            "rands": "Plot R&S FSW SFT Files"
+            "rands": "Plot Rhode and Schwarz FSW SFT Files",
+            "snp": "Touchstone_AutoPlot.py",
+            "csv": "CSV and Deliminated Data Batch Plotting"
         }
 
         if script_key in original_texts:
