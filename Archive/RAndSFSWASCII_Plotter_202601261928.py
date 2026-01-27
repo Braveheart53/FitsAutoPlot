@@ -33,6 +33,7 @@ import math
 # import faulthandler
 from hanging_threads import start_monitoring
 import datetime  # Added for auto-save timestamping
+
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 # from qtpy.QtGui import *
 # from qtpy.QtCore import Qt, QSize, QThread, Signal
@@ -73,20 +74,20 @@ else:
         QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit
     )
 
-
 # %%% Math and Processing Modules
 import numpy as np
 from fastest_ascii_import import fastest_file_parser as fparser
-
 
 # %%% Parallel Processing Modules
 import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import Pool, cpu_count
 import multiprocessing as mp
+
 # %%% GPU Acceleration Modules
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
     # Verify CUDA device is actually accessible
     try:
@@ -106,9 +107,9 @@ except Exception as e:
     CUPY_AVAILABLE = False
     CUPY_AVAILABLE_VERIFIED = False
 
-
 try:
     import pyopencl as cl
+
     PYOPENCL_AVAILABLE = True
 except ImportError:
     PYOPENCL_AVAILABLE = False
@@ -117,6 +118,8 @@ except ImportError:
 import veusz.embed as embed
 from veusz.windows.simplewindow import SimpleWindow
 from veusz.document import CommandInterface
+
+
 # %%% File Processing
 
 # %% Configuration and Data Classes
@@ -147,6 +150,7 @@ class plotDescInfo:
     graph_title: str
     base_name: str
     first_plot: bool
+
 
 # %% GPU Processing Classes
 
@@ -289,6 +293,7 @@ class GPUProcessor:
         processed_gpu = gpu_array * 1.0  # Identity operation for now
         return cp.asnumpy(processed_gpu)
 
+
 # %% Multiprocessing Worker Functions
 
 
@@ -391,6 +396,7 @@ def extract_with_regex(inputText: str, delim: str = ';'):
     esc = re.escape(delim)
     pattern = rf"{esc}(.*?){esc}"
     return re.findall(pattern, inputText)
+
 
 # %% Enhanced Qt GUI Classes
 
@@ -563,36 +569,36 @@ class EnhancedMainWindow(QMainWindow):
         # NEW: Plot options section (Option 1)
         plot_group = QGroupBox("Plot Options")
         plot_layout = QVBoxLayout(plot_group)
-        
+
         # Radio button group for plot mode
         self.plot_mode_group = QButtonGroup()
-        
+
         self.all_plots_radio = QRadioButton("All plots (original behavior)")
         self.all_plots_radio.setChecked(True)
         self.plot_mode_group.addButton(self.all_plots_radio, 0)
         plot_layout.addWidget(self.all_plots_radio)
-        
+
         self.avg_overlay_radio = QRadioButton("Average + Overlay only (no individual plots)")
         self.plot_mode_group.addButton(self.avg_overlay_radio, 1)
         plot_layout.addWidget(self.avg_overlay_radio)
-        
+
         self.avg_only_radio = QRadioButton("Average only (no individual or overlay plots)")
         self.plot_mode_group.addButton(self.avg_only_radio, 2)
         plot_layout.addWidget(self.avg_only_radio)
-        
+
         self.plot_mode_group.buttonClicked.connect(self._update_plot_mode)
-        
+
         main_layout.addWidget(plot_group)
 
         # NEW: Auto-save options section (Option 2)
         autosave_group = QGroupBox("Auto-Save Options")
         autosave_layout = QVBoxLayout(autosave_group)
-        
+
         # Enable auto-save checkbox
         self.enable_autosave_checkbox = QCheckBox("Enable automatic batch saving")
         self.enable_autosave_checkbox.stateChanged.connect(self._update_autosave_config)
         autosave_layout.addWidget(self.enable_autosave_checkbox)
-        
+
         # Plots per file setting
         plots_layout = QHBoxLayout()
         plots_layout.addWidget(QLabel("Plots per file:"))
@@ -602,7 +608,7 @@ class EnhancedMainWindow(QMainWindow):
         plots_layout.addWidget(self.plots_per_file_edit)
         plots_layout.addStretch()
         autosave_layout.addLayout(plots_layout)
-        
+
         # Base filename setting
         filename_layout = QHBoxLayout()
         filename_layout.addWidget(QLabel("Base filename:"))
@@ -612,7 +618,7 @@ class EnhancedMainWindow(QMainWindow):
         filename_layout.addWidget(self.base_filename_edit)
         filename_layout.addStretch()
         autosave_layout.addLayout(filename_layout)
-        
+
         main_layout.addWidget(autosave_group)
 
         # Progress bar
@@ -830,6 +836,7 @@ class EnhancedMainWindow(QMainWindow):
                 QMessageBox.critical(self, "Save Error",
                                      f"Failed to save project: {e}")
 
+
 # %% Auto Plotter Class
 
 
@@ -908,7 +915,7 @@ class VZPlotRnS:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             save_dir = f"RnS_AutoSave_{timestamp}"
             os.makedirs(save_dir, exist_ok=True)
-            
+
             # Set base path without extension (will be added during save)
             self.base_save_path = os.path.join(save_dir, self.config.auto_save_base_name)
             print(f"Auto-save directory created: {save_dir}")
@@ -918,22 +925,22 @@ class VZPlotRnS:
         """Automatically save file if plot count threshold is reached."""
         if not self.auto_save_enabled:
             return
-            
+
         if self.plot_count > 0 and self.plot_count % self.plots_per_file == 0:
             if self.base_save_path is None:
                 self._setup_auto_save_path()
-            
+
             # Generate filename with batch number
             batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
-            
+
             # Use multiprocessing for save operation if enabled
             if self.config.enable_multiprocessing:
                 self._save_batch_parallel(batch_filename)
             else:
                 self._save_batch_sequential(batch_filename)
-            
+
             print(f"Auto-saved batch {self.file_batch_number} with {self.plots_per_file} plots to: {batch_filename}")
-            
+
             # Reset for next batch
             self.file_batch_number += 1
             self._reset_for_next_batch()
@@ -945,14 +952,14 @@ class VZPlotRnS:
             # Use threading for file I/O operations
             def save_worker():
                 self.doc.Save(filename, mode='hdf5')
-                
+
             save_thread = threading.Thread(target=save_worker)
             save_thread.start()
             save_thread.join(timeout=30)  # 30 second timeout
-            
+
             if save_thread.is_alive():
                 print(f"Warning: Save operation for {filename} timed out")
-            
+
         except Exception as e:
             print(f"Error during parallel save: {e}")
             # Fallback to sequential save
@@ -973,7 +980,7 @@ class VZPlotRnS:
         self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
         self.doc.EnableToolbar(enable=True)
         self.first_1d = True
-        
+
         # Clear dataset tracking for new batch
         self._datasets_by_base.clear()
 
@@ -994,7 +1001,7 @@ class VZPlotRnS:
                       if ('freq' not in ds.lower()
                           and not ds.endswith(('_avg_dB', '_avg_lin')))]
 
-        if len(candidates) < 2:      # nothing meaningful to average
+        if len(candidates) < 2:  # nothing meaningful to average
             return
 
         # Pick numeric backend
@@ -1033,7 +1040,7 @@ class VZPlotRnS:
         avg_lin = xp.mean(linear_stack, axis=0)
         avg_db = 10.0 * xp.log10(avg_lin)
 
-        if use_gpu:          # move to CPU before registering in Veusz
+        if use_gpu:  # move to CPU before registering in Veusz
             avg_lin = cp.asnumpy(avg_lin)
             avg_db = cp.asnumpy(avg_db)
 
@@ -1041,7 +1048,7 @@ class VZPlotRnS:
         lin_name = f"{base_name}_avg_lin"
         db_name = f"{base_name}_avg_dB"
         self.doc.SetData(name=lin_name, val=avg_lin)
-        self.doc.SetData(name=db_name,  val=avg_db)
+        self.doc.SetData(name=db_name, val=avg_db)
 
         # Set the tags for the datasets
         self.doc.TagDatasets('Avg_dB', [db_name])
@@ -1056,7 +1063,7 @@ class VZPlotRnS:
             # Overlay & individual average plot
             prev_title = self.plotInfo.graph_title
             self.plotInfo.graph_title = f"{base_name} average"
-            self._plot_1d(db_name)          # plot dB average
+            self._plot_1d(db_name)  # plot dB average
             self.plotInfo.graph_title = prev_title
 
     def _process_file_data(self, filename, data_returned):
@@ -1146,7 +1153,7 @@ class VZPlotRnS:
             # NEW: Only create individual plots in mode 0 (all plots)
             if self.config.plot_mode == 0:
                 self._plot_1d(dataset_name)
-                
+
                 # NEW: Increment plot count and check for auto-save
                 self.plot_count += 1
                 self._auto_save_if_needed()
@@ -1165,7 +1172,7 @@ class VZPlotRnS:
             # NEW: Check if we should create overlay based on plot mode
             create_overlay = (self.config.plot_mode == 0) or (self.config.plot_mode == 1)
             create_individual = (self.config.plot_mode == 0)
-            
+
             # Create overlay plot if it doesn't exist and mode allows it
             if create_overlay and 'AllImported' not in self.doc.Root.childnames:
                 self._create_page('AllImported')
@@ -1278,7 +1285,8 @@ class VZPlotRnS:
                 final_batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
                 try:
                     self.doc.Save(final_batch_filename, mode='hdf5')
-                    print(f"Final batch saved with {self.plot_count % self.plots_per_file} plots to: {final_batch_filename}")
+                    print(
+                        f"Final batch saved with {self.plot_count % self.plots_per_file} plots to: {final_batch_filename}")
                 except Exception as e:
                     print(f"Error saving final batch: {e}")
 
@@ -1306,6 +1314,7 @@ class VZPlotRnS:
                 f"Failed to start Veusz: {e}"
             )
 
+
 # %% Veusz Example for Embedding
 
 
@@ -1325,7 +1334,7 @@ class VeuszWin(SimpleWindow):
         ifc.Add('function', name='myfunc')
 
         ifc.Set('myfunc/function', 'sin(x)')
-        ifc.Set('x/max', 3.14*2)
+        ifc.Set('x/max', 3.14 * 2)
 
 
 class MainWindow(QWidget):
@@ -1347,6 +1356,8 @@ class MainWindow(QWidget):
         filename = 'out.png'
         print("Writing", filename)
         self.veuszwin.interface.Export(filename)
+
+
 # %% Utility Functions
 
 
@@ -1397,6 +1408,7 @@ def main():
     # faulthandler.cancel_dump_traceback_later()
     # faulthandler.disable()
     monitor.stop()
+
 
 if __name__ == '__main__':
     main()

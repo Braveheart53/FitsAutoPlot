@@ -46,44 +46,49 @@ class GBOutDoor:
     All functions for GBO outdoor range
     """
 
-    def import_data(self, tuple data):
-        """
-        Parameters
-        ----------
-        tuple data : TYPE
-            DESCRIPTION.
+    def import_data(self, tuple data
 
-        Returns
-        -------
-        data_imported : TYPE
-            DESCRIPTION.
+    ):
+    """
+    Parameters
+    ----------
+    tuple data : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    data_imported : TYPE
+        DESCRIPTION.
 
 
-        Notes
-        -------
-        Import and parse data from GBO outdoor range, original script name
-        was import_ATR_file_inVeusz.py looking at using Pandas or Xarray to
-        organize data fields.
+    Notes
+    -------
+    Import and parse data from GBO outdoor range, original script name
+    was import_ATR_file_inVeusz.py looking at using Pandas or Xarray to
+    organize data fields.
 
-        """
-        pass
-        print("import_data")
-        # return data_imported
+    """
+    pass
+    print("import_data")
+    # return data_imported
 
-    def parse_data(self, tuple data):
-        """
 
-        Parameters
-        ----------
-        tuple data : TYPE
-            DESCRIPTION.
+def parse_data(self, tuple data
 
-        Returns
-        -------
-        None.
+):
+"""
 
-        """
-        pass
+Parameters
+----------
+tuple data : TYPE
+    DESCRIPTION.
+
+Returns
+-------
+None.
+
+"""
+pass
 
 
 class GBOAnechoic:
@@ -118,6 +123,7 @@ class GPUFun:
 
     It does take setup of the kernal
     """
+
     def _cudaGetErrorEnum(error):
         if isinstance(error, cuda.CUresult):
             err, name = cuda.cuGetErrorName(error)

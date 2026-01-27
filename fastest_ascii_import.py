@@ -69,6 +69,7 @@ Date: 2025-09-02
 =============================================================================
 """
 
+
 # %% Function Definitions
 
 
@@ -100,7 +101,7 @@ def fastest_file_parser(filename, line_targets=None, string_patterns=None):
     extracted_data['metadata']['file_size'] = os.path.getsize(filename)
 
     # Use appropriate method based on file size
-    if extracted_data['metadata']['file_size'] < 10**7:  # < 10MB
+    if extracted_data['metadata']['file_size'] < 10 ** 7:  # < 10MB
         # Use fast binary reading
         with open(filename, 'rb') as file:
             content = file.read().decode('ascii')

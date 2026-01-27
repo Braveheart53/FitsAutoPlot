@@ -18,6 +18,8 @@ from veusz.plugins.datasetplugin import (
 from veusz.plugins.datasetplugin import DatasetPluginHelper as hlpr
 from veusz.plugins import (field)
 import re
+
+
 # %% Class Definitions
 # %%% User Input Fields utilized
 
@@ -269,6 +271,8 @@ class LinearTodBPlugin(DatasetPlugin):
             perr=db_perr,
             nerr=db_nerr
         )
+
+
 # %%% Processing
 # ----------------------------------------------------------------------
 # INTERNAL HELPERS
@@ -277,6 +281,7 @@ class LinearTodBPlugin(DatasetPlugin):
 
 class _ConsoleMixin:
     """Safely write messages to Veusz' console or fall back to stdout."""
+
     @staticmethod
     def _log(helper, text):
         try:
@@ -287,6 +292,7 @@ class _ConsoleMixin:
 
 class _MathHelpers:
     """Static helpers for dB / linear conversions and averaging."""
+
     @staticmethod
     def lin_from_db(arr):
         return 10.0 ** (arr / 20.0)
@@ -352,6 +358,7 @@ class _pluginUtilities:
             raise DatasetPluginException("No tagged datasets found.")
         return tag_map
 
+
 # %%% Processing by Tag
 # # ----------------------------------------------------------------------
 # # "PROCESS BY TAG" - one result per tag
@@ -385,6 +392,7 @@ class dBLinearAvgByTagPlugin(_ConsoleMixin, _MathHelpers, _pluginUtilities,
                 default='Meaningless'
             )
         ]
+
     # helper is an object passed at run time by veusz, getDatasets does not
     # get his helper....
     def getDatasets(self, fields):

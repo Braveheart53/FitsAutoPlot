@@ -50,17 +50,20 @@ import multiprocessing as mp
 # GPU
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
 
 try:
     import pyopencl as cl
+
     PYOPENCL_AVAILABLE = True
 except ImportError:
     PYOPENCL_AVAILABLE = False
 
 import veusz.embed as embed
+
 
 # --- Core Config Data Classes ---
 
@@ -72,10 +75,11 @@ class ProcessingConfig:
     num_processes: int = cpu_count()
     max_workers: int = cpu_count()
     chunk_size: int = 1000
-    plot_mode: int = 0 # 0 = All, 1 = Overlay/Average, 2 = Average Only
+    plot_mode: int = 0  # 0 = All, 1 = Overlay/Average, 2 = Average Only
     enable_auto_save: bool = False
     plots_per_file: int = 1000
     base_batch_filename: str = 'RnS_Plots_Batch'
+
 
 @dataclass
 class plotDescInfo:
@@ -85,6 +89,7 @@ class plotDescInfo:
     graph_title: str
     base_name: str
     first_plot: bool
+
 
 # --- GPU Processing ---
 
@@ -115,13 +120,15 @@ class GPUProcessor:
                     self.context = cl.Context(devices=[devices[0]])
                     self.queue = cl.CommandQueue(self.context)
                     self.gpu_available = True
-        except Exception: pass
+        except Exception:
+            pass
 
     def _initialize_cupy(self):
         try:
             cp.cuda.Device(0).use()
             self.gpu_available = True
-        except Exception: pass
+        except Exception:
+            pass
 
     def process_array_gpu(self, data_array):
         if not self.gpu_available:
@@ -152,9 +159,11 @@ class GPUProcessor:
         cl.enqueue_copy(self.queue, result, data_buffer)
         self.queue.finish()
         return result.astype(data_array.dtype)
+
     def _process_cupy(self, data_array):
         gpu_array = cp.asarray(data_array)
         return cp.asnumpy(gpu_array * 1.0)
+
 
 # --- Multiprocessing Worker ---
 
@@ -183,10 +192,12 @@ def process_file_worker(file_info):
             'error': str(e)
         }
 
+
 def extract_with_regex(inputText: str, delim: str = ';'):
     esc = re.escape(delim)
     pattern = rf"{esc}(.*?){esc}"
     return re.findall(pattern, inputText)
+
 
 # --- Qt GUI Classes ---
 
@@ -194,12 +205,14 @@ class FileProcessingThread(QThread):
     progress_updated = Signal(int)
     processing_finished = Signal(object)
     error_occurred = Signal(str)
+
     def __init__(self, file_list, config, search_strings, sft_lines):
         super().__init__()
         self.file_list = file_list
         self.config = config
         self.search_strings = search_strings
         self.sft_lines = sft_lines
+
     def run(self):
         try:
             if self.config.enable_multiprocessing and len(self.file_list) > 1:
@@ -209,6 +222,7 @@ class FileProcessingThread(QThread):
             self.processing_finished.emit(results)
         except Exception as e:
             self.error_occurred.emit(str(e))
+
     def _process_files_parallel(self):
         file_info_list = [
             (filename, self.search_strings, self.sft_lines, self.config)
@@ -228,6 +242,7 @@ class FileProcessingThread(QThread):
                 progress = int((completed / len(self.file_list)) * 100)
                 self.progress_updated.emit(progress)
         return results
+
     def _process_files_sequential(self):
         results = []
         for i, filename in enumerate(self.file_list):
@@ -237,6 +252,7 @@ class FileProcessingThread(QThread):
             progress = int(((i + 1) / len(self.file_list)) * 100)
             self.progress_updated.emit(progress)
         return results
+
 
 class EnhancedMainWindow(QMainWindow):
     def __init__(self):
@@ -365,37 +381,46 @@ class EnhancedMainWindow(QMainWindow):
             self.selected_files.extend(selected_files)
             self._update_file_list()
             self._log_message(f"Selected {len(selected_files)} files")
+
     def _clear_files(self):
         self.selected_files.clear()
         self._update_file_list()
         self._log_message("File list cleared")
+
     def _update_file_list(self):
         self.file_list_widget.clear()
         for file_path in self.selected_files:
             self.file_list_widget.addItem(os.path.basename(file_path))
+
     def _update_mp_config(self, state):
         self.config.enable_multiprocessing = state == Qt.Checked
         self._log_message(f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}")
+
     def _update_cpu_config(self, value):
         self.config.num_processes = value
         self.config.max_workers = value
         self._log_message(f"CPU cores set to: {value}")
+
     def _update_gpu_config(self, state):
         self.config.enable_gpu_processing = state == Qt.Checked
         self._log_message(f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}")
+
     def _update_opencl_config(self, state):
         self.config.use_opencl = state == Qt.Checked
         self._log_message(f"OpenCL preference: {'Enabled' if self.config.use_opencl else 'Disabled'}")
+
     def _update_plot_mode(self, button):
         self.config.plot_mode = self.plot_mode_group.id(button)
         modes = ["All", "Overlay+BatchAverage", "GlobalAverage"]
         self._log_message(f"Plot mode: {modes[self.config.plot_mode]}")
+
     def _update_autosave_config(self, state):
         self.config.enable_auto_save = state == Qt.Checked
         self.plots_per_file_edit.setEnabled(self.config.enable_auto_save)
         self.base_filename_edit.setEnabled(self.config.enable_auto_save)
         self.vzplot.auto_save_enabled = self.config.enable_auto_save
         self._log_message(f"Auto-save: {'Enabled' if self.config.enable_auto_save else 'Disabled'}")
+
     def _update_plots_per_file(self, text):
         try:
             value = int(text)
@@ -403,13 +428,17 @@ class EnhancedMainWindow(QMainWindow):
             self.vzplot.plots_per_file = self.config.plots_per_file
         except Exception:
             self.config.plots_per_file = 1000
+
     def _update_base_filename(self, text):
         self.config.base_batch_filename = text if text else "RnS_Plots_Batch"
         self.vzplot.base_batch_filename = self.config.base_batch_filename
+
     def _log_message(self, message):
         self.status_text.append(f"[{self._get_timestamp()}] {message}")
+
     def _get_timestamp(self):
         return datetime.datetime.now().strftime("%H:%M:%S")
+
     def _process_and_plot(self):
         if not self.selected_files:
             QMessageBox.warning(self, "Warning", "Please select SFT files first.")
@@ -454,7 +483,7 @@ class EnhancedMainWindow(QMainWindow):
     def _save_project(self):
         file_dialog = QFileDialog()
         save_path, _ = file_dialog.getSaveFileName(self, "Save Veusz Project", "",
-            "Veusz High Precision Files (*.vszh5)")
+                                                   "Veusz High Precision Files (*.vszh5)")
         if save_path:
             try:
                 self.vzplot.save(save_path)
@@ -469,6 +498,7 @@ class EnhancedMainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Save Error", f"Failed to save project: {e}")
 
+
 # --- Enhanced Plotter with Batch Overlay/Average Only ---
 
 class VZPlotRnS:
@@ -478,18 +508,18 @@ class VZPlotRnS:
         self.first_1d = True
         self.doc.EnableToolbar(enable=True)
         self.searchData_strings = {
-            'version': 'VERSION','type': 'TYPE',
-            'mode': 'MODE','center freq': 'CENTER FREQ',
-            'freq offset': 'FREQ OFFSET','span': 'SPAN',
-            'x-axis': 'X-AXIS','start': 'START',
-            'stop': 'STOP','stop_2': 'STOP',
-            'ref level': 'REF LEVEL','level offset': 'LEVEL OFFSET',
-            'ref position': 'REF POSITION','y-axis': 'Y-AXIS',
-            'level range': 'LEVEL RANGE','rf att': 'RF ATT',
-            'rbw': 'RBW','vbw': 'VBW','swt': 'SWT','trace mode': 'TRACE MODE',
-            'detector': 'DETECTOR','sweep count': "SWEEP COUNT",'trace': 'TRACE',
-            'x-unit': 'X-UNIT','y-unit': 'Y-UNIT','preamplifier': 'PREAMPLIFIER',
-            'transducer': 'TRANSDUCER','values': 'VALUES','section': 'SECTION'
+            'version': 'VERSION', 'type': 'TYPE',
+            'mode': 'MODE', 'center freq': 'CENTER FREQ',
+            'freq offset': 'FREQ OFFSET', 'span': 'SPAN',
+            'x-axis': 'X-AXIS', 'start': 'START',
+            'stop': 'STOP', 'stop_2': 'STOP',
+            'ref level': 'REF LEVEL', 'level offset': 'LEVEL OFFSET',
+            'ref position': 'REF POSITION', 'y-axis': 'Y-AXIS',
+            'level range': 'LEVEL RANGE', 'rf att': 'RF ATT',
+            'rbw': 'RBW', 'vbw': 'VBW', 'swt': 'SWT', 'trace mode': 'TRACE MODE',
+            'detector': 'DETECTOR', 'sweep count': "SWEEP COUNT", 'trace': 'TRACE',
+            'x-unit': 'X-UNIT', 'y-unit': 'Y-UNIT', 'preamplifier': 'PREAMPLIFIER',
+            'transducer': 'TRANSDUCER', 'values': 'VALUES', 'section': 'SECTION'
         }
         self.sft_lines = [1, 2, 3] + list(range(5, 58, 2))
         self.plotInfo = plotDescInfo(
@@ -529,7 +559,7 @@ class VZPlotRnS:
         batches = []
         batch_size = self.plots_per_file if self.auto_save_enabled else len(self.processed_batch_results)
         for i in range(0, len(self.processed_batch_results), batch_size):
-            batches.append(self.processed_batch_results[i:i+batch_size])
+            batches.append(self.processed_batch_results[i:i + batch_size])
 
         # 2. Compute the global average from all files, only if any global average option is enabled
         if self.config.plot_mode in [2, 1]:
@@ -537,7 +567,7 @@ class VZPlotRnS:
 
         # 3. For each batch, create new Veusz document
         for batch_index, batch_results in enumerate(batches):
-            batch_doc = embed.Embedded('Batch_{:03d}'.format(batch_index+1))
+            batch_doc = embed.Embedded('Batch_{:03d}'.format(batch_index + 1))
             batch_doc.EnableToolbar(enable=True)
             datasets_for_batch = []
             batch_basenames = []
@@ -555,7 +585,7 @@ class VZPlotRnS:
                 self._create_overlay_and_batch_average(batch_doc, batch_basenames, datasets_for_batch)
 
             # Save batch file
-            batch_file = self._setup_auto_save_path() + "_{:03d}.vszh5".format(batch_index+1)
+            batch_file = self._setup_auto_save_path() + "_{:03d}.vszh5".format(batch_index + 1)
             batch_doc.Save(batch_file, mode='hdf5')
         # Only for global average mode (mode==2), save global average file
         if self.config.plot_mode == 2:
@@ -728,7 +758,9 @@ class VZPlotRnS:
         if not os.path.exists(veusz_exe): return
         try:
             subprocess.Popen([veusz_exe, filename])
-        except Exception: pass
+        except Exception:
+            pass
+
 
 # --- App Launcher ---
 
@@ -738,6 +770,7 @@ def main():
     window = EnhancedMainWindow()
     window.show()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()

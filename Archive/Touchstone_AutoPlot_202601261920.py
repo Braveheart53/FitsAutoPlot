@@ -73,6 +73,7 @@ except ImportError:
 # IMPORTS - Plotting and Visualization (matplotlib)
 # ============================================================================
 import matplotlib
+
 matplotlib.use('QtAgg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -140,22 +141,26 @@ GPUAVAILABLE = None
 
 try:
     import cupy as cp
+
     GPUAVAILABLE = 'cupy'
     print("CuPy detected - NVIDIA/AMD GPU acceleration available")
 except ImportError:
     try:
         import pyopencl as cl
         import pyopencl.array as clarray
+
         GPUAVAILABLE = 'opencl'
         print("PyOpenCL detected - Cross-platform GPU acceleration available")
     except ImportError:
         try:
             import taichi as ti
+
             GPUAVAILABLE = 'taichi'
             print("Taichi detected - Cross-platform GPU acceleration available")
         except ImportError:
             GPUAVAILABLE = None
             print("No GPU acceleration libraries available - using CPU only")
+
 
 # ============================================================================
 # CONFIGURATION CLASSES
@@ -233,7 +238,7 @@ class SmithChartMatplotlibPlotter:
         config (SmithChartMatplotlibConfig): Configuration settings for plotting.
         z0 (float): Reference impedance for normalization.
     """
-    
+
     def __init__(self, config: SmithChartMatplotlibConfig = None, z0: float = 50.0):
         """
         Initialize the Smith chart plotter.
@@ -247,11 +252,11 @@ class SmithChartMatplotlibPlotter:
         self.z0 = z0
         self.figures = []
         self.file_paths = []
-        
+
     def create_smith_chart_figure(self, network: Network, param_name: str,
-                                 chart_type: str = 'z', 
-                                 draw_labels: bool = True,
-                                 draw_vswr: bool = True) -> Tuple[Figure, str]:
+                                  chart_type: str = 'z',
+                                  draw_labels: bool = True,
+                                  draw_vswr: bool = True) -> Tuple[Figure, str]:
         """
         Create a Smith chart figure from network S-parameters.
         
@@ -265,21 +270,21 @@ class SmithChartMatplotlibPlotter:
         Returns:
             Tuple[Figure, str]: matplotlib Figure object and descriptive title string.
         """
-        fig, ax = plt.subplots(1, 1, figsize=self.config.figure_size, 
+        fig, ax = plt.subplots(1, 1, figsize=self.config.figure_size,
                                dpi=self.config.dpi)
-        
+
         # Extract port indices from parameter name (e.g., 'S11' -> (0,0))
         indices = self._extract_param_indices(param_name)
         if indices is None:
             raise ValueError(f"Invalid parameter name: {param_name}")
-        
+
         i, j = indices
         if i >= network.nports or j >= network.nports:
             raise IndexError(f"Port index out of range for {param_name}")
-        
+
         # Extract S-parameter data
         s_param = network.s[:, i, j]
-        
+
         # Convert to impedance or admittance
         if chart_type.lower() == 'z':
             # Impedance: Z = Z0 * (1 + S) / (1 - S)
@@ -293,28 +298,28 @@ class SmithChartMatplotlibPlotter:
             label_type = "Admittance"
         else:
             raise ValueError(f"Invalid chart type: {chart_type}")
-        
+
         # Draw Smith chart background
-        self._draw_smith_chart_grid(ax, draw_labels=draw_labels, 
-                                   draw_vswr=draw_vswr, label_type=label_type)
-        
+        self._draw_smith_chart_grid(ax, draw_labels=draw_labels,
+                                    draw_vswr=draw_vswr, label_type=label_type)
+
         # Plot S-parameter trace
         real_part = np.real(z_norm)
         imag_part = np.imag(z_norm)
-        
+
         ax.plot(real_part, imag_part, 'b-', linewidth=self.config.line_width,
-                label=f"{param_name} Trace", marker='o', 
+                label=f"{param_name} Trace", marker='o',
                 markersize=self.config.marker_size, alpha=0.7)
-        
+
         # Mark frequency points
         num_points = len(z_norm)
         if num_points > 0:
             # Mark start and end points
-            ax.plot(real_part[0], imag_part[0], 'go', markersize=8, 
-                   label='Start', zorder=5)
+            ax.plot(real_part[0], imag_part[0], 'go', markersize=8,
+                    label='Start', zorder=5)
             ax.plot(real_part[-1], imag_part[-1], 'ro', markersize=8,
-                   label='End', zorder=5)
-        
+                    label='End', zorder=5)
+
         # Configure axes
         ax.set_xlim(-2.5, 2.5)
         ax.set_ylim(-2.5, 2.5)
@@ -324,13 +329,13 @@ class SmithChartMatplotlibPlotter:
         ax.set_title(title, fontsize=self.config.title_fontsize, fontweight='bold')
         ax.legend(fontsize=self.config.legend_fontsize, loc='upper right')
         ax.grid(True, alpha=self.config.grid_alpha)
-        
+
         fig.tight_layout()
-        
+
         return fig, title
-    
+
     def _draw_smith_chart_grid(self, ax, draw_labels: bool = True,
-                              draw_vswr: bool = True, label_type: str = "Impedance"):
+                               draw_vswr: bool = True, label_type: str = "Impedance"):
         """
         Draw the Smith chart grid background on matplotlib axes.
         
@@ -343,53 +348,53 @@ class SmithChartMatplotlibPlotter:
         # Main circle (magnitude = 1)
         circle = Circle((0, 0), 1, fill=False, edgecolor='black', linewidth=2)
         ax.add_patch(circle)
-        
+
         # Resistance circles (for impedance) or conductance circles (for admittance)
         # These are circles with centers on the real axis
         resistance_values = [0.2, 0.5, 1.0, 2.0, 5.0]
-        
+
         for r in resistance_values:
             # Circle equation for Smith chart resistance circles:
             # (x - r/(1+r))^2 + y^2 = (1/(1+r))^2
             center_x = r / (1 + r)
             radius = 1 / (1 + r)
-            
+
             circle = Circle((center_x, 0), radius, fill=False,
-                           edgecolor='lightblue', linewidth=0.5, linestyle='--')
+                            edgecolor='lightblue', linewidth=0.5, linestyle='--')
             ax.add_patch(circle)
-            
+
             # Add labels if requested
             if draw_labels and center_x + radius < 1.0:
                 label_text = f"{r:.1f}" if r != 1.0 else f"{r:.1f}"
                 ax.text(center_x + radius + 0.05, 0, label_text,
-                       fontsize=8, ha='left', va='center', color='blue')
-        
+                        fontsize=8, ha='left', va='center', color='blue')
+
         # Reactance circles (imaginary axis)
         reactance_values = [0.2, 0.5, 1.0, 2.0, 5.0]
-        
+
         for x in reactance_values:
             # Circle equation for Smith chart reactance circles:
             # (x - 1)^2 + (y - 1/x)^2 = (1/x)^2
             center_x = 1.0
             center_y = 1.0 / x
             radius = 1.0 / x
-            
+
             circle = Circle((center_x, center_y), radius, fill=False,
-                           edgecolor='lightgreen', linewidth=0.5, linestyle='--')
+                            edgecolor='lightgreen', linewidth=0.5, linestyle='--')
             ax.add_patch(circle)
-            
+
             # Negative reactance circle (symmetric about real axis)
             circle_neg = Circle((center_x, -center_y), radius, fill=False,
-                               edgecolor='lightgreen', linewidth=0.5, linestyle='--')
+                                edgecolor='lightgreen', linewidth=0.5, linestyle='--')
             ax.add_patch(circle_neg)
-            
+
             # Add labels if requested
             if draw_labels:
                 ax.text(center_x + 0.05, center_y + 0.05, f"+j{x:.1f}",
-                       fontsize=7, ha='left', va='bottom', color='green')
+                        fontsize=7, ha='left', va='bottom', color='green')
                 ax.text(center_x + 0.05, -center_y - 0.05, f"-j{x:.1f}",
-                       fontsize=7, ha='left', va='top', color='green')
-        
+                        fontsize=7, ha='left', va='top', color='green')
+
         # Draw VSWR circles if requested
         if draw_vswr:
             vswr_values = [1.5, 2.0, 3.0]
@@ -397,15 +402,15 @@ class SmithChartMatplotlibPlotter:
                 # VSWR circle: maps to reflection coefficient magnitude
                 gamma_mag = (vswr - 1) / (vswr + 1)
                 circle = Circle((0, 0), gamma_mag, fill=False,
-                               edgecolor='red', linewidth=0.5, linestyle=':',
-                               alpha=0.5)
+                                edgecolor='red', linewidth=0.5, linestyle=':',
+                                alpha=0.5)
                 ax.add_patch(circle)
-                
+
                 # VSWR label
                 if draw_labels:
                     ax.text(gamma_mag, 0.05, f"VSWR={vswr:.1f}",
-                           fontsize=7, ha='center', va='bottom', color='red')
-    
+                            fontsize=7, ha='center', va='bottom', color='red')
+
     def _extract_param_indices(self, param_name: str) -> Optional[Tuple[int, int]]:
         """
         Extract port indices from S-parameter name.
@@ -418,19 +423,19 @@ class SmithChartMatplotlibPlotter:
         """
         if not param_name.startswith('S') or len(param_name) != 3:
             return None
-        
+
         try:
             i = int(param_name[1]) - 1
             j = int(param_name[2]) - 1
             return (i, j) if i >= 0 and j >= 0 else None
         except ValueError:
             return None
-    
+
     def save_smith_charts(self, network: Network, filename: str,
-                         output_dir: str, output_format: str = 'png',
-                         chart_type: str = 'z', combine_pdf: bool = False,
-                         draw_labels: bool = True,
-                         draw_vswr: bool = True) -> List[str]:
+                          output_dir: str, output_format: str = 'png',
+                          chart_type: str = 'z', combine_pdf: bool = False,
+                          draw_labels: bool = True,
+                          draw_vswr: bool = True) -> List[str]:
         """
         Generate and save Smith charts for all S-parameters in a network.
         
@@ -449,16 +454,16 @@ class SmithChartMatplotlibPlotter:
         """
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
-        
+
         saved_files = []
         base_filename = os.path.splitext(filename)[0]
         pdf_files = [] if output_format.lower() == 'pdf' and combine_pdf else None
-        
+
         # Generate Smith charts for each S-parameter
         for i in range(network.nports):
             for j in range(network.nports):
-                param_name = f"S{i+1}{j+1}"
-                
+                param_name = f"S{i + 1}{j + 1}"
+
                 try:
                     fig, title = self.create_smith_chart_figure(
                         network, param_name,
@@ -466,25 +471,25 @@ class SmithChartMatplotlibPlotter:
                         draw_labels=draw_labels,
                         draw_vswr=draw_vswr
                     )
-                    
+
                     # Create output filename
                     safe_title = title.replace(' ', '_').replace('-', '_')
                     output_filename = f"{base_filename}_{param_name}.{output_format.lower()}"
                     output_path = os.path.join(output_dir, output_filename)
-                    
+
                     # Save figure
                     fig.savefig(output_path, format=output_format.lower(), dpi=self.config.dpi)
                     plt.close(fig)
-                    
+
                     saved_files.append(output_path)
-                    
+
                     # Track PDF files for potential merging
                     if output_format.lower() == 'pdf' and combine_pdf:
                         pdf_files.append(output_path)
-                    
+
                 except Exception as e:
                     print(f"Warning: Failed to create Smith chart for {param_name}: {e}")
-        
+
         # Combine PDFs if requested
         if combine_pdf and pdf_files and len(pdf_files) > 1:
             combined_path = os.path.join(output_dir, f"{base_filename}_All_SmithCharts.pdf")
@@ -494,9 +499,9 @@ class SmithChartMatplotlibPlotter:
                 print(f"Combined PDF created: {combined_path}")
             except Exception as e:
                 print(f"Warning: Failed to create combined PDF: {e}")
-        
+
         return saved_files
-    
+
     def _combine_pdfs(self, pdf_files: List[str], output_path: str):
         """
         Combine multiple PDF files into a single bookmarked PDF.
@@ -507,16 +512,16 @@ class SmithChartMatplotlibPlotter:
         """
         try:
             from PyPDF2 import PdfMerger
-            
+
             merger = PdfMerger()
-            
+
             for pdf_file in pdf_files:
                 if os.path.exists(pdf_file):
                     merger.append(pdf_file)
-            
+
             merger.write(output_path)
             merger.close()
-            
+
         except ImportError:
             print("PyPDF2 not available. Install with: pip install PyPDF2")
             # Fallback: at least document the issue
@@ -529,11 +534,11 @@ class SmithChartMatplotlibPlotter:
 
 class TimeDomainProcessor:
     """Handles time domain analysis and gating of S-parameter data."""
-    
+
     def __init__(self, config: TimeDomainConfig = None):
         """Initialize time domain processor."""
         self.config = config or TimeDomainConfig()
-    
+
     def process_network(self, network: Network) -> Dict[str, Any]:
         """Process a network for time domain analysis."""
         results = {}
@@ -544,20 +549,20 @@ class TimeDomainProcessor:
             results['error'] = None
         except Exception as e:
             results['error'] = str(e)
-        
+
         return results
 
 
 class SmithChartProcessor:
     """Handles Smith Chart analysis of S-parameter data."""
-    
+
     def __init__(self, config: SmithChartConfig = None):
         """Initialize Smith Chart processor."""
         self.config = config or SmithChartConfig()
-    
+
     def process_network_for_smith_chart(self, network: Network,
-                                       apply_td_filter: bool = False,
-                                       td_processor: TimeDomainProcessor = None) -> Dict[str, Any]:
+                                        apply_td_filter: bool = False,
+                                        td_processor: TimeDomainProcessor = None) -> Dict[str, Any]:
         """Process a network for Smith Chart plotting."""
         results = {}
         try:
@@ -569,7 +574,7 @@ class SmithChartProcessor:
             results['error'] = None
         except Exception as e:
             results['error'] = str(e)
-        
+
         return results
 
 
@@ -588,12 +593,12 @@ def process_single_touchstone_file(file_info: Tuple[str, Optional[object]]) -> T
         Tuple: (filename, processed_data_dict).
     """
     filepath, gpu_accelerator = file_info
-    
+
     try:
         # Load Touchstone file using scikit-rf
         network = rf.Network(filepath)
         filename = os.path.basename(filepath)
-        
+
         return filename, {
             'network': network,
             'filepath': filepath,
@@ -618,186 +623,186 @@ class TouchstoneMainWindowSmithMatplotlib(QMainWindow):
     scikit-rf instead of Veusz, while maintaining compatibility with traditional
     Veusz-based Touchstone S-parameter and time domain plotting.
     """
-    
+
     def __init__(self):
         """Initialize the main application window."""
         super().__init__()
         self.setWindowTitle("Enhanced Touchstone AutoPlot - Smith Chart Matplotlib Edition")
         self.setGeometry(100, 100, 1400, 900)
-        
+
         # Data storage
         self.selected_files = []
         self.processed_data = {}
         self.smith_results = {}
-        
+
         # Configuration objects
         self.config = ProcessingConfig()
         self.td_config = TimeDomainConfig()
         self.smith_config = SmithChartConfig()
         self.smith_mpl_config = SmithChartMatplotlibConfig()
-        
+
         # Processing components
         self.td_processor = TimeDomainProcessor(self.td_config)
         self.smith_processor = SmithChartProcessor(self.smith_config)
         self.smith_mpl_plotter = SmithChartMatplotlibPlotter(self.smith_mpl_config)
-        
+
         # Setup UI
         self.setup_ui()
-        
+
         self.log_message("Application initialized successfully")
         self.log_message("Select Touchstone files and configure Smith chart options")
-    
+
     def setup_ui(self):
         """Set up the user interface."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
+
         main_layout = QVBoxLayout(central_widget)
-        
+
         # Tab widget for different analysis types
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
-        
+
         # File selection area
         file_group = QGroupBox("File Selection")
         file_layout = QVBoxLayout(file_group)
-        
+
         button_layout = QHBoxLayout()
         browse_btn = QPushButton("Browse Files")
         browse_btn.clicked.connect(self.browse_files)
         clear_btn = QPushButton("Clear Files")
         clear_btn.clicked.connect(self.clear_files)
-        
+
         button_layout.addWidget(browse_btn)
         button_layout.addWidget(clear_btn)
         file_layout.addLayout(button_layout)
-        
+
         self.file_list_widget = QListWidget()
         file_layout.addWidget(self.file_list_widget)
-        
+
         main_layout.addWidget(file_group)
-        
+
         # Smith Chart tab setup
         self.setup_smith_chart_tab()
-        
+
         # Status/logging area
         status_group = QGroupBox("Status Log")
         status_layout = QVBoxLayout(status_group)
-        
+
         self.status_text = QTextEdit()
         self.status_text.setReadOnly(True)
         self.status_text.setMaximumHeight(150)
         status_layout.addWidget(self.status_text)
-        
+
         main_layout.addWidget(status_group)
-    
+
     def setup_smith_chart_tab(self):
         """Set up the Smith Chart analysis tab."""
         smith_tab = QWidget()
         self.tab_widget.addTab(smith_tab, "Smith Chart Analysis")
-        
+
         layout = QHBoxLayout(smith_tab)
-        
+
         # Left control panel
         controls_widget = QWidget()
         controls_widget.setMaximumWidth(400)
         controls_layout = QVBoxLayout(controls_widget)
-        
+
         # File selection
         file_select_group = QGroupBox("File Selection")
         file_select_layout = QVBoxLayout(file_select_group)
-        
+
         self.smith_file_combo = QComboBox()
         self.smith_file_combo.currentTextChanged.connect(self.update_smith_preview)
         file_select_layout.addWidget(self.smith_file_combo)
-        
+
         controls_layout.addWidget(file_select_group)
-        
+
         # Smith Chart settings
         smith_group = QGroupBox("Smith Chart Settings")
         smith_layout = QFormLayout(smith_group)
-        
+
         self.chart_type_combo = QComboBox()
         self.chart_type_combo.addItems(["z (Impedance)", "y (Admittance)"])
         self.chart_type_combo.currentTextChanged.connect(self.update_chart_type)
         smith_layout.addRow("Chart Type:", self.chart_type_combo)
-        
+
         self.ref_impedance_spin = QDoubleSpinBox()
         self.ref_impedance_spin.setRange(1.0, 1000.0)
         self.ref_impedance_spin.setValue(self.smith_config.reference_impedance)
         self.ref_impedance_spin.setSuffix(" Ω")
         self.ref_impedance_spin.valueChanged.connect(self.update_ref_impedance)
         smith_layout.addRow("Reference Impedance:", self.ref_impedance_spin)
-        
+
         self.draw_labels_checkbox = QCheckBox("Draw Labels")
         self.draw_labels_checkbox.setChecked(self.smith_config.draw_labels)
         self.draw_labels_checkbox.stateChanged.connect(self.update_draw_labels)
         smith_layout.addRow(self.draw_labels_checkbox)
-        
+
         self.draw_vswr_checkbox = QCheckBox("Draw VSWR Circles")
         self.draw_vswr_checkbox.setChecked(self.smith_config.draw_vswr)
         self.draw_vswr_checkbox.stateChanged.connect(self.update_draw_vswr)
         smith_layout.addRow(self.draw_vswr_checkbox)
-        
+
         controls_layout.addWidget(smith_group)
-        
+
         # Output format selection
         output_group = QGroupBox("Output Format")
         output_layout = QVBoxLayout(output_group)
-        
+
         format_label = QLabel("Output Format:")
         self.output_format_combo = QComboBox()
         self.output_format_combo.addItems(["PNG", "PDF", "TIFF", "BMP", "SVG", "JPG"])
         self.output_format_combo.setCurrentText("PNG")
         self.output_format_combo.currentTextChanged.connect(self.update_output_format)
-        
+
         output_layout.addWidget(format_label)
         output_layout.addWidget(self.output_format_combo)
-        
+
         self.combine_pdf_checkbox = QCheckBox("Combine all plots into single PDF (with bookmarks)")
         self.combine_pdf_checkbox.setChecked(False)
         self.combine_pdf_checkbox.setEnabled(False)
         self.combine_pdf_checkbox.stateChanged.connect(self.update_combine_pdf)
-        
+
         output_layout.addWidget(self.combine_pdf_checkbox)
-        
+
         controls_layout.addWidget(output_group)
-        
+
         # Processing scope
         scope_group = QGroupBox("Processing Scope")
         scope_layout = QVBoxLayout(scope_group)
-        
+
         self.smith_process_selected_only = QCheckBox(
             "Generate Smith Chart only for selected file"
         )
         self.smith_process_selected_only.setChecked(False)
         scope_layout.addWidget(self.smith_process_selected_only)
-        
+
         controls_layout.addWidget(scope_group)
-        
+
         # Process button
         self.smith_process_button = QPushButton("Generate Smith Charts in Matplotlib")
         self.smith_process_button.clicked.connect(self.process_smith_charts_matplotlib)
         self.smith_process_button.setEnabled(False)
         controls_layout.addWidget(self.smith_process_button)
-        
+
         controls_layout.addStretch()
-        
+
         layout.addWidget(controls_widget)
-    
+
     def browse_files(self):
         """Open file dialog to select Touchstone files."""
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
         file_dialog.setNameFilter("Touchstone Files (*.s1p *.s2p *.s3p *.s4p *.sp)")
         file_dialog.setWindowTitle("Select Touchstone Files")
-        
+
         if file_dialog.exec() == QFileDialog.Accepted:
             selected_files = file_dialog.selectedFiles()
             self.selected_files.extend(selected_files)
             self.update_file_list()
             self.process_files_in_thread()
-    
+
     def clear_files(self):
         """Clear the selected files list."""
         self.selected_files.clear()
@@ -806,35 +811,35 @@ class TouchstoneMainWindowSmithMatplotlib(QMainWindow):
         self.update_file_list()
         self.update_smith_file_combo()
         self.log_message("File list cleared")
-    
+
     def update_file_list(self):
         """Update the file list widget display."""
         self.file_list_widget.clear()
         for filepath in self.selected_files:
             self.file_list_widget.addItem(os.path.basename(filepath))
-    
+
     def update_smith_file_combo(self):
         """Update the Smith chart file selection combo box."""
         self.smith_file_combo.clear()
         if self.processed_data:
             self.smith_file_combo.addItems(list(self.processed_data.keys()))
             self.smith_process_button.setEnabled(len(self.processed_data) > 0)
-    
+
     def process_files_in_thread(self):
         """Process selected files in a background thread."""
         if not self.selected_files:
             self.log_message("No files selected")
             return
-        
+
         # For simplicity, process sequentially
         for filepath in self.selected_files:
             filename, data = process_single_touchstone_file((filepath, None))
             if data:
                 self.processed_data[filename] = data
                 self.log_message(f"Loaded: {filename}")
-        
+
         self.update_smith_file_combo()
-    
+
     def update_chart_type(self, chart_type_text: str):
         """Update Smith chart type configuration."""
         if "Impedance" in chart_type_text:
@@ -842,50 +847,50 @@ class TouchstoneMainWindowSmithMatplotlib(QMainWindow):
         else:
             self.smith_config.chart_type = 'y'
         self.smith_mpl_config.output_format = self.output_format_combo.currentText().lower()
-    
+
     def update_ref_impedance(self, value: float):
         """Update reference impedance configuration."""
         self.smith_config.reference_impedance = value
         self.smith_mpl_plotter.z0 = value
-    
+
     def update_draw_labels(self, state: int):
         """Update draw labels configuration."""
         self.smith_config.draw_labels = (state == Qt.Checked)
-    
+
     def update_draw_vswr(self, state: int):
         """Update draw VSWR configuration."""
         self.smith_config.draw_vswr = (state == Qt.Checked)
-    
+
     def update_smith_preview(self):
         """Update Smith chart preview (placeholder)."""
         current_file = self.smith_file_combo.currentText()
         if current_file and current_file in self.processed_data:
             self.log_message(f"Selected: {current_file}")
-    
+
     def update_output_format(self, format_text: str):
         """Update output format and enable PDF combine option if applicable."""
         self.smith_mpl_config.output_format = format_text.lower()
         is_pdf = format_text.lower() == 'pdf'
         self.combine_pdf_checkbox.setEnabled(is_pdf)
-    
+
     def update_combine_pdf(self, state: int):
         """Update combine PDF option."""
         self.smith_mpl_config.combine_to_pdf = (state == Qt.Checked)
-    
+
     def process_smith_charts_matplotlib(self):
         """Process and generate Smith charts using matplotlib."""
         if not self.processed_data:
             QMessageBox.warning(self, "No Data", "Please load Touchstone files first")
             return
-        
+
         # Ask user for output directory
         output_dir = QFileDialog.getExistingDirectory(
             self, "Select Output Directory for Smith Charts"
         )
-        
+
         if not output_dir:
             return
-        
+
         try:
             # Determine which files to process
             if self.smith_process_selected_only.isChecked():
@@ -893,16 +898,16 @@ class TouchstoneMainWindowSmithMatplotlib(QMainWindow):
                 files_to_process = {current_file: self.processed_data[current_file]}
             else:
                 files_to_process = self.processed_data
-            
+
             # Generate Smith charts
             all_saved_files = []
-            
+
             for filename, data in files_to_process.items():
                 if 'network' not in data:
                     continue
-                
+
                 network = data['network']
-                
+
                 try:
                     saved_files = self.smith_mpl_plotter.save_smith_charts(
                         network=network,
@@ -914,24 +919,24 @@ class TouchstoneMainWindowSmithMatplotlib(QMainWindow):
                         draw_labels=self.smith_config.draw_labels,
                         draw_vswr=self.smith_config.draw_vswr
                     )
-                    
+
                     all_saved_files.extend(saved_files)
                     self.log_message(f"Smith charts generated for {filename}: {len(saved_files)} file(s)")
-                    
+
                 except Exception as e:
                     self.log_message(f"Error processing {filename}: {str(e)}")
-            
+
             # Notify user
             msg = f"Smith charts generated successfully!\n\n"
             msg += f"Total files saved: {len(all_saved_files)}\n"
             msg += f"Output directory: {output_dir}"
-            
+
             QMessageBox.information(self, "Success", msg)
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate Smith charts: {str(e)}")
             self.log_message(f"Smith chart generation error: {str(e)}")
-    
+
     def log_message(self, message: str):
         """Add message to status log."""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")

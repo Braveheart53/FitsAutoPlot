@@ -60,11 +60,12 @@ import numpy as np
 # from tkinter import Tk     # from tkinter import Tk for Python 3.x
 from tkinter.filedialog import askopenfilenames  # for file import dialog
 
+
 # from tkinter.filedialog import askdirectory
 
 
 def SDataVuesz(
-    DataSetStringRoot, sub_Nets, SubNet2Write, string1, string2, idx
+        DataSetStringRoot, sub_Nets, SubNet2Write, string1, string2, idx
 ):
     """Create a veusz data set."""
     """idx == loop index"""
@@ -75,12 +76,12 @@ def SDataVuesz(
 
     else:
         dataSetName = (
-            DataSetStringRoot
-            + string1
-            + string2
-            + str(sub_Nets[idx].frequency.start / 1e9)
-            + " to "
-            + str(sub_Nets[idx].frequency.stop / 1e9)
+                DataSetStringRoot
+                + string1
+                + string2
+                + str(sub_Nets[idx].frequency.start / 1e9)
+                + " to "
+                + str(sub_Nets[idx].frequency.stop / 1e9)
         )
         SetData(dataSetName, SubNet2Write[idx])
         TagDatasets(DataSetStringRoot, [dataSetName])
@@ -130,7 +131,7 @@ for mainLooper in range(len(filename)):
     for i in range(len(sub_Nets)):
         sub_Nets[i] = currentNet[
             str(lowerValues[i]) + "-" + str(upperValues[i]) + "GHz"
-        ]
+            ]
 
     print("Now We Start to define data sets in Veusz")
 

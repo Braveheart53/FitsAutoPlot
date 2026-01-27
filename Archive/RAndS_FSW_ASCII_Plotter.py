@@ -35,6 +35,7 @@ import psutil
 import math
 # import faulthandler
 from hanging_threads import start_monitoring
+
 # %%% GUI Module Imports - QtPy for cross-platform compatibility
 # from qtpy.QtGui import *
 # from qtpy.QtCore import Qt, QSize, QThread, Signal
@@ -75,26 +76,27 @@ else:
         QSpinBox, QGroupBox, QListWidget, QSplitter
     )
 
-
 # %%% Math and Processing Modules
 import numpy as np
 from fastest_ascii_import import fastest_file_parser as fparser
-
 
 # %%% Parallel Processing Modules
 import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import Pool, cpu_count
 import multiprocessing as mp
+
 # %%% GPU Acceleration Modules
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
 
 try:
     import pyopencl as cl
+
     PYOPENCL_AVAILABLE = True
 except ImportError:
     PYOPENCL_AVAILABLE = False
@@ -103,6 +105,8 @@ except ImportError:
 import veusz.embed as embed
 from veusz.windows.simplewindow import SimpleWindow
 from veusz.document import CommandInterface
+
+
 # %%% File Processing
 
 # %% Configuration and Data Classes
@@ -128,6 +132,7 @@ class plotDescInfo:
     graph_title: str
     base_name: str
     first_plot: bool
+
 
 # %% GPU Processing Classes
 
@@ -252,6 +257,7 @@ class GPUProcessor:
         processed_gpu = gpu_array * 1.0  # Identity operation for now
         return cp.asnumpy(processed_gpu)
 
+
 # %% Multiprocessing Worker Functions
 
 
@@ -323,6 +329,7 @@ def extract_with_regex(inputText: str, delim: str = ';'):
     esc = re.escape(delim)
     pattern = rf"{esc}(.*?){esc}"
     return re.findall(pattern, inputText)
+
 
 # %% Enhanced Qt GUI Classes
 
@@ -678,6 +685,7 @@ class EnhancedMainWindow(QMainWindow):
                 QMessageBox.critical(self, "Save Error",
                                      f"Failed to save project: {e}")
 
+
 # %% Auto Plotter Class
 
 
@@ -758,7 +766,7 @@ class VZPlotRnS:
                       if ('freq' not in ds.lower()
                           and not ds.endswith(('_avg_dB', '_avg_lin')))]
 
-        if len(candidates) < 2:      # nothing meaningful to average
+        if len(candidates) < 2:  # nothing meaningful to average
             return
 
         # Pick numeric backend
@@ -797,7 +805,7 @@ class VZPlotRnS:
         avg_lin = xp.mean(linear_stack, axis=0)
         avg_db = 10.0 * xp.log10(avg_lin)
 
-        if use_gpu:          # move to CPU before registering in Veusz
+        if use_gpu:  # move to CPU before registering in Veusz
             avg_lin = cp.asnumpy(avg_lin)
             avg_db = cp.asnumpy(avg_db)
 
@@ -805,7 +813,7 @@ class VZPlotRnS:
         lin_name = f"{base_name}_avg_lin"
         db_name = f"{base_name}_avg_dB"
         self.doc.SetData(name=lin_name, val=avg_lin)
-        self.doc.SetData(name=db_name,  val=avg_db)
+        self.doc.SetData(name=db_name, val=avg_db)
 
         # Set the tags for the datasets
         self.doc.TagDatasets('Avg_dB', [db_name])
@@ -818,7 +826,7 @@ class VZPlotRnS:
         # Overlay & individual average plot
         prev_title = self.plotInfo.graph_title
         self.plotInfo.graph_title = f"{base_name} average"
-        self._plot_1d(db_name)          # plot dB average
+        self._plot_1d(db_name)  # plot dB average
         self.plotInfo.graph_title = prev_title
 
     def _process_file_data(self, filename, data_returned):
@@ -1042,6 +1050,7 @@ class VZPlotRnS:
                 f"Failed to start Veusz: {e}"
             )
 
+
 # %% Veusz Example for Embedding
 
 
@@ -1061,7 +1070,7 @@ class VeuszWin(SimpleWindow):
         ifc.Add('function', name='myfunc')
 
         ifc.Set('myfunc/function', 'sin(x)')
-        ifc.Set('x/max', 3.14*2)
+        ifc.Set('x/max', 3.14 * 2)
 
 
 class MainWindow(QWidget):
@@ -1083,6 +1092,8 @@ class MainWindow(QWidget):
         filename = 'out.png'
         print("Writing", filename)
         self.veuszwin.interface.Export(filename)
+
+
 # %% Utility Functions
 
 
@@ -1133,6 +1144,7 @@ def main():
     # faulthandler.cancel_dump_traceback_later()
     # faulthandler.disable()
     monitor.stop()
+
 
 if __name__ == '__main__':
     main()

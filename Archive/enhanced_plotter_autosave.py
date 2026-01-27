@@ -134,15 +134,11 @@ else:
 
     )
 
-
-
 # %%% Math and Processing Modules
 
 import numpy as np
 
 from fastest_ascii_import import fastest_file_parser as fparser
-
-
 
 # %%% Parallel Processing Modules
 
@@ -166,8 +162,6 @@ except ImportError:
 
     CUPY_AVAILABLE = False
 
-
-
 try:
 
     import pyopencl as cl
@@ -178,8 +172,6 @@ except ImportError:
 
     PYOPENCL_AVAILABLE = False
 
-
-
 # %%% Plotting Environment
 
 import veusz.embed as embed
@@ -188,18 +180,15 @@ from veusz.windows.simplewindow import SimpleWindow
 
 from veusz.document import CommandInterface
 
-# %%% File Processing
 
+# %%% File Processing
 
 
 # %% Configuration and Data Classes
 
 
-
 @dataclass
-
 class ProcessingConfig:
-
     """Configuration class for processing settings."""
 
     enable_multiprocessing: bool = False
@@ -217,11 +206,8 @@ class ProcessingConfig:
     plots_per_file: int = 1000  # New: Number of plots per auto-saved file
 
 
-
 @dataclass
-
 class plotDescInfo:
-
     """Setting up general plot info class to update as needed."""
 
     xAxis_label: str
@@ -237,16 +223,11 @@ class plotDescInfo:
     first_plot: bool
 
 
-
 # %% GPU Processing Classes
 
 
-
 class GPUProcessor:
-
     """Handles GPU acceleration using either CuPy or PyOpenCL."""
-
-
 
     def __init__(self, config: ProcessingConfig):
 
@@ -274,13 +255,8 @@ class GPUProcessor:
 
         self.queue = None
 
-
-
         if config.enable_gpu_processing:
-
             self._initialize_gpu()
-
-
 
     def _initialize_gpu(self):
 
@@ -297,8 +273,6 @@ class GPUProcessor:
         else:
 
             print("No GPU libraries available. Falling back to CPU processing.")
-
-
 
     def _initialize_opencl(self):
 
@@ -317,13 +291,9 @@ class GPUProcessor:
                 devices = platform.get_devices(cl.device_type.GPU)
 
                 if not devices:
-
                     devices = platform.get_devices(cl.device_type.CPU)
 
-
-
                 if devices:
-
                     self.context = cl.Context(devices=[devices[0]])
 
                     self.queue = cl.CommandQueue(self.context)
@@ -335,8 +305,6 @@ class GPUProcessor:
         except Exception as e:
 
             print(f"OpenCL initialization failed: {e}")
-
-
 
     def _initialize_cupy(self):
 
@@ -353,8 +321,6 @@ class GPUProcessor:
         except Exception as e:
 
             print(f"CuPy initialization failed: {e}")
-
-
 
     def process_array_gpu(self, data_array):
 
@@ -385,10 +351,7 @@ class GPUProcessor:
         """
 
         if not self.gpu_available:
-
             return data_array
-
-
 
         try:
 
@@ -404,11 +367,7 @@ class GPUProcessor:
 
             print(f"GPU processing failed: {e}. Falling back to CPU.")
 
-
-
         return data_array
-
-
 
     def _process_opencl(self, data_array):
 
@@ -421,8 +380,6 @@ class GPUProcessor:
         data_buffer = cl.Buffer(self.context, mf.READ_WRITE | mf.COPY_HOST_PTR,
 
                                 hostbuf=data_array.astype(np.float32))
-
-
 
         # Simple kernel for demonstration (can be replaced with more complex operations)
 
@@ -440,19 +397,13 @@ class GPUProcessor:
 
         """
 
-
-
         program = cl.Program(self.context, kernel_source).build()
 
         kernel = program.process_data
 
-
-
         # Execute kernel
 
         kernel(self.queue, (len(data_array),), None, data_buffer)
-
-
 
         # Read back results
 
@@ -462,11 +413,7 @@ class GPUProcessor:
 
         self.queue.finish()
 
-
-
         return result.astype(data_array.dtype)
-
-
 
     def _process_cupy(self, data_array):
 
@@ -481,13 +428,10 @@ class GPUProcessor:
         return cp.asnumpy(processed_gpu)
 
 
-
 # %% Multiprocessing Worker Functions
 
 
-
 def process_file_worker(file_info):
-
     """
 
     Worker function for processing individual SFT files in parallel.
@@ -516,8 +460,6 @@ def process_file_worker(file_info):
 
     filename, search_strings, sft_lines, config = file_info
 
-
-
     try:
 
         # Parse the file
@@ -526,22 +468,17 @@ def process_file_worker(file_info):
 
                                 string_patterns=search_strings)
 
-
-
         # Initialize GPU processor if enabled
 
         if config.enable_gpu_processing:
 
             gpu_processor = GPUProcessor(config)
 
-
-
             # Process data arrays with GPU if available
 
             for key, data_match in data_returned['data_matches'].items():
 
                 if 'extracted_value' in data_match:
-
                     data_array = np.array(data_match['extracted_value'])
 
                     processed_array = gpu_processor.process_array_gpu(
@@ -551,8 +488,6 @@ def process_file_worker(file_info):
                     data_returned['data_matches'][key]['extracted_value'] = processed_array.tolist(
 
                     )
-
-
 
         return {
 
@@ -581,9 +516,7 @@ def process_file_worker(file_info):
         }
 
 
-
 def extract_with_regex(inputText: str, delim: str = ';'):
-
     """
 
     Extract all substrings enclosed by the same delimiter using regex.
@@ -621,24 +554,17 @@ def extract_with_regex(inputText: str, delim: str = ';'):
     return re.findall(pattern, inputText)
 
 
-
 # %% Enhanced Qt GUI Classes
 
 
-
 class FileProcessingThread(QThread):
-
     """Thread for handling file processing without blocking the GUI."""
-
-
 
     progress_updated = Signal(int)
 
     processing_finished = Signal(object)
 
     error_occurred = Signal(str)
-
-
 
     def __init__(self, file_list, config, search_strings, sft_lines):
 
@@ -680,8 +606,6 @@ class FileProcessingThread(QThread):
 
         self.sft_lines = sft_lines
 
-
-
     def run(self):
 
         """Execute file processing in separate thread."""
@@ -696,15 +620,11 @@ class FileProcessingThread(QThread):
 
                 results = self._process_files_sequential()
 
-
-
             self.processing_finished.emit(results)
 
         except Exception as e:
 
             self.error_occurred.emit(str(e))
-
-
 
     def _process_files_parallel(self):
 
@@ -718,12 +638,9 @@ class FileProcessingThread(QThread):
 
         ]
 
-
-
         results = []
 
         with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
-
             future_to_file = {
 
                 executor.submit(process_file_worker, file_info): file_info[0]
@@ -732,12 +649,9 @@ class FileProcessingThread(QThread):
 
             }
 
-
-
             completed = 0
 
             for future in as_completed(future_to_file):
-
                 result = future.result()
 
                 results.append(result)
@@ -748,11 +662,7 @@ class FileProcessingThread(QThread):
 
                 self.progress_updated.emit(progress)
 
-
-
         return results
-
-
 
     def _process_files_sequential(self):
 
@@ -761,7 +671,6 @@ class FileProcessingThread(QThread):
         results = []
 
         for i, filename in enumerate(self.file_list):
-
             file_info = (filename, self.search_strings,
 
                          self.sft_lines, self.config)
@@ -774,17 +683,11 @@ class FileProcessingThread(QThread):
 
             self.progress_updated.emit(progress)
 
-
-
         return results
 
 
-
 class EnhancedMainWindow(QMainWindow):
-
     """Enhanced main window with modern Qt interface."""
-
-
 
     def __init__(self):
 
@@ -796,31 +699,21 @@ class EnhancedMainWindow(QMainWindow):
 
         self.setGeometry(100, 100, 800, 600)
 
-
-
         # Initialize configuration
 
         self.config = ProcessingConfig()
-
-
 
         # Initialize VZPlotRnS
 
         self.vzplot = VZPlotRnS(self.config)
 
-
-
         # Setup UI
 
         self._setup_ui()
 
-
-
         # File list
 
         self.selected_files = []
-
-
 
     def _setup_ui(self):
 
@@ -830,13 +723,9 @@ class EnhancedMainWindow(QMainWindow):
 
         self.setCentralWidget(central_widget)
 
-
-
         # Main layout
 
         main_layout = QVBoxLayout(central_widget)
-
-
 
         # File selection section
 
@@ -844,15 +733,11 @@ class EnhancedMainWindow(QMainWindow):
 
         file_layout = QVBoxLayout(file_group)
 
-
-
         # File list widget
 
         self.file_list_widget = QListWidget()
 
         file_layout.addWidget(self.file_list_widget)
-
-
 
         # Browse button
 
@@ -864,29 +749,21 @@ class EnhancedMainWindow(QMainWindow):
 
         browse_layout.addWidget(self.browse_button)
 
-
-
         self.clear_button = QPushButton("Clear Files")
 
         self.clear_button.clicked.connect(self._clear_files)
 
         browse_layout.addWidget(self.clear_button)
 
-
-
         file_layout.addLayout(browse_layout)
 
         main_layout.addWidget(file_group)
-
-
 
         # Processing options section
 
         options_group = QGroupBox("Processing Options")
 
         options_layout = QVBoxLayout(options_group)
-
-
 
         # Multiprocessing options
 
@@ -897,8 +774,6 @@ class EnhancedMainWindow(QMainWindow):
         self.enable_mp_checkbox.stateChanged.connect(self._update_mp_config)
 
         options_layout.addWidget(self.enable_mp_checkbox)
-
-
 
         # CPU cores selection
 
@@ -922,8 +797,6 @@ class EnhancedMainWindow(QMainWindow):
 
         options_layout.addLayout(cpu_layout)
 
-
-
         # GPU options
 
         self.enable_gpu_checkbox = QCheckBox("Enable GPU Processing")
@@ -933,8 +806,6 @@ class EnhancedMainWindow(QMainWindow):
         self.enable_gpu_checkbox.stateChanged.connect(self._update_gpu_config)
 
         options_layout.addWidget(self.enable_gpu_checkbox)
-
-
 
         # OpenCL preference
 
@@ -948,11 +819,7 @@ class EnhancedMainWindow(QMainWindow):
 
         options_layout.addWidget(self.use_opencl_checkbox)
 
-
-
         main_layout.addWidget(options_group)
-
-
 
         # Progress bar
 
@@ -961,8 +828,6 @@ class EnhancedMainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
 
         main_layout.addWidget(self.progress_bar)
-
-
 
         # Status text
 
@@ -974,21 +839,15 @@ class EnhancedMainWindow(QMainWindow):
 
         main_layout.addWidget(self.status_text)
 
-
-
         # Control buttons
 
         button_layout = QHBoxLayout()
-
-
 
         self.plot_button = QPushButton("Process and Plot")
 
         self.plot_button.clicked.connect(self._process_and_plot)
 
         button_layout.addWidget(self.plot_button)
-
-
 
         self.save_button = QPushButton("Save Project")
 
@@ -998,19 +857,13 @@ class EnhancedMainWindow(QMainWindow):
 
         button_layout.addWidget(self.save_button)
 
-
-
         self.close_button = QPushButton("Close")
 
         self.close_button.clicked.connect(self.close)
 
         button_layout.addWidget(self.close_button)
 
-
-
         main_layout.addLayout(button_layout)
-
-
 
     def _browse_files(self):
 
@@ -1024,10 +877,7 @@ class EnhancedMainWindow(QMainWindow):
 
         file_dialog.setWindowTitle("Select SFT Files")
 
-
-
         if file_dialog.exec_() == QFileDialog.Accepted:
-
             selected_files = file_dialog.selectedFiles()
 
             self.selected_files.extend(selected_files)
@@ -1035,8 +885,6 @@ class EnhancedMainWindow(QMainWindow):
             self._update_file_list()
 
             self._log_message(f"Selected {len(selected_files)} files")
-
-
 
     def _clear_files(self):
 
@@ -1048,8 +896,6 @@ class EnhancedMainWindow(QMainWindow):
 
         self._log_message("File list cleared")
 
-
-
     def _update_file_list(self):
 
         """Update the file list widget."""
@@ -1057,10 +903,7 @@ class EnhancedMainWindow(QMainWindow):
         self.file_list_widget.clear()
 
         for file_path in self.selected_files:
-
             self.file_list_widget.addItem(os.path.basename(file_path))
-
-
 
     def _update_mp_config(self, state):
 
@@ -1072,8 +915,6 @@ class EnhancedMainWindow(QMainWindow):
 
             f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}")
 
-
-
     def _update_cpu_config(self, value):
 
         """Update CPU cores configuration."""
@@ -1083,8 +924,6 @@ class EnhancedMainWindow(QMainWindow):
         self.config.max_workers = value
 
         self._log_message(f"CPU cores set to: {value}")
-
-
 
     def _update_gpu_config(self, state):
 
@@ -1096,8 +935,6 @@ class EnhancedMainWindow(QMainWindow):
 
             f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}")
 
-
-
     def _update_opencl_config(self, state):
 
         """Update OpenCL preference configuration."""
@@ -1108,15 +945,11 @@ class EnhancedMainWindow(QMainWindow):
 
             f"OpenCL preference: {'Enabled' if self.config.use_opencl else 'Disabled'}")
 
-
-
     def _log_message(self, message):
 
         """Add message to status text."""
 
         self.status_text.append(f"[{self._get_timestamp()}] {message}")
-
-
 
     def _get_timestamp(self):
 
@@ -1126,29 +959,22 @@ class EnhancedMainWindow(QMainWindow):
 
         return datetime.datetime.now().strftime("%H:%M:%S")
 
-
-
     def _process_and_plot(self):
 
         """Process selected files and create plots."""
 
         if not self.selected_files:
-
             QMessageBox.warning(
 
                 self, "Warning", "Please select SFT files first.")
 
             return
 
-
-
         self.plot_button.setEnabled(False)
 
         self.progress_bar.setVisible(True)
 
         self.progress_bar.setValue(0)
-
-
 
         # Start processing thread
 
@@ -1164,8 +990,6 @@ class EnhancedMainWindow(QMainWindow):
 
         )
 
-
-
         self.processing_thread.progress_updated.connect(
 
             self.progress_bar.setValue)
@@ -1178,13 +1002,9 @@ class EnhancedMainWindow(QMainWindow):
 
             self._on_processing_error)
 
-
-
         self.processing_thread.start()
 
         self._log_message("Processing started...")
-
-
 
     def _on_processing_finished(self, results):
 
@@ -1194,22 +1014,15 @@ class EnhancedMainWindow(QMainWindow):
 
         self.plot_button.setEnabled(True)
 
-
-
         successful_results = [r for r in results if r['success']]
 
         failed_results = [r for r in results if not r['success']]
-
-
 
         self._log_message(
 
             f"Processing completed: {len(successful_results)} successful, {len(failed_results)} failed")
 
-
-
         if failed_results:
-
             error_msg = "\n".join(
 
                 [f"{r['filename']}: {r['error']}" for r in failed_results])
@@ -1218,15 +1031,10 @@ class EnhancedMainWindow(QMainWindow):
 
                                 f"Some files failed to process:\n{error_msg}")
 
-
-
         if successful_results:
-
             self._create_plots(successful_results)
 
             self.save_button.setEnabled(True)
-
-
 
     def _on_processing_error(self, error_message):
 
@@ -1240,23 +1048,17 @@ class EnhancedMainWindow(QMainWindow):
 
         QMessageBox.critical(self, "Processing Error", error_message)
 
-
-
     def _create_plots(self, results):
 
         """Create Veusz plots from processed results."""
 
         self._log_message("Creating plots...")
 
-
-
         for result in results:
 
             filename = result['filename']
 
             data_returned = result['data']
-
-
 
             try:
 
@@ -1266,11 +1068,7 @@ class EnhancedMainWindow(QMainWindow):
 
                 self._log_message(f"Plot creation failed for {filename}: {e}")
 
-
-
         self._log_message("Plot creation completed")
-
-
 
     def _save_project(self):
 
@@ -1286,8 +1084,6 @@ class EnhancedMainWindow(QMainWindow):
 
         )
 
-
-
         if save_path:
 
             try:
@@ -1295,8 +1091,6 @@ class EnhancedMainWindow(QMainWindow):
                 self.vzplot.save(save_path)
 
                 self._log_message(f"Project saved: {save_path}")
-
-
 
                 # Ask to open in Veusz
 
@@ -1310,10 +1104,7 @@ class EnhancedMainWindow(QMainWindow):
 
                 )
 
-
-
                 if reply == QMessageBox.Yes:
-
                     VZPlotRnS.open_veusz_gui(save_path)
 
 
@@ -1325,16 +1116,11 @@ class EnhancedMainWindow(QMainWindow):
                                      f"Failed to save project: {e}")
 
 
-
 # %% Auto Plotter Class
 
 
-
 class VZPlotRnS:
-
     """Enhanced Veusz plotting class with multiprocessing support."""
-
-
 
     def __init__(self, config: ProcessingConfig):
 
@@ -1348,8 +1134,6 @@ class VZPlotRnS:
 
         self.doc.EnableToolbar(enable=True)
 
-        
-
         # Initialize auto-save tracking variables
 
         self.plot_count = 0
@@ -1359,8 +1143,6 @@ class VZPlotRnS:
         self.base_save_path = None
 
         self.auto_save_enabled = True
-
-
 
         # Search strings for data parsing
 
@@ -1426,15 +1208,11 @@ class VZPlotRnS:
 
         }
 
-
-
         # Line targets for header parsing
 
         # TODO: Look and se if this is correct or not utilized correctly
 
         self.sft_lines = [1, 2, 3] + list(range(5, 58, 2))
-
-
 
         # Plot info initialization
 
@@ -1454,20 +1232,15 @@ class VZPlotRnS:
 
         )
 
-
-
         # Craete a dict to track datasets for average calculation
 
         self._datasets_by_base = defaultdict(list)
-
-
 
     def _setup_auto_save_path(self):
 
         """Setup automatic save path based on first processed file."""
 
         if self.base_save_path is None:
-
             # Create auto-save directory in current working directory
 
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1476,39 +1249,27 @@ class VZPlotRnS:
 
             os.makedirs(save_dir, exist_ok=True)
 
-            
-
             # Set base path without extension (will be added during save)
 
             self.base_save_path = os.path.join(save_dir, "RnS_Plots_Batch")
 
             print(f"Auto-save directory created: {save_dir}")
 
-
-
     def _auto_save_if_needed(self):
 
         """Automatically save file if plot count threshold is reached."""
 
         if not self.auto_save_enabled:
-
             return
-
-            
 
         if self.plot_count > 0 and self.plot_count % self.config.plots_per_file == 0:
 
             if self.base_save_path is None:
-
                 self._setup_auto_save_path()
-
-            
 
             # Generate filename with batch number
 
             batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
-
-            
 
             # Use multiprocessing for save operation if enabled
 
@@ -1520,19 +1281,14 @@ class VZPlotRnS:
 
                 self._save_batch_sequential(batch_filename)
 
-            
-
-            print(f"Auto-saved batch {self.file_batch_number} with {self.config.plots_per_file} plots to: {batch_filename}")
-
-            
+            print(
+                f"Auto-saved batch {self.file_batch_number} with {self.config.plots_per_file} plots to: {batch_filename}")
 
             # Reset for next batch
 
             self.file_batch_number += 1
 
             self._reset_for_next_batch()
-
-
 
     def _save_batch_parallel(self, filename):
 
@@ -1546,8 +1302,6 @@ class VZPlotRnS:
 
                 self.doc.Save(filename, mode='hdf5')
 
-                
-
             import threading
 
             save_thread = threading.Thread(target=save_worker)
@@ -1556,13 +1310,10 @@ class VZPlotRnS:
 
             save_thread.join(timeout=30)  # 30 second timeout
 
-            
-
             if save_thread.is_alive():
-
                 print(f"Warning: Save operation for {filename} timed out")
 
-            
+
 
         except Exception as e:
 
@@ -1571,8 +1322,6 @@ class VZPlotRnS:
             # Fallback to sequential save
 
             self._save_batch_sequential(filename)
-
-
 
     def _save_batch_sequential(self, filename):
 
@@ -1586,8 +1335,6 @@ class VZPlotRnS:
 
             print(f"Error during sequential save: {e}")
 
-
-
     def _reset_for_next_batch(self):
 
         """Reset document for next batch while preserving settings."""
@@ -1600,13 +1347,9 @@ class VZPlotRnS:
 
         self.first_1d = True
 
-        
-
         # Clear dataset tracking for new batch
 
         self._datasets_by_base.clear()
-
-
 
     def _create_average_datasets(self, base_name: str):
 
@@ -1640,13 +1383,9 @@ class VZPlotRnS:
 
                           and not ds.endswith(('_avg_dB', '_avg_lin')))]
 
-
-
-        if len(candidates) < 2:      # nothing meaningful to average
+        if len(candidates) < 2:  # nothing meaningful to average
 
             return
-
-
 
         # Pick numeric backend
 
@@ -1654,15 +1393,11 @@ class VZPlotRnS:
 
         xp = cp if use_gpu else np
 
-
-
         # Helper to convert one array
 
         def _db_to_lin(arr):
 
             return xp.power(10.0, arr / 10.0)
-
-
 
         # Fetch data
 
@@ -1677,8 +1412,6 @@ class VZPlotRnS:
         data_arrays = [xp.asarray(self.doc.GetData(ds)[0])
 
                        for ds in candidates]
-
-
 
         # Optional multiprocessing on CPU if GPU not used
 
@@ -1712,21 +1445,15 @@ class VZPlotRnS:
 
             linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
 
-
-
         avg_lin = xp.mean(linear_stack, axis=0)
 
         avg_db = 10.0 * xp.log10(avg_lin)
 
-
-
-        if use_gpu:          # move to CPU before registering in Veusz
+        if use_gpu:  # move to CPU before registering in Veusz
 
             avg_lin = cp.asnumpy(avg_lin)
 
             avg_db = cp.asnumpy(avg_db)
-
-
 
         # Register in Veusz
 
@@ -1736,9 +1463,7 @@ class VZPlotRnS:
 
         self.doc.SetData(name=lin_name, val=avg_lin)
 
-        self.doc.SetData(name=db_name,  val=avg_db)
-
-
+        self.doc.SetData(name=db_name, val=avg_db)
 
         # Set the tags for the datasets
 
@@ -1748,13 +1473,9 @@ class VZPlotRnS:
 
         self.doc.TagDatasets(base_name, [db_name, lin_name])
 
-
-
         # Book-keeping so we don't re-average
 
         self._datasets_by_base[base_name].extend([lin_name, db_name])
-
-
 
         # Overlay & individual average plot
 
@@ -1762,11 +1483,9 @@ class VZPlotRnS:
 
         self.plotInfo.graph_title = f"{base_name} average"
 
-        self._plot_1d(db_name)          # plot dB average
+        self._plot_1d(db_name)  # plot dB average
 
         self.plotInfo.graph_title = prev_title
-
-
 
     def _process_file_data(self, filename, data_returned):
 
@@ -1794,17 +1513,12 @@ class VZPlotRnS:
 
         self.plotInfo.base_name = base_name
 
-
-
         # Setup auto-save path on first file
 
         if self.base_save_path is None:
-
             import datetime
 
             self._setup_auto_save_path()
-
-
 
         # Extract section data
 
@@ -1816,15 +1530,10 @@ class VZPlotRnS:
 
         ))
 
-
-
         # TODO look at this with the large time span file and >3000 plots
 
         if len(data_sections) != len(data_returned['data_matches']):
-
             raise ValueError(f"Data sections mismatch in file {filename}")
-
-
 
         # Process data values
 
@@ -1844,8 +1553,6 @@ class VZPlotRnS:
 
                                         data_sections.values()))
 
-
-
         # Create frequency range
 
         data_fields = data_returned['pattern_matches']
@@ -1853,12 +1560,9 @@ class VZPlotRnS:
         num_pts = extract_with_regex(data_fields['values']['extracted_value'])
 
         if len(num_pts) != 1:
-
             raise ValueError(f"Invalid VALUES field in {filename}")
 
         num_pts = int(num_pts[0])
-
-
 
         # Extract frequency parameters
 
@@ -1870,13 +1574,9 @@ class VZPlotRnS:
 
             data_fields['stop_2']['extracted_value'])[0])
 
-
-
         freq_range = np.linspace(freq_start, freq_stop, num=num_pts,
 
                                  endpoint=True, dtype=np.float64)
-
-
 
         # Create header notes
 
@@ -1886,18 +1586,13 @@ class VZPlotRnS:
 
         data_notes = os.path.split(filename)[1] + '\n\n' + data_notes
 
-
-
         # Process each data section
 
         for index, label in enumerate(data_section_content):
 
             dataset_name = label
 
-
-
             if index == 0:
-
                 x_data_name = base_name + '_freq'
 
                 self.doc.SetData(name=x_data_name, val=freq_range)
@@ -1906,15 +1601,10 @@ class VZPlotRnS:
 
                 self._datasets_by_base[base_name].append(x_data_name)
 
-
-
             # Verify data alignment
 
             if (data_line_numbers[index] - 1 != data_section_line_numbers[index]):
-
                 raise ValueError(f"Data alignment error in {filename}")
-
-
 
             # Set data in Veusz
 
@@ -1923,8 +1613,6 @@ class VZPlotRnS:
             self.doc.TagDatasets(base_name, [dataset_name])
 
             self._datasets_by_base[base_name].append(dataset_name)
-
-
 
             # Update plot info and create plot
 
@@ -1936,11 +1624,7 @@ class VZPlotRnS:
 
                 '_', ' ')
 
-
-
             self._plot_1d(dataset_name)
-
-            
 
             # Increment plot count and check for auto-save
 
@@ -1948,13 +1632,9 @@ class VZPlotRnS:
 
             self._auto_save_if_needed()
 
-
-
         # Create the averaged datasets after everything is processed
 
         self._create_average_datasets(base_name)
-
-
 
     def _create_page(self, dataset: str):
 
@@ -1963,8 +1643,6 @@ class VZPlotRnS:
         self.page = self.doc.Root.Add('page', name=dataset)
 
         self.grid = self.page.Add('grid', columns=2)
-
-
 
     def _plot_1d(self, dataset: str):
 
@@ -1979,8 +1657,6 @@ class VZPlotRnS:
                 self._create_page('AllImported')
 
                 self.page.notes.val = "All Imported and Plottable Data Overlay"
-
-
 
                 graph_all = self.grid.Add('graph', name='Imported_Overlay')
 
@@ -2000,8 +1676,6 @@ class VZPlotRnS:
 
                 graph_all.notes.val = 'All imported overlay, see individual plots for specifics.'
 
-
-
                 # Set axis labels
 
                 graph_all.x.label.val = self.plotInfo.xAxis_label
@@ -2016,8 +1690,6 @@ class VZPlotRnS:
 
                 graph_all = self.doc.Root.AllImported.grid1.Imported_Overlay
 
-
-
             # Add overlay plot
 
             all_overlay_xy = graph_all.Add('xy', name=dataset)
@@ -2027,8 +1699,6 @@ class VZPlotRnS:
             all_overlay_xy.xData.val = self.plotInfo.base_name + '_freq'
 
             all_overlay_xy.nanHandling = 'break-on'
-
-
 
             # Style overlay plot
 
@@ -2056,19 +1726,13 @@ class VZPlotRnS:
 
             all_overlay_xy.PlotLine.color.val = 'auto'
 
-
-
             self.plotInfo.first_plot = False
-
-
 
             # Create individual plot
 
             self._create_page(self.plotInfo.graph_title)
 
             self.page.notes.val = self.plotInfo.graph_notes
-
-
 
             graph = self.grid.Add('graph', name=dataset)
 
@@ -2088,8 +1752,6 @@ class VZPlotRnS:
 
             graph.notes.val = self.plotInfo.graph_notes
 
-
-
             # Add individual plot
 
             xy = graph.Add('xy', name=dataset)
@@ -2100,15 +1762,11 @@ class VZPlotRnS:
 
             xy.nanHandling = 'break-on'
 
-
-
             # Set axis labels
 
             graph.x.label.val = self.plotInfo.xAxis_label
 
             graph.y.label.val = self.plotInfo.yAxis_label
-
-
 
             # Style individual plot
 
@@ -2136,10 +1794,7 @@ class VZPlotRnS:
 
             xy.PlotLine.color.val = 'red'
 
-
-
             if self.first_1d:
-
                 self.first_1d = False
 
 
@@ -2147,8 +1802,6 @@ class VZPlotRnS:
         except Exception as e:
 
             raise RuntimeError(f"Failed to create 1D plot: {e}")
-
-
 
     def save(self, filename: str):
 
@@ -2164,21 +1817,15 @@ class VZPlotRnS:
 
                         os.path.splitext(file_split[1])[0] + '_BEWARE.vsz')
 
-
-
         # Save high precision version
 
         self.doc.Save(filename_hp, mode='hdf5')
-
-
 
         # Save legacy version
 
         os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
 
         self.doc.Save(filename_vsz, mode='vsz')
-
-
 
         # Save any remaining plots in current batch if auto-save is enabled
 
@@ -2192,16 +1839,14 @@ class VZPlotRnS:
 
                     self.doc.Save(final_batch_filename, mode='hdf5')
 
-                    print(f"Final batch saved with {self.plot_count % self.config.plots_per_file} plots to: {final_batch_filename}")
+                    print(
+                        f"Final batch saved with {self.plot_count % self.config.plots_per_file} plots to: {final_batch_filename}")
 
                 except Exception as e:
 
                     print(f"Error saving final batch: {e}")
 
-
-
     @staticmethod
-
     def open_veusz_gui(filename: str):
 
         """Launch Veusz GUI with generated project file."""
@@ -2214,10 +1859,7 @@ class VZPlotRnS:
 
             veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
 
-
-
         if not os.path.exists(veusz_exe):
-
             QMessageBox.critical(
 
                 None, "Veusz Not Found",
@@ -2229,8 +1871,6 @@ class VZPlotRnS:
             )
 
             return
-
-
 
         try:
 
@@ -2247,30 +1887,20 @@ class VZPlotRnS:
             )
 
 
-
 # %% Veusz Example for Embedding
 
 
-
 class VeuszWin(SimpleWindow):
-
     """A veusz window displaying a sin function."""
 
-
-
     def __init__(self, title):
-
         SimpleWindow.__init__(self, title)
-
-
 
         # send commands to this object to modify the window
 
         # the commands are from the standard veusz api
 
         ifc = self.interface = CommandInterface(self.document)
-
-
 
         # a basic plot win a sin function
 
@@ -2280,25 +1910,16 @@ class VeuszWin(SimpleWindow):
 
         ifc.Add('function', name='myfunc')
 
-
-
         ifc.Set('myfunc/function', 'sin(x)')
 
-        ifc.Set('x/max', 3.14*2)
-
+        ifc.Set('x/max', 3.14 * 2)
 
 
 class MainWindow(QWidget):
-
     """Put veusz window in layout with push button."""
 
-
-
     def __init__(self):
-
         QWidget.__init__(self)
-
-
 
         lt = QVBoxLayout()
 
@@ -2316,22 +1937,18 @@ class MainWindow(QWidget):
 
                      self.slotClicked)
 
-
-
     def slotClicked(self):
-
         filename = 'out.png'
 
         print("Writing", filename)
 
         self.veuszwin.interface.Export(filename)
 
+
 # %% Utility Functions
 
 
-
 def setup_qt_plugins():
-
     """
 
     Setup Qt platform plugin paths for compiled applications.
@@ -2347,7 +1964,6 @@ def setup_qt_plugins():
         plugin_path = os.path.join(dirname, 'plugins', 'platforms')
 
         if os.path.exists(plugin_path):
-
             os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
 
     except ImportError:
@@ -2355,16 +1971,11 @@ def setup_qt_plugins():
         pass
 
 
-
 # %% Main Application
 
 
-
 def main():
-
     """Main application entry point."""
-
-
 
     # faulthandler.enable(file="faultLog.txt")
 
@@ -2383,7 +1994,6 @@ def main():
     # Set multiprocessing start method for cross-platform compatibility
 
     if __name__ == '__main__':
-
         mp.set_start_method('spawn', force=True)
 
         # Call this before any Qt imports
@@ -2394,21 +2004,15 @@ def main():
 
     app = QApplication(sys.argv)
 
-
-
     # Create and show main window
 
     window = EnhancedMainWindow()
 
     window.show()
 
-
-
     # Run application
 
     sys.exit(app.exec_())
-
-
 
     # Exit all the fault handling
 
@@ -2421,7 +2025,5 @@ def main():
     monitor.stop()
 
 
-
 if __name__ == '__main__':
-
     main()

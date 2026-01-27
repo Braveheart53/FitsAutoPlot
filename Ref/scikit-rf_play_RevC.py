@@ -60,6 +60,8 @@ TD_xlims = [0, 1]  # in nano-seconds
 VSWR_ylim = [1, 1.2]
 spec_FreqLims = [26.5e9, 40e9]  # limits of the spec line in Hz
 spec_MagLims = [-35, -35]  # limits of the magnitude of the spec per freq
+
+
 # show an "Open" dialog box and return the path to the selected file
 
 
@@ -68,7 +70,7 @@ spec_MagLims = [-35, -35]  # limits of the magnitude of the spec per freq
 # will replace definiting each by hand and will just call these functions
 # to parse data
 def parseSparamData(
-    NetUsed, FirstPort, SecondPort, typeOData, freqStart, freqStop
+        NetUsed, FirstPort, SecondPort, typeOData, freqStart, freqStop
 ):
     """Docstring."""
     match typeOData:
@@ -111,9 +113,9 @@ plt.ylim([-40, 0])
 plt.axhline(
     y=spec_MagLims[0],
     xmin=(min(spec_FreqLims) - S11_Net.frequency.start)
-    / (S11_Net.frequency.stop - S11_Net.frequency.start),
+         / (S11_Net.frequency.stop - S11_Net.frequency.start),
     xmax=(max(spec_FreqLims) - S11_Net.frequency.start)
-    / (S11_Net.frequency.stop - S11_Net.frequency.start),
+         / (S11_Net.frequency.stop - S11_Net.frequency.start),
     color="r",
     linewidth=3,
 )
@@ -201,16 +203,16 @@ sub_Nets = [float("nan")] * numberOfNets2Use  # create a list of nan
 for i in range(len(sub_Nets)):
     sub_Nets[i] = currentNet.s11[
         str(lowerValues[i]) + "-" + str(upperValues[i]) + "GHz"
-    ]
+        ]
 
 fig2 = plt.figure(2)  # create the figure and loop to plot the time domains
 for i in range(len(sub_Nets)):
     label2use = (
-        "Pass Band of "
-        + str(lowerValues[i])
-        + "-"
-        + str(upperValues[i])
-        + " GHz"
+            "Pass Band of "
+            + str(lowerValues[i])
+            + "-"
+            + str(upperValues[i])
+            + " GHz"
     )
     sub_Nets[i].plot_s_db_time(m=0, n=0, label=label2use)
 plt.xlim(TD_xlims)
@@ -328,22 +330,22 @@ sub_Nets[-1].plot_s_db_time(
     m=0,
     n=0,
     label=(
-        "Pass Band of "
-        + str(lowerValues[-1])
-        + "-"
-        + str(upperValues[-1])
-        + " GHz"
+            "Pass Band of "
+            + str(lowerValues[-1])
+            + "-"
+            + str(upperValues[-1])
+            + " GHz"
     ),
 )
 sub_Nets[-2].plot_s_db_time(
     m=0,
     n=0,
     label=(
-        "Pass Band of "
-        + str(lowerValues[-2])
-        + "-"
-        + str(upperValues[-2])
-        + " GHz"
+            "Pass Band of "
+            + str(lowerValues[-2])
+            + "-"
+            + str(upperValues[-2])
+            + " GHz"
     ),
 )
 plt.xlim([0, 1])

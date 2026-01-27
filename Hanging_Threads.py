@@ -86,6 +86,7 @@ This script prints
 """
 import sys
 import threading
+
 try:
     try:
         from threading import _get_ident as get_ident
@@ -96,12 +97,13 @@ except ImportError:
 import linecache
 import time
 
-SECONDS_FROZEN = 30 # seconds
+SECONDS_FROZEN = 30  # seconds
 TESTS_PER_SECOND = 5
+
 
 def frame2string(frame):
     # from module traceback
-    lineno = frame.f_lineno # or f_lasti
+    lineno = frame.f_lineno  # or f_lasti
     co = frame.f_code
     filename = co.co_filename
     name = co.co_name
@@ -109,12 +111,14 @@ def frame2string(frame):
     line = linecache.getline(filename, lineno, frame.f_globals).lstrip()
     return s + '\n\t' + line
 
+
 def thread2list(frame):
     l = []
     while frame:
         l.insert(0, frame2string(frame))
         frame = frame.f_back
     return l
+
 
 def monitor():
     self = get_ident()
@@ -130,13 +134,14 @@ def monitor():
         for thread_id, frame_list in new_threads.items():
             if thread_id == self: continue
             if thread_id not in old_threads or \
-               frame_list != old_threads[thread_id][0]:
+                    frame_list != old_threads[thread_id][0]:
                 new_threads[thread_id] = (frame_list, now)
             elif old_threads[thread_id][1] < then:
                 print_frame_list(frame_list, frame_id)
             else:
                 new_threads[thread_id] = old_threads[thread_id]
         old_threads = new_threads
+
 
 def print_frame_list(frame_list, frame_id):
     sys.stderr.write('-' * 20 +
@@ -145,15 +150,17 @@ def print_frame_list(frame_list, frame_id):
                      '\n' +
                      ''.join(frame_list))
 
+
 def start_monitoring():
     '''After hanging SECONDS_FROZEN the stack trace of the deadlock is printed automatically.'''
-    thread = threading.Thread(target = monitor)
+    thread = threading.Thread(target=monitor)
     thread.daemon = True
     thread.start()
     return thread
+
 
 monitoring_thread = start_monitoring()
 
 if __name__ == '__main__':
     SECONDS_FROZEN = 1
-    time.sleep(3) # TEST
+    time.sleep(3)  # TEST

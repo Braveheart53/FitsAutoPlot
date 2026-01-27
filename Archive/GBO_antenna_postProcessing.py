@@ -106,6 +106,8 @@ from fastest_ascii_import import fastest_file_parser as fparser
 # %% Locally Global constants
 c_0 = cons.speed_of_light  # in meters
 pi = mpm.pi  # using mpmath versus numpy, there is a reason for this, just
+
+
 # not sure what that reason is at the moment
 
 # %% Class Definitions
@@ -140,7 +142,7 @@ class AntennaFun:
         UnitConversions = Antenna_unit_conversion(
             units_O_len, units_O_freq, units_O_angle)
         freq_tune_Hz = freq_tune * UnitConversions[1]
-        lambda_tune_Hz = c_0/freq_tune_Hz
+        lambda_tune_Hz = c_0 / freq_tune_Hz
         Dimension_array = np.array([Horn_Body_len, Horn_Ap_Eplane, Horn_Ap_Hplane, Horn_WG_a,
                                     Horn_WG_b])
         Dimension_array = Dimension_array * UnitConversions[0]
@@ -148,9 +150,9 @@ class AntennaFun:
         Physical_Aperture = Dimension_array[1] * Dimension_array[2]
         Affective_Aperture = antenna_efficiency * Physical_Aperture
 
-        Antenna_Gain_linear = 4*pi*Affective_Aperture/(lambda_tune_Hz**2)
-        Antenna_Gain_dB = 10*mpm.log(Antenna_Gain_linear, 10)
-        Antenna_Gain_dB_float = 10*np.log10(float(Antenna_Gain_linear))
+        Antenna_Gain_linear = 4 * pi * Affective_Aperture / (lambda_tune_Hz ** 2)
+        Antenna_Gain_dB = 10 * mpm.log(Antenna_Gain_linear, 10)
+        Antenna_Gain_dB_float = 10 * np.log10(float(Antenna_Gain_linear))
 
         # Gain = 4*pi /(HPBW_az*HPBW_el), here this is 4pi square steradians
         # therefore, to convert it would be 4*pi*(180/pi)**2 ~= 4*pi*57.3**2 ~=
@@ -162,8 +164,8 @@ class AntennaFun:
 
         # need to calculate 10 dB BW from sinc^2 function
         # can use expansion technique of the sinc^2 fuction to approximate.
-        HPBW_Hplane = 70*lambda_tune_Hz/Dimension_array[2]
-        HPBW_Eplane = 56*lambda_tune_Hz/Dimension_array[1]
+        HPBW_Hplane = 70 * lambda_tune_Hz / Dimension_array[2]
+        HPBW_Eplane = 56 * lambda_tune_Hz / Dimension_array[1]
 
         return (HPBW_Eplane, HPBW_Hplane, Antenna_Gain_dB, Antenna_Gain_dB_float)
         # End of SGH_BWApprox
@@ -379,10 +381,10 @@ class AntennaFun:
             return 1
 
         def foot():
-            return 12*2.54/100
+            return 12 * 2.54 / 100
 
         def inch():
-            return 2.54/100
+            return 2.54 / 100
 
         def centimeter():
             return 100
@@ -406,7 +408,7 @@ class AntennaFun:
             return 1
 
         def rad():
-            return cons.pi/180
+            return cons.pi / 180
 
         angle_unit = {'deg': deg,
                       'rad': rad}
@@ -424,18 +426,18 @@ class AntennaFun:
         # Script Calculations
         # may have to use mpm.atan
         Psi = mpm.atan((Tx_ht_U + Rcv_ht_U) / Range_length_U)
-        Psi_degrees = (180/cons.pi)*Psi
+        Psi_degrees = (180 / cons.pi) * Psi
         pathLength_direct = mpm.sqrt(
-            Range_length_U**2 + (Rcv_ht_U + Tx_ht_U)**2)
+            Range_length_U ** 2 + (Rcv_ht_U + Tx_ht_U) ** 2)
         F1 = ((Fresnel_Zones * Tuned_lambda_U) /
               (2 * Range_length_U)) + mpm.sec(Psi)
-        F2 = (Rcv_ht_U**2 - Tx_ht_U**2) / ((F1**2 - 1) * Range_length_U**2)
-        F3 = (Rcv_ht_U**2 + Tx_ht_U**2) / ((F1**2 - 1) * Range_length_U**2)
+        F2 = (Rcv_ht_U ** 2 - Tx_ht_U ** 2) / ((F1 ** 2 - 1) * Range_length_U ** 2)
+        F3 = (Rcv_ht_U ** 2 + Tx_ht_U ** 2) / ((F1 ** 2 - 1) * Range_length_U ** 2)
 
-        Fresnel_Cn = Range_length_U * (1-F2)/2
-        Fresnel_Ln = Range_length_U * F1 * mpm.sqrt(1 + F2**2 - 2*F3)
+        Fresnel_Cn = Range_length_U * (1 - F2) / 2
+        Fresnel_Ln = Range_length_U * F1 * mpm.sqrt(1 + F2 ** 2 - 2 * F3)
         Fresnel_Wn = Range_length_U * \
-            mpm.sqrt((F1**2 - 1) * (1 + F2**2 - 2*F3))
+                     mpm.sqrt((F1 ** 2 - 1) * (1 + F2 ** 2 - 2 * F3))
 
         # define a way to calculate piece count, remember patch is 45 degrees so its 3' instead of 2
         # most likely a different def / function
@@ -478,37 +480,37 @@ class AntennaFun:
         Freq_unit = Dimensional_units[1]
         Angle_unit = Dimensional_units[2]
 
-        Height_of_aperture = Height_of_aperture/Len_unit    # conver to meters
+        Height_of_aperture = Height_of_aperture / Len_unit  # conver to meters
 
         # tangent of the required angles
         if units_O_angle == 'deg':
             tanTilt = mpm.tan(mpm.radians(Antenna_physical_tilt_angle))
-            tanHPBW = mpm.tan(mpm.radians(HPBW/2))
-            tanTendB_BW = mpm.tan(mpm.radians(TendB_BW/2))
+            tanHPBW = mpm.tan(mpm.radians(HPBW / 2))
+            tanTendB_BW = mpm.tan(mpm.radians(TendB_BW / 2))
         elif units_O_angle == 'rad':
             tanTilt = mpm.tan(mpm.degrees(Antenna_physical_tilt_angle))
-            tanHPBW = mpm.tan(mpm.degrees(HPBW/2))
-            tanTendB_BW = mpm.tan(mpm.degrees(TendB_BW/2))
+            tanHPBW = mpm.tan(mpm.degrees(HPBW / 2))
+            tanTendB_BW = mpm.tan(mpm.degrees(TendB_BW / 2))
         else:
             messagebox.showerror('Illumination Error',
                                  'Unit for angle is neither rad nor deg.')
             sys.exit()
 
         # Calculated lead and trailing distance from direct ray
-        trial1_HPBW = Height_of_aperture*((tanTilt)+(tanHPBW))
-        trial2_HPBW = Height_of_aperture*(((tanTilt + tanHPBW) /
-                                           (1-tanTilt*tanHPBW))-tanTilt)
-        trial1_10dBBW = Height_of_aperture*((tanTilt)+(tanTendB_BW))
-        trial2_10dBBW = Height_of_aperture*(((tanTilt + tanTendB_BW) /
-                                            (1-tanTilt*tanTendB_BW))-tanTilt)
+        trial1_HPBW = Height_of_aperture * ((tanTilt) + (tanHPBW))
+        trial2_HPBW = Height_of_aperture * (((tanTilt + tanHPBW) /
+                                             (1 - tanTilt * tanHPBW)) - tanTilt)
+        trial1_10dBBW = Height_of_aperture * ((tanTilt) + (tanTendB_BW))
+        trial2_10dBBW = Height_of_aperture * (((tanTilt + tanTendB_BW) /
+                                               (1 - tanTilt * tanTendB_BW)) - tanTilt)
         # Calc HP illumination distance
-        HP_Illumination_distance = Height_of_aperture*(
-            (((tanTilt + tanHPBW)/(1-tanTilt*tanHPBW))-tanTilt) +
-            (tanTilt)+(tanHPBW))
+        HP_Illumination_distance = Height_of_aperture * (
+                (((tanTilt + tanHPBW) / (1 - tanTilt * tanHPBW)) - tanTilt) +
+                (tanTilt) + (tanHPBW))
         # Calc distance to 10 dB BW
-        TendB_Illumination_distance = Height_of_aperture*(
-            (((tanTilt + tanTendB_BW)/(1-tanTilt*tanTendB_BW))-tanTilt) +
-            (tanTilt)+(tanTendB_BW))
+        TendB_Illumination_distance = Height_of_aperture * (
+                (((tanTilt + tanTendB_BW) / (1 - tanTilt * tanTendB_BW)) - tanTilt) +
+                (tanTilt) + (tanTendB_BW))
 
         # Text Output
         # =============================================================================
@@ -536,9 +538,9 @@ class AntennaFun:
         #     print("10 dB BW Illumination_distance 2: ",trial2_10dBBW*
         #           Len_unit,units_O_len)
         # =============================================================================
-        return (HP_Illumination_distance*Len_unit,
-                TendB_Illumination_distance*Len_unit, trial1_HPBW*Len_unit,
-                trial2_HPBW*Len_unit, trial1_10dBBW*Len_unit, trial2_10dBBW*Len_unit)
+        return (HP_Illumination_distance * Len_unit,
+                TendB_Illumination_distance * Len_unit, trial1_HPBW * Len_unit,
+                trial2_HPBW * Len_unit, trial1_10dBBW * Len_unit, trial2_10dBBW * Len_unit)
         # end of illuminationORange
 
 
@@ -784,10 +786,10 @@ class GBOutDoor:
                                            coords=[data_Az_angle, data_freq],
                                            dims=["Azimuth", "frequnecy"],
                                            attrs=dict(description=(
-                                               "Full Dataset for " +
-                                               "the associated " +
-                                               "outdoor " +
-                                               "range measurement.")
+                                                   "Full Dataset for " +
+                                                   "the associated " +
+                                                   "outdoor " +
+                                                   "range measurement.")
                                            )
                                            )
 
@@ -804,8 +806,8 @@ class GBOutDoor:
                         Azimuth=("Az", data_Az_angle)
                     ),
                     attrs=dict(description=(
-                        "Full Dataset for the associated " + "outdoor " +
-                        "range measurement.")
+                            "Full Dataset for the associated " + "outdoor " +
+                            "range measurement.")
                     )
                 )
 
@@ -872,7 +874,7 @@ class GBOutDoor:
             # selected_data = np.array([[selected_magnitude_data],
             #                           [selected_phase_data]])
             selected_data = np.array([selected_magnitude_data,
-                                     selected_phase_data])
+                                      selected_phase_data])
             selected_data_transpose = selected_data.transpose()
             return header_info, selected_data_transpose
 

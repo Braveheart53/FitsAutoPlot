@@ -110,6 +110,8 @@ from rich import inspect as richinspect
 from rich import pretty
 import inspect
 from pprint import pprint
+
+
 # =============================================================================
 # %%% Parallel Processing Modules
 # =============================================================================
@@ -159,6 +161,7 @@ def select_file():
     if file_path:
         file_entry.delete(0, tk.END)
         file_entry.insert(0, file_path)
+
 
 # %% Main Execution
 
