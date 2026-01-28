@@ -20,6 +20,9 @@ capabilities using scikit-rf, including:
 Author: William W. Wallace
 Last updated: 2026-01-27 (CORRECTIONS APPLIED)
 """
+# TODO: Data sets are not being tagged with their file names, see RandS FSW script for a good example of where this works
+# TODO: Fix the options selection and generate the time gated freq domain plots in veusz
+# TODO: Recview interactive HTML smith chart
 # ============================================================================
 # IMPORTS - Standard Library
 # ============================================================================
@@ -385,7 +388,7 @@ class SmithChartPlottermpld3:
                         mag = np.abs(s_val)
                         phase = np.angle(s_val, deg=True)
                         if mag < 1.0:
-                            vswr = (1 + mag) / (1 - mag + 1e-12)
+                            vswr = (1 + mag) / (1 - mag + 1e-36)
                         else:
                             vswr = 10.0
                         label = (f"{param_name}\n"
@@ -611,7 +614,7 @@ class TouchstonePlotter:
                 # ✅ FIXED: Add _unwrapped suffix to dataset names when unwrapping is enabled
                 phase_name = f"{dataset_name}_{param_name}_phase{'_unwrapped' if self.unwrap_phase else ''}"
                 s_param = network.s[:, i, j]
-                mag_db = 20 * np.log10(np.abs(s_param) + 1e-12)
+                mag_db = 20 * np.log10(np.abs(s_param) + 1e-36)
                 # ✅ APPLY PHASE UNWRAPPING USING NUMPY.UNWRAP() - FASTEST METHOD
                 if self.unwrap_phase:
                     try:
@@ -771,8 +774,8 @@ class TouchstonePlotter:
             # FFT of both unfiltered and gated time-domain data
             unfilt_fft = np.fft.fft(td_unfilt_data)
             gated_fft = np.fft.fft(td_gated_data)
-            mag_db_unfilt = 20 * np.log10(np.abs(unfilt_fft) + 1e-12)
-            mag_db_gated = 20 * np.log10(np.abs(gated_fft) + 1e-12)
+            mag_db_unfilt = 20 * np.log10(np.abs(unfilt_fft) + 1e-36)
+            mag_db_gated = 20 * np.log10(np.abs(gated_fft) + 1e-36)
             # ✅ FIXED: Create frequency array for FFT using correct spacing from original frequency
             original_frequencies = td_result.get('frequency', np.array([]))
             if len(original_frequencies) > 1:

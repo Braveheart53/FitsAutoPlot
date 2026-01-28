@@ -16,6 +16,7 @@ Version: 1.0.3 - Corrected Average+Overlay only mode with AutoSave functionality
 =============================================================================
 """
 # TODO: compare GPU based processing on this one to Touchstone
+# TODO: ensure plot of the average trace is created in both avg only and avg with overlay. Avg of each file and all
 # %% Import all required modules
 # %%% System Interface Modules
 import os
