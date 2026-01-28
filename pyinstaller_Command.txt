@@ -1,0 +1,13 @@
+pyinstaller --onefile --windowed \
+  --hidden-import=veusz \
+  --hidden-impor=scikit-rf \
+  --hidden-import=veusz.plugins \
+  --collect-data RAndS_FSW_ASCII_Plotter \
+  --collect-data Hanging_Threads \
+  --collect-data FITS_AutoPlot \
+  --collect-data fastest_ascii_import \
+  --collect-data CSV_TSV_AutoPlot \
+  --collect-data ATR_AutoPlot \
+  --add-data "assets:assets" \
+  --icon=app_icon.ico \
+  postProcessing_Launcher.py

@@ -6,7 +6,7 @@
       <excludeFolder url="file://$MODULE_DIR$/.venv/Scripts" />
       <excludeFolder url="file://$MODULE_DIR$/Nuitka" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.8 (FitsAutoPlot)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Py3p8_devel" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PyDocumentationSettings">
