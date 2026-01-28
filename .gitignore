@@ -13,3 +13,6 @@ deployment/*
 ATR_AutoPlot.dist/
 ATR_AutoPlot.dist/*
 ATR_AutoPlot.dist*
+__pycache__/*
+*__pycache__/*
+*__pycache__/
