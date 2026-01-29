@@ -774,6 +774,7 @@ class TouchstonePlotter:
             # FFT of both unfiltered and gated time-domain data
             unfilt_fft = np.fft.fft(td_unfilt_data)
             gated_fft = np.fft.fft(td_gated_data)
+            # TODO: instead of creating error by adding a value, change this to a try statement and add nan if it fails.
             mag_db_unfilt = 20 * np.log10(np.abs(unfilt_fft) + 1e-36)
             mag_db_gated = 20 * np.log10(np.abs(gated_fft) + 1e-36)
             # ✅ FIXED: Create frequency array for FFT using correct spacing from original frequency
