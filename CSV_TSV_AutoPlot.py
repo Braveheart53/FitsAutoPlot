@@ -13,6 +13,9 @@ NEW FEATURES IN THIS VERSION:
 - Dual preview panes (metadata + data)
 - Multi-file support with flexible column matching
 - ALL loaded files are plotted (file selection only affects preview)
+- Overlaid plot + individual plots for each file
+- Datasets tagged with original file names
+- Page names use file names for easy navigation
 - Logging of missing columns to text file
 - Metadata stored in page notes (not displayed on plot)
 
@@ -23,6 +26,7 @@ Key Features:
 - Interactive preview of loaded data
 - Multi-column selection for X and Y axes
 - Multi-file plotting with flexible column matching by name
+- Overlaid plot showing all files + individual plots per file
 - Veusz plot window with full toolbar (separate window)
 - Save plots as .vszh5 (Veusz HDF5 format)
 - Metadata stored in page notes (accessible via Veusz)
@@ -40,7 +44,8 @@ Typical Workflow:
 7. Configure plot options (title, labels, legend, etc.)
 8. Enable logging if you want missing column reports
 9. Generate plots in separate Veusz window (ALL loaded files plotted)
-10. Save Veusz file for later use (.vszh5 format)
+10. Navigate between overlaid plot and individual file plots
+11. Save Veusz file for later use (.vszh5 format)
 
 Author: Based on William W. Wallace's framework
 Last Updated: 2026-02-03
@@ -326,6 +331,8 @@ class VeuszPlotter:
     matched by name, and missing columns are filled with NaN.
 
     Metadata is stored in page notes (not displayed on plot).
+
+    Creates both overlaid plot (all files) and individual plots per file.
     """
 
     def __init__(self, plot_title: str = "CSV Data Plot",
@@ -356,7 +363,12 @@ class VeuszPlotter:
         """
         Create XY plots from multiple files with flexible column matching.
 
+        Creates:
+        1. Overlaid plot (all files on one graph) on "All Files" page
+        2. Individual plots for each file on separate pages
+
         Metadata from all files is stored in page notes (not displayed on plot).
+        All datasets are tagged with their original file names.
 
         Parameters:
             file_data_dict (Dict): Dictionary mapping filename to (DataFrame, metadata).
@@ -375,15 +387,10 @@ class VeuszPlotter:
             plot_config = PlotConfig()
 
         try:
-            # Create page and grid
-            page = self.doc.Root.Add('page', name='MultiFilePlot')
-            grid = page.Add('grid', columns=1, rows=1)
-
-            # Create graph
-            graph = grid.Add('graph', name='MainPlot')
+            colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
 
             # ====================================================================
-            # ADD METADATA TO PAGE NOTES (NOT DISPLAYED ON PLOT)
+            # PREPARE METADATA NOTES (SHARED ACROSS ALL PAGES)
             # ====================================================================
             metadata_notes = []
             metadata_notes.append("="*80)
@@ -414,25 +421,28 @@ class VeuszPlotter:
             metadata_notes.append(f"  Title: {plot_config.title}")
             metadata_notes.append("="*80)
 
-            # Set page notes
-            page.notes.val = "\n".join(metadata_notes)
+            metadata_str = "\n".join(metadata_notes)
 
             # ====================================================================
-            # CREATE PLOTS (NO METADATA TEXT ON PLOT)
+            # PAGE 1: OVERLAID PLOT (ALL FILES)
             # ====================================================================
-            colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
+            print("Creating overlaid plot page...")
+            page_overlaid = self.doc.Root.Add('page', name='All_Files_Overlaid')
+            page_overlaid.notes.val = metadata_str
+
+            grid_overlaid = page_overlaid.Add('grid', columns=1, rows=1)
+            graph_overlaid = grid_overlaid.Add('graph', name='AllFilesPlot')
+
             plot_index = 0
 
-            # Process each file
+            # Process each file for overlaid plot
             for file_idx, (filename, (df, metadata)) in enumerate(file_data_dict.items()):
-                # Get available columns in this file
                 available_columns = df.columns.tolist()
 
-                # Log available columns if logger enabled
                 if logger:
                     logger.log_available_columns(filename, available_columns)
 
-                # Check if X column exists in this file
+                # Check if X column exists
                 if x_column not in available_columns:
                     if logger:
                         logger.log_missing_column(filename, x_column)
@@ -441,28 +451,33 @@ class VeuszPlotter:
 
                 # Get X data
                 x_data = pd.to_numeric(df[x_column], errors='coerce').dropna().values.tolist()
-                x_dataset_name = f'{self.dataset_name}_X_{file_idx}'
+                x_dataset_name = f'{self.dataset_name}_X_{file_idx}_{filename}'
                 self.doc.SetData(x_dataset_name, x_data)
+
+                # Tag dataset with file name
+                self.doc.TagDatasets(x_dataset_name, [filename, 'X-axis', x_column])
 
                 # Process each Y column
                 for y_col in y_columns:
                     if y_col not in available_columns:
-                        # Column doesn't exist in this file
                         if logger:
                             logger.log_missing_column(filename, y_col)
-                        print(f"Warning: Y column '{y_col}' not found in {filename}, skipping column for this file")
+                        print(f"Warning: Y column '{y_col}' not found in {filename}, skipping")
                         continue
 
                     # Get Y data
                     y_data = pd.to_numeric(df[y_col], errors='coerce').dropna().values.tolist()
-                    y_dataset_name = f'{self.dataset_name}_Y_{file_idx}_{y_col}'
+                    y_dataset_name = f'{self.dataset_name}_Y_{file_idx}_{filename}_{y_col}'
                     self.doc.SetData(y_dataset_name, y_data)
+
+                    # Tag dataset with file name
+                    self.doc.TagDatasets(y_dataset_name, [filename, 'Y-axis', y_col])
 
                     # Create XY plot
                     plot_name = f'{filename}_{y_col}'
-                    xy_plot = graph.Add('xy', name=plot_name,
-                                      xData=x_dataset_name,
-                                      yData=y_dataset_name)
+                    xy_plot = graph_overlaid.Add('xy', name=plot_name,
+                                                xData=x_dataset_name,
+                                                yData=y_dataset_name)
 
                     # Configure appearance
                     xy_plot.PlotLine.color.val = colors[plot_index % len(colors)]
@@ -473,16 +488,95 @@ class VeuszPlotter:
 
                     plot_index += 1
 
-            # Configure graph
-            graph.title.val = plot_config.title
-            graph.xlabel.val = plot_config.x_label
-            graph.ylabel.val = plot_config.y_label
-            graph.xLog.val = (plot_config.x_scale == 'log')
-            graph.yLog.val = (plot_config.y_scale == 'log')
-            graph.showLegend.val = plot_config.show_legend
+            # Configure overlaid graph
+            graph_overlaid.title.val = f"{plot_config.title} (All Files)"
+            graph_overlaid.xlabel.val = plot_config.x_label
+            graph_overlaid.ylabel.val = plot_config.y_label
+            graph_overlaid.xLog.val = (plot_config.x_scale == 'log')
+            graph_overlaid.yLog.val = (plot_config.y_scale == 'log')
+            graph_overlaid.showLegend.val = plot_config.show_legend
             if plot_config.show_legend:
-                graph.legend.pos.val = plot_config.legend_position
+                graph_overlaid.legend.pos.val = plot_config.legend_position
 
+            # ====================================================================
+            # PAGES 2+: INDIVIDUAL PLOTS FOR EACH FILE
+            # ====================================================================
+            print("Creating individual file plot pages...")
+
+            for file_idx, (filename, (df, metadata)) in enumerate(file_data_dict.items()):
+                available_columns = df.columns.tolist()
+
+                # Check if X column exists
+                if x_column not in available_columns:
+                    print(f"Skipping individual plot for {filename}: X column not found")
+                    continue
+
+                # Create page for this file (use filename without extension as page name)
+                page_name = os.path.splitext(filename)[0].replace(' ', '_').replace('.', '_')
+                page_individual = self.doc.Root.Add('page', name=page_name)
+
+                # Add file-specific metadata to page notes
+                file_notes = []
+                file_notes.append("="*80)
+                file_notes.append(f"File: {filename}")
+                file_notes.append("="*80)
+                file_notes.append("")
+
+                if metadata and len(metadata) > 0:
+                    file_notes.append("Header/Metadata lines:")
+                    for line in metadata:
+                        file_notes.append(f"  {line}")
+                    file_notes.append("")
+
+                file_notes.append(f"Data shape: {df.shape[0]} rows × {df.shape[1]} columns")
+                file_notes.append(f"Columns: {', '.join(df.columns.tolist())}")
+                file_notes.append("")
+                file_notes.append("="*80)
+
+                page_individual.notes.val = "\n".join(file_notes)
+
+                # Create grid and graph
+                grid_individual = page_individual.Add('grid', columns=1, rows=1)
+                graph_individual = grid_individual.Add('graph', name=f'{page_name}_Plot')
+
+                # Get X data (reuse from overlaid plot)
+                x_dataset_name = f'{self.dataset_name}_X_{file_idx}_{filename}'
+
+                # Process each Y column for this file
+                plot_color_index = 0
+                for y_col in y_columns:
+                    if y_col not in available_columns:
+                        continue
+
+                    # Reuse Y data from overlaid plot
+                    y_dataset_name = f'{self.dataset_name}_Y_{file_idx}_{filename}_{y_col}'
+
+                    # Create XY plot
+                    plot_name = f'{y_col}'
+                    xy_plot = graph_individual.Add('xy', name=plot_name,
+                                                  xData=x_dataset_name,
+                                                  yData=y_dataset_name)
+
+                    # Configure appearance
+                    xy_plot.PlotLine.color.val = colors[plot_color_index % len(colors)]
+                    xy_plot.PlotLine.style.val = plot_config.line_style
+                    xy_plot.PlotLine.width.val = f'{plot_config.line_width}pt'
+                    xy_plot.marker.val = plot_config.marker_style
+                    xy_plot.markerSize.val = f'{plot_config.marker_size}pt'
+
+                    plot_color_index += 1
+
+                # Configure individual graph
+                graph_individual.title.val = f"{plot_config.title} - {filename}"
+                graph_individual.xlabel.val = plot_config.x_label
+                graph_individual.ylabel.val = plot_config.y_label
+                graph_individual.xLog.val = (plot_config.x_scale == 'log')
+                graph_individual.yLog.val = (plot_config.y_scale == 'log')
+                graph_individual.showLegend.val = (len(y_columns) > 1)  # Show legend only if multiple Y columns
+                if len(y_columns) > 1:
+                    graph_individual.legend.pos.val = plot_config.legend_position
+
+            print(f"Created overlaid plot + {len(file_data_dict)} individual file plots")
             return True
 
         except Exception as e:
@@ -597,12 +691,13 @@ class CSVAutoPlotMainWindow(QMainWindow):
     Supports multiple files with different column structures.
     Metadata stored in page notes (not displayed on plot).
     ALL loaded files are plotted (file selection only affects preview).
+    Creates overlaid plot + individual plots per file.
     """
 
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
-        self.setWindowTitle("CSV/TSV AutoPlot - Multi-File Support (All Files Plotted)")
+        self.setWindowTitle("CSV/TSV AutoPlot - Overlaid + Individual Plots")
         self.setGeometry(100, 100, 1400, 950)
 
         self.selected_files = []
@@ -615,10 +710,9 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         self.setup_ui()
 
-        self.log_message("CSV/TSV AutoPlot with Multi-File Support initialized")
-        self.log_message("Browse for CSV or TSV files to begin")
-        self.log_message("NOTE: ALL loaded files will be plotted together")
-        self.log_message("File selection only affects data preview")
+        self.log_message("CSV/TSV AutoPlot initialized")
+        self.log_message("Features: Overlaid plot + Individual file plots")
+        self.log_message("All datasets tagged with file names")
 
     def setup_ui(self):
         """Set up the user interface."""
@@ -646,17 +740,17 @@ class CSVAutoPlotMainWindow(QMainWindow):
         left_layout.addLayout(button_layout)
 
         self.file_list_widget = QListWidget()
-        self.file_list_widget.setSelectionMode(QListWidget.SingleSelection)  # Single selection for preview only
+        self.file_list_widget.setSelectionMode(QListWidget.SingleSelection)
         self.file_list_widget.itemSelectionChanged.connect(self.on_file_selection_changed)
 
         left_layout.addWidget(QLabel("Loaded Files (select for preview only):"))
         left_layout.addWidget(self.file_list_widget)
 
-        preview_note = QLabel("⚠️ ALL loaded files will be plotted (selection only for preview)")
-        preview_note.setStyleSheet("QLabel { color: #cc6600; font-weight: bold; }")
+        preview_note = QLabel("ℹ️ Overlaid plot + individual plots for each file")
+        preview_note.setStyleSheet("QLabel { color: #0066cc; font-weight: bold; }")
         left_layout.addWidget(preview_note)
 
-        # Right side: Delimiter and Data Start Line configuration
+        # Right side: Configuration
         right_layout = QVBoxLayout()
 
         # Delimiter configuration
@@ -710,7 +804,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         self.enable_logging_checkbox.stateChanged.connect(self.on_logging_changed)
         logging_layout.addWidget(self.enable_logging_checkbox)
 
-        logging_info = QLabel("(Logs missing columns to text file in script directory)")
+        logging_info = QLabel("(Logs missing columns to text file)")
         logging_info.setStyleSheet("QLabel { color: gray; font-size: 10px; }")
         logging_layout.addWidget(logging_info)
 
@@ -728,12 +822,12 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         main_layout.addWidget(file_group)
 
-        # ====== DUAL PREVIEW AREA (Metadata + Data) ======
+        # ====== PREVIEW AREA ======
         preview_group = QGroupBox("File Preview (Selected File Only)")
         preview_layout = QVBoxLayout(preview_group)
 
         # Metadata preview
-        preview_layout.addWidget(QLabel("Notes/Metadata (stored in Veusz page notes):"))
+        preview_layout.addWidget(QLabel("Metadata:"))
         self.metadata_preview = QTextEdit()
         self.metadata_preview.setReadOnly(True)
         self.metadata_preview.setMaximumHeight(120)
@@ -748,13 +842,9 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         main_layout.addWidget(preview_group)
 
-        # ====== COLUMN SELECTION FOR PLOTTING ======
-        column_group = QGroupBox("Column Selection for Plotting (Matched by Name Across All Files)")
+        # ====== COLUMN SELECTION ======
+        column_group = QGroupBox("Column Selection for Plotting")
         column_layout = QVBoxLayout(column_group)
-
-        column_info = QLabel("ℹ️ Columns are matched by NAME (not position). Missing columns in some files will be skipped.")
-        column_info.setStyleSheet("QLabel { color: #0066cc; font-weight: bold; }")
-        column_layout.addWidget(column_info)
 
         selection_form = QFormLayout()
 
@@ -802,14 +892,14 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         # ====== MATPLOTLIB PREVIEW ======
         self.preview_canvas = PreviewCanvas(width=8, height=2.5)
-        main_layout.addWidget(QLabel("Matplotlib Preview (Selected File Only):"))
+        main_layout.addWidget(QLabel("Matplotlib Preview:"))
         main_layout.addWidget(self.preview_canvas)
 
         # ====== ACTION BUTTONS ======
         button_group = QGroupBox("")
         button_layout = QHBoxLayout(button_group)
 
-        self.generate_btn = QPushButton("Generate Plots from ALL Loaded Files")
+        self.generate_btn = QPushButton("Generate Plots (Overlaid + Individual)")
         self.generate_btn.clicked.connect(self.generate_plots)
         self.generate_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #4CAF50; color: white; }")
 
@@ -823,7 +913,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         main_layout.addWidget(button_group)
 
-        # ====== STATUS/LOGGING AREA ======
+        # ====== STATUS LOG ======
         status_group = QGroupBox("Status Log")
         status_layout = QVBoxLayout(status_group)
 
@@ -853,7 +943,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
     def load_files(self):
         """Load selected files into memory."""
         delimiter = self.delimiter_input.text() or ','
-        # Handle tab escape
         if delimiter == '\\t':
             delimiter = '\t'
 
@@ -894,15 +983,10 @@ class CSVAutoPlotMainWindow(QMainWindow):
         """Handle file selection change."""
         selected_items = self.file_list_widget.selectedItems()
         if selected_items:
-            # Show preview of selected file
             filename = selected_items[0].text()
             self.display_data_preview(filename)
             self.display_metadata_preview(filename)
             self.log_message(f"Previewing: {filename}")
-
-    # ========================================================================
-    # DELIMITER AND DATA START LINE METHODS
-    # ========================================================================
 
     def auto_detect_delimiter(self):
         """Auto-detect delimiter from first loaded file."""
@@ -951,29 +1035,20 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 return file_path
         return ""
 
-    # ========================================================================
-    # PREVIEW METHODS
-    # ========================================================================
-
     def update_column_selectors_from_all_files(self):
-        """
-        Update column selectors with union of all columns from all loaded files.
-        """
+        """Update column selectors with union of all columns from all loaded files."""
         self.x_column_combo.clear()
         self.y_columns_list.clear()
 
         if not self.loaded_data:
             return
 
-        # Collect all unique column names from all files
         all_columns = set()
         for df, _ in self.loaded_data.values():
             all_columns.update(df.columns.tolist())
 
-        # Sort columns
         sorted_columns = sorted(list(all_columns))
 
-        # Populate selectors
         self.x_column_combo.addItems(sorted_columns)
         self.y_columns_list.addItems(sorted_columns)
 
@@ -990,13 +1065,12 @@ class CSVAutoPlotMainWindow(QMainWindow):
         _, metadata = self.loaded_data[filename]
 
         if metadata:
-            # Show first 10 lines of metadata
             preview_lines = metadata[:10]
             self.metadata_preview.setText("\n".join(preview_lines))
             if len(metadata) > 10:
                 self.metadata_preview.append(f"\n... ({len(metadata) - 10} more lines)")
         else:
-            self.metadata_preview.setText("(No metadata - data starts at line 1)")
+            self.metadata_preview.setText("(No metadata)")
 
     def display_data_preview(self, filename: str):
         """Display a preview of the loaded data in the table."""
@@ -1004,8 +1078,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
             return
 
         df, _ = self.loaded_data[filename]
-
-        # Show first 10 rows
         preview_df = df.head(10)
 
         self.data_preview_table.setRowCount(preview_df.shape[0])
@@ -1019,15 +1091,10 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         self.data_preview_table.resizeColumnsToContents()
 
-    # ========================================================================
-    # PLOT CONFIGURATION AND PREVIEW
-    # ========================================================================
-
     def on_plot_config_changed(self):
         """Handle plot configuration change."""
         selected_items = self.file_list_widget.selectedItems()
         if not selected_items:
-            # Preview first file
             if self.loaded_data:
                 first_filename = list(self.loaded_data.keys())[0]
             else:
@@ -1046,21 +1113,15 @@ class CSVAutoPlotMainWindow(QMainWindow):
         if not x_column or not y_columns:
             return
 
-        # Update plot config
         self.plot_config.title = self.title_input.text()
         self.plot_config.x_label = self.x_label_input.text()
         self.plot_config.y_label = self.y_label_input.text()
         self.plot_config.show_legend = self.show_legend_checkbox.isChecked()
 
-        # Update matplotlib preview
         try:
             self.preview_canvas.plot_data(df, x_column, y_columns, self.plot_config)
         except Exception as e:
             self.log_message(f"Error updating preview: {str(e)}")
-
-    # ========================================================================
-    # VEUSZ PLOT GENERATION (SEPARATE WINDOW)
-    # ========================================================================
 
     def generate_plots(self):
         """Generate plots in Veusz from ALL loaded files."""
@@ -1077,7 +1138,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
                                   "Please select X and Y columns")
                 return
 
-            # Create logger if enabled
             logger = None
             if self.csv_config.enable_logging:
                 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1086,34 +1146,34 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 logger = ColumnLogger(log_file_path)
                 self.log_message(f"Logging enabled: {log_file_path}")
 
-            # Create Veusz plotter (separate window)
             self.veusz_plotter = VeuszPlotter(
                 plot_title=self.plot_config.title,
                 dataset_name="MultiFileData"
             )
 
-            # Create multi-file plot using ALL loaded data
             success = self.veusz_plotter.create_multi_file_plot(
                 self.loaded_data, x_column, y_columns,
                 self.plot_config,
                 logger
             )
 
-            # Write log if enabled
             if logger:
                 logger.write_log()
                 self.log_message(f"✓ Log file written: {log_file_path}")
 
             if success:
                 self.save_veusz_btn.setEnabled(True)
-                self.log_message(f"✓ Plot generated from ALL {len(self.loaded_data)} file(s)")
-                self.log_message("✓ Metadata stored in Veusz page notes")
+                num_files = len(self.loaded_data)
+                self.log_message(f"✓ Created overlaid plot + {num_files} individual plots")
+                self.log_message("✓ All datasets tagged with file names")
+                self.log_message("✓ Metadata stored in page notes")
                 QMessageBox.information(self, "Success",
-                                      f"Plot generated from ALL {len(self.loaded_data)} loaded file(s).\n\n" +
-                                      "A separate Veusz window has opened with the plot.\n" +
-                                      "Columns were matched by name across files.\n" +
-                                      "Metadata is stored in page notes (Edit → Page Properties → Notes).\n" +
-                                      "Use 'Save Veusz File' button to save your work.")
+                                      f"Generated plots from {num_files} file(s):\n\n" +
+                                      "• Overlaid plot (all files)\n" +
+                                      f"• {num_files} individual plots (one per file)\n\n" +
+                                      "Navigate between pages in Veusz window.\n" +
+                                      "All datasets are tagged with file names.\n" +
+                                      "Metadata is in page notes (Edit → Page Properties → Notes).")
             else:
                 QMessageBox.critical(self, "Error", "Failed to create plot in Veusz")
 
@@ -1143,7 +1203,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
             success = self.veusz_plotter.save_project(file_path)
 
             if success:
-                # Ensure correct extension was used
                 if not file_path.endswith('.vszh5'):
                     file_path = os.path.splitext(file_path)[0] + '.vszh5'
 
@@ -1151,18 +1210,14 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 QMessageBox.information(self, "Success",
                                       f"Veusz file saved successfully:\n\n{file_path}\n\n" +
                                       "File format: HDF5 (.vszh5)\n" +
-                                      "Metadata is preserved in page notes.\n" +
-                                      "You can open this file later in Veusz.")
+                                      "Contains overlaid plot + individual plots\n" +
+                                      "All datasets tagged with file names")
             else:
                 QMessageBox.critical(self, "Error", "Failed to save Veusz file")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error saving Veusz file: {str(e)}")
             self.log_message(f"✗ Save error: {str(e)}")
-
-    # ========================================================================
-    # LOGGING
-    # ========================================================================
 
     def log_message(self, message: str):
         """Add message to status log."""
