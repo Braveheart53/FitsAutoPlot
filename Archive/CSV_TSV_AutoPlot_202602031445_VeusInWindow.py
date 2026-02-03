@@ -1,13 +1,14 @@
 """
-CSV/TSV AutoPlot - Automatic data visualization with Veusz Embedded API.
+CSV/TSV AutoPlot - Automatic data visualization with Embedded Veusz Window.
 
 This script provides a complete GUI application for loading CSV, TSV, and other
 delimited text files, configuring custom delimiters, and generating publication-
-quality plots using Veusz's embedded API (separate window with toolbar).
+quality plots using an EMBEDDED Veusz window with toolbar.
 
 NEW FEATURES IN THIS VERSION:
-- Veusz window opens as separate window with full toolbar (Veusz embedded API)
-- Save Veusz files button (HDF5 .vszh5 format)
+- Embedded Veusz window directly in GUI
+- Full Veusz toolbar access
+- Save Veusz files button (HDF5 format)
 - Support for metadata/header lines
 - Data start line configuration
 - Dual preview panes (metadata + data)
@@ -18,8 +19,8 @@ Key Features:
 - Handle files with metadata headers
 - Interactive preview of loaded data
 - Multi-column selection for X and Y axes
-- Veusz plot window with full toolbar (separate window)
-- Save plots as .vszh5 (Veusz HDF5 format)
+- Embedded Veusz plot window with toolbar
+- Save plots as .vsz (Veusz HDF5 format)
 - Configurable plot styles and formatting
 - Comprehensive error handling and logging
 
@@ -31,8 +32,8 @@ Typical Workflow:
 5. Preview metadata and data
 6. Select columns for plotting
 7. Configure plot options (title, labels, legend, etc.)
-8. Generate plots in separate Veusz window
-9. Save Veusz file for later use (.vszh5 format)
+8. Generate plots in embedded Veusz window
+9. Save Veusz file for later use
 
 Author: Based on William W. Wallace's framework
 Last Updated: 2026-02-03
@@ -43,11 +44,11 @@ Dependencies:
 - pandas (data loading and manipulation)
 - numpy (numerical computing)
 - matplotlib (preview plots)
-- veusz (plot generation with embedded API)
+- veusz (final plot generation with embedding)
 - scipy (optional, for advanced analysis)
 
 Installation:
-    pip install pandas numpy matplotlib veusz pyside6 qtpy
+    pip install pandas numpy matplotlib veusz pyside6
 
 Usage:
     python CSV_TSV_AutoPlot_Embedded.py
@@ -82,7 +83,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 # ============================================================================
-# IMPORTS - Veusz Integration (embedded API for separate window)
+# IMPORTS - Veusz Integration (for final plot generation)
 # ============================================================================
 try:
     import veusz.embed as vz
@@ -121,7 +122,7 @@ class CSVProcessingConfig:
     max_workers: int = multiprocessing.cpu_count()
     chunk_size: int = 1000
     encoding: str = 'utf-8'
-    data_start_line: int = 1  # Line where data begins
+    data_start_line: int = 1  # NEW: Line where data begins
     skip_footer: int = 0
     skip_empty_lines: bool = True
 
@@ -237,22 +238,21 @@ def load_csv_file(file_path: str, delimiter: str = ',',
         return None, error_msg, []
 
 # ============================================================================
-# VEUSZ PLOTTING CLASS WITH EMBEDDED API (SEPARATE WINDOW)
+# VEUSZ PLOTTING CLASS WITH EMBEDDING SUPPORT
 # ============================================================================
 
 class VeuszPlotter:
     """
-    Handles plot generation in Veusz using embedded API (separate window).
+    Handles plot generation in Veusz for CSV/TSV data with embedding support.
 
     This class wraps the Veusz embedding API to create publication-quality
-    plots from pandas DataFrames. The Veusz window opens separately with
-    full toolbar enabled.
+    plots from pandas DataFrames and embeds the Veusz window in the GUI.
     """
 
     def __init__(self, plot_title: str = "CSV Data Plot",
                  dataset_name: str = "CSVDataset"):
         """
-        Initialize Veusz plotter with embedded API.
+        Initialize Veusz plotter for embedding.
 
         Parameters:
             plot_title (str): Title for the plot window.
@@ -261,14 +261,34 @@ class VeuszPlotter:
         self.plot_title = plot_title
         self.dataset_name = dataset_name
         self.doc = None
+        self.veusz_widget = None
 
         try:
             if vz is not None:
-                # Create embedded document with separate window (hidden=False)
-                self.doc = vz.Embedded(plot_title, hidden=False)
+                # Create embedded document (hidden initially until makeWindow called)
+                self.doc = vz.Embedded(plot_title, hidden=True)
                 self.doc.EnableToolbar()
         except Exception as e:
             print(f"Warning: Could not initialize Veusz: {e}")
+
+    def get_embed_widget(self):
+        """
+        Get Qt widget for embedding in main window.
+
+        Returns:
+            QWidget: Veusz window widget for embedding.
+        """
+        if self.doc is None:
+            return None
+
+        try:
+            if self.veusz_widget is None:
+                self.veusz_widget = self.doc.makeWindow()
+            return self.veusz_widget
+        except Exception as e:
+            print(f"Error creating Veusz widget: {e}")
+            traceback.print_exc()
+            return None
 
     def create_xy_plot(self, df: pd.DataFrame, x_column: str, y_columns: List[str],
                       plot_config: PlotConfig = None, filename_tag: str = "",
@@ -303,16 +323,13 @@ class VeuszPlotter:
 
             # Add metadata as text annotation if provided
             if metadata and len(metadata) > 0:
-                # Limit metadata to first 15 lines to avoid cluttering
-                metadata_text = "\n".join(metadata[:15])
+                metadata_text = "\n".join(metadata[:15])  # Limit to first 15 lines
                 text_widget = page.Add('label', name='Metadata')
                 text_widget.label.val = metadata_text
-                text_widget.xPos.val = 0.02
-                text_widget.yPos.val = 0.98
-                text_widget.Text.size.val = '7pt'
+                text_widget.xPos.val = 0.05
+                text_widget.yPos.val = 0.95
+                text_widget.Text.size.val = '8pt'
                 text_widget.Text.color.val = 'gray'
-                text_widget.alignVert.val = 'top'
-                text_widget.alignHorz.val = 'left'
 
             # Add data to Veusz
             x_data = df[x_column].dropna().values.tolist()
@@ -355,7 +372,7 @@ class VeuszPlotter:
 
     def save_project(self, file_path: str) -> bool:
         """
-        Save Veusz project to file in HDF5 format (.vszh5).
+        Save Veusz project to file in HDF5 format (.vsz).
 
         Parameters:
             file_path (str): Path where to save the Veusz project.
@@ -367,17 +384,10 @@ class VeuszPlotter:
             return False
 
         try:
-            # Ensure .vszh5 extension
-            if not file_path.lower().endswith('.vszh5'):
-                # Remove .vsz if present and add .vszh5
-                file_path = os.path.splitext(file_path)[0] + '.vszh5'
-
-            # Save with HDF5 mode
-            self.doc.Save(file_path, mode='hdf5')
+            self.doc.Save(file_path)
             return True
         except Exception as e:
             print(f"Error saving Veusz project: {e}")
-            traceback.print_exc()
             return False
 
 # ============================================================================
@@ -443,14 +453,14 @@ class PreviewCanvas(FigureCanvas):
 
 class CSVAutoPlotMainWindow(QMainWindow):
     """
-    Main application window for CSV/TSV AutoPlot with Veusz embedded API.
+    Main application window for CSV/TSV AutoPlot with embedded Veusz.
     """
 
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
-        self.setWindowTitle("CSV/TSV AutoPlot - Veusz Embedded API (Separate Window)")
-        self.setGeometry(100, 100, 1400, 900)
+        self.setWindowTitle("CSV/TSV AutoPlot - Embedded Veusz Window")
+        self.setGeometry(100, 100, 1600, 1000)
 
         self.selected_files = []
         self.loaded_data = {}  # Dict[filename, (DataFrame, metadata)]
@@ -462,7 +472,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         self.setup_ui()
 
-        self.log_message("CSV/TSV AutoPlot with Veusz Embedded API initialized")
+        self.log_message("CSV/TSV AutoPlot with Embedded Veusz initialized")
         self.log_message("Browse for CSV or TSV files to begin")
 
     def setup_ui(self):
@@ -625,23 +635,52 @@ class CSVAutoPlotMainWindow(QMainWindow):
         main_layout.addWidget(QLabel("Matplotlib Preview:"))
         main_layout.addWidget(self.preview_canvas)
 
-        # ====== ACTION BUTTONS ======
-        button_group = QGroupBox("")
-        button_layout = QHBoxLayout(button_group)
+        # ====== VEUSZ EMBEDDED WINDOW AREA ======
+        veusz_group = QGroupBox("Veusz Plot Window (Embedded with Toolbar)")
+        veusz_layout = QVBoxLayout(veusz_group)
 
-        self.generate_btn = QPushButton("Generate Plots in Veusz (Separate Window)")
-        self.generate_btn.clicked.connect(self.generate_plots)
-        self.generate_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; }")
+        # Container for Veusz widget
+        self.veusz_container = QWidget()
+        self.veusz_container_layout = QVBoxLayout(self.veusz_container)
+        self.veusz_container_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.save_veusz_btn = QPushButton("Save Veusz File (.vszh5)")
+        # Placeholder label
+        self.veusz_placeholder = QLabel("📊 Generate plots to see Veusz window here with full toolbar")
+        self.veusz_placeholder.setAlignment(Qt.AlignCenter)
+        self.veusz_placeholder.setMinimumHeight(400)
+        font = QFont()
+        font.setPointSize(14)
+        self.veusz_placeholder.setFont(font)
+        self.veusz_placeholder.setStyleSheet(
+            "QLabel { background-color: #f8f8f8; border: 3px dashed #999; color: #666; }"
+        )
+        self.veusz_container_layout.addWidget(self.veusz_placeholder)
+
+        veusz_layout.addWidget(self.veusz_container)
+
+        # Veusz control buttons
+        veusz_button_layout = QHBoxLayout()
+
+        self.generate_veusz_btn = QPushButton("Generate Plots in Embedded Veusz Window")
+        self.generate_veusz_btn.clicked.connect(self.generate_plots)
+        self.generate_veusz_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; }")
+
+        self.save_veusz_btn = QPushButton("Save Veusz File (HDF5 .vsz)")
         self.save_veusz_btn.clicked.connect(self.save_veusz_file)
         self.save_veusz_btn.setEnabled(False)
 
-        button_layout.addWidget(self.generate_btn)
-        button_layout.addWidget(self.save_veusz_btn)
-        button_layout.addStretch()
+        self.clear_veusz_btn = QPushButton("Clear Veusz Window")
+        self.clear_veusz_btn.clicked.connect(self.clear_veusz_window)
+        self.clear_veusz_btn.setEnabled(False)
 
-        main_layout.addWidget(button_group)
+        veusz_button_layout.addWidget(self.generate_veusz_btn)
+        veusz_button_layout.addWidget(self.save_veusz_btn)
+        veusz_button_layout.addWidget(self.clear_veusz_btn)
+        veusz_button_layout.addStretch()
+
+        veusz_layout.addLayout(veusz_button_layout)
+
+        main_layout.addWidget(veusz_group)
 
         # ====== STATUS/LOGGING AREA ======
         status_group = QGroupBox("Status Log")
@@ -649,7 +688,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         self.status_text = QTextEdit()
         self.status_text.setReadOnly(True)
-        self.status_text.setMaximumHeight(120)
+        self.status_text.setMaximumHeight(100)
         status_layout.addWidget(self.status_text)
 
         main_layout.addWidget(status_group)
@@ -674,7 +713,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         """Load selected files into memory."""
         delimiter = self.delimiter_input.text() or ','
         # Handle tab escape
-        if delimiter == '\\t':
+        if delimiter == '\t':
             delimiter = '\t'
 
         self.csv_config.data_start_line = self.data_start_line_spinbox.value()
@@ -855,11 +894,11 @@ class CSVAutoPlotMainWindow(QMainWindow):
             self.log_message(f"Error updating preview: {str(e)}")
 
     # ========================================================================
-    # VEUSZ PLOT GENERATION (SEPARATE WINDOW)
+    # VEUSZ PLOT GENERATION AND EMBEDDING
     # ========================================================================
 
     def generate_plots(self):
-        """Generate plots in Veusz (separate window with toolbar)."""
+        """Generate plots in embedded Veusz window."""
         if not self.loaded_data:
             QMessageBox.warning(self, "No Data", "Please load CSV/TSV files first")
             return
@@ -881,12 +920,13 @@ class CSVAutoPlotMainWindow(QMainWindow):
                                   "Please select X and Y columns")
                 return
 
-            # Create Veusz plotter (separate window)
-            base_filename = os.path.splitext(filename)[0]
-            self.veusz_plotter = VeuszPlotter(
-                plot_title=self.plot_config.title,
-                dataset_name=f"{base_filename}_Data"
-            )
+            # Create Veusz plotter if not exists
+            if self.veusz_plotter is None:
+                base_filename = os.path.splitext(filename)[0]
+                self.veusz_plotter = VeuszPlotter(
+                    plot_title=self.plot_config.title,
+                    dataset_name=f"{base_filename}_Data"
+                )
 
             # Create XY plot with metadata
             success = self.veusz_plotter.create_xy_plot(
@@ -897,12 +937,29 @@ class CSVAutoPlotMainWindow(QMainWindow):
             )
 
             if success:
-                self.save_veusz_btn.setEnabled(True)
-                self.log_message("✓ Plot generated in Veusz window (separate window with toolbar)")
-                QMessageBox.information(self, "Success",
-                                      "Plot generated in Veusz window.\n\n" +
-                                      "A separate Veusz window has opened with the plot and full toolbar.\n" +
-                                      "Use 'Save Veusz File' button to save your work.")
+                # Get Veusz widget and embed it
+                veusz_widget = self.veusz_plotter.get_embed_widget()
+
+                if veusz_widget:
+                    # Remove placeholder if it exists
+                    if self.veusz_placeholder:
+                        self.veusz_container_layout.removeWidget(self.veusz_placeholder)
+                        self.veusz_placeholder.deleteLater()
+                        self.veusz_placeholder = None
+
+                    # Add Veusz widget to container
+                    self.veusz_container_layout.addWidget(veusz_widget)
+
+                    # Enable save/clear buttons
+                    self.save_veusz_btn.setEnabled(True)
+                    self.clear_veusz_btn.setEnabled(True)
+
+                    self.log_message("✓ Plot generated successfully in embedded Veusz window")
+                    QMessageBox.information(self, "Success",
+                                          "Plot generated in Veusz window below.\n\n" +
+                                          "Use the Veusz toolbar to zoom, pan, and customize the plot.")
+                else:
+                    QMessageBox.critical(self, "Error", "Failed to create Veusz widget")
             else:
                 QMessageBox.critical(self, "Error", "Failed to create plot in Veusz")
 
@@ -912,7 +969,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
             traceback.print_exc()
 
     def save_veusz_file(self):
-        """Save the current Veusz plot to HDF5 .vszh5 file."""
+        """Save the current Veusz plot to HDF5 file."""
         if self.veusz_plotter is None or self.veusz_plotter.doc is None:
             QMessageBox.warning(self, "No Plot", "Please generate a plot first")
             return
@@ -922,24 +979,23 @@ class CSVAutoPlotMainWindow(QMainWindow):
             self,
             "Save Veusz File",
             "",
-            "Veusz HDF5 Files (*.vszh5);;All Files (*)"
+            "Veusz HDF5 Files (*.vsz);;All Files (*)"
         )
 
         if not file_path:
             return
 
+        # Ensure .vsz extension
+        if not file_path.lower().endswith('.vsz'):
+            file_path += '.vsz'
+
         try:
             success = self.veusz_plotter.save_project(file_path)
 
             if success:
-                # Ensure correct extension was used
-                if not file_path.endswith('.vszh5'):
-                    file_path = os.path.splitext(file_path)[0] + '.vszh5'
-
                 self.log_message(f"✓ Veusz file saved: {file_path}")
                 QMessageBox.information(self, "Success",
                                       f"Veusz file saved successfully:\n\n{file_path}\n\n" +
-                                      "File format: HDF5 (.vszh5)\n" +
                                       "You can open this file later in Veusz.")
             else:
                 QMessageBox.critical(self, "Error", "Failed to save Veusz file")
@@ -947,6 +1003,42 @@ class CSVAutoPlotMainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error saving Veusz file: {str(e)}")
             self.log_message(f"✗ Save error: {str(e)}")
+
+    def clear_veusz_window(self):
+        """Clear the embedded Veusz window."""
+        if self.veusz_plotter is None:
+            return
+
+        try:
+            # Get current widget and remove it
+            if self.veusz_plotter.veusz_widget:
+                self.veusz_container_layout.removeWidget(self.veusz_plotter.veusz_widget)
+                self.veusz_plotter.veusz_widget.deleteLater()
+                self.veusz_plotter.veusz_widget = None
+
+            # Reset plotter
+            self.veusz_plotter = None
+
+            # Restore placeholder
+            self.veusz_placeholder = QLabel("📊 Generate plots to see Veusz window here with full toolbar")
+            self.veusz_placeholder.setAlignment(Qt.AlignCenter)
+            self.veusz_placeholder.setMinimumHeight(400)
+            font = QFont()
+            font.setPointSize(14)
+            self.veusz_placeholder.setFont(font)
+            self.veusz_placeholder.setStyleSheet(
+                "QLabel { background-color: #f8f8f8; border: 3px dashed #999; color: #666; }"
+            )
+            self.veusz_container_layout.addWidget(self.veusz_placeholder)
+
+            # Disable buttons
+            self.save_veusz_btn.setEnabled(False)
+            self.clear_veusz_btn.setEnabled(False)
+
+            self.log_message("✓ Veusz window cleared")
+
+        except Exception as e:
+            self.log_message(f"✗ Error clearing Veusz window: {str(e)}")
 
     # ========================================================================
     # LOGGING
