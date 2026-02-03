@@ -7,45 +7,49 @@ quality plots using Veusz. It mirrors the functionality and interface design of
 the original Touchstone_AutoPlot.py but adapts it for arbitrary delimited data files.
 
 Key Features:
-    - Support for arbitrary delimiter characters/strings (comma, tab, semicolon, etc.)
-    - Automatic data type detection (numeric vs. categorical)
-    - Interactive preview of loaded data
-    - Multi-column selection for X and Y axes
-    - Automatic plot generation with Veusz
-    - Batch processing of multiple files
-    - Configurable plot styles and formatting
-    - Comprehensive error handling and logging
+- Support for arbitrary delimiter characters/strings (comma, tab, semicolon, etc.)
+- Automatic data type detection (numeric vs. categorical)
+- Interactive preview of loaded data
+- Multi-column selection for X and Y axes
+- Automatic plot generation with Veusz
+- Batch processing of multiple files
+- Configurable plot styles and formatting
+- Comprehensive error handling and logging
+- Metadata/notes extraction from file headers
+- Split preview showing notes and data separately
+- Dataset tagging with source filenames
 
 Typical Workflow:
-    1. Launch the application
-    2. Browse and select CSV/TSV files
-    3. Specify delimiter character(s)
-    4. Preview data to verify correct parsing
-    5. Select columns for plotting
-    6. Configure plot options (title, labels, legend, etc.)
-    7. Generate plots in Veusz or save as images
+1. Launch the application
+2. Browse and select CSV/TSV files
+3. Specify delimiter character(s)
+4. Specify data start line (where headers or first data row begins)
+5. Preview notes/metadata and data separately
+6. Select columns for plotting
+7. Configure plot options (title, labels, legend, etc.)
+8. Generate plots in Veusz with embedded metadata
 
 Author: Based on William W. Wallace's Touchstone_AutoPlot.py framework
-Last Updated: 2026-01-26
-Python Version: 3.8+
-
+Last Updated: 2026-02-03
+Python Version: 3.8.20
 Dependencies:
-    - PyQt5/PySide6 (GUI framework)
-    - pandas (data loading and manipulation)
-    - numpy (numerical computing)
-    - matplotlib (preview plots)
-    - veusz (final plot generation)
-    - scipy (optional, for advanced analysis)
+- PyQt5/PySide6 (GUI framework)
+- pandas (data loading and manipulation)
+- numpy (numerical computing)
+- matplotlib (preview plots)
+- veusz (final plot generation)
+- scipy (optional, for advanced analysis)
 
 Installation:
-    pip install pandas numpy matplotlib veusz pyside6
+pip install pandas numpy matplotlib veusz pyside6
 
 Usage:
-    python CSV_TSV_AutoPlot.py
+python CSV_TSV_AutoPlot.py
 """
 
 import datetime
 import multiprocessing
+
 # ============================================================================
 # IMPORTS - Standard Library
 # ============================================================================
@@ -71,7 +75,6 @@ except ImportError:
 # IMPORTS - Visualization (Matplotlib for preview)
 # ============================================================================
 import matplotlib
-
 matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -95,8 +98,10 @@ if getattr(sys, 'frozen', False):
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QFileDialog, QLabel, QMessageBox, QTextEdit,
         QCheckBox, QGroupBox, QListWidget,
-        QLineEdit, QComboBox, QFormLayout, QTableWidget, QTableWidgetItem
+        QLineEdit, QComboBox, QFormLayout, QTableWidget, QTableWidgetItem,
+        QSpinBox, QSplitter
     )
+    from PySide6.QtCore import Qt
 else:
     # Development environment - use QtPy abstraction layer
     try:
@@ -124,6 +129,7 @@ else:
 @dataclass
 class CSVProcessingConfig:
     """Configuration class for CSV/TSV processing settings."""
+
     enable_multiprocessing: bool = True
     num_processes: int = multiprocessing.cpu_count()
     max_workers: int = multiprocessing.cpu_count()
@@ -132,11 +138,13 @@ class CSVProcessingConfig:
     skip_rows: int = 0
     skip_footer: int = 0
     skip_empty_lines: bool = True
+    data_start_line: int = 1  # Line number where data (or headers) start (1-indexed)
 
 
 @dataclass
 class PlotConfig:
     """Configuration class for plot formatting."""
+
     title: str = "Data Plot"
     x_label: str = "X Axis"
     y_label: str = "Y Axis"
@@ -158,15 +166,15 @@ class PlotConfig:
 def detect_delimiter(file_path: str, sample_size: int = 5) -> str:
     """
     Attempt to auto-detect the delimiter in a delimited text file.
-    
+
     This function reads the first few lines of the file and analyzes
     common delimiters (comma, tab, semicolon, pipe) to determine which
     is most likely being used.
-    
+
     Parameters:
         file_path (str): Path to the delimited text file.
         sample_size (int): Number of lines to sample for detection.
-        
+
     Returns:
         str: Detected delimiter character (most commonly ',', '\t', ';', or '|').
     """
@@ -199,61 +207,99 @@ def detect_delimiter(file_path: str, sample_size: int = 5) -> str:
         return ','  # Default to comma
 
 
+def extract_metadata(file_path: str, data_start_line: int, encoding: str = 'utf-8') -> str:
+    """
+    Extract metadata/notes from lines before data start line.
+
+    Parameters:
+        file_path (str): Path to the delimited text file.
+        data_start_line (int): Line number where data starts (1-indexed).
+        encoding (str): File encoding.
+
+    Returns:
+        str: Concatenated metadata lines as a single string.
+    """
+    metadata_lines = []
+
+    try:
+        with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+            for line_num in range(1, data_start_line):
+                line = f.readline()
+                if not line:
+                    break
+                metadata_lines.append(line.rstrip('\n'))
+
+    except Exception as e:
+        print(f"Error extracting metadata: {e}")
+
+    return '\n'.join(metadata_lines)
+
+
 def load_csv_file(file_path: str, delimiter: str = ',',
-                  config: CSVProcessingConfig = None) -> Tuple[Optional[pd.DataFrame], str]:
+                  config: CSVProcessingConfig = None) -> Tuple[Optional[pd.DataFrame], str, str]:
     """
     Load a CSV/TSV file into a pandas DataFrame.
-    
+
     Parameters:
         file_path (str): Path to the CSV/TSV file.
         delimiter (str): Delimiter character or string.
         config (CSVProcessingConfig, optional): Processing configuration.
-        
+
     Returns:
-        Tuple[DataFrame or None, str]: Loaded DataFrame and status message.
+        Tuple[DataFrame or None, str, str]: Loaded DataFrame, status message, and metadata.
     """
     if config is None:
         config = CSVProcessingConfig()
 
     try:
+        # Extract metadata from lines before data start
+        metadata = extract_metadata(file_path, config.data_start_line, config.encoding)
+
+        # Calculate skiprows for pandas (0-indexed, skip lines before data_start_line)
+        # data_start_line is 1-indexed, so skiprows = data_start_line - 1
+        # If data_start_line = 1, we skip 0 rows (read from first line)
+        # If data_start_line = 5, we skip 4 rows (lines 1-4), read from line 5
+        pandas_skiprows = list(range(config.data_start_line - 1)) if config.data_start_line > 1 else None
+
         # Load the CSV file with specified delimiter
+        # First row after skipped lines becomes the header
         df = pd.read_csv(
             file_path,
             delimiter=delimiter,
             encoding=config.encoding,
-            skiprows=config.skip_rows,
+            skiprows=pandas_skiprows,
             skip_blank_lines=config.skip_empty_lines,
             engine='python'  # Use python engine for better delimiter support
         )
 
         status_msg = f"Successfully loaded {file_path}: {df.shape[0]} rows, {df.shape[1]} columns"
-        return df, status_msg
+        return df, status_msg, metadata
 
     except Exception as e:
         error_msg = f"Error loading {file_path}: {str(e)}"
-        return None, error_msg
+        return None, error_msg, ""
 
 
 def load_multiple_csv_files(file_paths: List[str], delimiter: str = ',',
-                            config: CSVProcessingConfig = None) -> Dict[str, pd.DataFrame]:
+                           config: CSVProcessingConfig = None) -> Dict[str, Tuple[pd.DataFrame, str]]:
     """
     Load multiple CSV/TSV files.
-    
+
     Parameters:
         file_paths (List[str]): List of file paths.
         delimiter (str): Delimiter character or string.
         config (CSVProcessingConfig, optional): Processing configuration.
-        
+
     Returns:
-        Dict[str, DataFrame]: Dictionary mapping filenames to DataFrames.
+        Dict[str, Tuple[DataFrame, str]]: Dictionary mapping filenames to (DataFrame, metadata) tuples.
     """
     results = {}
 
     for file_path in file_paths:
-        df, status_msg = load_csv_file(file_path, delimiter, config)
+        df, status_msg, metadata = load_csv_file(file_path, delimiter, config)
         if df is not None:
             filename = os.path.basename(file_path)
-            results[filename] = df
+            results[filename] = (df, metadata)
 
     return results
 
@@ -261,10 +307,10 @@ def load_multiple_csv_files(file_paths: List[str], delimiter: str = ',',
 def infer_numeric_columns(df: pd.DataFrame) -> Dict[str, bool]:
     """
     Infer which columns in a DataFrame are numeric.
-    
+
     Parameters:
         df (pd.DataFrame): Input DataFrame.
-        
+
     Returns:
         Dict[str, bool]: Dictionary mapping column names to numeric status.
     """
@@ -280,6 +326,7 @@ def infer_numeric_columns(df: pd.DataFrame) -> Dict[str, bool]:
             # Consider numeric if more than 90% of values are numeric
             is_numeric = (numeric_count / non_null_count) > 0.9 if non_null_count > 0 else False
             numeric_status[col] = is_numeric
+
         except Exception:
             numeric_status[col] = False
 
@@ -293,7 +340,7 @@ def infer_numeric_columns(df: pd.DataFrame) -> Dict[str, bool]:
 class VeuszPlotter:
     """
     Handles plot generation in Veusz for CSV/TSV data.
-    
+
     This class wraps the Veusz embedding API to create publication-quality
     plots from pandas DataFrames loaded from CSV/TSV files.
     """
@@ -302,7 +349,7 @@ class VeuszPlotter:
                  dataset_name: str = "CSVDataset"):
         """
         Initialize Veusz plotter.
-        
+
         Parameters:
             plot_title (str): Title for the plot window.
             dataset_name (str): Base name for datasets in Veusz.
@@ -319,16 +366,19 @@ class VeuszPlotter:
             print(f"Warning: Could not initialize Veusz: {e}")
 
     def create_xy_plot(self, df: pd.DataFrame, x_column: str, y_columns: List[str],
-                       plot_config: PlotConfig = None) -> bool:
+                      plot_config: PlotConfig = None, filename_tag: str = None,
+                      metadata: str = None) -> bool:
         """
         Create an XY plot in Veusz from DataFrame columns.
-        
+
         Parameters:
             df (pd.DataFrame): Input DataFrame.
             x_column (str): Name of column to use for X axis.
             y_columns (List[str]): Names of columns to use for Y axes.
             plot_config (PlotConfig, optional): Plot configuration.
-            
+            filename_tag (str, optional): Tag to apply to datasets (typically source filename).
+            metadata (str, optional): Metadata/notes to add to plot.
+
         Returns:
             bool: True if successful, False otherwise.
         """
@@ -346,22 +396,41 @@ class VeuszPlotter:
             # Create graph
             graph = grid.Add('graph', name='MainPlot')
 
+            # Add metadata/notes to graph if provided
+            if metadata:
+                # Add text widget for notes at the bottom of the graph
+                text_note = page.Add('text', name='Notes')
+                text_note.Text.val = metadata
+                text_note.xPos.val = 0.1
+                text_note.yPos.val = 0.95
+                text_note.Text.val = f"Metadata/Notes:\n{metadata}"
+
             # Add data to Veusz
             # X data
             x_data = df[x_column].dropna().values.tolist()
-            self.doc.SetData(f'{self.dataset_name}_X', x_data)
+            x_dataset_name = f'{self.dataset_name}_X'
+            self.doc.SetData(x_dataset_name, x_data)
+
+            # Apply tag to X dataset if provided
+            if filename_tag:
+                self.doc.SetDataTag(x_dataset_name, filename_tag)
 
             # Y data for each column
             colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown']
 
             for idx, y_col in enumerate(y_columns):
                 y_data = df[y_col].dropna().values.tolist()
-                self.doc.SetData(f'{self.dataset_name}_Y{idx}', y_data)
+                y_dataset_name = f'{self.dataset_name}_Y{idx}'
+                self.doc.SetData(y_dataset_name, y_data)
+
+                # Apply tag to Y dataset if provided
+                if filename_tag:
+                    self.doc.SetDataTag(y_dataset_name, filename_tag)
 
                 # Create XY plot
                 xy_plot = graph.Add('xy', name=f'Plot_{y_col}',
-                                    xData=f'{self.dataset_name}_X',
-                                    yData=f'{self.dataset_name}_Y{idx}')
+                                  xData=x_dataset_name,
+                                  yData=y_dataset_name)
 
                 # Configure appearance
                 with self._wrap_widget(xy_plot) as plot:
@@ -407,10 +476,10 @@ class VeuszPlotter:
     def save_project(self, file_path: str) -> bool:
         """
         Save Veusz project to file.
-        
+
         Parameters:
             file_path (str): Path where to save the Veusz project.
-            
+
         Returns:
             bool: True if successful, False otherwise.
         """
@@ -427,11 +496,11 @@ class VeuszPlotter:
     def export_plot(self, file_path: str, format_type: str = 'png') -> bool:
         """
         Export plot to image file.
-        
+
         Parameters:
             file_path (str): Output file path.
             format_type (str): Format ('png', 'pdf', 'svg', etc.).
-            
+
         Returns:
             bool: True if successful, False otherwise.
         """
@@ -445,7 +514,7 @@ class VeuszPlotter:
                 page = pages[0]
                 # Export using Veusz's export function
                 self.doc.Export(file_path, format=format_type, page=page.name)
-            return True
+                return True
         except Exception as e:
             print(f"Error exporting plot: {e}")
             return False
@@ -453,7 +522,7 @@ class VeuszPlotter:
     def open_gui(self, file_path: str = None):
         """
         Open the Veusz GUI window.
-        
+
         Parameters:
             file_path (str, optional): Optional file path to open.
         """
@@ -482,7 +551,7 @@ class VeuszPlotter:
 class PreviewCanvas(FigureCanvas):
     """
     Matplotlib canvas for previewing data plots.
-    
+
     This canvas displays a live preview of selected columns from the
     loaded CSV/TSV data to help users verify their selections before
     generating final plots in Veusz.
@@ -491,7 +560,7 @@ class PreviewCanvas(FigureCanvas):
     def __init__(self, parent=None, width=8, height=6, dpi=100):
         """
         Initialize preview canvas.
-        
+
         Parameters:
             parent (QWidget, optional): Parent widget.
             width (float): Figure width in inches.
@@ -506,7 +575,7 @@ class PreviewCanvas(FigureCanvas):
                   plot_config: PlotConfig = None):
         """
         Plot data on the canvas.
-        
+
         Parameters:
             df (pd.DataFrame): Input DataFrame.
             x_column (str): Column name for X axis.
@@ -533,12 +602,12 @@ class PreviewCanvas(FigureCanvas):
 
             if len(valid_idx) > 0:
                 ax.plot(x_data[valid_idx], y_data[valid_idx],
-                        color=colors[idx % len(colors)],
-                        marker=plot_config.marker_style,
-                        markersize=plot_config.marker_size,
-                        linestyle=plot_config.line_style,
-                        linewidth=plot_config.line_width,
-                        label=y_col, alpha=0.7)
+                       color=colors[idx % len(colors)],
+                       marker=plot_config.marker_style,
+                       markersize=plot_config.marker_size,
+                       linestyle=plot_config.line_style,
+                       linewidth=plot_config.line_width,
+                       label=y_col, alpha=0.7)
 
         # Configure axes
         ax.set_xlabel(plot_config.x_label, fontsize=12)
@@ -566,7 +635,7 @@ class PreviewCanvas(FigureCanvas):
 class CSVAutoPlotMainWindow(QMainWindow):
     """
     Main application window for CSV/TSV AutoPlot.
-    
+
     Provides a comprehensive GUI for loading delimited text files, configuring
     parsing options, previewing data, and generating plots in Veusz.
     """
@@ -579,7 +648,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         # Data storage
         self.selected_files = []
-        self.loaded_data = {}  # Dict[filename, DataFrame]
+        self.loaded_data = {}  # Dict[filename, (DataFrame, metadata)]
 
         # Configuration
         self.csv_config = CSVProcessingConfig()
@@ -587,7 +656,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         # Setup UI
         self.setup_ui()
-
         self.log_message("CSV/TSV AutoPlot initialized successfully")
         self.log_message("Browse for CSV or TSV files to begin")
 
@@ -595,7 +663,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
         """Set up the user interface."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-
         main_layout = QVBoxLayout(central_widget)
 
         # ====== FILE SELECTION AREA ======
@@ -610,11 +677,9 @@ class CSVAutoPlotMainWindow(QMainWindow):
         browse_btn.clicked.connect(self.browse_files)
         clear_btn = QPushButton("Clear Files")
         clear_btn.clicked.connect(self.clear_files)
-
         button_layout.addWidget(browse_btn)
         button_layout.addWidget(clear_btn)
         button_layout.addStretch()
-
         left_layout.addLayout(button_layout)
 
         self.file_list_widget = QListWidget()
@@ -622,9 +687,10 @@ class CSVAutoPlotMainWindow(QMainWindow):
         left_layout.addWidget(QLabel("Loaded Files:"))
         left_layout.addWidget(self.file_list_widget)
 
-        # Right side: Delimiter configuration
+        # Right side: Delimiter and data start line configuration
         right_layout = QVBoxLayout()
 
+        # Delimiter configuration
         delimiter_group = QGroupBox("Delimiter Configuration")
         delimiter_form = QFormLayout(delimiter_group)
 
@@ -646,34 +712,74 @@ class CSVAutoPlotMainWindow(QMainWindow):
             btn.setMaximumWidth(80)
             preset_layout.addWidget(btn)
         preset_layout.addStretch()
-        delimiter_form.addRow("Presets:", QWidget())  # placeholder
-        # Add preset layout to form properly
-        form_layout = QVBoxLayout()
-        form_layout.addWidget(delimiter_group)
 
+        right_layout.addWidget(delimiter_group)
+
+        # Delimiter presets group
         delimiter_group2 = QGroupBox("Delimiter Presets")
         preset_form = QVBoxLayout(delimiter_group2)
         preset_form.addLayout(preset_layout)
-        form_layout.addWidget(delimiter_group2)
+        right_layout.addWidget(delimiter_group2)
 
-        right_layout.addLayout(form_layout)
+        # Data start line configuration
+        data_start_group = QGroupBox("Data Start Line Configuration")
+        data_start_form = QFormLayout(data_start_group)
+
+        self.data_start_line_spinbox = QSpinBox()
+        self.data_start_line_spinbox.setMinimum(1)
+        self.data_start_line_spinbox.setMaximum(10000)
+        self.data_start_line_spinbox.setValue(1)
+        self.data_start_line_spinbox.setToolTip(
+            "Line number where data starts (1-indexed).\n"
+            "This should be the line with column headers,\n"
+            "or the first data row if no headers exist."
+        )
+        self.data_start_line_spinbox.valueChanged.connect(self.on_data_start_line_changed)
+        data_start_form.addRow("Data Start Line:", self.data_start_line_spinbox)
+
+        help_label = QLabel(
+            "Lines before this will be treated as metadata/notes.\n"
+            "The line at this number should contain column headers\n"
+            "or be the first row of data if no headers exist."
+        )
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("QLabel { color: gray; font-size: 10px; }")
+        data_start_form.addRow("", help_label)
+
+        right_layout.addWidget(data_start_group)
         right_layout.addStretch()
 
         file_layout.addLayout(left_layout, 1)
         file_layout.addLayout(right_layout, 0)
-
         main_layout.addWidget(file_group)
 
-        # ====== DATA PREVIEW AREA ======
-        preview_group = QGroupBox("Data Preview")
+        # ====== DATA PREVIEW AREA (Split: Notes + Data) ======
+        preview_group = QGroupBox("File Preview (Notes and Data)")
         preview_layout = QVBoxLayout(preview_group)
 
-        # Table widget for data preview
+        # Create splitter for notes and data previews
+        preview_splitter = QSplitter(Qt.Vertical)
+
+        # Notes preview
+        notes_widget = QWidget()
+        notes_layout = QVBoxLayout(notes_widget)
+        notes_layout.addWidget(QLabel("Notes/Metadata (First 13 lines before data start):"))
+        self.notes_preview_text = QTextEdit()
+        self.notes_preview_text.setReadOnly(True)
+        self.notes_preview_text.setMaximumHeight(150)
+        notes_layout.addWidget(self.notes_preview_text)
+        preview_splitter.addWidget(notes_widget)
+
+        # Data preview
+        data_widget = QWidget()
+        data_layout = QVBoxLayout(data_widget)
+        data_layout.addWidget(QLabel("Data Preview (First 13 rows):"))
         self.data_preview_table = QTableWidget()
         self.data_preview_table.setMaximumHeight(200)
-        preview_layout.addWidget(QLabel("First 10 rows:"))
-        preview_layout.addWidget(self.data_preview_table)
+        data_layout.addWidget(self.data_preview_table)
+        preview_splitter.addWidget(data_widget)
 
+        preview_layout.addWidget(preview_splitter)
         main_layout.addWidget(preview_group)
 
         # ====== COLUMN SELECTION FOR PLOTTING ======
@@ -698,7 +804,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
         column_layout.addLayout(selection_form)
         column_layout.addWidget(y_label)
         column_layout.addWidget(self.y_columns_list)
-
         main_layout.addWidget(column_group)
 
         # ====== PLOT CONFIGURATION ======
@@ -738,14 +843,12 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         generate_btn = QPushButton("Generate Plots in Veusz")
         generate_btn.clicked.connect(self.generate_plots)
-
         export_btn = QPushButton("Export Preview as Image")
         export_btn.clicked.connect(self.export_preview)
 
         button_layout.addWidget(generate_btn)
         button_layout.addWidget(export_btn)
         button_layout.addStretch()
-
         main_layout.addWidget(button_group)
 
         # ====== STATUS/LOGGING AREA ======
@@ -774,27 +877,21 @@ class CSVAutoPlotMainWindow(QMainWindow):
     def load_files(self):
         """Load selected files into memory."""
         delimiter = self.delimiter_input.text() or ','
+        self.csv_config.data_start_line = self.data_start_line_spinbox.value()
 
         for file_path in self.selected_files:
-            if file_path not in [os.path.join(d, f) for d, f in
-                                 [os.path.split(self._get_file_path(name))
-                                  for name in self.loaded_data.keys()]]:
-                df, msg = load_csv_file(file_path, delimiter, self.csv_config)
+            filename = os.path.basename(file_path)
+
+            # Check if file is already loaded
+            if filename not in self.loaded_data:
+                df, msg, metadata = load_csv_file(file_path, delimiter, self.csv_config)
                 if df is not None:
-                    filename = os.path.basename(file_path)
-                    self.loaded_data[filename] = df
+                    self.loaded_data[filename] = (df, metadata)
                     self.log_message(msg)
                 else:
                     self.log_message(msg)
 
         self.update_file_list()
-
-    def _get_file_path(self, filename: str) -> str:
-        """Get full file path from filename."""
-        for file_path in self.selected_files:
-            if os.path.basename(file_path) == filename:
-                return file_path
-        return ""
 
     def update_file_list(self):
         """Update the file list widget."""
@@ -809,6 +906,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         self.update_file_list()
         self.update_column_selectors()
         self.preview_canvas.clear_plot()
+        self.notes_preview_text.clear()
         self.log_message("File list cleared")
 
     def on_file_selection_changed(self):
@@ -818,6 +916,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
             filename = current_item.text()
             self.update_column_selectors(filename)
             self.display_data_preview(filename)
+            self.display_notes_preview(filename)
             self.log_message(f"Selected: {filename}")
 
     def update_column_selectors(self, filename: str = None):
@@ -826,7 +925,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         self.y_columns_list.clear()
 
         if filename and filename in self.loaded_data:
-            df = self.loaded_data[filename]
+            df, _ = self.loaded_data[filename]
             columns = df.columns.tolist()
 
             self.x_column_combo.addItems(columns)
@@ -841,10 +940,10 @@ class CSVAutoPlotMainWindow(QMainWindow):
         if filename not in self.loaded_data:
             return
 
-        df = self.loaded_data[filename]
+        df, _ = self.loaded_data[filename]
 
-        # Show first 10 rows
-        preview_df = df.head(10)
+        # Show first 13 rows
+        preview_df = df.head(13)
 
         self.data_preview_table.setRowCount(preview_df.shape[0])
         self.data_preview_table.setColumnCount(preview_df.shape[1])
@@ -857,6 +956,19 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         # Resize columns to content
         self.data_preview_table.resizeColumnsToContents()
+
+    def display_notes_preview(self, filename: str):
+        """Display a preview of the notes/metadata."""
+        if filename not in self.loaded_data:
+            return
+
+        _, metadata = self.loaded_data[filename]
+
+        # Show first 13 lines of metadata
+        metadata_lines = metadata.split('\n')[:13]
+        preview_metadata = '\n'.join(metadata_lines)
+
+        self.notes_preview_text.setPlainText(preview_metadata)
 
     def auto_detect_delimiter(self):
         """Auto-detect delimiter from currently selected file."""
@@ -873,6 +985,13 @@ class CSVAutoPlotMainWindow(QMainWindow):
             self.delimiter_input.setText(detected_delim)
             self.log_message(f"Auto-detected delimiter: {repr(detected_delim)}")
 
+    def _get_file_path(self, filename: str) -> str:
+        """Get full file path from filename."""
+        for file_path in self.selected_files:
+            if os.path.basename(file_path) == filename:
+                return file_path
+        return ""
+
     def set_delimiter(self, delimiter: str):
         """Set the delimiter and reload files."""
         self.delimiter_input.setText(delimiter)
@@ -886,6 +1005,13 @@ class CSVAutoPlotMainWindow(QMainWindow):
         self.loaded_data.clear()
         self.load_files()
 
+    def on_data_start_line_changed(self):
+        """Handle data start line change."""
+        # Reload files with new data start line
+        self.loaded_data.clear()
+        self.load_files()
+        self.log_message(f"Data start line set to: {self.data_start_line_spinbox.value()}")
+
     def on_plot_config_changed(self):
         """Handle plot configuration change."""
         # Update preview
@@ -897,7 +1023,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         if filename not in self.loaded_data:
             return
 
-        df = self.loaded_data[filename]
+        df, _ = self.loaded_data[filename]
 
         # Get selected columns
         x_column = self.x_column_combo.currentText()
@@ -939,14 +1065,14 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 return
 
             filename = current_item.text()
-            df = self.loaded_data[filename]
+            df, metadata = self.loaded_data[filename]
 
             x_column = self.x_column_combo.currentText()
             y_columns = [item.text() for item in self.y_columns_list.selectedItems()]
 
             if not x_column or not y_columns:
                 QMessageBox.warning(self, "No Columns Selected",
-                                    "Please select X and Y columns")
+                                  "Please select X and Y columns")
                 return
 
             # Create Veusz plot
@@ -956,14 +1082,18 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 dataset_name=f"{base_filename}_Data"
             )
 
-            # Create XY plot
-            success = plotter.create_xy_plot(df, x_column, y_columns, self.plot_config)
+            # Create XY plot with filename tag and metadata
+            success = plotter.create_xy_plot(
+                df, x_column, y_columns, 
+                self.plot_config,
+                filename_tag=filename,
+                metadata=metadata
+            )
 
             if success:
                 # Save project
-                project_path = os.path.join(output_dir, f"{base_filename}_plot.vszh5")
+                project_path = os.path.join(output_dir, f"{base_filename}_plot.vsz")
                 plotter.save_project(project_path)
-
                 self.log_message(f"Plot created successfully: {project_path}")
 
                 # Ask to open in Veusz
@@ -981,6 +1111,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error generating plots: {str(e)}")
             self.log_message(f"Plot generation error: {str(e)}")
+            traceback.print_exc()
 
     def export_preview(self):
         """Export the preview plot as an image."""
