@@ -12,7 +12,7 @@ NEW FEATURES IN THIS VERSION:
 - Data start line configuration
 - Dual preview panes (metadata + data)
 - Multi-file support with flexible column matching
-- NaN filling for missing columns across files
+- ALL loaded files are plotted (file selection only affects preview)
 - Logging of missing columns to text file
 - Metadata stored in page notes (not displayed on plot)
 
@@ -35,11 +35,11 @@ Typical Workflow:
 2. Browse and select CSV/TSV files (can have different column structures)
 3. Configure delimiter (auto-detect or manual)
 4. Set data start line (where actual data begins)
-5. Preview metadata and data
+5. Preview metadata and data (select file in list for preview)
 6. Select columns for plotting (matched by column name across files)
 7. Configure plot options (title, labels, legend, etc.)
 8. Enable logging if you want missing column reports
-9. Generate plots in separate Veusz window (metadata in page notes)
+9. Generate plots in separate Veusz window (ALL loaded files plotted)
 10. Save Veusz file for later use (.vszh5 format)
 
 Author: Based on William W. Wallace's framework
@@ -297,6 +297,9 @@ def load_csv_file(file_path: str, delimiter: str = ',',
             on_bad_lines='warn'
         )
 
+        # Clean column names (strip whitespace and trailing commas)
+        df.columns = df.columns.str.strip().str.rstrip(',')
+
         status_msg = f"Successfully loaded {os.path.basename(file_path)}: {df.shape[0]} rows, {df.shape[1]} columns"
         if metadata_lines:
             status_msg += f" (skipped {len(metadata_lines)} metadata lines)"
@@ -437,7 +440,7 @@ class VeuszPlotter:
                     continue
 
                 # Get X data
-                x_data = df[x_column].dropna().values.tolist()
+                x_data = pd.to_numeric(df[x_column], errors='coerce').dropna().values.tolist()
                 x_dataset_name = f'{self.dataset_name}_X_{file_idx}'
                 self.doc.SetData(x_dataset_name, x_data)
 
@@ -451,7 +454,7 @@ class VeuszPlotter:
                         continue
 
                     # Get Y data
-                    y_data = df[y_col].dropna().values.tolist()
+                    y_data = pd.to_numeric(df[y_col], errors='coerce').dropna().values.tolist()
                     y_dataset_name = f'{self.dataset_name}_Y_{file_idx}_{y_col}'
                     self.doc.SetData(y_dataset_name, y_data)
 
@@ -593,12 +596,13 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
     Supports multiple files with different column structures.
     Metadata stored in page notes (not displayed on plot).
+    ALL loaded files are plotted (file selection only affects preview).
     """
 
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
-        self.setWindowTitle("CSV/TSV AutoPlot - Multi-File Support with Flexible Column Matching")
+        self.setWindowTitle("CSV/TSV AutoPlot - Multi-File Support (All Files Plotted)")
         self.setGeometry(100, 100, 1400, 950)
 
         self.selected_files = []
@@ -613,9 +617,8 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         self.log_message("CSV/TSV AutoPlot with Multi-File Support initialized")
         self.log_message("Browse for CSV or TSV files to begin")
-        self.log_message("NOTE: Files can have different column structures")
-        self.log_message("Columns are matched by NAME across files")
-        self.log_message("Metadata stored in Veusz page notes (not on plot)")
+        self.log_message("NOTE: ALL loaded files will be plotted together")
+        self.log_message("File selection only affects data preview")
 
     def setup_ui(self):
         """Set up the user interface."""
@@ -643,11 +646,15 @@ class CSVAutoPlotMainWindow(QMainWindow):
         left_layout.addLayout(button_layout)
 
         self.file_list_widget = QListWidget()
-        self.file_list_widget.setSelectionMode(QListWidget.MultiSelection)  # Allow multiple selection
+        self.file_list_widget.setSelectionMode(QListWidget.SingleSelection)  # Single selection for preview only
         self.file_list_widget.itemSelectionChanged.connect(self.on_file_selection_changed)
 
-        left_layout.addWidget(QLabel("Loaded Files (select multiple):"))
+        left_layout.addWidget(QLabel("Loaded Files (select for preview only):"))
         left_layout.addWidget(self.file_list_widget)
+
+        preview_note = QLabel("⚠️ ALL loaded files will be plotted (selection only for preview)")
+        preview_note.setStyleSheet("QLabel { color: #cc6600; font-weight: bold; }")
+        left_layout.addWidget(preview_note)
 
         # Right side: Delimiter and Data Start Line configuration
         right_layout = QVBoxLayout()
@@ -722,7 +729,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         main_layout.addWidget(file_group)
 
         # ====== DUAL PREVIEW AREA (Metadata + Data) ======
-        preview_group = QGroupBox("File Preview (First Selected File)")
+        preview_group = QGroupBox("File Preview (Selected File Only)")
         preview_layout = QVBoxLayout(preview_group)
 
         # Metadata preview
@@ -734,7 +741,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
         preview_layout.addWidget(self.metadata_preview)
 
         # Data preview
-        preview_layout.addWidget(QLabel("Data Preview (first 13 rows):"))
+        preview_layout.addWidget(QLabel("Data Preview (first 10 rows):"))
         self.data_preview_table = QTableWidget()
         self.data_preview_table.setMaximumHeight(200)
         preview_layout.addWidget(self.data_preview_table)
@@ -795,16 +802,16 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
         # ====== MATPLOTLIB PREVIEW ======
         self.preview_canvas = PreviewCanvas(width=8, height=2.5)
-        main_layout.addWidget(QLabel("Matplotlib Preview (First Selected File):"))
+        main_layout.addWidget(QLabel("Matplotlib Preview (Selected File Only):"))
         main_layout.addWidget(self.preview_canvas)
 
         # ====== ACTION BUTTONS ======
         button_group = QGroupBox("")
         button_layout = QHBoxLayout(button_group)
 
-        self.generate_btn = QPushButton("Generate Plots from All Selected Files")
+        self.generate_btn = QPushButton("Generate Plots from ALL Loaded Files")
         self.generate_btn.clicked.connect(self.generate_plots)
-        self.generate_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; }")
+        self.generate_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #4CAF50; color: white; }")
 
         self.save_veusz_btn = QPushButton("Save Veusz File (.vszh5)")
         self.save_veusz_btn.clicked.connect(self.save_veusz_file)
@@ -887,25 +894,24 @@ class CSVAutoPlotMainWindow(QMainWindow):
         """Handle file selection change."""
         selected_items = self.file_list_widget.selectedItems()
         if selected_items:
-            # Show preview of first selected file
-            first_filename = selected_items[0].text()
-            self.display_data_preview(first_filename)
-            self.display_metadata_preview(first_filename)
-            self.log_message(f"Selected {len(selected_items)} file(s) for plotting")
+            # Show preview of selected file
+            filename = selected_items[0].text()
+            self.display_data_preview(filename)
+            self.display_metadata_preview(filename)
+            self.log_message(f"Previewing: {filename}")
 
     # ========================================================================
     # DELIMITER AND DATA START LINE METHODS
     # ========================================================================
 
     def auto_detect_delimiter(self):
-        """Auto-detect delimiter from first selected file."""
-        selected_items = self.file_list_widget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "No File Selected", "Please select a file first")
+        """Auto-detect delimiter from first loaded file."""
+        if not self.loaded_data:
+            QMessageBox.warning(self, "No Files Loaded", "Please load files first")
             return
 
-        filename = selected_items[0].text()
-        file_path = self._get_file_path(filename)
+        first_filename = list(self.loaded_data.keys())[0]
+        file_path = self._get_file_path(first_filename)
 
         if file_path:
             start_line = self.data_start_line_spinbox.value()
@@ -1021,10 +1027,14 @@ class CSVAutoPlotMainWindow(QMainWindow):
         """Handle plot configuration change."""
         selected_items = self.file_list_widget.selectedItems()
         if not selected_items:
-            return
+            # Preview first file
+            if self.loaded_data:
+                first_filename = list(self.loaded_data.keys())[0]
+            else:
+                return
+        else:
+            first_filename = selected_items[0].text()
 
-        # Preview first selected file
-        first_filename = selected_items[0].text()
         if first_filename not in self.loaded_data:
             return
 
@@ -1053,15 +1063,9 @@ class CSVAutoPlotMainWindow(QMainWindow):
     # ========================================================================
 
     def generate_plots(self):
-        """Generate plots in Veusz from all selected files."""
+        """Generate plots in Veusz from ALL loaded files."""
         if not self.loaded_data:
             QMessageBox.warning(self, "No Data", "Please load CSV/TSV files first")
-            return
-
-        selected_items = self.file_list_widget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "No Files Selected", 
-                              "Please select one or more files to plot")
             return
 
         try:
@@ -1072,13 +1076,6 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 QMessageBox.warning(self, "No Columns Selected",
                                   "Please select X and Y columns")
                 return
-
-            # Get selected files data
-            selected_file_data = {}
-            for item in selected_items:
-                filename = item.text()
-                if filename in self.loaded_data:
-                    selected_file_data[filename] = self.loaded_data[filename]
 
             # Create logger if enabled
             logger = None
@@ -1095,9 +1092,9 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 dataset_name="MultiFileData"
             )
 
-            # Create multi-file plot
+            # Create multi-file plot using ALL loaded data
             success = self.veusz_plotter.create_multi_file_plot(
-                selected_file_data, x_column, y_columns,
+                self.loaded_data, x_column, y_columns,
                 self.plot_config,
                 logger
             )
@@ -1109,10 +1106,10 @@ class CSVAutoPlotMainWindow(QMainWindow):
 
             if success:
                 self.save_veusz_btn.setEnabled(True)
-                self.log_message(f"✓ Plot generated from {len(selected_file_data)} file(s)")
+                self.log_message(f"✓ Plot generated from ALL {len(self.loaded_data)} file(s)")
                 self.log_message("✓ Metadata stored in Veusz page notes")
                 QMessageBox.information(self, "Success",
-                                      f"Plot generated from {len(selected_file_data)} file(s).\n\n" +
+                                      f"Plot generated from ALL {len(self.loaded_data)} loaded file(s).\n\n" +
                                       "A separate Veusz window has opened with the plot.\n" +
                                       "Columns were matched by name across files.\n" +
                                       "Metadata is stored in page notes (Edit → Page Properties → Notes).\n" +
