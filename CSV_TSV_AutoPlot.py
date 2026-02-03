@@ -447,7 +447,7 @@ class VeuszPlotter:
                 datasets_created.append(x_dataset_name)
 
                 # Tag dataset with file name
-                self.doc.TagDatasets(x_dataset_name, [filename, 'X-axis', x_column])
+                self.doc.TagDatasets(filename, [filename, 'X-axis', x_column])
                 print(f"    Created X dataset: {x_dataset_name} ({len(x_data)} points)")
 
                 # Process each Y column
