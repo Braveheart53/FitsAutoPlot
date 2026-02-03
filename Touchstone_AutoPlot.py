@@ -631,6 +631,8 @@ class TouchstonePlotter:
                     phase_deg = np.angle(s_param, deg=True)
                 self.doc.SetData(mag_name, mag_db)
                 self.doc.SetData(phase_name, phase_deg)
+                # Adding tag to datasets just created
+                self.doc.TagDatasets(dataset_name,[mag_name, phase_name, freq_name])
                 xy_mag = graph_mag.Add('xy', name=f"{param_name}_mag")
                 self._configure_xy_plot(xy_mag, freq_name, mag_name, get_sparam_color(param_name))
                 xy_phase = graph_phase.Add('xy', name=f"{param_name}_phase")
@@ -659,6 +661,7 @@ class TouchstonePlotter:
         self.doc.SetData(time_name, time_data)
         self.doc.SetData(td_unfilt_name, np.abs(td_unfilt_data))
         self.doc.SetData(td_filt_name, np.abs(td_filt_data))
+        self.doc.TagDatasets(dataset_name, [time_name, td_unfilt_name, td_filt_name])
         td_page_name = f"{dataset_name}_{param_name}_TimeDomain"
         page_td = self.doc.Root.Add('page', name=td_page_name)
         grid_td = page_td.Add('grid', columns=2)
@@ -736,9 +739,11 @@ class TouchstonePlotter:
         self.doc.SetData(time_name, time_data)
         self.doc.SetData(td_unfilt_name, np.abs(td_unfilt_data))
         self.doc.SetData(td_gated_name, np.abs(td_gated_data))
+        self.doc.TagDatasets(dataset_name, [time_name, td_unfilt_name, td_gated_name])
         tg_page_name = f"{dataset_name}_{param_name}_TimeGated"
         page_tg = self.doc.Root.Add('page', name=tg_page_name)
         # Determine grid layout based on what's being plotted
+        # TODO: look at this plotting call and correct
         num_cols = 1
         if plot_time_domain and plot_frequency_domain:
             num_cols = 2
@@ -793,6 +798,7 @@ class TouchstonePlotter:
             self.doc.SetData(freq_name_gated, fft_freqs_ghz)
             self.doc.SetData(mag_name_unfilt, mag_db_unfilt)
             self.doc.SetData(mag_name_gated, mag_db_gated)
+            self.doc.TagDatasets(dataset_name, [freq_name_unfilt, freq_name_gated, mag_name_unfilt, mag_name_gated)
             graph_tg_freq = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Freq_Graph")
             graph_title_freq = f"{dataset_name.replace('_', ' ')} - {param_name} Gated Frequency Domain"
             self._configure_standard_graph(graph_tg_freq, graph_title_freq, 'Frequency (GHz)', 'Magnitude (dB)', -80,
@@ -810,6 +816,7 @@ class TouchstonePlotter:
                 plot.MarkerFill.color.val = 'blue'
                 plot.MarkerLine.color.val = 'blue'
             # Plot gated FFT (solid line, 40% transparent)
+            # TODO: this seems to be a problem
             xy_gated_freq = graph_tg_freq.Add('xy', name=f"{param_name}_timegated_gated_freq")
             self._configure_xy_plot(xy_gated_freq, freq_name_gated, mag_name_gated, get_sparam_color(param_name),
                                     transparency=40)
