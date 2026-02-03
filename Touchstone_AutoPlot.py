@@ -20,9 +20,11 @@ capabilities using scikit-rf, including:
 Author: William W. Wallace
 Last updated: 2026-01-27 (CORRECTIONS APPLIED)
 """
-# TODO: Data sets are not being tagged with their file names, see RandS FSW script for a good example of where this works
+# TODO: should be fixed now, need to test: Data sets are not being tagged with their file names, see RandS FSW script
+#  for a good example of where this works
 # TODO: Fix the options selection and generate the time gated freq domain plots in veusz
 # TODO: Recview interactive HTML smith chart
+# TODO: fix long path issue
 # ============================================================================
 # IMPORTS - Standard Library
 # ============================================================================
