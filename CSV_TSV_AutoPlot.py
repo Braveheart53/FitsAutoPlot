@@ -14,12 +14,18 @@ NEW FEATURES IN THIS VERSION:
 - Multi-file support with flexible column matching
 - ALL loaded files are plotted (file selection only affects preview)
 - Overlaid plot + individual plots for each file
-- Datasets tagged with original file names
+- Datasets properly named and tagged per file
 - Page names use file names for easy navigation
 - Logging of missing columns to text file
 - Metadata stored in page notes (not displayed on plot)
 - Fixed blank lines in column selectors
 - Matplotlib removed (Veusz-only plotting)
+
+DATASET ORGANIZATION:
+- Each file has its own datasets: filename_columnname
+- All datasets from a file are tagged together with the filename
+- No data mixing between files
+- Each trace uses its own file's X and Y datasets
 
 Key Features:
 - Support for arbitrary delimiter characters/strings (comma, tab, semicolon, etc.)
@@ -144,9 +150,7 @@ class PlotConfig:
 # ============================================================================
 
 class ColumnLogger:
-    """
-    Handles logging of missing columns across multiple files.
-    """
+    """Handles logging of missing columns across multiple files."""
 
     def __init__(self, log_file_path: str):
         """
@@ -311,25 +315,23 @@ class VeuszPlotter:
     plots from pandas DataFrames. The Veusz window opens separately with
     full toolbar enabled.
 
-    Supports multiple files with different column structures - columns are
-    matched by name, and missing columns are filled with NaN.
-
-    Metadata is stored in page notes (not displayed on plot).
+    DATASET ORGANIZATION:
+    - Each file has its own datasets named: filename_columnname
+    - All datasets from a file are tagged together with filename as tag
+    - No data mixing between files
+    - Each trace references its own file's X and Y datasets
 
     Creates both overlaid plot (all files) and individual plots per file.
     """
 
-    def __init__(self, plot_title: str = "CSV Data Plot",
-                 dataset_name: str = "CSVDataset"):
+    def __init__(self, plot_title: str = "CSV Data Plot"):
         """
         Initialize Veusz plotter with embedded API.
 
         Parameters:
             plot_title (str): Title for the plot window.
-            dataset_name (str): Base name for datasets in Veusz.
         """
         self.plot_title = plot_title
-        self.dataset_name = dataset_name
         self.doc = None
 
         try:
@@ -351,8 +353,14 @@ class VeuszPlotter:
         1. Overlaid plot (all files on one graph) on "All Files" page
         2. Individual plots for each file on separate pages
 
-        Metadata from all files is stored in page notes (not displayed on plot).
-        All datasets are tagged with their original file names.
+        DATASET NAMING:
+        - Format: filename_columnname
+        - Example: DATASET000.csv_Freq. [Hz]
+
+        DATASET TAGGING:
+        - All datasets from a file tagged with filename
+        - Example: self.doc.TagDatasets('DATASET000.csv', 
+                     ['DATASET000.csv_Freq. [Hz]', 'DATASET000.csv_Min. [dBm]'])
 
         Parameters:
             file_data_dict (Dict): Dictionary mapping filename to (DataFrame, metadata).
@@ -413,9 +421,63 @@ class VeuszPlotter:
             print("="*80)
 
             # ====================================================================
-            # PAGE 1: OVERLAID PLOT (ALL FILES)
+            # STEP 1: CREATE ALL DATASETS FOR ALL FILES
             # ====================================================================
-            print("\n[1/2] Creating overlaid plot page (all files)...")
+            print("\n[STEP 1/3] Creating datasets for all files...")
+
+            # Dictionary to track datasets created per file
+            # Format: {filename: [list of dataset names for this file]}
+            file_datasets = {}
+
+            for filename, (df, metadata) in file_data_dict.items():
+                print(f"\n  Processing file: {filename}")
+                available_columns = df.columns.tolist()
+
+                if logger:
+                    logger.log_available_columns(filename, available_columns)
+
+                # List to store dataset names for this file
+                datasets_for_this_file = []
+
+                # Create X dataset if column exists
+                if x_column in available_columns:
+                    x_data = pd.to_numeric(df[x_column], errors='coerce').dropna().values.tolist()
+                    x_dataset_name = f'{filename}_{x_column}'
+                    self.doc.SetData(x_dataset_name, x_data)
+                    datasets_for_this_file.append(x_dataset_name)
+                    print(f"    ✓ Created X dataset: {x_dataset_name} ({len(x_data)} points)")
+                else:
+                    if logger:
+                        logger.log_missing_column(filename, x_column)
+                    print(f"    ✗ X column '{x_column}' not found in {filename}")
+                    continue
+
+                # Create Y datasets for each Y column that exists
+                for y_col in y_columns:
+                    if y_col in available_columns:
+                        y_data = pd.to_numeric(df[y_col], errors='coerce').dropna().values.tolist()
+                        y_dataset_name = f'{filename}_{y_col}'
+                        self.doc.SetData(y_dataset_name, y_data)
+                        datasets_for_this_file.append(y_dataset_name)
+                        print(f"    ✓ Created Y dataset: {y_dataset_name} ({len(y_data)} points)")
+                    else:
+                        if logger:
+                            logger.log_missing_column(filename, y_col)
+                        print(f"    ⚠ Y column '{y_col}' not found in {filename}")
+
+                # Tag all datasets for this file with the filename
+                if datasets_for_this_file:
+                    self.doc.TagDatasets(filename, datasets_for_this_file)
+                    file_datasets[filename] = datasets_for_this_file
+                    print(f"    ✓ Tagged {len(datasets_for_this_file)} datasets with '{filename}'")
+
+            print(f"\n  Total files processed: {len(file_datasets)}")
+            print(f"  Total datasets created: {sum(len(ds) for ds in file_datasets.values())}")
+
+            # ====================================================================
+            # STEP 2: CREATE OVERLAID PLOT (ALL FILES)
+            # ====================================================================
+            print("\n[STEP 2/3] Creating overlaid plot page (all files)...")
             page_overlaid = self.doc.Root.Add('page', name='All_Files_Overlaid')
             page_overlaid.notes.val = metadata_str
 
@@ -423,53 +485,24 @@ class VeuszPlotter:
             graph_overlaid = grid_overlaid.Add('graph', name='AllFilesPlot')
 
             plot_index = 0
-            datasets_created = []
 
-            # Process each file for overlaid plot
-            for file_idx, (filename, (df, metadata)) in enumerate(file_data_dict.items()):
-                print(f"  Processing {filename} for overlaid plot...")
+            # Create traces for each file
+            for filename, datasets in file_datasets.items():
+                df, _ = file_data_dict[filename]
                 available_columns = df.columns.tolist()
 
-                if logger:
-                    logger.log_available_columns(filename, available_columns)
+                # Get X dataset name
+                x_dataset_name = f'{filename}_{x_column}'
 
-                # Check if X column exists
-                if x_column not in available_columns:
-                    if logger:
-                        logger.log_missing_column(filename, x_column)
-                    print(f"    WARNING: X column '{x_column}' not found in {filename}, skipping file")
-                    continue
-
-                # Get X data
-                x_data = pd.to_numeric(df[x_column], errors='coerce').dropna().values.tolist()
-                x_dataset_name = f'{self.dataset_name}_X_{file_idx}_{filename}'
-                self.doc.SetData(x_dataset_name, x_data)
-                datasets_created.append(x_dataset_name)
-
-                # Tag dataset with file name
-                self.doc.TagDatasets(filename, [filename, 'X-axis', x_column])
-                print(f"    Created X dataset: {x_dataset_name} ({len(x_data)} points)")
-
-                # Process each Y column
+                # Create XY plot for each Y column in this file
                 for y_col in y_columns:
                     if y_col not in available_columns:
-                        if logger:
-                            logger.log_missing_column(filename, y_col)
-                        print(f"    WARNING: Y column '{y_col}' not found in {filename}, skipping")
                         continue
 
-                    # Get Y data
-                    y_data = pd.to_numeric(df[y_col], errors='coerce').dropna().values.tolist()
-                    y_dataset_name = f'{self.dataset_name}_Y_{file_idx}_{filename}_{y_col}'
-                    self.doc.SetData(y_dataset_name, y_data)
-                    datasets_created.append(y_dataset_name)
+                    y_dataset_name = f'{filename}_{y_col}'
 
-                    # Tag dataset with file name
-                    self.doc.TagDatasets(y_dataset_name, [filename, 'Y-axis', y_col])
-                    print(f"    Created Y dataset: {y_dataset_name} ({len(y_data)} points)")
-
-                    # Create XY plot
-                    plot_name = f'{filename}_{y_col}'.replace(' ', '_').replace('.', '_')
+                    # Create XY plot (scatter plot / line plot)
+                    plot_name = f'{filename}_{y_col}'.replace(' ', '_').replace('.', '_').replace('[', '').replace(']', '')
                     xy_plot = graph_overlaid.Add('xy', name=plot_name,
                                                 xData=x_dataset_name,
                                                 yData=y_dataset_name)
@@ -480,7 +513,7 @@ class VeuszPlotter:
                     xy_plot.PlotLine.width.val = f'{plot_config.line_width}pt'
                     xy_plot.marker.val = 'none'  # No markers for cleaner overlay
 
-                    print(f"    Created XY plot: {plot_name} ({colors[plot_index % len(colors)]})")
+                    print(f"    ✓ Created trace: {plot_name} ({colors[plot_index % len(colors)]})")
                     plot_index += 1
 
             # Configure overlaid graph
@@ -494,20 +527,17 @@ class VeuszPlotter:
             print(f"  ✓ Overlaid plot complete with {plot_index} traces")
 
             # ====================================================================
-            # PAGES 2+: INDIVIDUAL PLOTS FOR EACH FILE
+            # STEP 3: CREATE INDIVIDUAL PLOTS FOR EACH FILE
             # ====================================================================
-            print("\n[2/2] Creating individual file plot pages...")
+            print("\n[STEP 3/3] Creating individual file plot pages...")
 
             individual_plots_created = 0
 
-            for file_idx, (filename, (df, metadata)) in enumerate(file_data_dict.items()):
-                print(f"  Processing {filename} for individual plot...")
+            for filename, datasets in file_datasets.items():
+                df, metadata = file_data_dict[filename]
                 available_columns = df.columns.tolist()
 
-                # Check if X column exists
-                if x_column not in available_columns:
-                    print(f"    Skipping: X column not found")
-                    continue
+                print(f"\n  Creating page for: {filename}")
 
                 # Create page for this file (use filename without extension as page name)
                 page_name = os.path.splitext(filename)[0].replace(' ', '_').replace('.', '_').replace('-', '_')
@@ -530,6 +560,7 @@ class VeuszPlotter:
 
                 file_notes.append(f"Data shape: {df.shape[0]} rows × {df.shape[1]} columns")
                 file_notes.append(f"Columns: {', '.join(df.columns.tolist())}")
+                file_notes.append(f"Datasets: {', '.join(datasets)}")
                 file_notes.append("")
                 file_notes.append("="*80)
 
@@ -539,10 +570,10 @@ class VeuszPlotter:
                 grid_individual = page_individual.Add('grid', columns=1, rows=1)
                 graph_individual = grid_individual.Add('graph', name=f'{page_name}_Plot')
 
-                # Get X data (reuse from overlaid plot)
-                x_dataset_name = f'{self.dataset_name}_X_{file_idx}_{filename}'
+                # Get X dataset name
+                x_dataset_name = f'{filename}_{x_column}'
 
-                # Process each Y column for this file
+                # Create traces for each Y column in this file
                 plot_color_index = 0
                 y_plots_created = 0
 
@@ -550,11 +581,10 @@ class VeuszPlotter:
                     if y_col not in available_columns:
                         continue
 
-                    # Reuse Y data from overlaid plot
-                    y_dataset_name = f'{self.dataset_name}_Y_{file_idx}_{filename}_{y_col}'
+                    y_dataset_name = f'{filename}_{y_col}'
 
                     # Create XY plot
-                    plot_name = f'{y_col}'.replace(' ', '_').replace('.', '_')
+                    plot_name = f'{y_col}'.replace(' ', '_').replace('.', '_').replace('[', '').replace(']', '')
                     xy_plot = graph_individual.Add('xy', name=plot_name,
                                                   xData=x_dataset_name,
                                                   yData=y_dataset_name)
@@ -583,7 +613,9 @@ class VeuszPlotter:
             print(f"✓ PLOT GENERATION COMPLETE")
             print(f"  - Overlaid plot: 1 page with {plot_index} traces")
             print(f"  - Individual plots: {individual_plots_created} pages")
-            print(f"  - Total datasets: {len(datasets_created)}")
+            print(f"  - Total datasets: {sum(len(ds) for ds in file_datasets.values())}")
+            print(f"  - Dataset naming: filename_columnname")
+            print(f"  - Dataset tagging: All datasets per file tagged with filename")
             print("="*80 + "\n")
 
             return True
@@ -633,6 +665,11 @@ class CSVAutoPlotMainWindow(QMainWindow):
     Metadata stored in page notes (not displayed on plot).
     ALL loaded files are plotted (file selection only affects preview).
     Creates overlaid plot + individual plots per file.
+
+    DATASET ORGANIZATION:
+    - Each file has its own datasets: filename_columnname
+    - All datasets from file tagged with filename
+    - No data mixing between files
     """
 
     def __init__(self):
@@ -652,7 +689,8 @@ class CSVAutoPlotMainWindow(QMainWindow):
         self.setup_ui()
 
         self.log_message("CSV/TSV AutoPlot initialized")
-        self.log_message("Ready to load files and create plots")
+        self.log_message("Dataset naming: filename_columnname")
+        self.log_message("Dataset tagging: All file datasets tagged with filename")
 
     def setup_ui(self):
         """Set up the user interface."""
@@ -1089,10 +1127,7 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 logger = ColumnLogger(log_file_path)
                 self.log_message(f"Logging enabled: {log_file_path}")
 
-            self.veusz_plotter = VeuszPlotter(
-                plot_title=self.plot_config.title,
-                dataset_name="MultiFileData"
-            )
+            self.veusz_plotter = VeuszPlotter(plot_title=self.plot_config.title)
 
             success = self.veusz_plotter.create_multi_file_plot(
                 self.loaded_data, x_column, y_columns,
@@ -1111,17 +1146,17 @@ class CSVAutoPlotMainWindow(QMainWindow):
                 self.log_message("✓ PLOT GENERATION SUCCESSFUL")
                 self.log_message(f"  - Overlaid plot created with all {num_files} files")
                 self.log_message(f"  - {num_files} individual plots created")
-                self.log_message("  - All datasets tagged with file names")
-                self.log_message("  - Metadata stored in page notes")
+                self.log_message("  - Dataset naming: filename_columnname")
+                self.log_message("  - Dataset tagging: All file datasets tagged with filename")
                 self.log_message("="*60)
 
                 QMessageBox.information(self, "Success",
                                       f"✓ Generated plots from {num_files} file(s):\n\n" +
                                       f"• Page 1: Overlaid plot (all files)\n" +
                                       f"• Pages 2-{num_files+1}: Individual plots\n\n" +
-                                      "Navigate between pages using the page tabs.\n" +
-                                      "All datasets are tagged with their file names.\n" +
-                                      "Metadata is in page notes (Edit → Page).") 
+                                      "Dataset naming: filename_columnname\n" +
+                                      "Dataset tagging: All file datasets tagged with filename\n\n" +
+                                      "Navigate between pages using the page tabs.")
             else:
                 self.log_message("✗ Plot generation failed")
                 QMessageBox.critical(self, "Error", "Failed to create plot in Veusz")
