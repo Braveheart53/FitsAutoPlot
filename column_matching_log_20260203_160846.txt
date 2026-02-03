@@ -1,0 +1,20 @@
+================================================================================
+CSV/TSV AutoPlot - Column Matching Log
+Generated: 2026-02-03 16:08:48
+================================================================================
+
+File: DATASET000.csv | Available columns: Freq. [Hz], Min. [dBm], Max. [dBm]
+File: DATASET000.csv | Missing column: Magnitude [dBm]
+File: DATASET001.csv | Available columns: Freq. [Hz], Magnitude [dBm], 
+File: DATASET001.csv | Missing column: Max. [dBm]
+File: DATASET001.csv | Missing column: Min. [dBm]
+File: DATASET002.csv | Available columns: Freq. [Hz], Magnitude [dBm], 
+File: DATASET002.csv | Missing column: Max. [dBm]
+File: DATASET002.csv | Missing column: Min. [dBm]
+File: DATASET003.csv | Available columns: Freq. [Hz], Magnitude [dBm], 
+File: DATASET003.csv | Missing column: Max. [dBm]
+File: DATASET003.csv | Missing column: Min. [dBm]
+
+================================================================================
+Total log entries: 11
+================================================================================
