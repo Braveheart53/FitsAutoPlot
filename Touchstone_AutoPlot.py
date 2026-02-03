@@ -798,7 +798,7 @@ class TouchstonePlotter:
             self.doc.SetData(freq_name_gated, fft_freqs_ghz)
             self.doc.SetData(mag_name_unfilt, mag_db_unfilt)
             self.doc.SetData(mag_name_gated, mag_db_gated)
-            self.doc.TagDatasets(dataset_name, [freq_name_unfilt, freq_name_gated, mag_name_unfilt, mag_name_gated)
+            self.doc.TagDatasets(dataset_name, [freq_name_unfilt, freq_name_gated, mag_name_unfilt, mag_name_gated])
             graph_tg_freq = grid_tg.Add('graph', name=f"{dataset_name}_{param_name}_TG_Freq_Graph")
             graph_title_freq = f"{dataset_name.replace('_', ' ')} - {param_name} Gated Frequency Domain"
             self._configure_standard_graph(graph_tg_freq, graph_title_freq, 'Frequency (GHz)', 'Magnitude (dB)', -80,
