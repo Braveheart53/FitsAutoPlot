@@ -1,4 +1,0 @@
-CSV/TSV AutoPlot V5 Log - 2026-02-03 22:59:36
-============================================================
-
-[22:59:36] Error creating plots: WidgetNode does not have attribute or child 'width'
