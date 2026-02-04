@@ -1,0 +1,4 @@
+CSV/TSV AutoPlot V5 Log - 2026-02-03 23:03:40
+============================================================
+
+[23:03:41] Error creating plots: name 'notes_test' is not defined

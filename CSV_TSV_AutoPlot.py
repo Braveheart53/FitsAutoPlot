@@ -394,14 +394,15 @@ class VeuszPlotter:
                 else:
                     notes_text += "(No metadata lines before header)\n"
                 notes_text += "\n"
-            
-            page.Add('label', name='PageNotes')
-            page.PageNotes.Text.val = notes_text
-            page.PageNotes.hide.val = False
-            page.PageNotes.xPos.val = 0.02
-            page.PageNotes.yPos.val = 0.02
-            page.PageNotes.width.val = 0.3
-            page.PageNotes.height.val = 0.2
+            # TODO: Add to page notes
+            print(notes_text)
+            # page.Add('label', name='PageNotes')
+            # page.PageNotes.Text.val = notes_text
+            # page.PageNotes.hide.val = False
+            # page.PageNotes.xPos.val = 0.02
+            # page.PageNotes.yPos.val = 0.02
+            # page.PageNotes.width.val = 0.3
+            # page.PageNotes.height.val = 0.2
             
             # Calculate grid dimensions (1 overlay + N individual plots)
             num_files = len(data_dict)
