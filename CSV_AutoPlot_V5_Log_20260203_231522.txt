@@ -1,0 +1,11 @@
+CSV/TSV AutoPlot V5 Log - 2026-02-03 23:15:22
+============================================================
+
+[23:15:31] WARNING: Y column 'Magnitude [dBm]' not found in DATASET000.csv - skipping
+[23:15:32] WARNING: Y column 'Max. [dBm]' not found in DATASET001.csv - skipping
+[23:15:32] WARNING: Y column 'Min. [dBm]' not found in DATASET001.csv - skipping
+[23:15:32] WARNING: Y column 'Max. [dBm]' not found in DATASET002.csv - skipping
+[23:15:32] WARNING: Y column 'Min. [dBm]' not found in DATASET002.csv - skipping
+[23:15:32] WARNING: Y column 'Max. [dBm]' not found in DATASET003.csv - skipping
+[23:15:32] WARNING: Y column 'Min. [dBm]' not found in DATASET003.csv - skipping
+[23:16:54] Error creating plots: 

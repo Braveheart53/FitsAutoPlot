@@ -395,7 +395,8 @@ class VeuszPlotter:
                     notes_text += "(No metadata lines before header)\n"
                 notes_text += "\n"
             # TODO: Add to page notes
-            print(notes_text)
+
+            page.notes.val = notes_text
             # page.Add('label', name='PageNotes')
             # page.PageNotes.Text.val = notes_text
             # page.PageNotes.hide.val = False
@@ -489,8 +490,9 @@ class VeuszPlotter:
                 
                 if plot_config.show_legend:
                     key = g.Add('key')
-                    key.hide.val = False
-                    key.horzPosn.val = 'tr'
+                    # TODO: Take ANother Look at this
+                    # key.hide.val = "False"
+                    # key.horzPosn.val = 'tr'
             
             # ========== CREATE INDIVIDUAL PLOTS (one per file) ==========
             for filename, df in data_dict.items():
