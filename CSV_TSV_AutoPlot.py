@@ -38,7 +38,7 @@ Installation:
 pip install pandas numpy veusz pyside6
 
 Usage:
-python CSV_TSV_AutoPlot_V5.py
+python CSV_TSV_AutoPlot.py
 """
 
 import datetime

@@ -997,10 +997,21 @@ class TouchstonePlotCanvas(FigureCanvas):
 # PROCESSING THREAD
 # ============================================================================
 def process_single_touchstone_file(file_info: Tuple) -> Tuple[str, Optional[dict]]:
-    """Worker function to process a single Touchstone file."""
+    """Worker function to process a single Touchstone file (V3: with long path support)."""
     filepath, _ = file_info
     try:
-        network = Network(filepath)
+        # V3: Normalize path
+        filepath_normalized = str(normalize_path(filepath))  # ← This creates the variable
+
+        # V3: Validate path length
+        is_valid, msg = validate_path_length(filepath_normalized, "file processing")
+        if not is_valid:
+            print(f"ERROR: {msg}")
+            return os.path.basename(filepath), None
+        elif msg:
+            print(msg)
+
+        network = Network(filepath_normalized)  # ← Using normalized path
         filename = os.path.basename(filepath)
         header_info = []
         try:
