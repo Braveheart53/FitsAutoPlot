@@ -87,4 +87,4 @@ psutil ^
 qt6-main
 ````
 
-A [detailed google doc is available for Python Environment Creation Direction](<https://docs.google.com/document/d/1roQzx02ZDnD8I1MvyUEJWbL53ArOPD9zG1YbmjY1jFs/edit?usp=sharing>)
+A [detailed google doc is available for Python Environment Creation Direction](<https://docs.google.com/document/d/1roQzx02ZDnD8I1MvyUEJWbL53ArOPD9zG1YbmjY1jFs/view?usp=sharing>)
