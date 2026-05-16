@@ -112,6 +112,14 @@ Date: 2026-05-16
 #               line per column instead of N lines per file.  The
 #               concatenated x is also emitted as a Veusz date-time
 #               dataset for the datetime-duplicate page.
+#               Fix: AutoPlotMainWindow.log() previously assumed
+#               ``self.status_text`` already existed, but subclass
+#               ``_populate_options()`` runs during _build_central_widget
+#               BEFORE that widget is created and legitimately calls
+#               log() (e.g. "GPU backend: ...").  log() now buffers any
+#               pre-widget messages and flushes them as soon as
+#               status_text is constructed, eliminating the
+#               AttributeError seen at startup.
 Date: 2026-05-16
 # %%%% 0.0.11: Added datetime-duplicate plot support.  Plots whose x axis
 #              is a Modified Julian Date column (or any column known to be
@@ -1063,6 +1071,17 @@ class AutoPlotMainWindow(QMainWindow):
         self.status_text.setReadOnly(True)
         self.status_text.setMinimumHeight(150)
         root.addWidget(self.status_text)
+        # v0.0.12: flush any messages buffered by log() during the
+        # subclass _populate_options() call above, which ran before
+        # status_text existed.
+        pending = getattr(self, "_pending_log", None)
+        if pending:
+            for ln in pending:
+                try:
+                    self.status_text.append(ln)
+                except Exception:
+                    pass
+            self._pending_log = []
 
         # Progress bars (read + parse/push + per-column)
         # %% Progress bars
@@ -1152,9 +1171,35 @@ class AutoPlotMainWindow(QMainWindow):
 
     # ----- log / status -----------------------------------------------------
     def log(self, msg: str) -> None:
-        self.status_text.append("[%s] %s" % (time.strftime("%H:%M:%S"), msg))
+        # v0.0.12: subclass _populate_options() runs before the log widget
+        # exists, so any early log() calls (e.g. "GPU backend: ...") would
+        # AttributeError on self.status_text.  Buffer messages emitted
+        # before the widget exists, then flush them once the widget is
+        # built.  Also guard ensureCursorVisible() against a stray None.
+        line = "[%s] %s" % (time.strftime("%H:%M:%S"), msg)
+        widget = getattr(self, "status_text", None)
+        if widget is None:
+            buf = getattr(self, "_pending_log", None)
+            if buf is None:
+                buf = []
+                self._pending_log = buf
+            buf.append(line)
+            return
+        # Drain any pre-widget buffer first so messages appear in order.
+        pending = getattr(self, "_pending_log", None)
+        if pending:
+            for ln in pending:
+                try:
+                    widget.append(ln)
+                except Exception:
+                    pass
+            self._pending_log = []
         try:
-            self.status_text.ensureCursorVisible()
+            widget.append(line)
+        except Exception:
+            pass
+        try:
+            widget.ensureCursorVisible()
         except Exception:
             pass
 
