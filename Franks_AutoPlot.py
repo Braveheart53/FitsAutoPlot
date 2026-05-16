@@ -196,6 +196,7 @@ from _autoplot_common import (   # noqa: E402
     gpu_argsort, is_gpu_available, enable_gpu, gpu_backend_name,
     # v0.0.11: datetime-duplicate helpers
     mjd_to_veusz_seconds, style_datetime_x_axis,
+    set_datetime_dataset,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
@@ -493,20 +494,13 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                     pass
             secs = mjd_to_veusz_seconds(arr_mjd)
             dt_name = "%s__%s__dt" % (base, safe_dsname(sort_key))
-            try:
-                doc.SetDataDateTime(dt_name, list(secs))
+            if set_datetime_dataset(doc, dt_name, secs, log_cb=log_cb):
                 datetime_x_name = dt_name
                 try:
                     doc.TagDatasets(base, [dt_name])
                     doc.TagDatasets("sorted", [dt_name])
                 except Exception:
                     pass
-                if log_cb:
-                    log_cb("  Datetime-duplicate dataset: %s" % dt_name)
-            except Exception as exc:
-                if log_cb:
-                    log_cb("  SetDataDateTime failed for %s: %s"
-                           % (dt_name, exc))
         elif log_cb:
             log_cb("  Datetime duplicate skipped: %s epoch unknown"
                    % sort_key)
@@ -868,7 +862,10 @@ def build_unit_overlay_pages_franks(doc, file_records,
                 mjds_s = mjds[order]
                 dt_secs = mjd_to_veusz_seconds(mjds_s)
                 dt_name = "OverlayCat__%s__x__dt" % c_safe
-                doc.SetDataDateTime(dt_name, list(dt_secs))
+                if not set_datetime_dataset(
+                    doc, dt_name, dt_secs, log_cb=log_cb
+                ):
+                    dt_name = None
             except Exception as _exc:
                 if log_cb:
                     log_cb("  Overlay '%s' datetime build failed: %s"

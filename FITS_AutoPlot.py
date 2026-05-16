@@ -234,6 +234,7 @@ from _autoplot_common import (   # noqa: E402
     register_nrao_fits_units, suppress_fits_unit_warnings,
     detect_time_breaks, make_broken_x_axis,
     mjd_to_veusz_seconds, style_datetime_x_axis,
+    set_datetime_dataset,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
@@ -795,6 +796,11 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         # per-tag datetime x.  Untagged HDUs keep the original single-dt
         # behaviour for backward compatibility.
         datetime_x_name = None
+        if datetime_duplicate and log_cb:
+            log_cb("  Datetime-duplicate requested (sort_key=%s)"
+                   % (sort_key,))
+        if datetime_duplicate and sort_key is None and log_cb:
+            log_cb("  Datetime duplicate skipped: no sort_key for this file")
         if datetime_duplicate and sort_key is not None:
             sk_hdu, sk_col = sort_key
             upper_sk = sk_col.upper()
@@ -843,17 +849,20 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                 base, safe_dsname(sk_hdu),
                                 safe_dsname(sk_col), tag_suffix,
                             )
-                            doc.SetDataDateTime(dt_name, list(secs))
-                            sorted_names.append(dt_name)
-                            bucket = per_tag_sorted_names \
-                                .setdefault(sk_hdu, {}) \
-                                .setdefault(tup, {})
-                            bucket["__dt__"] = dt_name
+                            ok = set_datetime_dataset(
+                                doc, dt_name, secs, log_cb=log_cb
+                            )
+                            if ok:
+                                sorted_names.append(dt_name)
+                                bucket = per_tag_sorted_names \
+                                    .setdefault(sk_hdu, {}) \
+                                    .setdefault(tup, {})
+                                bucket["__dt__"] = dt_name
                         except Exception as exc:
                             if log_cb:
                                 log_cb(
-                                    "  SetDataDateTime failed for tag %s: %s"
-                                    % (tup, exc)
+                                    "  SetDataDateTime build failed for "
+                                    "tag %s: %s" % (tup, exc)
                                 )
                     if log_cb:
                         log_cb(
@@ -873,17 +882,11 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                     dt_name = "%s__%s__%s__dt" % (
                         base, safe_dsname(sk_hdu), safe_dsname(sk_col)
                     )
-                    try:
-                        doc.SetDataDateTime(dt_name, list(secs))
+                    if set_datetime_dataset(
+                        doc, dt_name, secs, log_cb=log_cb
+                    ):
                         datetime_x_name = dt_name
                         sorted_names.append(dt_name)
-                        if log_cb:
-                            log_cb("  Datetime-duplicate dataset: %s"
-                                   % dt_name)
-                    except Exception as exc:
-                        if log_cb:
-                            log_cb("  SetDataDateTime failed for %s: %s"
-                                   % (dt_name, exc))
             elif log_cb:
                 log_cb("  Datetime duplicate skipped: %s epoch unknown"
                        % sk_col)
@@ -1587,10 +1590,12 @@ def build_unit_overlay_pages(doc, file_records,
                     dt_name = "OverlayCat__%s__%s__%s__%s__x__dt" % (
                         u_safe, h_safe, c_safe, t_safe
                     )
-                    doc.SetDataDateTime(dt_name, list(dt_secs))
-                    dt_eligible.append(
-                        (hname, col, tup, dt_name, y_name, i)
-                    )
+                    if set_datetime_dataset(
+                        doc, dt_name, dt_secs, log_cb=log_cb
+                    ):
+                        dt_eligible.append(
+                            (hname, col, tup, dt_name, y_name, i)
+                        )
                 except Exception as _exc:
                     if log_cb:
                         log_cb("  Overlay '%s.%s [%s]' datetime build "
