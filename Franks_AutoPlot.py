@@ -29,52 +29,59 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
-# %%%% 0.0.1: Initial implementation, FranksProcessed file support
-Date: 2026-05-16
-# %%%% 0.0.2: Added "Generate MJD->date strings" checkbox.  Whenever the
-#             parsed file contains an MJD column, ticking the option emits
-#             two additional Veusz text datasets (raw + sorted) of
-#             YYYY-MM-DD_HH:MM:SS strings tagged with the file's base name
-#             plus ``datestr``.
-Date: 2026-05-16
-# %%%% 0.0.3: NaN-preserving emission policy.  When a Franks token is
-#             missing or non-numeric the parser now records ``NaN`` in the
-#             numeric column (length-preserving) AND keeps the text token
-#             ("" for fully missing) in the text companion -- rows are
-#             never dropped.  Veusz numeric datasets carry the NaN through;
-#             non-finite MJDs in the optional date-string text datasets
-#             become the sentinel string ``"NaN"`` so all per-row arrays
-#             retain the same length and stay index-aligned.
-Date: 2026-05-16
-# %%%% 0.0.5: _on_done() now calls QApplication.processEvents() between
-#             every per-file push so the GUI stays responsive (log pane
-#             scrolls live, buttons remain clickable) during a long
-#             batch insert -- previously the window could appear stuck
-#             when processing many .t00new files in one batch.
-#             (No 0.0.4: aligned with FITS_AutoPlot.py version stream.)
-# %%%% 0.0.6: Added Spyder IDE cell markers (# %% / # %%%) at all major
-#             section banners and import subsections so the file can be
-#             navigated and run cell-by-cell in Spyder's Outline view.
-#             Cosmetic only -- no behavior change.
-Date: 2026-05-16
-# %%%% 0.0.7: Added two new progress bars in the GUI -- a 'Parsing/pushing'
-#             file-level bar that ticks once per file as push_franks_to_veusz()
-#             finishes that file, and a 'Current file - columns' bar that
-#             ticks per source column.  push_franks_to_veusz() gained a
-#             ``column_cb(done, total)`` parameter.  No skip-images knob
-#             here (Franks files have no image HDUs).
-Date: 2026-05-16
-# %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
+# %%%% 0.0.14: Datetime via xy.labels per-point text labels.
 # Date: 2026-05-16
+#                * The v0.0.11..0.0.13 dt-duplicate pages used a Veusz
+#                  date-time x axis driven by SetDataDateTime.  On Veusz
+#                  3.4 (current NRAO production) that path fires hundreds
+#                  of internal exceptions inside Veusz's date code.  The
+#                  v0.0.14 dt-duplicate pages keep the SAME numeric
+#                  seconds x dataset as the seconds page, and instead
+#                  bind a TEXT dataset to ``xy.labels.val`` so every
+#                  data point carries its own "YYYY-MM-DD HH:MM:SS"
+#                  label rendered in place.  No SetDataDateTime calls.
+#                * Two label datasets are built per trace:
+#                    - sparse (~10 evenly spaced anchors; the rest are
+#                      empty strings so they render as nothing)
+#                    - full   (one label per data point)
+#                  Both are always pushed; the new GUI checkbox
+#                  "Use full per-point date labels" toggles which one
+#                  is bound by default.
+#                * Per-trace style sub-group ``xy.Label`` is set to
+#                  angle=45deg, size=6pt, posnVert=centre, posnHorz=left
+#                  by style_xy_datetime_labels().
+#                * dt-page x axis stays NUMERIC -- style_datetime_x_axis
+#                  is no longer called on the dt-page x axis.
+
+# %%%% 0.0.13: Identity-stable trace styling + datetime-duplicate hardening.
 # Date: 2026-05-16
+#                * Every xy widget (per-file, datetime-duplicate, and
+#                  cross-file column-overlay) is now styled by
+#                  apply_trace_style() with identity key
+#                  (column_name, (None,)).  The same column keeps the
+#                  SAME colour and line style on every page it appears on
+#                  -- the seconds page, the datetime-duplicate page, and
+#                  the cross-file overlay -- so it is easy to follow a
+#                  single column (e.g. DELTAT) through the document.
+#                * Line is shown by default with a 1pt width; markers
+#                  shrink to 1pt.  vary_style is False everywhere because
+#                  every Franks graph carries exactly one trace.
+#                * SetDataDateTime calls now go through
+#                  set_datetime_dataset(), which coerces every value to a
+#                  plain Python float (NaN/inf -> 0.0) and logs the
+#                  outcome.  Plugged in at the single-file dt site and
+#                  the overlay dt site.
+
 # %%%% 0.0.12: Combined-in-time overlay semantics.
+# Date: 2026-05-16
 #              build_unit_overlay_pages_franks now collapses each shared
 #              column onto a single time-sorted xy trace stitched across
 #              every file (legend names the column, e.g. 'DELTAT').  The
 #              datetime-axis duplicate page mirrors the concatenation
 #              with the Veusz-seconds version of the same x.
-Date: 2026-05-16
+
 # %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
+# Date: 2026-05-16
 #              checkbox 'Duplicate plots with datetime X axis' makes
 #              push_franks_to_veusz emit a companion Veusz date-time
 #              dataset built from the file's MJD column (MJD->Veusz
@@ -87,8 +94,9 @@ Date: 2026-05-16
 #              ``datetime_duplicate`` kwarg; the cross-file overlay is
 #              cloned the same way.  Helpers ``mjd_to_veusz_seconds``
 #              and ``style_datetime_x_axis`` live in _autoplot_common.
-Date: 2026-05-16
+
 # %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
+# Date: 2026-05-16
 #              When the 'Use GPU acceleration (CuPy)' checkbox is
 #              checked and CuPy is importable on the host, the large
 #              MJD-sort permutation is dispatched to ``gpu_argsort``
@@ -97,7 +105,9 @@ Date: 2026-05-16
 #              samples.  Smaller files still use NumPy.  CuPy is a soft
 #              dependency: the checkbox is disabled and tooltipped when
 #              CuPy is absent.
+
 # %%%% 0.0.9: Per-plot broken-x-axis on time gaps + column-name overlay
+# Date: 2026-05-16
 #             pages.  push_franks_to_veusz() now takes new keyword args
 #             ``plot_individual`` (default True), ``gap_k`` (default 10.0),
 #             and ``gap_absolute`` (default 0.0); when ``plot_individual``
@@ -130,8 +140,53 @@ Date: 2026-05-16
 #                 ``self.mark_project_saved(written)`` to enable it so the
 #                 user can launch the full Veusz GUI in the current Python
 #                 env on the freshly saved project.
-Date: 2026-05-16
 # %%%%% Function Descriptions
+
+# %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
+# Date: 2026-05-16
+
+# %%%% 0.0.7: Added two new progress bars in the GUI -- a 'Parsing/pushing'
+# Date: 2026-05-16
+#             file-level bar that ticks once per file as push_franks_to_veusz()
+#             finishes that file, and a 'Current file - columns' bar that
+#             ticks per source column.  push_franks_to_veusz() gained a
+#             ``column_cb(done, total)`` parameter.  No skip-images knob
+#             here (Franks files have no image HDUs).
+
+# %%%% 0.0.6: Added Spyder IDE cell markers (# %% / # %%%) at all major
+# Date: 2026-05-16
+#             section banners and import subsections so the file can be
+#             navigated and run cell-by-cell in Spyder's Outline view.
+#             Cosmetic only -- no behavior change.
+
+# %%%% 0.0.5: _on_done() now calls QApplication.processEvents() between
+# Date: 2026-05-16
+#             every per-file push so the GUI stays responsive (log pane
+#             scrolls live, buttons remain clickable) during a long
+#             batch insert -- previously the window could appear stuck
+#             when processing many .t00new files in one batch.
+#             (No 0.0.4: aligned with FITS_AutoPlot.py version stream.)
+
+# %%%% 0.0.3: NaN-preserving emission policy.  When a Franks token is
+# Date: 2026-05-16
+#             missing or non-numeric the parser now records ``NaN`` in the
+#             numeric column (length-preserving) AND keeps the text token
+#             ("" for fully missing) in the text companion -- rows are
+#             never dropped.  Veusz numeric datasets carry the NaN through;
+#             non-finite MJDs in the optional date-string text datasets
+#             become the sentinel string ``"NaN"`` so all per-row arrays
+#             retain the same length and stay index-aligned.
+
+# %%%% 0.0.2: Added "Generate MJD->date strings" checkbox.  Whenever the
+# Date: 2026-05-16
+#             parsed file contains an MJD column, ticking the option emits
+#             two additional Veusz text datasets (raw + sorted) of
+#             YYYY-MM-DD_HH:MM:SS strings tagged with the file's base name
+#             plus ``datestr``.
+
+# %%%% 0.0.1: Initial implementation, FranksProcessed file support
+# Date: 2026-05-16
+
         main: build QApplication and open the AutoPlot main window.
         FranksAutoPlotWindow: qtpy main window with the Touchstone-style
             file list / options / log / progress layout and the View menu
@@ -194,12 +249,19 @@ from _autoplot_common import (   # noqa: E402
     mjd_to_datestr,
     detect_time_breaks, make_broken_x_axis,
     gpu_argsort, is_gpu_available, enable_gpu, gpu_backend_name,
-    # v0.0.11: datetime-duplicate helpers
+    # v0.0.11: datetime-duplicate helpers (legacy SetDataDateTime path,
+    # retained only for backward-compatibility -- v0.0.14 no longer calls
+    # them on dt-pages).
     mjd_to_veusz_seconds, style_datetime_x_axis,
     set_datetime_dataset,
+    # v0.0.13: identity-stable trace styling
+    apply_trace_style, TRACE_STYLE_VARY_THRESHOLD,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
+    # v0.0.14: per-point datetime labels via xy.labels.val
+    build_sparse_datestr_dataset, build_full_datestr_dataset,
+    style_xy_datetime_labels,
 )
 
 # v0.0.11: Franks files always use MJD as their sort key, so the upper-cased
@@ -379,7 +441,8 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                          plot_individual: bool = True,
                          gap_k: float = 10.0,
                          gap_absolute: float = 0.0,
-                         datetime_duplicate: bool = False) -> None:
+                         datetime_duplicate: bool = False,
+                         datetime_full_labels: bool = False) -> None:
     """Push parsed Franks columns into the running embedded Veusz document.
 
     ``column_cb(done, total)`` -- optional, ticked once per source column
@@ -465,12 +528,20 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
     except Exception:
         pass
 
-    # ---- v0.0.11: Optional datetime companion dataset --------------------
-    # When the user asked for datetime-duplicate plots, build a single
-    # Veusz date-time dataset from the file's MJD-like sort key.  The
-    # dataset shares its sort permutation with the sorted y datasets, so
-    # xy widgets line up row-for-row.
-    datetime_x_name = None
+    # ---- v0.0.14: Optional per-point datetime label datasets -------------
+    # Replaces the v0.0.11..0.0.13 SetDataDateTime path.  When the user
+    # asks for datetime-duplicate plots we build TWO text datasets from
+    # the file's MJD-like sort key (already in sort permutation order
+    # via ``sort_idx``):
+    #   * sparse -- ~10 evenly spaced anchor labels, rest are empty
+    #   * full   -- one YYYY-MM-DD HH:MM:SS label per data point
+    # Both are always pushed; the dt-page clone binds whichever one the
+    # GUI flag ``datetime_full_labels`` selects to ``xy.labels.val``.
+    # The numeric seconds x dataset is reused from the seconds page,
+    # so no separate datetime x dataset is created.
+    datetime_x_name = None          # signal flag; holds the chosen label ds
+    datelabels_sparse_name = None
+    datelabels_full_name = None
     if datetime_duplicate and sort_key is not None and sort_key in cols:
         upper_sk = sort_key.upper()
         arr_mjd = None
@@ -492,15 +563,35 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                     arr_mjd = arr_mjd[sort_idx]
                 except Exception:
                     pass
-            secs = mjd_to_veusz_seconds(arr_mjd)
-            dt_name = "%s__%s__dt" % (base, safe_dsname(sort_key))
-            if set_datetime_dataset(doc, dt_name, secs, log_cb=log_cb):
-                datetime_x_name = dt_name
-                try:
-                    doc.TagDatasets(base, [dt_name])
-                    doc.TagDatasets("sorted", [dt_name])
-                except Exception:
-                    pass
+            sparse_name = "%s__%s__datelabels_sparse" % (
+                base, safe_dsname(sort_key)
+            )
+            full_name = "%s__%s__datelabels_full" % (
+                base, safe_dsname(sort_key)
+            )
+            datelabels_sparse_name = build_sparse_datestr_dataset(
+                doc, sparse_name, arr_mjd, log_cb=log_cb
+            )
+            datelabels_full_name = build_full_datestr_dataset(
+                doc, full_name, arr_mjd, log_cb=log_cb
+            )
+            # Tag both datasets so they group nicely in Veusz's Data
+            # Browser alongside the file's other sorted datasets.
+            for _ln in (datelabels_sparse_name, datelabels_full_name):
+                if _ln:
+                    try:
+                        doc.TagDatasets(base, [_ln])
+                        doc.TagDatasets("sorted", [_ln])
+                    except Exception:
+                        pass
+            # The signal flag holds the label dataset that will be
+            # bound by default on the dt-page clone.
+            if datetime_full_labels and datelabels_full_name:
+                datetime_x_name = datelabels_full_name
+            elif datelabels_sparse_name:
+                datetime_x_name = datelabels_sparse_name
+            elif datelabels_full_name:
+                datetime_x_name = datelabels_full_name
         elif log_cb:
             log_cb("  Datetime duplicate skipped: %s epoch unknown"
                    % sort_key)
@@ -597,24 +688,26 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
         if x_ds is not None:
             xy.xData.val = x_ds
         xy.yData.val = ds
-        try:
-            xy.marker.val = "circle"
-            xy.markerSize.val = "2pt"
-            xy.PlotLine.hide.val = True
-        except Exception:
-            pass
+        # v0.0.13: Franks has no channel tags, so identity is
+        # (col_name, (None,)); 1 trace per graph -> vary_style False.
+        apply_trace_style(
+            xy, identity_key=(cname, (None,)), vary_style=False,
+        )
 
     if log_cb:
         log_cb("  Page built with %d graphs" %
                sum(1 for c in cols if c != sort_key
                    and np.asarray(cols[c]).dtype.kind in ("f", "i", "u")))
 
-    # ---- v0.0.11: datetime-duplicate per-file page -----------------------
-    # When a datetime companion dataset was emitted above, clone the
-    # just-built page with the same graphs but bind xy.xData to the
-    # date-time dataset and style the x axis for YYYY-MM-DD HH:MM:SS
-    # labels rotated 45 deg.  This page lands right after the original
-    # page in the document tree.
+    # ---- v0.0.14: datetime-duplicate per-file page -----------------------
+    # The dt-page reuses the seconds-page numeric x dataset (``x_ds``)
+    # so its x ordering matches the seconds page exactly.  Per-point
+    # YYYY-MM-DD HH:MM:SS labels are rendered via ``xy.labels.val``
+    # bound to either the sparse (~10 anchors) or full (per-point)
+    # text dataset built during the emission block above.  ``datetime_x_name``
+    # is the chosen-default label dataset name (picked per
+    # ``datetime_full_labels``), used here as both the signal flag
+    # AND the binding target.
     if datetime_x_name is not None:
         page_dt = doc.Root.Add(
             "page", name=safe_dsname("%s_dt" % base)
@@ -622,7 +715,10 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
         try:
             page_dt.notes.val = "\n".join(
                 data.get("header_lines", [])
-                + ["", "Datetime-axis duplicate (v0.0.11)."]
+                + ["",
+                   "Datetime-axis duplicate (v0.0.14 per-point "
+                   "xy.labels, %s variant)."
+                   % ("full" if datetime_full_labels else "sparse")]
             )
         except Exception:
             pass
@@ -637,36 +733,53 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
             graph = grid_dt.Add(
                 "graph", name=safe_dsname("g_%s_dt" % cname)
             )
+            # v0.0.14: numeric seconds x -- no style_datetime_x_axis.
             if break_pairs:
                 try:
-                    ax = make_broken_x_axis(
+                    make_broken_x_axis(
                         graph, break_pairs,
                         label=sort_key or "index",
                         show_gridlines=True,
                     )
-                    style_datetime_x_axis(ax, label=sort_key or "index")
                 except Exception:
-                    style_datetime_x_axis(
-                        graph.x, label=sort_key or "index"
-                    )
+                    try:
+                        graph.x.label.val = sort_key or "index"
+                        graph.x.GridLines.hide.val = False
+                    except Exception:
+                        pass
             else:
-                style_datetime_x_axis(graph.x, label=sort_key or "index")
+                try:
+                    graph.x.label.val = sort_key or "index"
+                    graph.x.GridLines.hide.val = False
+                except Exception:
+                    pass
             try:
                 graph.y.label.val = cname
                 graph.y.GridLines.hide.val = False
             except Exception:
                 pass
             xy = graph.Add("xy", name=safe_dsname("xy_%s_dt" % cname))
-            xy.xData.val = datetime_x_name
+            # Reuse the seconds-page numeric x dataset.
+            if x_ds is not None:
+                xy.xData.val = x_ds
             xy.yData.val = ds
+            # Bind per-point date labels.
             try:
-                xy.marker.val = "circle"
-                xy.markerSize.val = "2pt"
-                xy.PlotLine.hide.val = True
+                xy.labels.val = datetime_x_name
             except Exception:
+                # Older Veusz versions: labels may not be a DatasetOrStr
+                # setting -- silently skip per-point labels.
                 pass
+            style_xy_datetime_labels(xy)
+            # v0.0.13: identity matches seconds page so the trace keeps
+            # the same color/style on the dt page.
+            apply_trace_style(
+                xy, identity_key=(cname, (None,)), vary_style=False,
+            )
         if log_cb:
-            log_cb("  Datetime-duplicate page built (%s_dt)." % base)
+            log_cb("  Datetime-duplicate page built (%s_dt, %s labels)."
+                   % (base,
+                      "full" if datetime_full_labels else "sparse"))
 
 
 # ============================================================================
@@ -682,7 +795,8 @@ _OVERLAY_COLORS = [
 def build_unit_overlay_pages_franks(doc, file_records,
                                      gap_k=10.0, gap_absolute=0.0,
                                      log_cb=None,
-                                     datetime_duplicate=False):
+                                     datetime_duplicate=False,
+                                     datetime_full_labels=False):
     """Build one overlay page per **shared column name** across the loaded
     batch.  Franks files carry no unit annotations, so all files that
     expose a column with the same name (e.g. ``DELTAT``) are overlaid on a
@@ -837,21 +951,23 @@ def build_unit_overlay_pages_franks(doc, file_records,
             xy.key.val = cname
         except Exception:
             pass
-        try:
-            xy.marker.val = "circle"
-            xy.markerSize.val = "2pt"
-            xy.PlotLine.hide.val = True
-            colour = _OVERLAY_COLORS[0]
-            xy.MarkerFill.color.val = colour
-            xy.MarkerLine.color.val = colour
-        except Exception:
-            pass
+        # v0.0.13: overlay carries 1 trace per page (time-combined
+        # across all member files), identity = (col, (None,)).
+        apply_trace_style(
+            xy, identity_key=(cname, (None,)), vary_style=False,
+        )
         if log_cb:
             log_cb("  Overlay page '%s': 1 trace (time-combined across "
                    "%d files)." % (page_name, len(members)))
 
-        # Datetime companion: only when EVERY file has an MJD array.
-        dt_name = None
+        # v0.0.14: datetime companion -- build per-point text label
+        # datasets (sparse + full) from the concatenated, time-sorted
+        # MJD array.  Only proceeds when EVERY contributing file has an
+        # MJD column.  Replaces the v0.0.11..0.0.13 SetDataDateTime
+        # path; the dt-overlay page now reuses the seconds x dataset
+        # (``x_name``) and binds labels to xy.labels.val.
+        dt_sparse_name = None
+        dt_full_name = None
         if datetime_duplicate and all(
             m.get("mjd") is not None for m in members
         ):
@@ -860,28 +976,34 @@ def build_unit_overlay_pages_franks(doc, file_records,
                     [np.asarray(m["mjd"], dtype=float) for m in members]
                 )
                 mjds_s = mjds[order]
-                dt_secs = mjd_to_veusz_seconds(mjds_s)
-                dt_name = "OverlayCat__%s__x__dt" % c_safe
-                if not set_datetime_dataset(
-                    doc, dt_name, dt_secs, log_cb=log_cb
-                ):
-                    dt_name = None
+                dt_sparse_name = build_sparse_datestr_dataset(
+                    doc,
+                    "OverlayCat__%s__datelabels_sparse" % c_safe,
+                    mjds_s, log_cb=log_cb,
+                )
+                dt_full_name = build_full_datestr_dataset(
+                    doc,
+                    "OverlayCat__%s__datelabels_full" % c_safe,
+                    mjds_s, log_cb=log_cb,
+                )
             except Exception as _exc:
                 if log_cb:
                     log_cb("  Overlay '%s' datetime build failed: %s"
                            % (cname, _exc))
-                dt_name = None
+                dt_sparse_name = None
+                dt_full_name = None
 
-        # ---- v0.0.11/0.0.12: datetime-duplicate overlay page ----------
-        if datetime_duplicate and dt_name:
+        # ---- v0.0.14: datetime-duplicate overlay page ----------
+        if datetime_duplicate and (dt_sparse_name or dt_full_name):
             page_dt = doc.Root.Add(
                 "page", name=safe_dsname("%s_dt" % page_name)
             )
             try:
                 page_dt.notes.val = (
                     "Datetime-axis duplicate of '%s' "
-                    "(v0.0.12 combined-in-time)."
-                    % page_name
+                    "(v0.0.14 per-point xy.labels, %s variant)."
+                    % (page_name,
+                       "full" if datetime_full_labels else "sparse")
                 )
             except Exception:
                 pass
@@ -891,17 +1013,25 @@ def build_unit_overlay_pages_franks(doc, file_records,
                 graph_dt.y.GridLines.hide.val = False
             except Exception:
                 pass
+            # v0.0.14: numeric x -- no style_datetime_x_axis.
             if break_pairs:
                 try:
-                    ax = make_broken_x_axis(
+                    make_broken_x_axis(
                         graph_dt, break_pairs,
                         label="MJD", show_gridlines=True,
                     )
-                    style_datetime_x_axis(ax, label="MJD")
                 except Exception:
-                    style_datetime_x_axis(graph_dt.x, label="MJD")
+                    try:
+                        graph_dt.x.label.val = "MJD"
+                        graph_dt.x.GridLines.hide.val = False
+                    except Exception:
+                        pass
             else:
-                style_datetime_x_axis(graph_dt.x, label="MJD")
+                try:
+                    graph_dt.x.label.val = "MJD"
+                    graph_dt.x.GridLines.hide.val = False
+                except Exception:
+                    pass
             try:
                 key_dt = graph_dt.Add("key", name="key1_dt")
                 key_dt.Border.hide.val = False
@@ -910,24 +1040,34 @@ def build_unit_overlay_pages_franks(doc, file_records,
             xy_dt = graph_dt.Add(
                 "xy", name=safe_dsname("xy_%s_dt" % cname)
             )
-            xy_dt.xData.val = dt_name
+            # Reuse the seconds-overlay numeric x dataset.
+            xy_dt.xData.val = x_name
             xy_dt.yData.val = y_name
+            # Pick label dataset per flag (with fallback).
+            label_ds = (dt_full_name if datetime_full_labels
+                        else dt_sparse_name)
+            if not label_ds:
+                label_ds = dt_sparse_name or dt_full_name
+            if label_ds:
+                try:
+                    xy_dt.labels.val = label_ds
+                except Exception:
+                    pass
+                style_xy_datetime_labels(xy_dt)
             try:
                 xy_dt.key.val = cname
             except Exception:
                 pass
-            try:
-                xy_dt.marker.val = "circle"
-                xy_dt.markerSize.val = "2pt"
-                xy_dt.PlotLine.hide.val = True
-                colour = _OVERLAY_COLORS[0]
-                xy_dt.MarkerFill.color.val = colour
-                xy_dt.MarkerLine.color.val = colour
-            except Exception:
-                pass
+            # v0.0.13: identity matches the seconds overlay so the
+            # trace keeps the same color/style on the dt overlay.
+            apply_trace_style(
+                xy_dt, identity_key=(cname, (None,)), vary_style=False,
+            )
             if log_cb:
-                log_cb("  Datetime-overlay page '%s_dt': 1 trace."
-                       % page_name)
+                log_cb("  Datetime-overlay page '%s_dt': 1 trace "
+                       "(%s labels)."
+                       % (page_name,
+                          "full" if datetime_full_labels else "sparse"))
 
 
 # ============================================================================
@@ -1037,6 +1177,29 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.datetime_dup_cb.setChecked(False)
         form.addRow(self.datetime_dup_cb)
 
+        # --- v0.0.14: full vs sparse per-point datetime labels ------------
+        # The dt-duplicate pages now bind a text dataset to xy.labels
+        # (rendering one date string per data point) instead of using a
+        # Veusz datetime x axis (which is broken on Veusz 3.4 internals).
+        # Sparse (~10 anchors) is the safe default; full (one label per
+        # data point) gets crowded fast on long traces.
+        self.full_labels_cb = QCheckBox(
+            "Use full per-point date labels on datetime pages "
+            "(one label per data point -- can be visually crowded)"
+        )
+        self.full_labels_cb.setChecked(False)
+        self.full_labels_cb.setToolTip(
+            "When checked, every data point on a datetime-duplicate "
+            "page is annotated with its own YYYY-MM-DD HH:MM:SS "
+            "label.  When unchecked (default), only ~10 evenly spaced "
+            "anchor points are labeled, which is much more readable on "
+            "long traces with hundreds or thousands of samples.  Both "
+            "label datasets are always pushed to the document, so this "
+            "toggle only changes the default binding -- you can swap "
+            "variants per-trace in the Veusz GUI without rebuilding."
+        )
+        form.addRow(self.full_labels_cb)
+
         # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
         self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
         self.gpu_cb.setChecked(False)
@@ -1093,6 +1256,8 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         plot_individual = not bool(self.combined_only_cb.isChecked())
         # v0.0.11: datetime-duplicate toggle
         datetime_duplicate = bool(self.datetime_dup_cb.isChecked())
+        # v0.0.14: full vs sparse per-point date-label rendering.
+        datetime_full_labels = bool(self.full_labels_cb.isChecked())
         # v0.0.10: drive the process-wide GPU flag from the checkbox
         enable_gpu(self.gpu_cb.isChecked() and self.gpu_cb.isEnabled())
         # Keep the GUI responsive across many files: pump the Qt event
@@ -1125,7 +1290,8 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
                                      plot_individual=plot_individual,
                                      gap_k=gap_k,
                                      gap_absolute=gap_absolute,
-                                     datetime_duplicate=datetime_duplicate)
+                                     datetime_duplicate=datetime_duplicate,
+                                     datetime_full_labels=datetime_full_labels)
             except Exception as exc:
                 self.log("  push failed: %s" % exc)
             else:
@@ -1146,6 +1312,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
                     gap_k=gap_k, gap_absolute=gap_absolute,
                     log_cb=self.log,
                     datetime_duplicate=datetime_duplicate,
+                    datetime_full_labels=datetime_full_labels,
                 )
             except Exception as exc:
                 self.log("  build_unit_overlay_pages_franks failed: %s"
