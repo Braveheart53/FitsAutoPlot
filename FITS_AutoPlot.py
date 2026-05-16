@@ -72,6 +72,22 @@ Date: 2026-05-16
 #             large batches.  (No 0.0.6: aligned with sibling plugin
 #             version stream.)
 Date: 2026-05-16
+# %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
+#               * MAX_THREADS default bumped from ``os.cpu_count() or 4``
+#                 to ``(os.cpu_count() or 4) * 2``.  The per-file read path
+#                 (astropy.io.fits + numpy memmap) is I/O bound and releases
+#                 the GIL through both libraries; oversubscribing the worker
+#                 pool gives a measurable speedup on slow / network storage.
+#                 The Veusz-push phase remains single-threaded by design --
+#                 ``veusz.embed.Embedded`` is documented as not thread-safe.
+#               * 'Open in Veusz...' button inherited from the base class
+#                 AutoPlotMainWindow is wired up by calling
+#                 ``self.mark_project_saved(written)`` after save_vszh5()
+#                 returns; this enables the button and lets the user launch
+#                 the full standalone Veusz GUI in the current Python env
+#                 (``python -m veusz <fn>``) without leaving the AutoPlot
+#                 session.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication, open AutoPlot main window, run event loop.
         FITSAutoPlotWindow: qtpy main window subclassing AutoPlotMainWindow;
@@ -160,7 +176,11 @@ register_nrao_fits_units()
 # ============================================================================
 # %% SCRIPT-LEVEL KNOBS  (kept at the top per spec)
 # ============================================================================
-MAX_THREADS = max(1, (os.cpu_count() or 4))   # used by ThreadPoolExecutor
+# I/O-bound default: FITS reads spend most wall-clock time in disk I/O
+# (memmap + numpy array creation both release the GIL), so we get a real
+# speedup from oversubscribing the CPU.  The GUI spin box caps at
+# cpu_count*2; the default now matches that cap.
+MAX_THREADS = max(1, (os.cpu_count() or 4) * 2)   # used by ThreadPoolExecutor
 DEFAULT_RSS_HIGH_WATER_MB = 1024              # spill threshold per process
 DEFAULT_BACKEND = "both"                      # 'veusz' | 'astropy' | 'both'
 SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
@@ -799,6 +819,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         try:
             written = save_vszh5(self.veusz_doc, fn)
             self.log("Saved %s" % written)
+            self.mark_project_saved(written)
             QMessageBox.information(self, "Saved", "Wrote %s" % written)
         except Exception as exc:
             self.log("Save failed: %s" % exc)
