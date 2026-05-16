@@ -82,6 +82,7 @@ Date: 2026-05-16
         without any user-space buffering or pickling overhead.
 =============================================================================
 """
+# %% Imports
 from __future__ import annotations
 
 import gc
@@ -103,6 +104,7 @@ import contextlib
 import numpy as np
 
 # ---------------------------------------------------------------------------
+# %%% QT Imports
 # Qt imports via qtpy (with frozen-bundle fallback to PySide6, matching the
 # pattern used elsewhere in the FitsAutoPlot repo).
 # ---------------------------------------------------------------------------
@@ -142,7 +144,7 @@ except Exception:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
-# THEME PALETTES
+# %% THEME PALETTES
 # ---------------------------------------------------------------------------
 def make_dark_palette() -> "QPalette":
     """Return a Fusion-style dark palette."""
@@ -179,7 +181,7 @@ def apply_theme(app: "QApplication", mode: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# MEMORY MONITOR + MEMMAP CACHE
+# %% MEMORY MONITOR + MEMMAP CACHE
 # ---------------------------------------------------------------------------
 @dataclass
 class MemoryMonitorConfig:
@@ -322,7 +324,7 @@ class MemoryMonitor(threading.Thread):
 
 
 # ---------------------------------------------------------------------------
-# THREAD POOL HELPER
+# %% THREAD POOL HELPER
 # ---------------------------------------------------------------------------
 def run_in_threadpool(work_items: List[Tuple[str, Callable[..., Any], Tuple[Any, ...]]],
                       max_workers: int,
@@ -360,7 +362,7 @@ def run_in_threadpool(work_items: List[Tuple[str, Callable[..., Any], Tuple[Any,
 
 
 # ---------------------------------------------------------------------------
-# VEUSZ EMBED COMPAT
+# %% VEUSZ EMBED COMPAT
 # ---------------------------------------------------------------------------
 def open_embedded(name: str = "AutoPlot"):
     """
@@ -399,7 +401,7 @@ def save_vszh5(doc, filename: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# COMMON GUI BUILDING BLOCKS
+# %% COMMON GUI BUILDING BLOCKS
 # ---------------------------------------------------------------------------
 class AutoPlotMainWindow(QMainWindow):
     """
@@ -580,7 +582,7 @@ class AutoPlotMainWindow(QMainWindow):
 
 
 # ---------------------------------------------------------------------------
-# I/O helpers shared by both apps
+# %% I/O helpers shared by both apps
 # ---------------------------------------------------------------------------
 def open_maybe_gzipped(path: str):
     """Return a binary file handle for ``path``; transparently gunzip *.gz."""
@@ -590,7 +592,7 @@ def open_maybe_gzipped(path: str):
 
 
 # ---------------------------------------------------------------------------
-# MJD -> date string conversion
+# %% MJD -> date string conversion
 # ---------------------------------------------------------------------------
 # Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC.
 # JD = MJD + 2400000.5  -- we implement the conversion directly without
@@ -700,7 +702,7 @@ def mjd_to_datestr(mjd_arr: "np.ndarray",
 
 
 # ---------------------------------------------------------------------------
-# NRAO FITS unit-warning helpers
+# %% NRAO FITS unit-warning helpers
 # ---------------------------------------------------------------------------
 # NRAO 1PPS-delta FITS files use non-standard FITS unit strings:
 #   * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit)

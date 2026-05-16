@@ -47,6 +47,15 @@ Date: 2026-05-16
 #             batch no longer floods the log with harmless UnitsWarning
 #             and "kept as MaskedColumn" messages.
 Date: 2026-05-16
+# %%%% 0.0.5: Explicit early-exit in push_to_veusz() and _build_pages()
+#             when ``data['images']`` is empty (the normal case for NRAO
+#             1PPS-delta files, whose only HDU is OnePpsDeltas). Adds an
+#             explicit log line so it's obvious image processing was
+#             skipped on purpose rather than hanging.  Also calls
+#             QApplication.processEvents() between every per-file push
+#             inside _on_worker_done() so a 900-file batch insert no
+#             longer makes the GUI look frozen.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication, open AutoPlot main window, run event loop.
         FITSAutoPlotWindow: qtpy main window subclassing AutoPlotMainWindow;
@@ -353,14 +362,26 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 doc.SetData(ds_name, np.ascontiguousarray(arr_s, dtype=float))
             sorted_names.append(ds_name)
 
-        for hname, img in data["images"].items():
-            img = np.asarray(img)
-            ds_name = "%s__%s__IMAGE" % (base, safe_dsname(hname))
-            try:
-                doc.SetData2D(ds_name, np.ascontiguousarray(img, dtype=float))
-            except Exception:
-                doc.SetData(ds_name, np.ascontiguousarray(img.ravel(), dtype=float))
-            sorted_names.append(ds_name)
+        # Image HDU push (skip explicitly when there are no images so the
+        # log makes it obvious to the user that nothing image-shaped was
+        # found in this file -- NRAO 1PPS-delta files contain only the
+        # OnePpsDeltas BinTableHDU, so 'images' is normally empty).
+        images_dict = data.get("images") or {}
+        if not images_dict:
+            if log_cb:
+                log_cb("  No image HDUs in this file -- skipping image push.")
+        else:
+            for hname, img in images_dict.items():
+                img = np.asarray(img)
+                ds_name = "%s__%s__IMAGE" % (base, safe_dsname(hname))
+                try:
+                    doc.SetData2D(ds_name, np.ascontiguousarray(img, dtype=float))
+                except Exception:
+                    doc.SetData(
+                        ds_name,
+                        np.ascontiguousarray(img.ravel(), dtype=float),
+                    )
+                sorted_names.append(ds_name)
 
         if sorted_names:
             doc.TagDatasets(base, sorted_names)
@@ -468,8 +489,14 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
             except Exception:
                 pass
 
-    # Image pages
-    for hname, img in data["images"].items():
+    # Image pages -- explicit early-exit when no image HDUs exist in the
+    # file.  This is the normal case for NRAO 1PPS-delta FITS (the only
+    # table HDU is OnePpsDeltas), so we don't even enter the page-
+    # creation loop.
+    images_dict = data.get("images") or {}
+    if not images_dict:
+        return
+    for hname, img in images_dict.items():
         ds_name = "%s__%s__IMAGE" % (base, safe_dsname(hname))
         page = doc.Root.Add("page", name=safe_dsname("%s_%s_img" % (base, hname)))
         graph = page.Add("graph", name="g_img")
@@ -620,16 +647,26 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         backend_idx = self.backend_combo.currentIndex()
         backend = ["both", "veusz", "astropy"][backend_idx]
         emit_datestr = bool(self.datestr_cb.isChecked())
-        for path, data in results.items():
+        # Keep the GUI responsive across hundreds of files: pump the Qt
+        # event loop between every push so the log pane scrolls live and
+        # the window doesn't appear "stuck" during a long batch insert.
+        app = QApplication.instance()
+        total = len(results)
+        for idx, (path, data) in enumerate(results.items(), start=1):
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
+                if app is not None:
+                    app.processEvents()
                 continue
-            self.log("Inserting datasets for %s" % os.path.basename(path))
+            self.log("Inserting datasets [%d/%d] %s"
+                     % (idx, total, os.path.basename(path)))
             try:
                 push_to_veusz(self.veusz_doc, path, data, backend,
                               log_cb=self.log, emit_datestr=emit_datestr)
             except Exception as exc:
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
+            if app is not None:
+                app.processEvents()
         self.log("Batch complete.")
         self.progress_bar.setVisible(False)
         self.process_button.setEnabled(True)

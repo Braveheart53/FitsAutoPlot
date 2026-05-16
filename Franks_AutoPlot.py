@@ -46,6 +46,13 @@ Date: 2026-05-16
 #             become the sentinel string ``"NaN"`` so all per-row arrays
 #             retain the same length and stay index-aligned.
 Date: 2026-05-16
+# %%%% 0.0.5: _on_done() now calls QApplication.processEvents() between
+#             every per-file push so the GUI stays responsive (log pane
+#             scrolls live, buttons remain clickable) during a long
+#             batch insert -- previously the window could appear stuck
+#             when processing many .t00new files in one batch.
+#             (No 0.0.4: aligned with FITS_AutoPlot.py version stream.)
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication and open the AutoPlot main window.
         FranksAutoPlotWindow: qtpy main window with the Touchstone-style
@@ -492,16 +499,26 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 
     def _on_done(self, results: Dict[str, Any]) -> None:
         emit_datestr = bool(self.datestr_cb.isChecked())
-        for path, data in results.items():
+        # Keep the GUI responsive across many files: pump the Qt event
+        # loop between every push so the log pane scrolls live and the
+        # window doesn't appear "stuck" during a long batch insert.
+        app = QApplication.instance()
+        total = len(results)
+        for idx, (path, data) in enumerate(results.items(), start=1):
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
+                if app is not None:
+                    app.processEvents()
                 continue
-            self.log("Inserting datasets for %s" % os.path.basename(path))
+            self.log("Inserting datasets [%d/%d] %s"
+                     % (idx, total, os.path.basename(path)))
             try:
                 push_franks_to_veusz(self.veusz_doc, data, log_cb=self.log,
                                      emit_datestr=emit_datestr)
             except Exception as exc:
                 self.log("  push failed: %s" % exc)
+            if app is not None:
+                app.processEvents()
         self.log("Batch complete.")
         self.progress_bar.setVisible(False)
         self.process_button.setEnabled(True)
