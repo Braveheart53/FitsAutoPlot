@@ -82,6 +82,13 @@ Date: 2026-05-16
 #              file boundaries disappear into the time series.  The
 #              datetime-axis duplicate overlay does the same with the
 #              concatenated time array converted to Veusz seconds.
+#              Channel-tag row model: text columns named in
+#              TAG_COLUMN_HINTS (e.g. CHANNELA, CHANNELB) are treated as
+#              row-tags that identify which channel-pair each row of
+#              numeric data belongs to.  They are NOT plotted as series.
+#              Instead each numeric column (e.g. DELTAT) is split into
+#              one trace per unique tag-tuple (e.g. ('CHA1','CHB2'))
+#              both on per-file pages and on cross-file overlay pages.
 Date: 2026-05-16
 # %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
 #              checkbox ("Duplicate plots with datetime X axis") asks
@@ -256,6 +263,14 @@ DEFAULT_RSS_HIGH_WATER_MB = 1024              # spill threshold per process
 DEFAULT_BACKEND = "both"                      # 'veusz' | 'astropy' | 'both'
 SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
 ALLOWED_EXT = (".fits", ".fit", ".fits.gz", ".fit.gz")
+# v0.0.12: Column names that should be treated as ROW-TAGS rather than
+# their own plottable series.  NRAO 1PPS-delta files use CHANNELA /
+# CHANNELB to identify which sampler-pair each row's DELTAT belongs to.
+# Any text-typed column whose name (case-insensitive) appears here is
+# combined with the others -- in declaration order -- into a per-row
+# label tuple, and the actual numeric measurement columns (e.g. DELTAT)
+# are then split per unique label tuple into one trace each.
+TAG_COLUMN_HINTS = ["CHANNELA", "CHANNELB", "CHANNEL", "SAMPLER", "PORT"]
 
 
 # ============================================================================
@@ -337,6 +352,12 @@ class FITSProcessor:
             # pages (one extra page per distinct unit string).
             "units": {},
             "sort_key": None,
+            # v0.0.12: row-tagging structures populated below per HDU.
+            #   tag_columns:  {hname: [tag_col_name, ...]}  declaration order
+            #   tag_groups:   {hname: {tag_tuple: int64 row index array}}
+            # Numeric measurement columns are SPLIT per tag_tuple downstream.
+            "tag_columns": {},
+            "tag_groups": {},
             "header": [],
             "fits_for_vz": local_path,
             "tmp_uncompressed": did_decompress,
@@ -402,6 +423,60 @@ class FITSProcessor:
                                 if col.upper() == hint:
                                     sort_key = (hname, col)
                                     break
+                    # v0.0.12: identify ROW-TAG columns in this HDU.  A
+                    # tag column is any column whose name (uppercased) is
+                    # in TAG_COLUMN_HINTS and whose dtype is text-like
+                    # (S/U/O).  Build a per-row tag tuple and group row
+                    # indices by that tuple.
+                    tag_cols = []
+                    for col in qt.colnames:
+                        if col.upper() not in [
+                            t.upper() for t in TAG_COLUMN_HINTS
+                        ]:
+                            continue
+                        try:
+                            tarr = np.asarray(out["columns"][(hname, col)])
+                        except Exception:
+                            continue
+                        if tarr.dtype.kind not in ("S", "U", "O"):
+                            continue
+                        tag_cols.append(col)
+                    if tag_cols:
+                        out["tag_columns"][hname] = list(tag_cols)
+                        # Build a row-aligned 2D list of decoded strings.
+                        decoded = []
+                        n_rows = None
+                        for col in tag_cols:
+                            tarr = np.asarray(out["columns"][(hname, col)])
+                            vals = [
+                                v.decode("ascii", "replace").strip()
+                                if isinstance(v, bytes)
+                                else str(v).strip()
+                                for v in tarr
+                            ]
+                            if n_rows is None:
+                                n_rows = len(vals)
+                            elif len(vals) != n_rows:
+                                # Length mismatch -- abandon tag grouping
+                                # for this HDU rather than emit broken data.
+                                decoded = []
+                                break
+                            decoded.append(vals)
+                        groups = {}
+                        if decoded and n_rows:
+                            for row_idx in range(n_rows):
+                                tup = tuple(
+                                    decoded[ci][row_idx]
+                                    for ci in range(len(decoded))
+                                )
+                                groups.setdefault(tup, []).append(row_idx)
+                            # Materialise as int64 arrays for fast fancy
+                            # indexing later.
+                            groups = {
+                                k: np.asarray(v, dtype=np.int64)
+                                for k, v in groups.items()
+                            }
+                        out["tag_groups"][hname] = groups
                 else:
                     # Image / primary array HDU.  Honor the user-requested
                     # skip_images flag: when set, we don't even read the
@@ -519,6 +594,14 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 log_cb("  Veusz native import failed: %s" % exc)
 
     # ---- 2) Astropy/column-oriented sorted datasets ----------------------
+    # v0.0.12: when an HDU carries row-tag columns (e.g. CHANNELA, CHANNELB),
+    # we no longer emit one ``__sorted`` dataset per numeric column.  Instead
+    # we split each numeric column by tag-tuple and emit one
+    # ``__{tagstr}__sorted`` dataset per (column, tag-tuple).  The tag
+    # columns themselves are NOT emitted as plottable datasets -- they are
+    # labels, not series.  ``per_tag_sorted_names`` records what was emitted
+    # so _build_pages and the overlay builder can find it.  When no tags are
+    # present for an HDU we fall back to the original per-column emission.
     if backend in ("astropy", "both") or backend == "veusz" and data["tmp_uncompressed"]:
         sort_key = data["sort_key"]
         sort_idx_by_hdu: Dict[str, np.ndarray] = {}
@@ -526,18 +609,132 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             hkey, ckey = sort_key
             # v0.0.10: gpu_argsort uses CuPy on large arrays when enabled
             # by the GUI; otherwise falls through to NumPy.  Result is a
-            # NumPy int64 index array either way.
+            # NumPy int64 index array either way.  v0.0.12: kept for the
+            # un-tagged fallback path only; per-tag splits re-sort their
+            # own subarrays below.
             sort_idx_by_hdu[hkey] = gpu_argsort(
                 np.asarray(data["columns"][sort_key])
             )
 
+        # Helper: stringify a tag tuple into a safe dataset suffix.
+        def _tag_suffix(tup):
+            if not tup:
+                return ""
+            return "_".join(safe_dsname(t or "NA") for t in tup)
+
+        # Track per-tag dataset names per HDU so downstream stages can
+        # discover them.  Schema:
+        #   {hname: {tag_tuple: {col_name: ds_name_for_that_col_and_tag,
+        #                        "__x__": x_ds_name,
+        #                        "__dt__": dt_ds_name_or_None}}}
+        per_tag_sorted_names = {}
+        # Untagged-fallback HDUs use the same shape but with key None.
         for (hname, col), arr in data["columns"].items():
             arr = np.asarray(arr)
+            # ----- tagged path --------------------------------------------
+            tag_groups = data.get("tag_groups", {}).get(hname) or {}
+            tag_cols = data.get("tag_columns", {}).get(hname) or []
+            if tag_groups:
+                # Skip tag columns themselves -- they are row labels.
+                if col in tag_cols:
+                    _tick()
+                    continue
+                # Skip non-numeric columns under the tag path: they cannot
+                # be split into per-tag y-series (Veusz xy widgets expect
+                # numeric y).
+                if arr.dtype.kind not in ("f", "i", "u"):
+                    _tick()
+                    continue
+                hkey_safe = safe_dsname(hname)
+                col_safe = safe_dsname(col)
+                # The time axis (sort_key) gets one per-tag x dataset and,
+                # when requested, one per-tag datetime companion.  Other
+                # numeric columns get a per-tag y dataset that is sorted by
+                # the tag's x permutation so x/y stay aligned row-for-row.
+                is_xcol = (sort_key is not None
+                           and (hname, col) == sort_key)
+                # Pre-compute the time-axis sort permutations per tag once
+                # per HDU (cached on the function's enclosing dict).
+                if hname not in per_tag_sorted_names:
+                    per_tag_sorted_names[hname] = {}
+                    if sort_key is not None and sort_key[0] == hname:
+                        try:
+                            x_full = np.asarray(
+                                data["columns"][sort_key], dtype=float
+                            )
+                        except Exception:
+                            x_full = None
+                    else:
+                        x_full = None
+                    # Stash the cached subarrays + their sort indices on
+                    # the outer per_tag_sorted_names dict via a sentinel
+                    # key so the loop below can reuse them.
+                    per_tag_sorted_names[hname]["__xcache__"] = {
+                        "x_full": x_full,
+                        "sort_idx": {},
+                    }
+                xcache = per_tag_sorted_names[hname]["__xcache__"]
+                x_full = xcache["x_full"]
+                sort_idx_per_tag = xcache["sort_idx"]
+                # Build per-tag sort index lazily and only once.
+                for tup, row_idx in tag_groups.items():
+                    if tup not in sort_idx_per_tag and x_full is not None:
+                        try:
+                            xs = x_full[row_idx]
+                            order = gpu_argsort(xs)
+                            sort_idx_per_tag[tup] = (row_idx, order)
+                        except Exception:
+                            sort_idx_per_tag[tup] = (row_idx, None)
+                    elif tup not in sort_idx_per_tag:
+                        sort_idx_per_tag[tup] = (row_idx, None)
+                # Emit one dataset per tag for this column.
+                for tup, (row_idx, order) in sort_idx_per_tag.items():
+                    tag_suffix = _tag_suffix(tup)
+                    try:
+                        sub = np.asarray(arr[row_idx], dtype=float)
+                    except Exception:
+                        continue
+                    if order is not None:
+                        try:
+                            sub = sub[order]
+                        except Exception:
+                            pass
+                    if is_xcol:
+                        ds_name = "%s__%s__%s__%s__x__sorted" % (
+                            base, hkey_safe, col_safe, tag_suffix
+                        )
+                    else:
+                        ds_name = "%s__%s__%s__%s__sorted" % (
+                            base, hkey_safe, col_safe, tag_suffix
+                        )
+                    try:
+                        doc.SetData(
+                            ds_name,
+                            np.ascontiguousarray(sub, dtype=float),
+                        )
+                    except Exception as exc:
+                        if log_cb:
+                            log_cb("  SetData failed for %s: %s"
+                                   % (ds_name, exc))
+                        continue
+                    sorted_names.append(ds_name)
+                    bucket = per_tag_sorted_names[hname].setdefault(
+                        tup, {}
+                    )
+                    if is_xcol:
+                        bucket["__x__"] = ds_name
+                    else:
+                        bucket[col] = ds_name
+                _tick()
+                continue
+            # ----- untagged fallback path --------------------------------
             if hname in sort_idx_by_hdu:
                 arr_s = arr[sort_idx_by_hdu[hname]]
             else:
                 arr_s = arr
-            ds_name = "%s__%s__%s__sorted" % (base, safe_dsname(hname), safe_dsname(col))
+            ds_name = "%s__%s__%s__sorted" % (
+                base, safe_dsname(hname), safe_dsname(col)
+            )
             # SetData refuses to accept bytes columns; convert to str list
             if arr_s.dtype.kind in ("S", "U", "O"):
                 arr_s = np.asarray([
@@ -557,6 +754,10 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 doc.SetData(ds_name, np.ascontiguousarray(arr_s, dtype=float))
             sorted_names.append(ds_name)
             _tick()
+        # Stash the per-tag map on the data dict so _build_pages and
+        # the overlay builder can locate the per-tag datasets without
+        # re-deriving the names.
+        data["_per_tag_sorted_names"] = per_tag_sorted_names
 
         # Image HDU push (skip explicitly when there are no images so the
         # log makes it obvious to the user that nothing image-shaped was
@@ -586,11 +787,13 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 sorted_names.append(ds_name)
                 _tick()
 
-        # ---- 2a) Optional datetime companion dataset (v0.0.11) -----------
-        # When the user asked for datetime-duplicate plots, build a single
-        # Veusz date-time dataset from the file's sort key.  We require an
-        # MJD-like (or JD-like) sort key because we have to know the epoch
-        # to map numeric values onto Veusz's internal date-time seconds.
+        # ---- 2a) Optional datetime companion dataset (v0.0.11/0.0.12) -----
+        # When the user asked for datetime-duplicate plots, build a Veusz
+        # date-time dataset from the file's sort key.  Requires MJD/JD-like
+        # sort key.  v0.0.12: when the HDU has tag-groups, emit one
+        # datetime dataset PER TAG so each per-tag y dataset has a matching
+        # per-tag datetime x.  Untagged HDUs keep the original single-dt
+        # behaviour for backward compatibility.
         datetime_x_name = None
         if datetime_duplicate and sort_key is not None:
             sk_hdu, sk_col = sort_key
@@ -611,28 +814,76 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 except Exception:
                     arr_mjd = None
             if arr_mjd is not None:
-                # Apply the same sort permutation the sorted column got, so
-                # the date-time x lines up row-for-row with the y datasets.
-                if sk_hdu in sort_idx_by_hdu:
-                    try:
-                        arr_mjd = arr_mjd[sort_idx_by_hdu[sk_hdu]]
-                    except Exception:
-                        pass
-                secs = mjd_to_veusz_seconds(arr_mjd)
-                dt_name = "%s__%s__%s__dt" % (
-                    base, safe_dsname(sk_hdu), safe_dsname(sk_col)
+                tag_groups_dt = (
+                    data.get("tag_groups", {}).get(sk_hdu) or {}
                 )
-                try:
-                    doc.SetDataDateTime(dt_name, list(secs))
-                    datetime_x_name = dt_name
-                    sorted_names.append(dt_name)
+                if tag_groups_dt:
+                    # Per-tag datetime datasets aligned with each tag's
+                    # already-sorted y datasets.
+                    xcache = (per_tag_sorted_names
+                              .get(sk_hdu, {})
+                              .get("__xcache__", {}))
+                    sort_idx_per_tag = xcache.get("sort_idx", {})
+                    for tup, _row in tag_groups_dt.items():
+                        rec = sort_idx_per_tag.get(tup)
+                        if rec is None:
+                            continue
+                        row_idx, order = rec
+                        try:
+                            sub = arr_mjd[row_idx]
+                            if order is not None:
+                                sub = sub[order]
+                            secs = mjd_to_veusz_seconds(
+                                np.asarray(sub, dtype=float)
+                            )
+                            tag_suffix = "_".join(
+                                safe_dsname(t or "NA") for t in tup
+                            )
+                            dt_name = "%s__%s__%s__%s__dt" % (
+                                base, safe_dsname(sk_hdu),
+                                safe_dsname(sk_col), tag_suffix,
+                            )
+                            doc.SetDataDateTime(dt_name, list(secs))
+                            sorted_names.append(dt_name)
+                            bucket = per_tag_sorted_names \
+                                .setdefault(sk_hdu, {}) \
+                                .setdefault(tup, {})
+                            bucket["__dt__"] = dt_name
+                        except Exception as exc:
+                            if log_cb:
+                                log_cb(
+                                    "  SetDataDateTime failed for tag %s: %s"
+                                    % (tup, exc)
+                                )
                     if log_cb:
-                        log_cb("  Datetime-duplicate dataset: %s"
-                               % dt_name)
-                except Exception as exc:
-                    if log_cb:
-                        log_cb("  SetDataDateTime failed for %s: %s"
-                               % (dt_name, exc))
+                        log_cb(
+                            "  Datetime-duplicate datasets per tag: %d"
+                            % len(tag_groups_dt)
+                        )
+                else:
+                    # Apply the same sort permutation the sorted column
+                    # got, so the date-time x lines up row-for-row with
+                    # the y datasets.
+                    if sk_hdu in sort_idx_by_hdu:
+                        try:
+                            arr_mjd = arr_mjd[sort_idx_by_hdu[sk_hdu]]
+                        except Exception:
+                            pass
+                    secs = mjd_to_veusz_seconds(arr_mjd)
+                    dt_name = "%s__%s__%s__dt" % (
+                        base, safe_dsname(sk_hdu), safe_dsname(sk_col)
+                    )
+                    try:
+                        doc.SetDataDateTime(dt_name, list(secs))
+                        datetime_x_name = dt_name
+                        sorted_names.append(dt_name)
+                        if log_cb:
+                            log_cb("  Datetime-duplicate dataset: %s"
+                                   % dt_name)
+                    except Exception as exc:
+                        if log_cb:
+                            log_cb("  SetDataDateTime failed for %s: %s"
+                                   % (dt_name, exc))
             elif log_cb:
                 log_cb("  Datetime duplicate skipped: %s epoch unknown"
                        % sk_col)
@@ -719,38 +970,223 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                  datetime_x_name=None) -> None:
     """Create one Veusz page per HDU with the appropriate plot widgets.
 
-    When the x-axis column has large gaps (per ``detect_time_breaks`` with
-    the given ``gap_k`` and ``gap_absolute`` thresholds), the default 'x'
-    axis of each graph is replaced with an ``axis-broken`` widget showing
-    every contiguous segment of the data without dead space in between.
-    """
-    # Group sorted datasets by HDU
-    by_hdu: Dict[str, List[Tuple[str, str]]] = {}
-    for (hname, col) in data["columns"].keys():
-        ds = "%s__%s__%s__sorted" % (base, safe_dsname(hname), safe_dsname(col))
-        if ds in sorted_names:
-            by_hdu.setdefault(hname, []).append((col, ds))
+    v0.0.12: when an HDU has row-tag columns (CHANNELA/CHANNELB etc.), each
+    numeric measurement column gets ONE graph with N xy widgets -- one trace
+    per unique tag tuple -- using the per-tag x/y/dt datasets that
+    push_to_veusz emitted.  The tag tuple is rendered in the legend (e.g.
+    'CHA1.CHB2').  Untagged HDUs keep the original one-graph-per-column
+    layout for backward compatibility.
 
-    for hname, cols in by_hdu.items():
+    When the x-axis column has large gaps (per ``detect_time_breaks``), the
+    plain ``x`` axis is replaced with an ``axis-broken`` widget.
+    """
+    per_tag = data.get("_per_tag_sorted_names") or {}
+
+    # Tagged HDUs are handled separately from the legacy per-column path.
+    tagged_hdus = set(
+        h for h, m in per_tag.items()
+        if any(k not in ("__xcache__",) for k in m.keys())
+    )
+
+    # Group untagged sorted datasets by HDU for the fallback path.
+    by_hdu_untagged: Dict[str, List[Tuple[str, str]]] = {}
+    for (hname, col) in data["columns"].keys():
+        if hname in tagged_hdus:
+            continue
+        ds = "%s__%s__%s__sorted" % (
+            base, safe_dsname(hname), safe_dsname(col)
+        )
+        if ds in sorted_names:
+            by_hdu_untagged.setdefault(hname, []).append((col, ds))
+
+    sort_key = data.get("sort_key")
+
+    # ============================================================
+    # Tagged-HDU pages
+    # ============================================================
+    for hname in tagged_hdus:
+        tag_map = {
+            k: v for k, v in per_tag[hname].items()
+            if k != "__xcache__"
+        }
+        if not tag_map:
+            continue
+        tag_cols_list = data.get("tag_columns", {}).get(hname) or []
+        page = doc.Root.Add(
+            "page", name=safe_dsname("%s_%s" % (base, hname))
+        )
+        try:
+            page.notes.val = "\n".join(
+                data.get("header", [])
+                + [
+                    "",
+                    "v0.0.12: rows tagged by %s; one trace per tag."
+                    % ", ".join(tag_cols_list),
+                ]
+            )
+        except Exception:
+            pass
+        grid = page.Add("grid", columns=2)
+        # x dataset name to use for the time axis: every tag bucket has
+        # a __x__ key when the HDU's sort_key column was processed.  Use
+        # the first available tag's x for break-pair detection's data
+        # source (we still compute break_pairs from the FULL HDU x array).
+        x_label = (sort_key[1] if sort_key and sort_key[0] == hname
+                   else "x")
+        try:
+            x_full = np.asarray(
+                data["columns"][sort_key], dtype=float
+            ) if sort_key and sort_key[0] == hname else np.empty(0, dtype=float)
+        except Exception:
+            x_full = np.empty(0, dtype=float)
+        break_pairs = detect_time_breaks(
+            x_full, k_factor=gap_k, absolute_gap=gap_absolute
+        )
+
+        # Discover the set of measurement columns by union over tag buckets.
+        meas_cols = []
+        seen = set()
+        for tup, bucket in tag_map.items():
+            for col in bucket.keys():
+                if col in ("__x__", "__dt__"):
+                    continue
+                if col not in seen:
+                    seen.add(col)
+                    meas_cols.append(col)
+
+        for col in meas_cols:
+            graph = grid.Add("graph", name=safe_dsname("g_%s" % col))
+            try:
+                graph.y.label.val = col
+                graph.y.GridLines.hide.val = False
+            except Exception:
+                pass
+            if break_pairs:
+                make_broken_x_axis(
+                    graph, break_pairs,
+                    label=x_label, show_gridlines=True,
+                )
+            else:
+                try:
+                    graph.x.label.val = x_label
+                    graph.x.GridLines.hide.val = False
+                except Exception:
+                    pass
+            try:
+                key = graph.Add("key", name="key1")
+                key.Border.hide.val = False
+            except Exception:
+                pass
+            for i, (tup, bucket) in enumerate(sorted(tag_map.items())):
+                y_ds = bucket.get(col)
+                x_ds = bucket.get("__x__")
+                if not y_ds or not x_ds:
+                    continue
+                tag_label = ".".join(t or "NA" for t in tup)
+                xy = graph.Add(
+                    "xy",
+                    name=safe_dsname("xy_%s_%s" % (col, tag_label)),
+                )
+                xy.xData.val = x_ds
+                xy.yData.val = y_ds
+                try:
+                    xy.key.val = tag_label
+                except Exception:
+                    pass
+                try:
+                    xy.marker.val = "circle"
+                    xy.markerSize.val = "2pt"
+                    xy.PlotLine.hide.val = True
+                    colour = _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)]
+                    xy.MarkerFill.color.val = colour
+                    xy.MarkerLine.color.val = colour
+                except Exception:
+                    pass
+
+        # ---- v0.0.11/0.0.12 datetime duplicate page (tagged) -----------
+        # Emit only when at least one tag bucket has __dt__.
+        has_dt = any("__dt__" in b for b in tag_map.values())
+        if has_dt:
+            page_dt = doc.Root.Add(
+                "page",
+                name=safe_dsname("%s_%s_dt" % (base, hname)),
+            )
+            try:
+                page_dt.notes.val = "\n".join(
+                    data.get("header", [])
+                    + ["", "Datetime-axis duplicate (v0.0.12 tagged)."]
+                )
+            except Exception:
+                pass
+            grid_dt = page_dt.Add("grid", columns=2)
+            for col in meas_cols:
+                graph = grid_dt.Add(
+                    "graph", name=safe_dsname("g_%s_dt" % col)
+                )
+                try:
+                    graph.y.label.val = col
+                    graph.y.GridLines.hide.val = False
+                except Exception:
+                    pass
+                if break_pairs:
+                    ax = make_broken_x_axis(
+                        graph, break_pairs,
+                        label=x_label, show_gridlines=True,
+                    )
+                    style_datetime_x_axis(ax, label=x_label)
+                else:
+                    style_datetime_x_axis(graph.x, label=x_label)
+                try:
+                    key = graph.Add("key", name="key1_dt")
+                    key.Border.hide.val = False
+                except Exception:
+                    pass
+                for i, (tup, bucket) in enumerate(sorted(tag_map.items())):
+                    y_ds = bucket.get(col)
+                    dt_ds = bucket.get("__dt__")
+                    if not y_ds or not dt_ds:
+                        continue
+                    tag_label = ".".join(t or "NA" for t in tup)
+                    xy = graph.Add(
+                        "xy",
+                        name=safe_dsname(
+                            "xy_%s_%s_dt" % (col, tag_label)
+                        ),
+                    )
+                    xy.xData.val = dt_ds
+                    xy.yData.val = y_ds
+                    try:
+                        xy.key.val = tag_label
+                    except Exception:
+                        pass
+                    try:
+                        xy.marker.val = "circle"
+                        xy.markerSize.val = "2pt"
+                        xy.PlotLine.hide.val = True
+                        colour = _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)]
+                        xy.MarkerFill.color.val = colour
+                        xy.MarkerLine.color.val = colour
+                    except Exception:
+                        pass
+
+    # ============================================================
+    # Untagged-HDU pages (legacy)
+    # ============================================================
+    for hname, cols in by_hdu_untagged.items():
         page = doc.Root.Add("page", name=safe_dsname("%s_%s" % (base, hname)))
         try:
             page.notes.val = "\n".join(data.get("header", []))
         except Exception:
             pass
         grid = page.Add("grid", columns=2)
-        # x-axis defaults to the sort key column (DMJD/MJD/etc.) when present
         x_col = None
         for c, ds in cols:
             if c.upper() in [k.upper() for k in SORTED_KEY_HINT]:
                 x_col = (c, ds)
                 break
         if x_col is None:
-            # fall back to the first numeric column
             x_col = cols[0]
         x_name = x_col[1]
-
-        # Detect time-axis gaps once per HDU (all graphs on the page share
-        # the same x dataset, so they share the same break positions).
         try:
             x_arr = np.asarray(data["columns"][(hname, x_col[0])], dtype=float)
         except Exception:
@@ -758,7 +1194,6 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
         break_pairs = detect_time_breaks(
             x_arr, k_factor=gap_k, absolute_gap=gap_absolute
         )
-
         for c, ds in cols:
             if ds == x_name:
                 continue
@@ -768,8 +1203,6 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 graph.y.GridLines.hide.val = False
             except Exception:
                 pass
-            # Install broken x-axis if gaps were detected; otherwise keep
-            # the default plain axis and just label / grid it.
             if break_pairs:
                 make_broken_x_axis(graph, break_pairs,
                                    label=x_col[0], show_gridlines=True)
@@ -790,13 +1223,6 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 xy.MarkerLine.color.val = "blue"
             except Exception:
                 pass
-
-        # ---- v0.0.11: datetime-duplicate page ----------------------------
-        # When the caller supplied a datetime companion x dataset (built
-        # earlier in push_to_veusz), build a parallel page right after the
-        # original one with the same y datasets but the date-time x.  All
-        # styling is shared; the only differences are the page name suffix,
-        # the xData reference and the angled date-formatted tick labels.
         if datetime_x_name:
             page_dt = doc.Root.Add(
                 "page",
@@ -821,9 +1247,6 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     graph.y.GridLines.hide.val = False
                 except Exception:
                     pass
-                # Reuse the same break_pairs we just computed -- the gaps
-                # are properties of the underlying x data, not of which
-                # axis flavour displays it.
                 if break_pairs:
                     ax = make_broken_x_axis(
                         graph, break_pairs,
@@ -884,11 +1307,22 @@ def build_unit_overlay_pages(doc, file_records,
     """
     Build one overlay page per distinct unit string across the loaded
     batch.  Each overlay page contains a single graph that plots every
-    (file, column) combination whose unit string matches that page,
-    against its file's x-axis (sort-key) dataset.  When the combined
+    (file, column, tag-tuple) combination whose unit string matches that
+    page, against its file's x-axis (sort-key) dataset.  When the combined
     x-values across files show large gaps, the graph uses an
     ``axis-broken`` x axis (gap thresholds: K * median(Δt) auto, or
     ``gap_absolute`` if positive).
+
+    v0.0.12 channel-tag row model
+    -----------------------------
+    For any HDU whose record carries a ``tag_columns`` declaration (e.g.
+    ``CHANNELA``, ``CHANNELB``), each numeric measurement column is split
+    by the unique tag-tuples observed across the batch.  Each unique
+    tuple becomes its OWN concatenated-in-time trace on the overlay page
+    -- there is no longer a single combined DELTAT trace; instead there
+    is one DELTAT trace per channel-pair (e.g. CHA1.CHB2, CHA1.CHB3, ...).
+    HDUs with no tag declaration fall back to the legacy single-trace
+    behaviour.
 
     Parameters
     ----------
@@ -897,8 +1331,10 @@ def build_unit_overlay_pages(doc, file_records,
     file_records : list of dict
         One entry per successfully pushed file, each containing keys
         ``base``, ``columns`` (dict (hname,col) -> array), ``units``
-        (dict (hname,col) -> unit-string), and ``sort_key`` (the
-        (hname,col) used as time-axis), produced by the GUI accumulator.
+        (dict (hname,col) -> unit-string), ``sort_key`` (the (hname,col)
+        used as time-axis), and optionally ``tag_columns`` (dict hname ->
+        [tag_col_name,...]) and ``tag_groups`` (dict hname -> dict
+        tag_tuple -> int64 row-index array).
     gap_k, gap_absolute : float
         Forwarded to ``detect_time_breaks``.
     log_cb : callable or None
@@ -906,23 +1342,12 @@ def build_unit_overlay_pages(doc, file_records,
     """
     if not file_records:
         return
-    # v0.0.12: Combined-in-time overlay semantics.
+    # v0.0.12: Combined-in-time overlay semantics + channel-tag rows.
     # ---------------------------------------------------------------
-    # Old behaviour (v0.0.9 -- v0.0.11): emit one xy trace per
-    # (file, hdu, column) so a 12-file run that all carry DELTAT would
-    # produce 12 DELTAT traces on the seconds page.
-    # New behaviour (v0.0.12): for each (unit, hdu, column) group,
-    # concatenate all contributing files' x and y arrays into a single
-    # time-sorted series and emit ONE xy trace per (hdu, column) on the
-    # unit page.  Each trace is bound to a freshly pushed pair of
-    # ``OverlayCat__{unit}__{hdu}__{col}__x__sorted`` and ``__y__sorted``
-    # datasets.  When datetime_duplicate is True and every file in the
-    # group has an MJD/JD-like sort key, a companion
-    # ``__x__dt`` Veusz date-time dataset is pushed in matching order
-    # and used as x on the duplicate page.
-    # ---------------------------------------------------------------
-    # group key: (unit_str, hname, col)
+    # Group key: (unit_str, hname, col, tag_tuple)
     #   -> list of dicts: {base, x, y, mjd_or_none}
+    # tag_tuple is (None,) for untagged HDUs (legacy single-series).
+    # ---------------------------------------------------------------
     groups = {}
     # accumulate x samples across files per unit for gap detection on
     # the unit page (combined across all columns sharing the unit).
@@ -932,49 +1357,90 @@ def build_unit_overlay_pages(doc, file_records,
         cols = rec.get("columns") or {}
         units = rec.get("units") or {}
         sort_key = rec.get("sort_key")
+        tag_columns_map = rec.get("tag_columns") or {}
+        tag_groups_map = rec.get("tag_groups") or {}
         if not base or sort_key is None or sort_key not in cols:
             # without a time axis we cannot overlay against time
             continue
         x_hdu, x_col = sort_key
         try:
-            x_arr = np.asarray(cols[sort_key], dtype=float)
+            x_arr_full = np.asarray(cols[sort_key], dtype=float)
         except Exception:
             continue
         # If the sort key is MJD/JD-like, convert to MJD-equivalent for
         # the datetime overlay.  JD is shifted by 2400000.5.
-        mjd_arr = None
+        mjd_arr_full = None
         sk_upper = x_col.upper()
         if datetime_duplicate and sk_upper in ("DMJD", "MJD", "JD"):
             try:
                 if sk_upper == "JD":
-                    mjd_arr = x_arr - 2400000.5
+                    mjd_arr_full = x_arr_full - 2400000.5
                 else:
-                    mjd_arr = x_arr.copy()
+                    mjd_arr_full = x_arr_full.copy()
             except Exception:
-                mjd_arr = None
+                mjd_arr_full = None
+
+        # Build set of (hname, col) names that are tag-columns -- skip
+        # them as plottable series.
+        tag_col_set = set()
+        for h, tlist in tag_columns_map.items():
+            for tcol in tlist or []:
+                tag_col_set.add((h, tcol))
+
         for (hname, col), arr in cols.items():
             if (hname, col) == sort_key:
                 continue
+            if (hname, col) in tag_col_set:
+                continue  # row-tag, not a series
             arr = np.asarray(arr)
             if arr.dtype.kind not in ("f", "i", "u"):
                 continue  # skip text columns
             try:
-                y_arr = np.asarray(arr, dtype=float)
+                y_full = np.asarray(arr, dtype=float)
             except Exception:
                 continue
-            if y_arr.shape != x_arr.shape:
+            if y_full.shape != x_arr_full.shape:
                 # length mismatch -- cannot align this column safely
                 continue
             unit_str = units.get((hname, col), "") or ""
             unit_str = str(unit_str).strip()
-            gkey = (unit_str, hname, col)
-            groups.setdefault(gkey, []).append({
-                "base": base,
-                "x": x_arr,
-                "y": y_arr,
-                "mjd": mjd_arr,
-            })
-            x_samples_by_unit.setdefault(unit_str, []).append(x_arr)
+
+            # Decide split: tagged HDU -> per tag-tuple; else single (None,)
+            tg = tag_groups_map.get(hname)
+            tcols = tag_columns_map.get(hname) or []
+            if tg and tcols:
+                # one slice per tag tuple
+                for tup, row_idx in tg.items():
+                    try:
+                        ri = np.asarray(row_idx, dtype=np.int64)
+                    except Exception:
+                        continue
+                    if ri.size == 0:
+                        continue
+                    x_slice = x_arr_full[ri]
+                    y_slice = y_full[ri]
+                    mjd_slice = (mjd_arr_full[ri]
+                                 if mjd_arr_full is not None else None)
+                    gkey = (unit_str, hname, col, tuple(tup))
+                    groups.setdefault(gkey, []).append({
+                        "base": base,
+                        "x": x_slice,
+                        "y": y_slice,
+                        "mjd": mjd_slice,
+                    })
+                    x_samples_by_unit.setdefault(
+                        unit_str, []).append(x_slice)
+            else:
+                # untagged HDU -- legacy single trace
+                gkey = (unit_str, hname, col, (None,))
+                groups.setdefault(gkey, []).append({
+                    "base": base,
+                    "x": x_arr_full,
+                    "y": y_full,
+                    "mjd": mjd_arr_full,
+                })
+                x_samples_by_unit.setdefault(
+                    unit_str, []).append(x_arr_full)
 
     if not groups:
         if log_cb:
@@ -982,12 +1448,23 @@ def build_unit_overlay_pages(doc, file_records,
         return
 
     # Bucket groups by unit so we still emit one page per unit, with
-    # one xy trace per (hdu, col) on that page.
+    # one xy trace per (hdu, col, tag-tuple) on that page.
     by_unit = {}
-    for (unit_str, hname, col), members in groups.items():
-        by_unit.setdefault(unit_str, []).append((hname, col, members))
+    for (unit_str, hname, col, tup), members in groups.items():
+        by_unit.setdefault(unit_str, []).append((hname, col, tup, members))
 
-    for unit_str, col_entries in by_unit.items():
+    def _tup_suffix(tup):
+        if not tup or tup == (None,):
+            return "all"
+        return "_".join(safe_dsname(str(t) if t is not None else "NA")
+                        for t in tup)
+
+    def _tup_label(tup):
+        if not tup or tup == (None,):
+            return ""
+        return ".".join(str(t) if t is not None else "NA" for t in tup)
+
+    for unit_str, entries in by_unit.items():
         unit_label = unit_str if unit_str else "(dimensionless)"
         page_name = safe_dsname("Overlay_%s" % (unit_str or "none"))
         page = doc.Root.Add("page", name=page_name)
@@ -995,7 +1472,8 @@ def build_unit_overlay_pages(doc, file_records,
             page.notes.val = (
                 "Combined-in-time overlay of all columns with unit "
                 "'%s' across the loaded batch (v0.0.12: one trace per "
-                "column, time-sorted concatenation across files)."
+                "(column, channel-tag tuple), time-sorted concatenation "
+                "across files)."
                 % unit_label
             )
         except Exception:
@@ -1030,13 +1508,13 @@ def build_unit_overlay_pages(doc, file_records,
         except Exception:
             pass
 
-        # Track which (hname, col) groups produced datetime-eligible
-        # concatenations (every contributing file had an MJD-like sort
-        # key).  Used to decide whether to emit the dt duplicate page.
-        dt_eligible = []  # list of (hname, col, dt_x_name, y_name)
+        # Track which (hname, col, tup) entries produced datetime-
+        # eligible concatenations (every contributing file had an
+        # MJD-like sort key).  Used for the dt duplicate page.
+        dt_eligible = []  # list of (hname, col, tup, dt_x_name, y_name, idx)
         u_safe = safe_dsname(unit_str or "none")
-        for i, (hname, col, members) in enumerate(col_entries):
-            # Concatenate and time-sort this (unit, hdu, col) group.
+        for i, (hname, col, tup, members) in enumerate(entries):
+            # Concatenate and time-sort this (unit, hdu, col, tup) group.
             try:
                 xs = np.concatenate([m["x"] for m in members])
                 ys = np.concatenate([m["y"] for m in members])
@@ -1044,9 +1522,9 @@ def build_unit_overlay_pages(doc, file_records,
                 continue
             if xs.size == 0:
                 continue
-            # v0.0.12: use GPU-aware stable sort.  gpu_argsort routes to
-            # CuPy when enabled AND xs is large enough, else falls back
-            # to numpy.argsort(kind='mergesort').  NaNs end up at the tail.
+            # v0.0.12: GPU-aware stable sort.  gpu_argsort routes to CuPy
+            # when enabled AND xs is large enough, else falls back to
+            # np.argsort(kind='mergesort').  NaNs end up at the tail.
             try:
                 order = gpu_argsort(xs)
             except Exception:
@@ -1058,26 +1536,31 @@ def build_unit_overlay_pages(doc, file_records,
             ys_s = ys[order]
             h_safe = safe_dsname(hname)
             c_safe = safe_dsname(col)
-            x_name = "OverlayCat__%s__%s__%s__x__sorted" % (
-                u_safe, h_safe, c_safe
+            t_safe = _tup_suffix(tup)
+            x_name = "OverlayCat__%s__%s__%s__%s__x__sorted" % (
+                u_safe, h_safe, c_safe, t_safe
             )
-            y_name = "OverlayCat__%s__%s__%s__y__sorted" % (
-                u_safe, h_safe, c_safe
+            y_name = "OverlayCat__%s__%s__%s__%s__y__sorted" % (
+                u_safe, h_safe, c_safe, t_safe
             )
             try:
                 doc.SetData(x_name, xs_s)
                 doc.SetData(y_name, ys_s)
             except Exception as _exc:
                 if log_cb:
-                    log_cb("  Overlay '%s.%s' SetData failed: %s"
-                           % (hname, col, _exc))
+                    log_cb("  Overlay '%s.%s [%s]' SetData failed: %s"
+                           % (hname, col, _tup_label(tup), _exc))
                 continue
-            xy_name = safe_dsname("xy_%s_%s" % (hname, col))
+            xy_name = safe_dsname("xy_%s_%s_%s" % (hname, col, t_safe))
             xy = graph.Add("xy", name=xy_name)
             xy.xData.val = x_name
             xy.yData.val = y_name
             try:
-                xy.key.val = "%s.%s" % (hname, col)
+                tlab = _tup_label(tup)
+                if tlab:
+                    xy.key.val = "%s.%s [%s]" % (hname, col, tlab)
+                else:
+                    xy.key.val = "%s.%s" % (hname, col)
             except Exception:
                 pass
             try:
@@ -1101,19 +1584,23 @@ def build_unit_overlay_pages(doc, file_records,
                     )
                     mjds_s = mjds[order]
                     dt_secs = mjd_to_veusz_seconds(mjds_s)
-                    dt_name = "OverlayCat__%s__%s__%s__x__dt" % (
-                        u_safe, h_safe, c_safe
+                    dt_name = "OverlayCat__%s__%s__%s__%s__x__dt" % (
+                        u_safe, h_safe, c_safe, t_safe
                     )
                     doc.SetDataDateTime(dt_name, list(dt_secs))
-                    dt_eligible.append((hname, col, dt_name, y_name, i))
+                    dt_eligible.append(
+                        (hname, col, tup, dt_name, y_name, i)
+                    )
                 except Exception as _exc:
                     if log_cb:
-                        log_cb("  Overlay '%s.%s' datetime build failed: %s"
-                               % (hname, col, _exc))
+                        log_cb("  Overlay '%s.%s [%s]' datetime build "
+                               "failed: %s"
+                               % (hname, col, _tup_label(tup), _exc))
 
         if log_cb:
-            log_cb("  Overlay page '%s': %d trace(s) (time-combined)"
-                   % (unit_label, len(col_entries)))
+            log_cb("  Overlay page '%s': %d trace(s) (time-combined, "
+                   "per channel-tag)"
+                   % (unit_label, len(entries)))
 
         # ---- v0.0.11/0.0.12: datetime-duplicate overlay page ----------
         if datetime_duplicate and dt_eligible:
@@ -1123,7 +1610,7 @@ def build_unit_overlay_pages(doc, file_records,
             try:
                 page_dt.notes.val = (
                     "Datetime-axis duplicate of '%s' "
-                    "(v0.0.12 combined-in-time)."
+                    "(v0.0.12 combined-in-time, per channel-tag)."
                     % page_name
                 )
             except Exception:
@@ -1147,15 +1634,20 @@ def build_unit_overlay_pages(doc, file_records,
                 key_dt.Border.hide.val = False
             except Exception:
                 pass
-            for hname, col, dt_name, y_name, idx in dt_eligible:
+            for hname, col, tup, dt_name, y_name, idx in dt_eligible:
+                t_safe = _tup_suffix(tup)
                 xy_name = safe_dsname(
-                    "xy_%s_%s_dt" % (hname, col)
+                    "xy_%s_%s_%s_dt" % (hname, col, t_safe)
                 )
                 xy = graph_dt.Add("xy", name=xy_name)
                 xy.xData.val = dt_name
                 xy.yData.val = y_name
                 try:
-                    xy.key.val = "%s.%s" % (hname, col)
+                    tlab = _tup_label(tup)
+                    if tlab:
+                        xy.key.val = "%s.%s [%s]" % (hname, col, tlab)
+                    else:
+                        xy.key.val = "%s.%s" % (hname, col)
                 except Exception:
                     pass
                 try:
@@ -1412,12 +1904,17 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
             else:
                 # Record this file for the overlay post-pass.
+                # v0.0.12 channel-tag: also carry tag_columns/tag_groups so
+                # build_unit_overlay_pages can split each numeric column
+                # into one trace per unique tag-tuple.
                 file_records.append({
                     "base": safe_dsname(data.get("base_name") or
                                         os.path.basename(path)),
                     "columns": data.get("columns") or {},
                     "units": data.get("units") or {},
                     "sort_key": data.get("sort_key"),
+                    "tag_columns": data.get("tag_columns") or {},
+                    "tag_groups": data.get("tag_groups") or {},
                 })
             self.parse_progress_bar.setValue(idx)
             if app is not None:
