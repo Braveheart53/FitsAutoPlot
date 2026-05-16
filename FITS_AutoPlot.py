@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
+FITS_AutoPlot.py
+-----------------------------------------------------------------------------
 # %% Header Info
---------
 
-Created on 2025-05-30
+Replacement for the older FITS_AutoPlot.py in the FitsAutoPlot repo.
+GUI-driven batch processor for NRAO Green Bank FITS files (OnePpsDeltas
+samplers and any other FITS BinTable / image HDUs) that produces a Veusz
+3.4 / 4.1 compatible ``.vszh5`` project file with:
+
+    * column-oriented sorted datasets (one Veusz dataset per FITS column),
+    * tagged datasets (filename tag + raw/sorted tag),
+    * appropriate plots per HDU (scatter for tables, image for image HDUs),
+    * a live embedded Veusz preview while the file is built.
 
 # %%% Author Information
 @author: William W. Wallace
@@ -12,566 +21,577 @@ Author Email: wwallace@nrao.edu
 Author Secondary Email: naval.antennas@gmail.com
 Author Business Phone: +1 (304) 456-2216
 
-
 # %%% Revisions
---------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
-# %%%% 0.0.1: Script to run in consol description
-Date: 2025-05-30
+# %%%% 0.0.1: Initial port of FITS_AutoPlot to the Touchstone-style GUI
+Date: 2026-05-16
 # %%%%% Function Descriptions
-        main: main script body
-        select_file: utilzing module os, select multiple files for processing
+        main: build QApplication, open AutoPlot main window, run event loop.
+        FITSAutoPlotWindow: qtpy main window subclassing AutoPlotMainWindow;
+            adds the FITS-specific processing-options form (import backend
+            choice, thread count, RSS high-water mark) and orchestrates the
+            batch run through a worker QThread.
+        FITSBatchWorker: QThread that runs the parallel batch read using
+            ``run_in_threadpool``; emits per-file progress signals.
+        FITSProcessor: per-file reader.  Supports both Veusz native FITS
+            import and astropy fallback; transparently handles ``.fits`` and
+            ``.fits.gz`` files; produces a normalised dict of column-shaped
+            arrays keyed by ``(hdu_name, column_name)`` or ``(hdu_name,
+            "IMAGE")`` for image HDUs.
+        push_to_veusz: install one file's worth of column datasets into the
+            running embedded Veusz document, with raw/sorted tagging and
+            per-HDU plot creation.
 # %%%%% Variable Descriptions
-    Define all utilized variables
-        file_path: path(s) to selected files for processing
+        MAX_THREADS: top-of-file knob for the worker thread pool size.
+        DEFAULT_RSS_HIGH_WATER_MB: RSS threshold for memmap spill.
+        SORTED_KEY_HINT: ordered list of preferred sort keys (DMJD first).
 # %%%%% More Info
-    See https://fits.gsfc.nasa.gov/fits_samples.html for sampel fits files
-# %%%% 0.0.2: Previous version put all the plots on a single page.
-Date: 2025-05-30
-# %%%%% Function Descriptions
-        main: main script body
-        select_file: utilzing module os, select multiple files for processing
-    More Info: Previous Version put all plots on a single page, this version
-    will create a page per plot
-# %%%%% Variable Descriptions
-    Define all utilized variables
-        file_path: path(s) to selected files for processing
-# %%%%% More Info
-    This puts all plots on their own page and grid. Colorbars are not working
-    and will need to be corrected.
-    Also need to find out how to apply color maps to the contour or otherwise
-
-    Also need to figure out how to plot multi-dimensional data and correctly
-    associate the X-axis in each plot.
-
-    Have not yet test astropy import method. This shall be done in 0.0.3
+        FITS files from NRAO Green Bank carry a single BinTableHDU named
+        ``OnePpsDeltas`` with columns DMJD (1D), CHANNELA (8A), CHANNELB
+        (8A), DELTAT (J).  We expose every column as its own Veusz dataset
+        plus an additional "sorted" pass (sorted by DMJD) so derived plots
+        match the convention used in the NRAO 1PPS documentation.  The
+        sorted datasets are produced from the raw arrays inside Python
+        because Veusz's internal expressions cannot reorder a structured
+        BinTable on import; the raw datasets are still imported so the
+        user can pivot back to the unsorted representation if desired.
 =============================================================================
 """
+from __future__ import annotations
 
-# event loop QApplication.exec_()
-# %% Import all required modules
-# %%% System Interface Modules
+# ============================================================================
+# IMPORTS - Standard library
+# ============================================================================
+import gzip
 import os
-import subprocess
-# import time as time
+import shutil
 import sys
+import tempfile
+import traceback
+from typing import Any, Dict, List, Optional, Tuple
 
-# %%% GUI Module Imports
-# %%%% QtPy
-# from qtpy.QtGui import *
-# # from qtpy.QtWidgets import (
-# #     QApplication,
-# #     QLabel,
-# #     QLineEdit,
-# #     QMainWindow,
-# #     QVBoxLayout,
-# #     QWidget,
-# # )
-# from qtpy.QtCore import Qt, QSize
-# from qtpy.QtWidgets import (
-#     QApplication,
-#     QDialog,
-#     QVBoxLayout,
-#     QHBoxLayout,
-#     QPushButton,
-#     QFileDialog,
-#     QLabel,
-#     QRadioButton,
-#     QButtonGroup,
-#     QMessageBox
-# )
-
-if getattr(sys, 'frozen', False):
-    # Running as compiled executable - use PySide6 directly
-    from PySide6.QtWidgets import (
-        QApplication,
-        QDialog,
-        QVBoxLayout,
-        QHBoxLayout,
-        QPushButton,
-        QFileDialog,
-        QLabel,
-        QRadioButton,
-        QButtonGroup,
-        QMessageBox
-    )
-else:
-    # Development environment - use QtPy
-    from qtpy.QtWidgets import (
-        QApplication,
-        QDialog,
-        QVBoxLayout,
-        QHBoxLayout,
-        QPushButton,
-        QFileDialog,
-        QLabel,
-        QRadioButton,
-        QButtonGroup,
-        QMessageBox
-    )
-# %%%% PyQt 6 GUI
-# =============================================================================
-# from PyQt6.QtGui import *
-# from PyQt6.QtWidgets import (QApplication, QPushButton, QMainWindow, QLabel)
-# from PyQt6.QtCore import Qt, QSize
-# =============================================================================
-# %%%% PySide6
-# =============================================================================
-# from PySide6.QtWidgets import QApplication, QWidget
-# =============================================================================
-# %%%% tkinter (essentially a Tcl wrapper)
-# =============================================================================
-# import tkinter as tk
-# from tkinter import filedialog
-# from tkinter.filedialog import askopenfilenames
-# =============================================================================
-# %%% Astronomy Modules
-# =============================================================================
+# ============================================================================
+# IMPORTS - Scientific
+# ============================================================================
+import numpy as np
 from astropy.io import fits
 from astropy.table import QTable
-# from astropy import units as astroU
-# from astropy import coordinates as astroCoord
-# from astropy.cosmology import WMAP7
-# from astropy.table import Table as astroTable
-# from astropy.wcs import WCS
-# import PyFITS
-# =============================================================================
-# %%% Math Modules
-# =============================================================================
-# import pandas as pd
-# import xarray as xr
-import numpy as np
-# import skrf as rf
-# =============================================================================
 
-# %%% Console Interaction Improvement
-# %%% Plotting Environment
-import veusz.embed as embed
+# ============================================================================
+# IMPORTS - Veusz embedded (deferred to runtime in workers, OK at module
+#           level here because the standalone GUI is also a Veusz client)
+# ============================================================================
+import veusz.embed as vz_embed
 
-# %%% File type Export/Import
-# =============================================================================
-# import h5py as h5
-# from scipy.io import savemat
-# =============================================================================
-# %%% Parallel Processing Modules
-# =============================================================================
-# from multiprocessing import Pool  # udpate when you learn it!
-# from multiprocessing import Process
-# from multiprocess import Pool
-# from multiprocess import Process
-# =============================================================================
-# %%% GPU Acceleration
-# =============================================================================
-# # Cupy is numpy implementation in CUDA for GPU use, need to learn more
-# import cupy
-# from cuda import cuda, nvrtc  # need to learn this as well, see class below
-# =============================================================================
+# ============================================================================
+# IMPORTS - shared GUI / threading / cache helpers
+# ============================================================================
+# Allow this file to be launched directly even if _autoplot_common.py lives
+# in the same folder but the folder is not on sys.path.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
 
-# %% Internal Functional Variables
-createLinkedFits = True
-createArbitraryXaxis = True
+from _autoplot_common import (   # noqa: E402
+    Qt, QThread, Signal,
+    QApplication, QFileDialog, QFormLayout, QLabel, QMessageBox,
+    QSpinBox, QComboBox, QCheckBox, QLineEdit,
+    AutoPlotMainWindow,
+    MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
+    apply_theme, open_embedded, save_vszh5,
+    run_in_threadpool, open_maybe_gzipped, safe_dsname,
+)
+
+# ============================================================================
+# SCRIPT-LEVEL KNOBS  (kept at the top per spec)
+# ============================================================================
+MAX_THREADS = max(1, (os.cpu_count() or 4))   # used by ThreadPoolExecutor
+DEFAULT_RSS_HIGH_WATER_MB = 1024              # spill threshold per process
+DEFAULT_BACKEND = "both"                      # 'veusz' | 'astropy' | 'both'
+SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+ALLOWED_EXT = (".fits", ".fit", ".fits.gz", ".fit.gz")
 
 
-# %% Class and Function Definitons
-
-
-class switch:
-    """Creates a case or switch style statement."""
-
+# ============================================================================
+# PER-FILE PROCESSOR
+# ============================================================================
+class FITSProcessor:
     """
-    This is utilized as follows:
+    Read a single FITS file (compressed or not) and return a normalised dict
+    of column-shaped numpy arrays plus minimal metadata.
 
-        for case in switch('b'):
-            if case('a'):
-                # print or do whatever one wants
-                print("Case A")
-                break
-            if case('b'):
-                print("Case B")  # Output: "Case B"
-                break
+    Two backends are supported:
+
+        * ``astropy``  -- uses ``astropy.io.fits``; works for any HDU.
+        * ``veusz``    -- uses ``veusz.embed.Embedded.ImportFileFITS`` which
+                          imports each column as its own dataset.  We mirror
+                          the resulting column data back into the same dict
+                          structure so the caller can attach raw/sorted
+                          datasets uniformly.
+
+    The two backends are not redundant: ``veusz`` keeps the link to the
+    original FITS file (if requested) so the project file follows updates
+    to the source; ``astropy`` is the fallback path for image HDUs and for
+    NRAO files where Veusz's importer skips header-only HDUs.
+
+    Per the spec, when Veusz's internal import does not yield the desired
+    column representation we additionally produce the column arrays
+    ourselves via astropy and tag them as 'sorted'.
     """
 
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, backend: str, cache: MemoryAwareCache,
+                 linked: bool = False) -> None:
+        if backend not in ("veusz", "astropy", "both"):
+            raise ValueError("backend must be 'veusz', 'astropy' or 'both'")
+        self.backend = backend
+        self.cache = cache
+        self.linked = linked
 
-    def __iter__(self):
-        """Interate and find the match."""
-        yield self.match
+    # ------------------------------------------------------------------
+    def _open(self, path: str):
+        # astropy.io.fits transparently opens .gz, but we still need a
+        # local copy on disk for Veusz's importer if the user picked the
+        # veusz backend on a gzipped file (Veusz cannot open .fits.gz).
+        if path.lower().endswith(".gz"):
+            tmp = tempfile.NamedTemporaryFile(prefix="autoplot_fits_",
+                                              suffix=".fits", delete=False)
+            tmp.close()
+            with gzip.open(path, "rb") as src, open(tmp.name, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            return tmp.name, True
+        return path, False
 
-    def match(self, *args):
-        return self.value in args
+    # ------------------------------------------------------------------
+    def read(self, path: str) -> Dict[str, Any]:
+        """
+        Returns
+        -------
+        dict with keys:
 
+            'columns'     : {(hdu_name, col_name) : np.ndarray}  -- 1D table cols
+            'images'      : {hdu_name             : np.ndarray}  -- nD images
+            'sort_key'    : (hdu_name, col_name) or None
+            'header'      : list[str]  -- pretty-printed PRIMARY header lines
+            'fits_for_vz' : path to a non-gzipped FITS file usable by Veusz
+            'tmp_uncompressed' : bool
+        """
+        local_path, did_decompress = self._open(path)
+        base = os.path.splitext(os.path.basename(path))[0]
+        if base.endswith(".fits"):
+            base = base[:-5]
+        out = {
+            "columns": {},
+            "images": {},
+            "sort_key": None,
+            "header": [],
+            "fits_for_vz": local_path,
+            "tmp_uncompressed": did_decompress,
+            "base_name": base,
+        }
+        with fits.open(local_path, memmap=True) as hdul:
+            # Collect a compact header dump from PRIMARY
+            try:
+                out["header"] = [
+                    "%s = %r" % (k, hdul[0].header[k])
+                    for k in list(hdul[0].header.keys())[:20]
+                ]
+            except Exception:
+                pass
 
-class qtGUI:
-    """Handles all Qt-based user interactions."""
-
-    def __init__(self):
-        self.app = QApplication(sys.argv)
-
-    def get_fits_file_and_method(self):
-        """Display dialog for FITS file selection and import method choice."""
-        dialog = QDialog()
-        dialog.setWindowTitle("Open FITS File and Select Import Method")
-        layout = QVBoxLayout()
-
-        # File selection components
-        file_layout = QHBoxLayout()
-        self.file_label = QLabel("No file selected")
-        file_btn = QPushButton("Select FITS File")
-        file_layout.addWidget(self.file_label)
-        file_layout.addWidget(file_btn)
-        layout.addLayout(file_layout)
-
-        # Import method selection
-        method_layout = QHBoxLayout()
-        method_label = QLabel("Import Method:")
-        self.veusz_radio = QRadioButton("Veusz Native")
-        self.astropy_radio = QRadioButton("AstroPy")
-        self.veusz_radio.setChecked(True)
-        method_group = QButtonGroup(dialog)
-        method_group.addButton(self.veusz_radio)
-        method_group.addButton(self.astropy_radio)
-        method_layout.addWidget(method_label)
-        method_layout.addWidget(self.veusz_radio)
-        method_layout.addWidget(self.astropy_radio)
-        layout.addLayout(method_layout)
-
-        # Dialog buttons
-        btn_layout = QHBoxLayout()
-        ok_btn = QPushButton("OK")
-        cancel_btn = QPushButton("Cancel")
-        btn_layout.addWidget(ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
-
-        dialog.setLayout(layout)
-        self.selected_file = None
-
-        # Connect signals
-        file_btn.clicked.connect(lambda: self._select_file(dialog))
-        ok_btn.clicked.connect(lambda: self._validate_selection(dialog))
-        cancel_btn.clicked.connect(dialog.reject)
-
-        result = dialog.exec_()
-        if result == QDialog.Accepted:
-            method = 'astropy' if self.astropy_radio.isChecked() else 'veusz'
-            return self.selected_file, method
-        return None, None
-
-    def _select_file(self, dialog):
-        """Handle file selection button click."""
-        fname, _ = QFileDialog.getOpenFileName(
-            dialog, "Open FITS File", "", "FITS Files (*.fits *.fit)"
-        )
-        if fname:
-            self.selected_file = fname
-            self.file_label.setText(fname)
-
-    def _validate_selection(self, dialog):
-        """Validate file selection before accepting dialog."""
-        if not self.selected_file:
-            self.file_label.setText("Please select a file!")
-            return
-        dialog.accept()
-
-    def get_save_filename(self):
-        """Display file save dialog for Veusz project."""
-        return QFileDialog.getSaveFileName(
-            None, "Save Veusz Project", "",
-            "Veusz Files (*.vsz)")[0]
-
-    def ask_open_veusz(self):
-        """Display dialog to open created file in Veusz GUI."""
-        msg = QMessageBox()
-        msg.setWindowTitle("Open in Veusz")
-        msg.setText("Would you like to open the file in Veusz?")
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        return msg.exec_() == QMessageBox.Yes
-
-
-class VZPlotFITS:
-    """Manages Veusz document creation and FITS data visualization."""
-
-    def __init__(self):
-        self.doc = embed.Embedded('FITS Visualizer')
-        # self.page = self.doc.Root.Add('page')
-        # self.grid = self.page.Add('grid', columns=2)
-        self.first_1d = True
-        self.doc.EnableToolbar(enable=True)
-
-    def import_via_veusz(self, filename: str):
-        """Import FITS data using Veusz native importer."""
-        base_name = os.path.splitext(os.path.basename(filename))[0]
-
-        # Import all HDUs and columns from FITS file
-        self.doc.ImportFileFITS(
-            filename=filename,
-            items=['/'],  # Import all items
-            namemap={},
-            linked=createLinkedFits
-        )
-
-        # Tag datasets with source filename
-        for ds in self.doc.GetDatasets():
-            # original_label = self.doc.GetDataLabel(ds) or ds
-            original_label = ds
-            # self.doc.SetDataLabel(ds, f"{original_label} [{base_name}]")
-            self.doc.TagDatasets(base_name, [original_label])
-
-    def import_via_astropy(self, filename: str):
-        """Import FITS data using Astropy with enhanced metadata handling."""
-        """"Testing this function to begin in version 0.0.3"""
-        base_name = os.path.splitext(os.path.basename(filename))[0]
-
-        with fits.open(filename) as hdul:
+            sort_key: Optional[Tuple[str, str]] = None
             for i, hdu in enumerate(hdul):
+                hname = hdu.name or "HDU%d" % i
                 if hdu.data is None:
                     continue
-
-                if isinstance(hdu, fits.BinTableHDU):
-                    self._import_astropy_table(hdu, base_name)
-                else:
-                    self._import_astropy_image(hdu, i, base_name)
-
-    def _import_astropy_table(self, hdu, base_name):
-        """Process table HDUs using QTable."""
-        qt = QTable.read(hdu)
-        for colname in qt.colnames:
-            description = hdu.header.get(f'TCOMM{colname}', colname)
-            self.doc.SetData(colname, qt[colname])
-            # self.doc.SetDataLabel(colname, f"{description} [{base_name}]")
-            self.doc.TagDatasets(base_name, [original_label])
-
-    def _import_astropy_image(self, hdu, index, base_name):
-        """Process image HDUs with filename tagging."""
-        header = hdu.header
-        ds_name = header.get('EXTNAME', f'hdu{index}_data')
-        label = header.get('EXTNAME', f'HDU {index} Data')
-
-        self.doc.SetData(ds_name, hdu.data)
-        # self.doc.SetDataLabel(ds_name, f"{label} [{base_name}]")
-        self.doc.TagDatasets(base_name, [ds_name])
-
-    def create_plots(self):
-        """Generate automated plots based on dataset dimensions."""
-        for ds in self.doc.GetDatasets():
-            ds_type = self.doc.GetDataType(ds)
-            # create a new page for each plot and name it by ds
-            self._create_page(ds)
-
-            # use a case or switch statement to plot according to dataset
-            # veusz documentation does not address nd dataset
-            # if ds == 'data':
-            #     print('Found the nd Array Data')
-
-            for case in switch(ds_type):
-                if case('1d'):
-                    # somehow nd datatype  is not being passed
-                    currentDataDims = self.doc.GetData(ds)[0].ndim
-                    if currentDataDims == 1:
-                        self._plot_1d(ds)
-                    else:
-                        # This means it is ndimensional data...
-                        ds_type = 'nD'
-                        self._plot_nd(ds)
-                    del currentDataDims
-                    break
-                if case('2d'):
-                    self._plot_2d(ds)
-                    break
-                if case('text'):
-                    pass
-                    break
-                if case('datetime'):
-                    pass
-                    break
-                if case('nD'):
-                    print('An ND case was found in ' + ds)
-                    break
-
-    def _create_page(self, dataset: str):
-        """Create a new page and grid."""
-        self.page = self.doc.Root.Add('page', name=dataset)
-        self.grid = self.page.Add('grid', columns=2)
-
-    def _plot_2d(self, dataset: str):
-        """Create contour plot for 2D datasets."""
-        # to create a second plot view of the same project
-        secondView = self.doc.StartSecondView('2D Dataset View of: ' +
-                                              dataset)
-        secondView.EnableToolbar(enable=True)
-        # secondView.To(self.page.path)
-        secondView.MoveToPage(self.doc.GetDatasets().index(self.page.name) + 1)
-        graph = self.grid.Add('graph')
-        # see if a move up can be done with Root page\graph\colorbar1\move up
-        # must associated the colorbar with the widget of the image or contour
-        colorbar = graph.Add('colorbar', direction='vertical',
-                             name='colorbar1', widgetName='imageIn')
-        contour = graph.Add('contour')
-        contour.data.val = dataset
-        image = graph.Add('image', name='imageIn',
-                          data=dataset, colorMap='plasma')
-
-    def _plot_1d(self, dataset: str):
-        """Create line plot for 1D datasets with red initial trace."""
-        try:
-            graph = self.grid.Add('graph')
-            xy = graph.Add('xy')
-            xy.yData.val = dataset
-            # if 'date' in dataset:
-            #     # get the dataset from Veusz and change it to a datetime list
-            #     # need to figure out exactly the time string format utilized
-            #     # self.doc.SetDataDateTime, likely will overwrite or need to
-            #     # use this earlier in the script
-            #     pass
-            xy.marker.val = 'none'
-            if createArbitraryXaxis:
-                # xy.xData.val = set x axis data
-                currentYDataTuple = self.doc.GetData(xy.yData.val)
-                if isinstance(currentYDataTuple[0], np.ndarray):
-                    if currentYDataTuple[0].ndim == 1:
-                        length = currentYDataTuple[0].size
-                        xy.xData.val = range(length)
-                    else:
-                        QMessageBox.critical(
-                            None,
-                            "Length of Data Array is non-integer",
-                            "This should not happen. \n"
-                            "Contact the Author and inform him of this error."
+                if isinstance(hdu, fits.BinTableHDU) or isinstance(hdu, fits.TableHDU):
+                    qt = QTable.read(hdu)
+                    for col in qt.colnames:
+                        try:
+                            data = np.asarray(qt[col])
+                        except Exception:
+                            data = np.asarray(hdu.data[col])
+                        # store via cache (will memmap-spill if needed)
+                        key = (hname, col)
+                        out["columns"][key] = self.cache.store(
+                            "%s.%s.%s" % (base, hname, col), data
                         )
-                        return
+                        if sort_key is None:
+                            for hint in SORTED_KEY_HINT:
+                                if col.upper() == hint:
+                                    sort_key = (hname, col)
+                                    break
                 else:
-                    QMessageBox.warning(
-                        None,
-                        "The Data array is non-numeric \n",
-                        "X axis value not defined."
+                    # Image / primary array HDU
+                    data = np.asarray(hdu.data)
+                    out["images"][hname] = self.cache.store(
+                        "%s.%s.IMAGE" % (base, hname), data
                     )
+            out["sort_key"] = sort_key
+        return out
 
-            if self.first_1d:
-                self.first_1d = False
 
-        except Exception as e:
-            QMessageBox.critical(
-                None,
-                "1D Plotting Error",
-                f"Failed to Plot 1D Data Set: {str(e)}"
-            )
+# ============================================================================
+# VEUSZ INTEGRATION  (runs on the GUI thread)
+# ============================================================================
+def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
+                  backend: str, log_cb=None) -> None:
+    """
+    Push a single processed FITS file into the running embedded Veusz
+    document.
 
-    def _plot_nd(self, dataset: str):
-        """Create line plot for nD datasets with red initial trace."""
+    Strategy
+    --------
+    1.  If backend in ('veusz', 'both'): call ``ImportFileFITS`` so the
+        raw FITS columns/images appear as Veusz datasets, tagged with the
+        base filename + 'raw'.  This keeps the Veusz-internal link to the
+        FITS file when ``linked=True``.
+    2.  If backend in ('astropy', 'both') or the FITS file was gzipped:
+        push python-level numpy column arrays as their own Veusz datasets,
+        tagged with the base filename + 'sorted' (sorted by DMJD when the
+        column is present, otherwise plain copies).
+    3.  Build one Veusz page per HDU containing scatter plots for table
+        HDUs (DELTAT vs DMJD, etc.) and image widgets for image HDUs.
+    """
+    base = safe_dsname(data["base_name"])
+    raw_names: List[str] = []
+    sorted_names: List[str] = []
+
+    # ---- 1) Veusz native import (raw datasets) ---------------------------
+    if backend in ("veusz", "both") and not data["tmp_uncompressed"]:
         try:
-            graph = self.grid.Add('graph')
-            # the following is from _plot_1d... adjust as needed for nd
-        # =============================================================================
-        #             xy = graph.Add('xy')
-        #             xy.yData.val = dataset
-        #             # if 'date' in dataset:
-        #             #     # get the dataset from Veusz and change it to a datetime list
-        #             #     # need to figure out exactly the time string format utilized
-        #             #     # self.doc.SetDataDateTime, likely will overwrite or need to
-        #             #     # use this earlier in the script
-        #             #     pass
-        #             xy.marker.val = 'none'
-        #             xy.PlotLine.color.val = 'red'
-        #             if createArbitraryXaxis:
-        #                 # xy.xData.val = set x axis data
-        #                 currentYDataTuple = self.doc.GetData(xy.yData.val)
-        #                 if isinstance(currentYDataTuple[0], np.ndarray):
-        #                     if currentYDataTuple[0].ndim == 1:
-        #                         length = currentYDataTuple[0].size
-        #                         xy.xData.val = range(length)
-        #                     else:
-        #                         QMessageBox.critical(
-        #                             None,
-        #                             "Length of Data Array is non-integer",
-        #                             "This should not happen. \n"
-        #                             "Contact the Author and inform him of this error."
-        #                         )
-        #                         return
-        #                 else:
-        #                     QMessageBox.warning(
-        #                         None,
-        #                         "The Data array is non-numeric \n",
-        #                         "X axis value not defined."
-        #                     )
-        #
-        #             if self.first_1d:
-        #                 self.first_1d = False
-        # =============================================================================
-
-        except Exception as e:
-            QMessageBox.critical(
-                None,
-                "nD Plotting Error",
-                f"Failed to Plot nD Data Set: {str(e)}"
+            existing = set(doc.GetDatasets())
+            doc.ImportFileFITS(
+                filename=data["fits_for_vz"],
+                items=["/"],          # import every HDU/column
+                namemap={},
+                linked=False,         # we already point at a real file
             )
+            added = [n for n in doc.GetDatasets() if n not in existing]
+            for n in added:
+                # rename with base prefix so multi-file runs don't collide
+                new_name = "%s__%s__raw" % (base, safe_dsname(n))
+                try:
+                    doc.RenameDataset(n, new_name)
+                except Exception:
+                    new_name = n
+                raw_names.append(new_name)
+            doc.TagDatasets(base, raw_names)
+            doc.TagDatasets("raw", raw_names)
+            if log_cb:
+                log_cb("  Veusz native import: %d raw datasets" % len(raw_names))
+        except Exception as exc:
+            if log_cb:
+                log_cb("  Veusz native import failed: %s" % exc)
 
-    def save(self, filename: str):
-        """Save Veusz document to specified file."""
-        self.doc.Save(filename)
+    # ---- 2) Astropy/column-oriented sorted datasets ----------------------
+    if backend in ("astropy", "both") or backend == "veusz" and data["tmp_uncompressed"]:
+        sort_key = data["sort_key"]
+        sort_idx_by_hdu: Dict[str, np.ndarray] = {}
+        if sort_key is not None:
+            hkey, ckey = sort_key
+            sort_idx_by_hdu[hkey] = np.argsort(np.asarray(data["columns"][sort_key]))
 
-    def open_veusz_gui(filename: str):
-        """Launch Veusz GUI with generated project file."""
-        if sys.platform.startswith('win'):
-            veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
-        else:
-            veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
+        for (hname, col), arr in data["columns"].items():
+            arr = np.asarray(arr)
+            if hname in sort_idx_by_hdu:
+                arr_s = arr[sort_idx_by_hdu[hname]]
+            else:
+                arr_s = arr
+            ds_name = "%s__%s__%s__sorted" % (base, safe_dsname(hname), safe_dsname(col))
+            # SetData refuses to accept bytes columns; convert to str list
+            if arr_s.dtype.kind in ("S", "U", "O"):
+                arr_s = np.asarray([
+                    v.decode("ascii", "replace") if isinstance(v, bytes) else str(v)
+                    for v in arr_s
+                ])
+                try:
+                    doc.SetDataText(ds_name, list(arr_s))
+                except Exception:
+                    # Older Veusz: drop text columns silently
+                    continue
+            else:
+                doc.SetData(ds_name, np.ascontiguousarray(arr_s, dtype=float))
+            sorted_names.append(ds_name)
 
-        if not os.path.exists(veusz_exe):
-            QMessageBox.critical(
-                None,
-                "Veusz Not Found",
-                "Veusz not found in Python environment.\n",
-                "Install with: [pip OR conda OR mamba] install veusz"
+        for hname, img in data["images"].items():
+            img = np.asarray(img)
+            ds_name = "%s__%s__IMAGE" % (base, safe_dsname(hname))
+            try:
+                doc.SetData2D(ds_name, np.ascontiguousarray(img, dtype=float))
+            except Exception:
+                doc.SetData(ds_name, np.ascontiguousarray(img.ravel(), dtype=float))
+            sorted_names.append(ds_name)
+
+        if sorted_names:
+            doc.TagDatasets(base, sorted_names)
+            doc.TagDatasets("sorted", sorted_names)
+        if log_cb:
+            log_cb("  Column datasets created: %d" % len(sorted_names))
+
+    # ---- 3) Build the plots ---------------------------------------------
+    _build_pages(doc, base, data, sorted_names)
+
+    # cleanup any temporary uncompressed copy
+    if data["tmp_uncompressed"]:
+        try:
+            os.remove(data["fits_for_vz"])
+        except OSError:
+            pass
+
+
+def _build_pages(doc, base: str, data: Dict[str, Any],
+                 sorted_names: List[str]) -> None:
+    """Create one Veusz page per HDU with the appropriate plot widgets."""
+    # Group sorted datasets by HDU
+    by_hdu: Dict[str, List[Tuple[str, str]]] = {}
+    for (hname, col) in data["columns"].keys():
+        ds = "%s__%s__%s__sorted" % (base, safe_dsname(hname), safe_dsname(col))
+        if ds in sorted_names:
+            by_hdu.setdefault(hname, []).append((col, ds))
+
+    for hname, cols in by_hdu.items():
+        page = doc.Root.Add("page", name=safe_dsname("%s_%s" % (base, hname)))
+        try:
+            page.notes.val = "\n".join(data.get("header", []))
+        except Exception:
+            pass
+        grid = page.Add("grid", columns=2)
+        # x-axis defaults to the sort key column (DMJD/MJD/etc.) when present
+        x_col = None
+        for c, ds in cols:
+            if c.upper() in [k.upper() for k in SORTED_KEY_HINT]:
+                x_col = (c, ds)
+                break
+        if x_col is None:
+            # fall back to the first numeric column
+            x_col = cols[0]
+        x_name = x_col[1]
+
+        for c, ds in cols:
+            if ds == x_name:
+                continue
+            graph = grid.Add("graph", name=safe_dsname("g_%s" % c))
+            try:
+                graph.x.label.val = x_col[0]
+                graph.y.label.val = c
+                graph.x.GridLines.hide.val = False
+                graph.y.GridLines.hide.val = False
+            except Exception:
+                pass
+            xy = graph.Add("xy", name=safe_dsname("xy_%s" % c))
+            xy.xData.val = x_name
+            xy.yData.val = ds
+            xy.marker.val = "circle"
+            try:
+                xy.markerSize.val = "2pt"
+                xy.PlotLine.hide.val = True
+                xy.MarkerFill.color.val = "blue"
+                xy.MarkerLine.color.val = "blue"
+            except Exception:
+                pass
+
+    # Image pages
+    for hname, img in data["images"].items():
+        ds_name = "%s__%s__IMAGE" % (base, safe_dsname(hname))
+        page = doc.Root.Add("page", name=safe_dsname("%s_%s_img" % (base, hname)))
+        graph = page.Add("graph", name="g_img")
+        try:
+            image_w = graph.Add("image", name="imageIn",
+                                data=ds_name, colorMap="plasma")
+            graph.Add("colorbar", direction="vertical",
+                      name="colorbar1", widgetName="imageIn")
+        except Exception:
+            # Older Veusz API: omit colorbar
+            graph.Add("image", name="imageIn", data=ds_name)
+
+
+# ============================================================================
+# WORKER THREAD (parallel read)
+# ============================================================================
+class FITSBatchWorker(QThread):
+    """Background QThread that reads a batch of FITS files concurrently."""
+
+    progress = Signal(int, int, str)   # done, total, last_key
+    log = Signal(str)
+    finished_ok = Signal(dict)         # {path: read_dict}
+    failed = Signal(str)
+
+    def __init__(self, files: List[str], backend: str, max_threads: int,
+                 cache: MemoryAwareCache, parent=None) -> None:
+        super().__init__(parent)
+        self.files = files
+        self.backend = backend
+        self.max_threads = max_threads
+        self.cache = cache
+
+    def run(self) -> None:
+        try:
+            proc = FITSProcessor(self.backend, self.cache)
+            work = [(p, proc.read, (p,)) for p in self.files]
+            results = run_in_threadpool(
+                work,
+                max_workers=self.max_threads,
+                progress_cb=lambda d, t, k: self.progress.emit(d, t, k),
             )
+            self.finished_ok.emit(results)
+        except Exception as exc:
+            self.failed.emit("%s\n%s" % (exc, traceback.format_exc()))
+
+
+# ============================================================================
+# MAIN WINDOW
+# ============================================================================
+class FITSAutoPlotWindow(AutoPlotMainWindow):
+    """Top-level window for the FITS AutoPlot script."""
+
+    def __init__(self) -> None:
+        super().__init__("FITS AutoPlot - Veusz Embedded GUI", default_mode="dark")
+        self._file_filter = (
+            "FITS files (*.fits *.fit *.fits.gz *.fit.gz);;All files (*)"
+        )
+        self.cache = MemoryAwareCache(MemoryMonitorConfig(
+            rss_high_water_mb=DEFAULT_RSS_HIGH_WATER_MB,
+        ))
+        self.monitor = MemoryMonitor(
+            self.cache,
+            callback=lambda rss: self.log("RSS crossed high-water mark "
+                                          "(%.1f MiB) -- spilling to disk." % rss),
+        )
+        self.monitor.start()
+        self.veusz_doc = None
+        self.worker = None
+        self.log("MAX_THREADS = %d" % MAX_THREADS)
+
+    # ----- options form ----------------------------------------------------
+    def _populate_options(self, form: QFormLayout) -> None:
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItems(["both (Veusz + astropy)",
+                                     "veusz (native FITS import)",
+                                     "astropy"])
+        form.addRow(QLabel("Import backend:"), self.backend_combo)
+
+        self.thread_spin = QSpinBox()
+        self.thread_spin.setRange(1, max(1, (os.cpu_count() or 4) * 2))
+        self.thread_spin.setValue(MAX_THREADS)
+        form.addRow(QLabel("Worker threads:"), self.thread_spin)
+
+        self.rss_spin = QSpinBox()
+        self.rss_spin.setRange(128, 65536)
+        self.rss_spin.setSingleStep(128)
+        self.rss_spin.setValue(DEFAULT_RSS_HIGH_WATER_MB)
+        form.addRow(QLabel("RSS spill threshold (MiB):"), self.rss_spin)
+
+        self.show_embed_cb = QCheckBox("Show embedded Veusz preview while building")
+        self.show_embed_cb.setChecked(True)
+        form.addRow(self.show_embed_cb)
+
+    # ----- run -------------------------------------------------------------
+    def _process_files(self) -> None:
+        if not self.selected_files:
+            QMessageBox.information(self, "No files", "Select one or more FITS files first.")
             return
+        backend_idx = self.backend_combo.currentIndex()
+        backend = ["both", "veusz", "astropy"][backend_idx]
+        self.cache.cfg.rss_high_water_mb = int(self.rss_spin.value())
 
+        if self.veusz_doc is None and self.show_embed_cb.isChecked():
+            self.veusz_doc = open_embedded("FITS_AutoPlot")
+        elif self.veusz_doc is None:
+            # invisible doc: still required to build the project
+            self.veusz_doc = vz_embed.Embedded("FITS_AutoPlot", hidden=True)
+
+        self.process_button.setEnabled(False)
+        self.save_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, len(self.selected_files))
+        self.progress_bar.setValue(0)
+
+        self.worker = FITSBatchWorker(
+            self.selected_files, backend, int(self.thread_spin.value()),
+            self.cache, parent=self
+        )
+        self.worker.progress.connect(self._on_worker_progress)
+        self.worker.finished_ok.connect(self._on_worker_done)
+        self.worker.failed.connect(self._on_worker_failed)
+        self.log("Starting batch: %d file(s), backend=%s, threads=%d" %
+                 (len(self.selected_files), backend, int(self.thread_spin.value())))
+        self.worker.start()
+
+    def _on_worker_progress(self, done: int, total: int, key: str) -> None:
+        self.progress_bar.setValue(done)
+        self.log("  read [%d/%d] %s" % (done, total, os.path.basename(key)))
+        self.update_mem_label(self.cache.rss_mb())
+
+    def _on_worker_failed(self, msg: str) -> None:
+        self.log("Batch failed: %s" % msg)
+        QMessageBox.critical(self, "Batch failed", msg)
+        self.process_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+
+    def _on_worker_done(self, results: Dict[str, Any]) -> None:
+        backend_idx = self.backend_combo.currentIndex()
+        backend = ["both", "veusz", "astropy"][backend_idx]
+        for path, data in results.items():
+            if isinstance(data, Exception):
+                self.log("  ERROR processing %s: %s" % (path, data))
+                continue
+            self.log("Inserting datasets for %s" % os.path.basename(path))
+            try:
+                push_to_veusz(self.veusz_doc, path, data, backend, log_cb=self.log)
+            except Exception as exc:
+                self.log("  push_to_veusz failed for %s: %s" % (path, exc))
+        self.log("Batch complete.")
+        self.progress_bar.setVisible(False)
+        self.process_button.setEnabled(True)
+        self.save_button.setEnabled(True)
+
+    # ----- save ------------------------------------------------------------
+    def _save_project(self) -> None:
+        if self.veusz_doc is None:
+            QMessageBox.information(self, "Nothing to save",
+                                    "Process some files first.")
+            return
+        fn, _ = QFileDialog.getSaveFileName(
+            self, "Save Veusz Project", "", "Veusz HDF5 Projects (*.vszh5)"
+        )
+        if not fn:
+            return
         try:
-            subprocess.Popen([veusz_exe, filename])
-        except Exception as e:
-            QMessageBox.critical(
-                None,
-                "Launch Error",
-                f"Failed to start Veusz: {str(e)}"
-            )
+            written = save_vszh5(self.veusz_doc, fn)
+            self.log("Saved %s" % written)
+            QMessageBox.information(self, "Saved", "Wrote %s" % written)
+        except Exception as exc:
+            self.log("Save failed: %s" % exc)
+            QMessageBox.critical(self, "Save failed", str(exc))
+
+    # ----- shutdown --------------------------------------------------------
+    def closeEvent(self, event) -> None:
+        try:
+            self.monitor.stop()
+        except Exception:
+            pass
+        try:
+            if self.veusz_doc is not None:
+                self.veusz_doc.Close()
+        except Exception:
+            pass
+        try:
+            self.cache.cleanup()
+        except Exception:
+            pass
+        super().closeEvent(event)
 
 
-# %% Utiliy Functions
+# ============================================================================
+# ENTRY POINT
+# ============================================================================
+def main() -> int:
+    app = QApplication.instance() or QApplication(sys.argv)
+    win = FITSAutoPlotWindow()
+    win.show()
+    return app.exec_() if hasattr(app, "exec_") else app.exec()
 
 
-def setup_qt_plugins():
-    """
-    Setup Qt platform plugin paths for compiled applications.
-    """
-    try:
-        import PySide6
-        dirname = os.path.dirname(PySide6.__file__)
-        plugin_path = os.path.join(dirname, 'plugins', 'platforms')
-        if os.path.exists(plugin_path):
-            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
-    except ImportError:
-        pass
-
-
-# %% Main Func
-if __name__ == '__main__':
-    # Call this before any Qt imports
-    if getattr(sys, 'frozen', False):  # Check if running as compiled executable
-        setup_qt_plugins()
-    gui = qtGUI()
-    fits_path, import_method = gui.get_fits_file_and_method()
-
-    if not fits_path or not import_method:
-        sys.exit()
-
-    vz = VZPlotFITS()
-    getattr(vz, f'import_via_{import_method}')(fits_path)
-    vz.create_plots()
-
-    if save_path := gui.get_save_filename():
-        vz.save(save_path)
-        if gui.ask_open_veusz():
-            VZPlotFITS.open_veusz_gui(save_path)
-
-    sys.exit(gui.app.exec_())
+if __name__ == "__main__":
+    sys.exit(main())
