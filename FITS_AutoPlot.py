@@ -73,6 +73,23 @@ Date: 2026-05-16
 #             version stream.)
 Date: 2026-05-16
 # %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
+# Date: 2026-05-16
+# %%%% 0.0.9: Per-plot broken-x-axis on time gaps + unit-overlay pages.
+#             FITSProcessor.read() now also captures per-column unit
+#             strings (qt[col].unit if set, else TUNIT header), exposed
+#             via data['units'][(hdu_name, col_name)].  push_to_veusz()
+#             and _build_pages() take new keyword args ``plot_individual``
+#             (default True), ``gap_k`` (default 10.0), and
+#             ``gap_absolute`` (default 0.0); per-file pages now install a
+#             native ``axis-broken`` X axis whenever ``detect_time_breaks``
+#             returns non-empty pairs.  Added ``build_unit_overlay_pages``
+#             which post-builds one page per distinct unit string with a
+#             single graph overlaying every (file, column) matching that
+#             unit -- broken X axis is computed from the combined x sample
+#             distribution across all contributing files.  GUI gained a
+#             ``Gap K (× median Δt)`` spin, an ``Absolute gap`` override
+#             spin (0 = auto), and a ``Combined plots only`` checkbox that
+#             suppresses per-file pages but keeps the overlays.
 #               * MAX_THREADS default bumped from ``os.cpu_count() or 4``
 #                 to ``(os.cpu_count() or 4) * 2``.  The per-file read path
 #                 (astropy.io.fits + numpy memmap) is I/O bound and releases
@@ -159,13 +176,14 @@ if _THIS_DIR not in sys.path:
 from _autoplot_common import (   # noqa: E402
     Qt, QThread, Signal,
     QApplication, QFileDialog, QFormLayout, QLabel, QMessageBox,
-    QSpinBox, QComboBox, QCheckBox, QLineEdit,
+    QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QLineEdit,
     AutoPlotMainWindow,
     MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
     apply_theme, open_embedded, save_vszh5,
     run_in_threadpool, open_maybe_gzipped, safe_dsname,
     mjd_to_datestr,
     register_nrao_fits_units, suppress_fits_unit_warnings,
+    detect_time_breaks, make_broken_x_axis,
 )
 
 # Register the NRAO non-standard FITS unit aliases ('none', 'NanoSeconds')
@@ -261,6 +279,10 @@ class FITSProcessor:
         out = {
             "columns": {},
             "images": {},
+            # (hdu_name, col_name) -> unit string ("" if no TUNITn declared).
+            # Used by FITSAutoPlotWindow to group columns into unit-overlay
+            # pages (one extra page per distinct unit string).
+            "units": {},
             "sort_key": None,
             "header": [],
             "fits_for_vz": local_path,
@@ -300,6 +322,28 @@ class FITSProcessor:
                         out["columns"][key] = self.cache.store(
                             "%s.%s.%s" % (base, hname, col), data
                         )
+                        # Capture the unit string for this column when astropy
+                        # exposes one (Quantity columns have ``.unit``); fall
+                        # back to the bare ``TUNITn`` header keyword.  An empty
+                        # string means 'no declared unit' and groups all such
+                        # columns into a single 'dimensionless' overlay page.
+                        unit_str = ""
+                        try:
+                            u = getattr(qt[col], "unit", None)
+                            if u is not None:
+                                unit_str = str(u)
+                        except Exception:
+                            pass
+                        if not unit_str:
+                            try:
+                                # TUNITn keyword (1-based column index)
+                                col_idx = qt.colnames.index(col) + 1
+                                unit_str = str(
+                                    hdu.header.get("TUNIT%d" % col_idx, "") or ""
+                                ).strip()
+                            except Exception:
+                                unit_str = ""
+                        out["units"][key] = unit_str
                         if sort_key is None:
                             for hint in SORTED_KEY_HINT:
                                 if col.upper() == hint:
@@ -327,7 +371,10 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   backend: str, log_cb=None,
                   emit_datestr: bool = False,
                   column_cb=None,
-                  skip_images: bool = False) -> None:
+                  skip_images: bool = False,
+                  plot_individual: bool = True,
+                  gap_k: float = 10.0,
+                  gap_absolute: float = 0.0) -> None:
     """
     Push a single processed FITS file into the running embedded Veusz
     document.
@@ -524,14 +571,23 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             if log_cb:
                 log_cb("  Date-string datasets created: %d" % len(datestr_names))
 
-    # ---- 3) Build the plots ---------------------------------------------
-    # When the user opted to skip image HDUs, pass a shallow-copied
-    # data dict with an empty images map so _build_pages doesn't try
-    # to render image pages for HDUs that were never read.
-    if skip_images:
-        _build_pages(doc, base, dict(data, images={}), sorted_names)
-    else:
-        _build_pages(doc, base, data, sorted_names)
+    # ---- 3) Build the per-file plot pages -------------------------------
+    # When ``plot_individual`` is False, the user asked for combined
+    # (unit-overlay) plots only -- skip building the per-file pages here.
+    # The caller (FITSAutoPlotWindow) still builds the unit-overlay pages
+    # at the end of the batch from accumulated metadata.
+    if plot_individual:
+        # When the user opted to skip image HDUs, pass a shallow-copied
+        # data dict with an empty images map so _build_pages doesn't try
+        # to render image pages for HDUs that were never read.
+        if skip_images:
+            _build_pages(doc, base, dict(data, images={}), sorted_names,
+                         gap_k=gap_k, gap_absolute=gap_absolute)
+        else:
+            _build_pages(doc, base, data, sorted_names,
+                         gap_k=gap_k, gap_absolute=gap_absolute)
+    elif log_cb:
+        log_cb("  Per-file plot pages skipped (combined plots only).")
 
     # cleanup any temporary uncompressed copy
     if data["tmp_uncompressed"]:
@@ -542,8 +598,16 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
 
 
 def _build_pages(doc, base: str, data: Dict[str, Any],
-                 sorted_names: List[str]) -> None:
-    """Create one Veusz page per HDU with the appropriate plot widgets."""
+                 sorted_names: List[str],
+                 gap_k: float = 10.0,
+                 gap_absolute: float = 0.0) -> None:
+    """Create one Veusz page per HDU with the appropriate plot widgets.
+
+    When the x-axis column has large gaps (per ``detect_time_breaks`` with
+    the given ``gap_k`` and ``gap_absolute`` thresholds), the default 'x'
+    axis of each graph is replaced with an ``axis-broken`` widget showing
+    every contiguous segment of the data without dead space in between.
+    """
     # Group sorted datasets by HDU
     by_hdu: Dict[str, List[Tuple[str, str]]] = {}
     for (hname, col) in data["columns"].keys():
@@ -569,17 +633,36 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
             x_col = cols[0]
         x_name = x_col[1]
 
+        # Detect time-axis gaps once per HDU (all graphs on the page share
+        # the same x dataset, so they share the same break positions).
+        try:
+            x_arr = np.asarray(data["columns"][(hname, x_col[0])], dtype=float)
+        except Exception:
+            x_arr = np.empty(0, dtype=float)
+        break_pairs = detect_time_breaks(
+            x_arr, k_factor=gap_k, absolute_gap=gap_absolute
+        )
+
         for c, ds in cols:
             if ds == x_name:
                 continue
             graph = grid.Add("graph", name=safe_dsname("g_%s" % c))
             try:
-                graph.x.label.val = x_col[0]
                 graph.y.label.val = c
-                graph.x.GridLines.hide.val = False
                 graph.y.GridLines.hide.val = False
             except Exception:
                 pass
+            # Install broken x-axis if gaps were detected; otherwise keep
+            # the default plain axis and just label / grid it.
+            if break_pairs:
+                make_broken_x_axis(graph, break_pairs,
+                                   label=x_col[0], show_gridlines=True)
+            else:
+                try:
+                    graph.x.label.val = x_col[0]
+                    graph.x.GridLines.hide.val = False
+                except Exception:
+                    pass
             xy = graph.Add("xy", name=safe_dsname("xy_%s" % c))
             xy.xData.val = x_name
             xy.yData.val = ds
@@ -611,6 +694,152 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
         except Exception:
             # Older Veusz API: omit colorbar
             graph.Add("image", name="imageIn", data=ds_name)
+
+
+# ============================================================================
+# %% UNIT-OVERLAY PAGES (combined plots across files)
+# ============================================================================
+# A palette of distinct colours used to disambiguate the (file, column)
+# traces stacked on the same overlay graph.  Veusz also accepts hex codes;
+# we use named colours so the saved .vszh5 stays readable.
+_OVERLAY_COLORS = [
+    "blue", "red", "green", "darkorange", "purple", "saddlebrown",
+    "deeppink", "olive", "teal", "navy", "darkred", "darkgreen",
+    "magenta", "black", "darkcyan", "goldenrod",
+]
+
+
+def build_unit_overlay_pages(doc, file_records,
+                              gap_k=10.0, gap_absolute=0.0, log_cb=None):
+    """
+    Build one overlay page per distinct unit string across the loaded
+    batch.  Each overlay page contains a single graph that plots every
+    (file, column) combination whose unit string matches that page,
+    against its file's x-axis (sort-key) dataset.  When the combined
+    x-values across files show large gaps, the graph uses an
+    ``axis-broken`` x axis (gap thresholds: K * median(Δt) auto, or
+    ``gap_absolute`` if positive).
+
+    Parameters
+    ----------
+    doc : veusz.embed.Embedded
+        The active embedded Veusz document.
+    file_records : list of dict
+        One entry per successfully pushed file, each containing keys
+        ``base``, ``columns`` (dict (hname,col) -> array), ``units``
+        (dict (hname,col) -> unit-string), and ``sort_key`` (the
+        (hname,col) used as time-axis), produced by the GUI accumulator.
+    gap_k, gap_absolute : float
+        Forwarded to ``detect_time_breaks``.
+    log_cb : callable or None
+        Optional ``log_cb(msg)`` for status messages.
+    """
+    if not file_records:
+        return
+    # group: unit_str -> list of (file_base, hname, col, x_ds, y_ds)
+    by_unit = {}  # type: Dict[str, List[Tuple[str, str, str, str, str]]]
+    # accumulate x samples across files per unit for gap detection
+    x_samples_by_unit = {}  # type: Dict[str, List[np.ndarray]]
+    for rec in file_records:
+        base = rec.get("base")
+        cols = rec.get("columns") or {}
+        units = rec.get("units") or {}
+        sort_key = rec.get("sort_key")
+        if not base or sort_key is None or sort_key not in cols:
+            # without a time axis we cannot overlay against time
+            continue
+        x_hdu, x_col = sort_key
+        x_ds = "%s__%s__%s__sorted" % (
+            base, safe_dsname(x_hdu), safe_dsname(x_col)
+        )
+        try:
+            x_arr = np.asarray(cols[sort_key], dtype=float)
+        except Exception:
+            continue
+        for (hname, col), arr in cols.items():
+            if (hname, col) == sort_key:
+                continue
+            arr = np.asarray(arr)
+            if arr.dtype.kind not in ("f", "i", "u"):
+                continue  # skip text columns
+            unit_str = units.get((hname, col), "") or ""
+            unit_str = str(unit_str).strip()
+            y_ds = "%s__%s__%s__sorted" % (
+                base, safe_dsname(hname), safe_dsname(col)
+            )
+            by_unit.setdefault(unit_str, []).append(
+                (base, hname, col, x_ds, y_ds)
+            )
+            x_samples_by_unit.setdefault(unit_str, []).append(x_arr)
+
+    if not by_unit:
+        if log_cb:
+            log_cb("  No columns suitable for unit-overlay pages.")
+        return
+
+    for unit_str, traces in by_unit.items():
+        unit_label = unit_str if unit_str else "(dimensionless)"
+        page_name = safe_dsname("Overlay_%s" % (unit_str or "none"))
+        page = doc.Root.Add("page", name=page_name)
+        try:
+            page.notes.val = (
+                "Combined overlay of all columns with unit '%s' "
+                "across the loaded batch." % unit_label
+            )
+        except Exception:
+            pass
+        graph = page.Add("graph", name="g_overlay")
+        try:
+            graph.y.label.val = unit_label
+            graph.y.GridLines.hide.val = False
+        except Exception:
+            pass
+        # Compute break pairs from the combined x distribution across
+        # all files contributing to this unit page so the broken axis
+        # spans the whole batch.
+        x_all = np.concatenate(
+            [a for a in x_samples_by_unit.get(unit_str, []) if a.size]
+        ) if x_samples_by_unit.get(unit_str) else np.empty(0, dtype=float)
+        break_pairs = detect_time_breaks(
+            x_all, k_factor=gap_k, absolute_gap=gap_absolute
+        )
+        if break_pairs:
+            make_broken_x_axis(graph, break_pairs,
+                               label="time", show_gridlines=True)
+        else:
+            try:
+                graph.x.label.val = "time"
+                graph.x.GridLines.hide.val = False
+            except Exception:
+                pass
+        # Build a key so the legend names each trace by (file, column).
+        try:
+            key = graph.Add("key", name="key1")
+            key.Border.hide.val = False
+        except Exception:
+            pass
+        # One xy trace per (file, column) sharing this unit.
+        for i, (b, hn, col, x_ds, y_ds) in enumerate(traces):
+            xy_name = safe_dsname("xy_%s_%s_%s" % (b, hn, col))
+            xy = graph.Add("xy", name=xy_name)
+            xy.xData.val = x_ds
+            xy.yData.val = y_ds
+            try:
+                xy.key.val = "%s : %s.%s" % (b, hn, col)
+            except Exception:
+                pass
+            try:
+                xy.marker.val = "circle"
+                xy.markerSize.val = "2pt"
+                xy.PlotLine.hide.val = True
+                colour = _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)]
+                xy.MarkerFill.color.val = colour
+                xy.MarkerLine.color.val = colour
+            except Exception:
+                pass
+        if log_cb:
+            log_cb("  Overlay page '%s': %d trace(s)" %
+                   (unit_label, len(traces)))
 
 
 # ============================================================================
@@ -715,6 +944,28 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.skip_images_cb.setChecked(False)
         form.addRow(self.skip_images_cb)
 
+        # --- Broken-axis / overlay controls (v0.0.9) ----------------------
+        self.gap_k_spin = QDoubleSpinBox()
+        self.gap_k_spin.setRange(1.0, 1000.0)
+        self.gap_k_spin.setSingleStep(1.0)
+        self.gap_k_spin.setDecimals(2)
+        self.gap_k_spin.setValue(10.0)
+        form.addRow(QLabel("Gap K (× median Δt):"), self.gap_k_spin)
+
+        self.gap_abs_spin = QDoubleSpinBox()
+        self.gap_abs_spin.setRange(0.0, 1e12)
+        self.gap_abs_spin.setDecimals(6)
+        self.gap_abs_spin.setSingleStep(1.0)
+        self.gap_abs_spin.setValue(0.0)
+        form.addRow(QLabel("Absolute gap (units of x; 0=auto):"),
+                    self.gap_abs_spin)
+
+        self.combined_only_cb = QCheckBox(
+            "Combined (overlay) plots only -- skip per-file pages"
+        )
+        self.combined_only_cb.setChecked(False)
+        form.addRow(self.combined_only_cb)
+
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
         if not self.selected_files:
@@ -762,6 +1013,10 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         backend = ["both", "veusz", "astropy"][backend_idx]
         emit_datestr = bool(self.datestr_cb.isChecked())
         skip_images = bool(self.skip_images_cb.isChecked())
+        # v0.0.9 broken-axis / overlay knobs
+        gap_k = float(self.gap_k_spin.value())
+        gap_absolute = float(self.gap_abs_spin.value())
+        plot_individual = not bool(self.combined_only_cb.isChecked())
         # Keep the GUI responsive across hundreds of files: pump the Qt
         # event loop between every push so the log pane scrolls live and
         # the window doesn't appear "stuck" during a long batch insert.
@@ -776,6 +1031,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
             self.column_progress_bar.setValue(done)
             if app is not None:
                 app.processEvents()
+        file_records = []  # accumulator for the unit-overlay post-pass
         for idx, (path, data) in enumerate(results.items(), start=1):
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
@@ -794,12 +1050,34 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                 push_to_veusz(self.veusz_doc, path, data, backend,
                               log_cb=self.log, emit_datestr=emit_datestr,
                               column_cb=_col_cb,
-                              skip_images=skip_images)
+                              skip_images=skip_images,
+                              plot_individual=plot_individual,
+                              gap_k=gap_k,
+                              gap_absolute=gap_absolute)
             except Exception as exc:
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
+            else:
+                # Record this file for the overlay post-pass.
+                file_records.append({
+                    "base": safe_dsname(data.get("base_name") or
+                                        os.path.basename(path)),
+                    "columns": data.get("columns") or {},
+                    "units": data.get("units") or {},
+                    "sort_key": data.get("sort_key"),
+                })
             self.parse_progress_bar.setValue(idx)
             if app is not None:
                 app.processEvents()
+        # Build cross-file unit-overlay pages.
+        if file_records:
+            try:
+                build_unit_overlay_pages(
+                    self.veusz_doc, file_records,
+                    gap_k=gap_k, gap_absolute=gap_absolute,
+                    log_cb=self.log,
+                )
+            except Exception as exc:
+                self.log("  build_unit_overlay_pages failed: %s" % exc)
         self.log("Batch complete.")
         self.hide_progress_bars()
         self.process_button.setEnabled(True)

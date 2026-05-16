@@ -66,6 +66,45 @@ Date: 2026-05-16
 #             ``begin_column_progress()`` and ``tick_column_progress()``.
 #             Subclasses use these to drive a multi-stage progress UI.
 Date: 2026-05-16
+# %%%% 0.0.8: Added ``open_in_veusz_app(filename)`` helper that launches the
+#             full standalone Veusz GUI in the current Python environment
+#             via ``subprocess.Popen([sys.executable, '-m', 'veusz', fn])``
+#             so the freshly-saved .vszh5 project can be inspected without
+#             leaving the user's active venv / conda env.
+#             AutoPlotMainWindow gained an 'Open in Veusz...' button in the
+#             bottom button row (greyed out until ``mark_project_saved()``
+#             is called with a valid path).  Subclasses call
+#             ``self.mark_project_saved(fn)`` from their _save_project()
+#             override after save_vszh5() returns successfully.
+#             Also: parallelization audit.  ``MAX_THREADS`` defaults were
+#             bumped from ``cpu_count`` to ``cpu_count * 2`` in
+#             FITS_AutoPlot.py and Franks_AutoPlot.py because the file-read
+#             stage is I/O bound (GIL released in numpy + astropy) and
+#             oversubscription measurably helps on slow filesystems.
+#             The Veusz push phase is kept serial intentionally:
+#             ``veusz.embed.Embedded`` is documented as single-threaded --
+#             all document operations must come from one thread.
+Date: 2026-05-16
+# %%%% 0.0.9: Added broken-axis helpers used by FITS_AutoPlot and
+#             Franks_AutoPlot to generate plots that handle large time
+#             gaps without dead-space:
+#               * detect_time_breaks(x, k_factor=10, absolute_gap=0)
+#                 returns a list of (start, end) gap pairs.  Auto
+#                 threshold is ``K * median(|diff(x)|)`` (default K=10);
+#                 a positive ``absolute_gap`` overrides this in units of
+#                 ``x`` (seconds for time, days for MJD, etc.).
+#               * break_pairs_to_breakpoints(pairs) flattens to the
+#                 [s1,e1,s2,e2,...] FloatList format Veusz's
+#                 axis-broken widget expects in its ``breakPoints``
+#                 setting.
+#               * make_broken_x_axis(graph, pairs, label, show_gridlines)
+#                 removes the default 'x' axis of a graph and replaces
+#                 it with an ``axis-broken`` widget whose breakPoints
+#                 are set.  No-op if pairs is empty (caller keeps the
+#                 plain axis).  Veusz 3.4 and 4.1 compatible (the
+#                 widget and the breakPoints setting are stable since
+#                 Veusz 1.17, 2014).
+Date: 2026-05-16
 # %%%%% Function Descriptions
         make_dark_palette/make_light_palette/apply_theme: textual menu theme
             switching for dark vs light mode (View menu).
@@ -81,6 +120,10 @@ Date: 2026-05-16
             Touchstone_AutoPlot.py-style file list / options / log / button
             row layout, plus the View menu dark/light toggle.
         open_maybe_gzipped/safe_dsname: small I/O helpers used by callers.
+        open_in_veusz_app: launch the full Veusz GUI in the current Python
+            env and load the given .vszh5 file.
+        detect_time_breaks/break_pairs_to_breakpoints/make_broken_x_axis:
+            time-gap detection and Veusz axis-broken widget helpers.
 # %%%%% Variable Descriptions
         MemoryMonitorConfig.rss_high_water_mb: RSS threshold for spilling.
         MemoryMonitorConfig.array_min_bytes: arrays smaller than this stay
@@ -107,6 +150,7 @@ import time
 import uuid
 import gzip
 import shutil
+import subprocess
 import warnings
 import contextlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -126,7 +170,8 @@ if getattr(sys, "frozen", False):
     from PySide6.QtWidgets import (                          # noqa: F401
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QFileDialog, QLabel, QMessageBox, QListWidget,
-        QGroupBox, QCheckBox, QSpinBox, QComboBox, QLineEdit, QTextEdit,
+        QGroupBox, QCheckBox, QSpinBox, QDoubleSpinBox,
+        QComboBox, QLineEdit, QTextEdit,
         QProgressBar, QFormLayout, QMenuBar, QMenu, QStatusBar,
         QTabWidget, QRadioButton, QButtonGroup,
     )
@@ -141,7 +186,8 @@ else:
     from qtpy.QtWidgets import (                              # noqa: F401
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QFileDialog, QLabel, QMessageBox, QListWidget,
-        QGroupBox, QCheckBox, QSpinBox, QComboBox, QLineEdit, QTextEdit,
+        QGroupBox, QCheckBox, QSpinBox, QDoubleSpinBox,
+        QComboBox, QLineEdit, QTextEdit,
         QProgressBar, QFormLayout, QMenuBar, QMenu, QStatusBar,
         QTabWidget, QRadioButton, QButtonGroup,
     )
@@ -412,6 +458,181 @@ def save_vszh5(doc, filename: str) -> str:
     return filename
 
 
+# %%% Launch full Veusz GUI in current Python env
+# ---------------------------------------------------------------------------
+def open_in_veusz_app(filename, python_exe=None):
+    """
+    Launch the *full* Veusz GUI in the current Python environment and load
+    ``filename`` (typically a .vszh5 project just written by save_vszh5).
+
+    The standalone Veusz application is invoked as a Python module so it
+    uses the exact interpreter that is running this AutoPlot session --
+    that guarantees the GUI sees the same numpy / astropy / qtpy stack and
+    the same site-packages-installed Veusz that produced the file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the .vszh5 project to open.
+    python_exe : Optional[str]
+        Override the interpreter; defaults to ``sys.executable``.
+
+    Returns
+    -------
+    subprocess.Popen
+        Handle to the spawned Veusz process.  The caller is not required
+        to wait on it -- the new process is detached so the parent (the
+        AutoPlot GUI) can be closed without killing the Veusz session.
+    """
+    py = python_exe or sys.executable
+    cmd = [py, "-m", "veusz", filename]
+    kwargs = {"close_fds": True}
+    # Detach on Windows so the parent can exit without killing the GUI.
+    if os.name == "nt":
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    else:
+        # On POSIX, start a new session so closing the parent terminal does
+        # not deliver SIGHUP to the GUI.
+        kwargs["start_new_session"] = True
+    return subprocess.Popen(cmd, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# %% BROKEN-AXIS HELPERS
+# ---------------------------------------------------------------------------
+# %%% detect_time_breaks
+def detect_time_breaks(x, k_factor=10.0, absolute_gap=0.0):
+    # type: (np.ndarray, float, float) -> List[Tuple[float, float]]
+    """
+    Detect large gaps in a 1-D monotonic-ish array of time samples and return
+    a list of (start, end) pairs suitable for Veusz's ``axis-broken`` widget.
+
+    A 'gap' is any consecutive pair where ``x[i+1] - x[i]`` exceeds the
+    chosen threshold.  Two threshold sources are supported, with the
+    absolute value winning when given:
+
+        * ``absolute_gap > 0`` -- treat any Δt > absolute_gap as a break.
+          Units must match ``x`` (e.g. seconds if x is seconds, days if x
+          is MJD).  Pass 0.0 (or negative) to disable.
+        * Auto: gap > ``k_factor * median(|diff(x)|)``.  This is robust to
+          uniform sampling rates that differ between files and avoids
+          surprising the user when the typical Δt changes by orders of
+          magnitude across loaded files.
+
+    NaN samples are removed from ``x`` before gap detection (NaN-NaN diffs
+    are NaN which would otherwise propagate).  Non-monotonic input is
+    tolerated: we first ``np.sort`` the input copy so the gap analysis is
+    well-defined.  The returned pairs are also produced in sorted-x space,
+    which is what Veusz wants for ``breakPoints``.
+
+    Returns
+    -------
+    list of (gap_start, gap_end) tuples in the units of ``x``.  Empty list
+    if no break is detected, or if there are fewer than 3 finite samples.
+    """
+    arr = np.asarray(x, dtype=float).ravel()
+    arr = arr[np.isfinite(arr)]
+    if arr.size < 3:
+        return []
+    arr = np.sort(arr)
+    d = np.diff(arr)
+    if d.size == 0:
+        return []
+    # Absolute threshold wins if the user gave a positive value.
+    if absolute_gap and absolute_gap > 0.0:
+        thresh = float(absolute_gap)
+    else:
+        med = float(np.median(np.abs(d[d > 0])) if np.any(d > 0) else 0.0)
+        if med <= 0.0:
+            return []
+        thresh = float(k_factor) * med
+    mask = d > thresh
+    if not np.any(mask):
+        return []
+    starts = arr[:-1][mask]
+    stops = arr[1:][mask]
+    # Shrink the pair very slightly so the break does not eat the first /
+    # last sample on either side of the gap when Veusz computes ticks.
+    eps = 1e-9 * max(1.0, float(np.nanmax(np.abs(arr))))
+    pairs = []  # type: List[Tuple[float, float]]
+    for s, e in zip(starts, stops):
+        s2 = float(s) + eps
+        e2 = float(e) - eps
+        if e2 > s2:
+            pairs.append((s2, e2))
+    return pairs
+
+
+# %%% break_pairs_to_breakpoints
+def break_pairs_to_breakpoints(pairs):
+    # type: (List[Tuple[float, float]]) -> List[float]
+    """Flatten a list of (start, end) tuples to Veusz's flat-list format
+    [s1, e1, s2, e2, ...] as expected by the ``breakPoints`` setting of the
+    ``axis-broken`` widget."""
+    out = []  # type: List[float]
+    for s, e in pairs:
+        out.append(float(s))
+        out.append(float(e))
+    return out
+
+
+# %%% make_broken_x_axis
+def make_broken_x_axis(graph, break_pairs, label="", show_gridlines=True):
+    """
+    Add an ``axis-broken`` widget named ``x`` to ``graph`` with the given
+    list of (start, end) break pairs, after removing the default ``x``
+    axis that ``graph`` already carries.  Returns the new axis widget.
+
+    The function is idempotent: if a widget named ``x`` already exists on
+    ``graph`` it is removed first.  If ``break_pairs`` is empty the
+    function does nothing and returns None (the caller should keep the
+    default plain axis in that case).
+
+    Compatible with both Veusz 3.4 and 4.1 because the ``axis-broken``
+    widget and its ``breakPoints`` FloatList setting have been stable
+    since Veusz 1.17 (2014).
+    """
+    if not break_pairs:
+        return None
+    # Remove the default 'x' axis first.  Both Veusz versions accept
+    # Remove() on a child widget by name via the parent's API.
+    try:
+        graph.Remove("x")
+    except Exception:
+        # Fall back: it may have been removed already, or the API differs.
+        try:
+            for child in list(getattr(graph, "children", [])):
+                if getattr(child, "name", None) == "x":
+                    try:
+                        child.Remove()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    ax = graph.Add("axis-broken", name="x")
+    try:
+        ax.direction.val = "horizontal"
+    except Exception:
+        pass
+    try:
+        ax.breakPoints.val = break_pairs_to_breakpoints(break_pairs)
+    except Exception:
+        pass
+    if label:
+        try:
+            ax.label.val = str(label)
+        except Exception:
+            pass
+    if show_gridlines:
+        try:
+            ax.GridLines.hide.val = False
+        except Exception:
+            pass
+    return ax
+
+
 # ---------------------------------------------------------------------------
 # %% COMMON GUI BUILDING BLOCKS
 # ---------------------------------------------------------------------------
@@ -432,6 +653,9 @@ class AutoPlotMainWindow(QMainWindow):
         self.resize(1100, 800)
         self.selected_files: List[str] = []
         self._theme_mode = default_mode
+        # Path of the most recently saved .vszh5 project (None until
+        # mark_project_saved() is called by a subclass _save_project()).
+        self._last_saved_path: Optional[str] = None
         self._build_menu()
         self._build_central_widget()
         self._build_statusbar()
@@ -545,6 +769,15 @@ class AutoPlotMainWindow(QMainWindow):
         self.save_button.clicked.connect(self._save_project)
         self.save_button.setEnabled(False)
         bbox.addWidget(self.save_button)
+        # %% Open-in-Veusz button (enabled after a successful save)
+        self.open_veusz_button = QPushButton("Open in Veusz...")
+        self.open_veusz_button.setToolTip(
+            "Launch the full Veusz GUI in the current Python environment "
+            "and load the most recently saved project."
+        )
+        self.open_veusz_button.clicked.connect(self._open_last_in_veusz)
+        self.open_veusz_button.setEnabled(False)
+        bbox.addWidget(self.open_veusz_button)
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.close)
         bbox.addWidget(self.close_button)
@@ -627,6 +860,51 @@ class AutoPlotMainWindow(QMainWindow):
 
     def tick_column_progress(self, done: int) -> None:
         self.column_progress_bar.setValue(done)
+
+    # ----- saved-project tracking / Open-in-Veusz --------------------------
+    def mark_project_saved(self, filename: str) -> None:
+        """Record the path of a freshly saved .vszh5 project and enable the
+        'Open in Veusz...' button.  Subclasses should call this from their
+        ``_save_project`` after ``save_vszh5`` returns successfully."""
+        if filename:
+            self._last_saved_path = filename
+            self.open_veusz_button.setEnabled(True)
+            self.open_veusz_button.setToolTip(
+                "Open %s in the full Veusz GUI (current Python env)." % filename
+            )
+
+    def _open_last_in_veusz(self) -> None:
+        """Slot for the 'Open in Veusz...' button.  Spawns a detached
+        full-Veusz GUI on the last saved project using the active interpreter.
+        """
+        fn = self._last_saved_path
+        if not fn:
+            QMessageBox.information(
+                self, "No saved project",
+                "Save a Veusz project first, then this button will open it."
+            )
+            return
+        if not os.path.exists(fn):
+            QMessageBox.warning(
+                self, "File missing",
+                "The previously saved project no longer exists:\n\n%s" % fn
+            )
+            return
+        try:
+            proc = open_in_veusz_app(fn)
+            self.log("Launched Veusz (PID %s) on %s" %
+                     (getattr(proc, "pid", "?"), fn))
+        except FileNotFoundError as exc:
+            self.log("Open in Veusz failed: %s" % exc)
+            QMessageBox.critical(
+                self, "Open in Veusz failed",
+                "Could not launch Veusz with the current Python interpreter:\n\n%s\n\n"
+                "Make sure the ``veusz`` package is installed in this environment "
+                "(``python -m pip install veusz``)." % exc
+            )
+        except Exception as exc:
+            self.log("Open in Veusz failed: %s" % exc)
+            QMessageBox.critical(self, "Open in Veusz failed", str(exc))
 
     # ----- abstract hooks ---------------------------------------------------
     def _process_files(self) -> None:

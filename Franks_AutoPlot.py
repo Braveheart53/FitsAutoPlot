@@ -65,6 +65,22 @@ Date: 2026-05-16
 #             here (Franks files have no image HDUs).
 Date: 2026-05-16
 # %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
+# Date: 2026-05-16
+# %%%% 0.0.9: Per-plot broken-x-axis on time gaps + column-name overlay
+#             pages.  push_franks_to_veusz() now takes new keyword args
+#             ``plot_individual`` (default True), ``gap_k`` (default 10.0),
+#             and ``gap_absolute`` (default 0.0); when ``plot_individual``
+#             is False the per-file page is skipped (datasets are still
+#             pushed) so the user can produce overlay-only projects.  When
+#             time-axis breaks are detected, the per-file grid graphs are
+#             given a native ``axis-broken`` X axis.  Added
+#             ``build_unit_overlay_pages_franks`` which post-builds one
+#             page per shared column name across the loaded batch (Franks
+#             files have no unit annotations, so grouping is by column
+#             name).  GUI gained a ``Gap K (× median Δt)`` spin, an
+#             ``Absolute gap`` override spin (0 = auto), and a
+#             ``Combined plots only`` checkbox that suppresses per-file
+#             pages but keeps the overlays.
 #               * MAX_THREADS default bumped from ``os.cpu_count() or 4``
 #                 to ``(os.cpu_count() or 4) * 2``.  parse_franks_file()'s
 #                 work is overwhelmingly I/O bound (file read) and bounded
@@ -140,11 +156,12 @@ if _THIS_DIR not in sys.path:
 from _autoplot_common import (   # noqa: E402
     Qt, QThread, Signal,
     QApplication, QFileDialog, QFormLayout, QLabel, QMessageBox,
-    QSpinBox, QComboBox, QCheckBox, QLineEdit,
+    QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QLineEdit,
     AutoPlotMainWindow,
     MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
     open_embedded, save_vszh5, run_in_threadpool, safe_dsname,
     mjd_to_datestr,
+    detect_time_breaks, make_broken_x_axis,
 )
 
 # ============================================================================
@@ -313,12 +330,25 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
 # ============================================================================
 def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                          emit_datestr: bool = False,
-                         column_cb=None) -> None:
+                         column_cb=None,
+                         plot_individual: bool = True,
+                         gap_k: float = 10.0,
+                         gap_absolute: float = 0.0) -> None:
     """Push parsed Franks columns into the running embedded Veusz document.
 
     ``column_cb(done, total)`` -- optional, ticked once per source column
     successfully pushed (raw+sorted counted as one) so callers can drive a
     per-file column progress bar from the GUI thread.
+
+    Parameters (v0.0.9)
+    -------------------
+    plot_individual : bool
+        If False, the per-file plot page is **not** built (datasets are
+        still pushed so the cross-file overlay post-pass can use them).
+    gap_k : float
+        K factor for ``detect_time_breaks`` (threshold = K * median(Δt)).
+    gap_absolute : float
+        Absolute gap in MJD units; when > 0 overrides ``gap_k``.
     """
     base = data["base_name"]
     cols = data["columns"]
@@ -413,6 +443,13 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                     log_cb("  MJD->date conversion failed: %s" % exc)
 
     # Build pages: one page named after the file, one graph per numeric col vs MJD
+    # ``plot_individual`` (v0.0.9) lets the caller suppress per-file pages
+    # while still pushing the underlying datasets (overlays still work).
+    if not plot_individual:
+        if log_cb:
+            log_cb("  Per-file plot page skipped (combined plots only).")
+        return
+
     page = doc.Root.Add("page", name=safe_dsname(base))
     try:
         page.notes.val = "\n".join(data.get("header_lines", []))
@@ -421,6 +458,18 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
 
     grid = page.Add("grid", columns=2)
     x_ds = "%s__%s__sorted" % (base, safe_dsname(sort_key)) if sort_key else None
+
+    # Compute time-axis breaks once per file (all graphs on this page
+    # share the same X axis dataset).
+    break_pairs = []
+    if sort_key is not None and sort_key in cols:
+        try:
+            x_arr = np.asarray(cols[sort_key], dtype=float)
+            break_pairs = detect_time_breaks(
+                x_arr, k_factor=gap_k, absolute_gap=gap_absolute
+            )
+        except Exception:
+            break_pairs = []
 
     for cname in cols.keys():
         if cname == sort_key:
@@ -431,10 +480,27 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
             continue
         ds = "%s__%s__sorted" % (base, safe_dsname(cname))
         graph = grid.Add("graph", name=safe_dsname("g_%s" % cname))
+        # Install a broken X axis if time gaps were found; otherwise label
+        # the default X axis as before.
+        if break_pairs:
+            try:
+                make_broken_x_axis(graph, break_pairs,
+                                   label=sort_key or "index",
+                                   show_gridlines=True)
+            except Exception:
+                try:
+                    graph.x.label.val = sort_key or "index"
+                    graph.x.GridLines.hide.val = False
+                except Exception:
+                    pass
+        else:
+            try:
+                graph.x.label.val = sort_key or "index"
+                graph.x.GridLines.hide.val = False
+            except Exception:
+                pass
         try:
-            graph.x.label.val = sort_key or "index"
             graph.y.label.val = cname
-            graph.x.GridLines.hide.val = False
             graph.y.GridLines.hide.val = False
         except Exception:
             pass
@@ -453,6 +519,129 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
         log_cb("  Page built with %d graphs" %
                sum(1 for c in cols if c != sort_key
                    and np.asarray(cols[c]).dtype.kind in ("f", "i", "u")))
+
+
+# ============================================================================
+# %% UNIT-OVERLAY POST-PASS (Franks groups by COLUMN NAME, no units)
+# ============================================================================
+_OVERLAY_COLORS = [
+    "blue", "red", "green", "darkorange", "purple", "saddlebrown",
+    "deeppink", "olive", "teal", "navy", "darkred", "darkgreen",
+    "magenta", "black", "darkcyan", "goldenrod",
+]
+
+
+def build_unit_overlay_pages_franks(doc, file_records,
+                                     gap_k=10.0, gap_absolute=0.0,
+                                     log_cb=None):
+    """Build one overlay page per **shared column name** across the loaded
+    batch.  Franks files carry no unit annotations, so all files that
+    expose a column with the same name (e.g. ``DELTAT``) are overlaid on a
+    single page.
+
+    Parameters
+    ----------
+    doc : veusz.embed.Embedded
+        The active embedded Veusz document.
+    file_records : list of dict
+        One entry per successfully pushed file, each containing keys
+        ``base``, ``columns`` (dict colname -> array), and ``sort_key``
+        (column name, typically ``'MJD'``), produced by the GUI
+        accumulator.
+    gap_k, gap_absolute : float
+        Forwarded to ``detect_time_breaks``.
+    log_cb : callable or None
+        Optional ``log_cb(msg)`` for status messages.
+    """
+    if not file_records:
+        return
+    # group: col_name -> list of (file_base, x_ds, y_ds)
+    by_col = {}
+    x_samples_by_col = {}
+    for rec in file_records:
+        base = rec.get("base")
+        cols = rec.get("columns") or {}
+        sort_key = rec.get("sort_key")
+        if not base or sort_key is None or sort_key not in cols:
+            continue
+        x_ds = "%s__%s__sorted" % (base, safe_dsname(sort_key))
+        try:
+            x_arr = np.asarray(cols[sort_key], dtype=float)
+        except Exception:
+            continue
+        for cname, arr in cols.items():
+            if cname == sort_key:
+                continue
+            arr = np.asarray(arr)
+            if arr.dtype.kind not in ("f", "i", "u"):
+                continue
+            y_ds = "%s__%s__sorted" % (base, safe_dsname(cname))
+            by_col.setdefault(cname, []).append((base, x_ds, y_ds))
+            x_samples_by_col.setdefault(cname, []).append(x_arr)
+
+    if not by_col:
+        if log_cb:
+            log_cb("  No numeric columns suitable for column-overlay pages.")
+        return
+
+    for cname, traces in by_col.items():
+        page_name = safe_dsname("Overlay_%s" % cname)
+        page = doc.Root.Add("page", name=page_name)
+        try:
+            page.notes.val = (
+                "Combined overlay of column '%s' across the loaded batch."
+                % cname
+            )
+        except Exception:
+            pass
+        graph = page.Add("graph", name="g_overlay")
+        try:
+            graph.y.label.val = cname
+            graph.y.GridLines.hide.val = False
+        except Exception:
+            pass
+        # Combined x across files for break detection.
+        x_pieces = [a for a in x_samples_by_col.get(cname, []) if a.size]
+        x_all = (np.concatenate(x_pieces)
+                 if x_pieces else np.empty(0, dtype=float))
+        break_pairs = detect_time_breaks(
+            x_all, k_factor=gap_k, absolute_gap=gap_absolute
+        )
+        if break_pairs:
+            make_broken_x_axis(graph, break_pairs,
+                               label="MJD", show_gridlines=True)
+        else:
+            try:
+                graph.x.label.val = "MJD"
+                graph.x.GridLines.hide.val = False
+            except Exception:
+                pass
+        try:
+            key = graph.Add("key", name="key1")
+            key.Border.hide.val = False
+        except Exception:
+            pass
+        for i, (b, x_ds, y_ds) in enumerate(traces):
+            xy_name = safe_dsname("xy_%s_%s" % (b, cname))
+            xy = graph.Add("xy", name=xy_name)
+            xy.xData.val = x_ds
+            xy.yData.val = y_ds
+            try:
+                xy.key.val = "%s : %s" % (b, cname)
+            except Exception:
+                pass
+            try:
+                xy.marker.val = "circle"
+                xy.markerSize.val = "2pt"
+                xy.PlotLine.hide.val = True
+                colour = _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)]
+                xy.MarkerFill.color.val = colour
+                xy.MarkerLine.color.val = colour
+            except Exception:
+                pass
+        if log_cb:
+            log_cb("  Overlay page '%s' built with %d traces."
+                   % (page_name, len(traces)))
 
 
 # ============================================================================
@@ -533,6 +722,28 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.datestr_cb.setChecked(False)
         form.addRow(self.datestr_cb)
 
+        # --- Broken-axis / overlay controls (v0.0.9) ----------------------
+        self.gap_k_spin = QDoubleSpinBox()
+        self.gap_k_spin.setRange(1.0, 1000.0)
+        self.gap_k_spin.setSingleStep(1.0)
+        self.gap_k_spin.setDecimals(2)
+        self.gap_k_spin.setValue(10.0)
+        form.addRow(QLabel("Gap K (× median Δt):"), self.gap_k_spin)
+
+        self.gap_abs_spin = QDoubleSpinBox()
+        self.gap_abs_spin.setRange(0.0, 1e12)
+        self.gap_abs_spin.setDecimals(6)
+        self.gap_abs_spin.setSingleStep(1.0)
+        self.gap_abs_spin.setValue(0.0)
+        form.addRow(QLabel("Absolute gap (MJD units; 0=auto):"),
+                    self.gap_abs_spin)
+
+        self.combined_only_cb = QCheckBox(
+            "Combined (overlay) plots only -- skip per-file pages"
+        )
+        self.combined_only_cb.setChecked(False)
+        form.addRow(self.combined_only_cb)
+
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
         if not self.selected_files:
@@ -574,6 +785,10 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 
     def _on_done(self, results: Dict[str, Any]) -> None:
         emit_datestr = bool(self.datestr_cb.isChecked())
+        # v0.0.9 broken-axis / overlay knobs
+        gap_k = float(self.gap_k_spin.value())
+        gap_absolute = float(self.gap_abs_spin.value())
+        plot_individual = not bool(self.combined_only_cb.isChecked())
         # Keep the GUI responsive across many files: pump the Qt event
         # loop between every push so the log pane scrolls live and the
         # window doesn't appear "stuck" during a long batch insert.
@@ -585,6 +800,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
             self.column_progress_bar.setValue(done)
             if app is not None:
                 app.processEvents()
+        file_records = []  # accumulator for the overlay post-pass
         for idx, (path, data) in enumerate(results.items(), start=1):
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
@@ -599,12 +815,33 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
             try:
                 push_franks_to_veusz(self.veusz_doc, data, log_cb=self.log,
                                      emit_datestr=emit_datestr,
-                                     column_cb=_col_cb)
+                                     column_cb=_col_cb,
+                                     plot_individual=plot_individual,
+                                     gap_k=gap_k,
+                                     gap_absolute=gap_absolute)
             except Exception as exc:
                 self.log("  push failed: %s" % exc)
+            else:
+                file_records.append({
+                    "base": data.get("base_name") or
+                            safe_dsname(os.path.basename(path)),
+                    "columns": data.get("columns") or {},
+                    "sort_key": data.get("sort_key"),
+                })
             self.parse_progress_bar.setValue(idx)
             if app is not None:
                 app.processEvents()
+        # Build cross-file column-name overlay pages.
+        if file_records:
+            try:
+                build_unit_overlay_pages_franks(
+                    self.veusz_doc, file_records,
+                    gap_k=gap_k, gap_absolute=gap_absolute,
+                    log_cb=self.log,
+                )
+            except Exception as exc:
+                self.log("  build_unit_overlay_pages_franks failed: %s"
+                         % exc)
         self.log("Batch complete.")
         self.hide_progress_bars()
         self.process_button.setEnabled(True)
