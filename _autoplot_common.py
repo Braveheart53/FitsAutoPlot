@@ -106,6 +106,30 @@ Date: 2026-05-16
 #              importable on the host -- there is no install or
 #              configuration burden when CuPy is absent.
 Date: 2026-05-16
+# %%%% 0.0.13: Identity-stable trace styling + datetime-duplicate hardening.
+#                * apply_trace_style(xy, identity_key, vary_style=False)
+#                  assigns each trace a deterministic colour (md5 over the
+#                  identity key, mapped into TRACE_COLOR_PALETTE) and a
+#                  line style.  Line is shown by default with a 1pt width;
+#                  markers shrink to 1pt so dense traces remain legible.
+#                * Identity key is (column_name, tag_tuple) so the SAME
+#                  trace gets the SAME (colour, line-style) on every page
+#                  -- per-file, datetime-duplicate, and unit-overlay --
+#                  across both FITS and Franks pipelines.
+#                * vary_style activates only when a graph carries more
+#                  than TRACE_STYLE_VARY_THRESHOLD (16) traces, at which
+#                  point the line style cycles through TRACE_LINE_STYLES
+#                  (solid / dashed / dotted / dash-dot) keyed by the same
+#                  stable hash.  Small graphs stay fully solid.
+#                * set_datetime_dataset(doc, name, secs, log_cb) coerces
+#                  every value to a plain Python float, replaces NaN/inf
+#                  with 0.0, and logs '+datetime dataset <name>' on
+#                  success or 'SetDataDateTime FAILED for <name>' on
+#                  failure.  Wraps every SetDataDateTime call across the
+#                  FITS + Franks pipelines so real-Veusz no longer
+#                  silently drops dt-duplicate pages when the input array
+#                  contains NumPy float64 / NaN.
+Date: 2026-05-16
 # %%%% 0.0.12: Combined-in-time overlay semantics.  The unit-overlay
 #               builders now stitch every file's samples for a given
 #               (unit, column) into a single time-sorted xy trace -- one

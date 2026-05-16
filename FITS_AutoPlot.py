@@ -71,6 +71,77 @@ Date: 2026-05-16
 #             files where image HDUs are unused -- measurable speedup on
 #             large batches.  (No 0.0.6: aligned with sibling plugin
 #             version stream.)
+Date: 2026-05-16
+# %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
+# Date: 2026-05-16
+# %%%% 0.0.13: Identity-stable trace styling + datetime-duplicate hardening.
+#                * Every xy widget (tagged per-file, untagged per-file,
+#                  datetime-duplicate, and unit-overlay) is now styled by
+#                  apply_trace_style() with identity key (column_name,
+#                  tag_tuple).  The same (column, channel-pair) trace
+#                  keeps the SAME colour and line style on every page it
+#                  appears on -- so a given DELTAT trace for
+#                  (CHA1, CHB2) looks identical on the per-file page, on
+#                  the datetime-duplicate page, and on the cross-file
+#                  unit-overlay -- making it easy to follow a single
+#                  channel across the full document.
+#                * Line is shown by default with a 1pt width; markers
+#                  shrink to 1pt.  Line style cycles only when a graph
+#                  carries more than 16 traces, so the typical NRAO
+#                  1PPS case (a handful of channel pairs) stays fully
+#                  solid.
+#                * SetDataDateTime calls now go through
+#                  set_datetime_dataset(), which coerces every value to
+#                  a plain Python float (NaN/inf -> 0.0) and logs the
+#                  outcome.  Plugged in at every dt emission site:
+#                  per-tag dt, untagged dt fallback, and overlay dt.
+Date: 2026-05-16
+# %%%% 0.0.12: Combined-in-time overlay semantics.  build_unit_overlay_pages
+#              now collapses each (unit, column) onto a single time-sorted
+#              xy trace stitched across every file that contributes that
+#              column.  The legend names the column (e.g. 'DELTAT'); the
+#              file boundaries disappear into the time series.  The
+#              datetime-axis duplicate overlay does the same with the
+#              concatenated time array converted to Veusz seconds.
+#              Channel-tag row model: text columns named in
+#              TAG_COLUMN_HINTS (e.g. CHANNELA, CHANNELB) are treated as
+#              row-tags that identify which channel-pair each row of
+#              numeric data belongs to.  They are NOT plotted as series.
+#              Instead each numeric column (e.g. DELTAT) is split into
+#              one trace per unique tag-tuple (e.g. ('CHA1','CHB2'))
+#              both on per-file pages and on cross-file overlay pages.
+Date: 2026-05-16
+# %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
+#              checkbox ("Duplicate plots with datetime X axis") asks
+#              every per-file page and every cross-file unit-overlay
+#              page to be cloned with a parallel Veusz date-time x
+#              dataset (seconds since 2009-01-01 UTC).  The clones use
+#              the ``YYYY-MM-DD HH:MM:SS`` tick label format (Veusz
+#              %VDx tokens) rotated 45 degrees, so the cadence sits at
+#              a readable density.  The original numeric (MJD) pages
+#              are unchanged.
+#                * push_to_veusz() and _build_pages() take the new
+#                  ``datetime_duplicate`` kwarg.  The duplicate-pages
+#                  pass runs after the original page so the project
+#                  tree shows them side-by-side.
+#                * build_unit_overlay_pages() also gained
+#                  ``datetime_duplicate``; the cross-file overlay is
+#                  cloned once per unit using the same dt datasets.
+#                * The date-time companion dataset is emitted with the
+#                  suffix ``__dt`` (sorted by the same sort key); it is
+#                  built only when the sort key is an MJD-flavoured
+#                  column (DMJD, MJD, JD-with-2400000.5-correction).
+#                  TIME / TIMESTAMP columns are skipped with a log note
+#                  because their epoch is ambiguous.
+# %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
+#              When the 'Use GPU acceleration (CuPy)' checkbox is
+#              checked and CuPy is importable on the host (Windows or
+#              Linux), large time-axis sorts are dispatched to
+#              ``gpu_argsort`` from ``_autoplot_common`` -- typically
+#              2.7-10x faster than NumPy on consumer GPUs once N exceeds
+#              ~200k samples.  Smaller files still use NumPy.  CuPy is a
+#              soft dependency: the checkbox is disabled and tooltipped
+#              when CuPy is absent.
 # %%%% 0.0.9: Per-plot broken-x-axis on time gaps + unit-overlay pages.
 #             FITSProcessor.read() now also captures per-column unit
 #             strings (qt[col].unit if set, else TUNIT header), exposed
@@ -101,56 +172,6 @@ Date: 2026-05-16
 #                 the full standalone Veusz GUI in the current Python env
 #                 (``python -m veusz <fn>``) without leaving the AutoPlot
 #                 session.
-# %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
-#              When the 'Use GPU acceleration (CuPy)' checkbox is
-#              checked and CuPy is importable on the host (Windows or
-#              Linux), large time-axis sorts are dispatched to
-#              ``gpu_argsort`` from ``_autoplot_common`` -- typically
-#              2.7-10x faster than NumPy on consumer GPUs once N exceeds
-#              ~200k samples.  Smaller files still use NumPy.  CuPy is a
-#              soft dependency: the checkbox is disabled and tooltipped
-#              when CuPy is absent.
-Date: 2026-05-16
-# %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
-Date: 2026-05-16
-# %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
-#              checkbox ("Duplicate plots with datetime X axis") asks
-#              every per-file page and every cross-file unit-overlay
-#              page to be cloned with a parallel Veusz date-time x
-#              dataset (seconds since 2009-01-01 UTC).  The clones use
-#              the ``YYYY-MM-DD HH:MM:SS`` tick label format (Veusz
-#              %VDx tokens) rotated 45 degrees, so the cadence sits at
-#              a readable density.  The original numeric (MJD) pages
-#              are unchanged.
-#                * push_to_veusz() and _build_pages() take the new
-#                  ``datetime_duplicate`` kwarg.  The duplicate-pages
-#                  pass runs after the original page so the project
-#                  tree shows them side-by-side.
-#                * build_unit_overlay_pages() also gained
-#                  ``datetime_duplicate``; the cross-file overlay is
-#                  cloned once per unit using the same dt datasets.
-#                * The date-time companion dataset is emitted with the
-#                  suffix ``__dt`` (sorted by the same sort key); it is
-#                  built only when the sort key is an MJD-flavoured
-#                  column (DMJD, MJD, JD-with-2400000.5-correction).
-#                  TIME / TIMESTAMP columns are skipped with a log note
-#                  because their epoch is ambiguous.
-# Date: 2026-05-16
-# %%%% 0.0.12: Combined-in-time overlay semantics.  build_unit_overlay_pages
-#              now collapses each (unit, column) onto a single time-sorted
-#              xy trace stitched across every file that contributes that
-#              column.  The legend names the column (e.g. 'DELTAT'); the
-#              file boundaries disappear into the time series.  The
-#              datetime-axis duplicate overlay does the same with the
-#              concatenated time array converted to Veusz seconds.
-#              Channel-tag row model: text columns named in
-#              TAG_COLUMN_HINTS (e.g. CHANNELA, CHANNELB) are treated as
-#              row-tags that identify which channel-pair each row of
-#              numeric data belongs to.  They are NOT plotted as series.
-#              Instead each numeric column (e.g. DELTAT) is split into
-#              one trace per unique tag-tuple (e.g. ('CHA1','CHB2'))
-#              both on per-file pages and on cross-file overlay pages.
-
 Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication, open AutoPlot main window, run event loop.
@@ -235,6 +256,8 @@ from _autoplot_common import (   # noqa: E402
     detect_time_breaks, make_broken_x_axis,
     mjd_to_veusz_seconds, style_datetime_x_axis,
     set_datetime_dataset,
+    # v0.0.13: identity-stable trace styling
+    apply_trace_style, TRACE_STYLE_VARY_THRESHOLD,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
@@ -1080,6 +1103,10 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 key.Border.hide.val = False
             except Exception:
                 pass
+            # v0.0.13: vary_style only when this graph has >16 traces.
+            vary_style = (
+                len(tag_map) > TRACE_STYLE_VARY_THRESHOLD
+            )
             for i, (tup, bucket) in enumerate(sorted(tag_map.items())):
                 y_ds = bucket.get(col)
                 x_ds = bucket.get("__x__")
@@ -1096,15 +1123,11 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     xy.key.val = tag_label
                 except Exception:
                     pass
-                try:
-                    xy.marker.val = "circle"
-                    xy.markerSize.val = "2pt"
-                    xy.PlotLine.hide.val = True
-                    colour = _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)]
-                    xy.MarkerFill.color.val = colour
-                    xy.MarkerLine.color.val = colour
-                except Exception:
-                    pass
+                # v0.0.13: identity-stable styling keyed by (col, tup).
+                apply_trace_style(
+                    xy, identity_key=(col, tup),
+                    vary_style=vary_style,
+                )
 
         # ---- v0.0.11/0.0.12 datetime duplicate page (tagged) -----------
         # Emit only when at least one tag bucket has __dt__.
@@ -1144,6 +1167,10 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     key.Border.hide.val = False
                 except Exception:
                     pass
+                # v0.0.13: vary_style only when this graph has >16 traces.
+                vary_style_dt = (
+                    len(tag_map) > TRACE_STYLE_VARY_THRESHOLD
+                )
                 for i, (tup, bucket) in enumerate(sorted(tag_map.items())):
                     y_ds = bucket.get(col)
                     dt_ds = bucket.get("__dt__")
@@ -1162,15 +1189,12 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         xy.key.val = tag_label
                     except Exception:
                         pass
-                    try:
-                        xy.marker.val = "circle"
-                        xy.markerSize.val = "2pt"
-                        xy.PlotLine.hide.val = True
-                        colour = _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)]
-                        xy.MarkerFill.color.val = colour
-                        xy.MarkerLine.color.val = colour
-                    except Exception:
-                        pass
+                    # v0.0.13: identity matches seconds page so the same
+                    # (col, tup) trace keeps its (color, line-style).
+                    apply_trace_style(
+                        xy, identity_key=(col, tup),
+                        vary_style=vary_style_dt,
+                    )
 
     # ============================================================
     # Untagged-HDU pages (legacy)
@@ -1218,14 +1242,11 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
             xy = graph.Add("xy", name=safe_dsname("xy_%s" % c))
             xy.xData.val = x_name
             xy.yData.val = ds
-            xy.marker.val = "circle"
-            try:
-                xy.markerSize.val = "2pt"
-                xy.PlotLine.hide.val = True
-                xy.MarkerFill.color.val = "blue"
-                xy.MarkerLine.color.val = "blue"
-            except Exception:
-                pass
+            # v0.0.13: untagged graph carries exactly one trace, so
+            # vary_style is always False; identity is (col, (None,)).
+            apply_trace_style(
+                xy, identity_key=(c, (None,)), vary_style=False,
+            )
         if datetime_x_name:
             page_dt = doc.Root.Add(
                 "page",
@@ -1261,14 +1282,11 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 xy = graph.Add("xy", name=safe_dsname("xy_%s_dt" % c))
                 xy.xData.val = datetime_x_name
                 xy.yData.val = ds
-                xy.marker.val = "circle"
-                try:
-                    xy.markerSize.val = "2pt"
-                    xy.PlotLine.hide.val = True
-                    xy.MarkerFill.color.val = "blue"
-                    xy.MarkerLine.color.val = "blue"
-                except Exception:
-                    pass
+                # v0.0.13: identity matches the seconds page so the same
+                # (col, (None,)) trace keeps its color/style.
+                apply_trace_style(
+                    xy, identity_key=(c, (None,)), vary_style=False,
+                )
 
     # Image pages -- explicit early-exit when no image HDUs exist in the
     # file.  This is the normal case for NRAO 1PPS-delta FITS (the only
@@ -1516,6 +1534,11 @@ def build_unit_overlay_pages(doc, file_records,
         # MJD-like sort key).  Used for the dt duplicate page.
         dt_eligible = []  # list of (hname, col, tup, dt_x_name, y_name, idx)
         u_safe = safe_dsname(unit_str or "none")
+        # v0.0.13: vary_style only when the overlay graph would exceed
+        # the color palette and need additional disambiguation.
+        vary_style_overlay = (
+            len(entries) > TRACE_STYLE_VARY_THRESHOLD
+        )
         for i, (hname, col, tup, members) in enumerate(entries):
             # Concatenate and time-sort this (unit, hdu, col, tup) group.
             try:
@@ -1566,15 +1589,13 @@ def build_unit_overlay_pages(doc, file_records,
                     xy.key.val = "%s.%s" % (hname, col)
             except Exception:
                 pass
-            try:
-                xy.marker.val = "circle"
-                xy.markerSize.val = "2pt"
-                xy.PlotLine.hide.val = True
-                colour = _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)]
-                xy.MarkerFill.color.val = colour
-                xy.MarkerLine.color.val = colour
-            except Exception:
-                pass
+            # v0.0.13: identity = (col, tup); this trace will keep the
+            # same color/style on the seconds overlay, the dt overlay,
+            # and every per-file page that contains the same (col, tup).
+            apply_trace_style(
+                xy, identity_key=(col, tup),
+                vary_style=vary_style_overlay,
+            )
 
             # Datetime companion -- only if EVERY member has an MJD array.
             if datetime_duplicate and all(
@@ -1639,6 +1660,11 @@ def build_unit_overlay_pages(doc, file_records,
                 key_dt.Border.hide.val = False
             except Exception:
                 pass
+            # v0.0.13: vary_style for the dt overlay graph mirrors the
+            # threshold check used for the seconds overlay.
+            vary_style_overlay_dt = (
+                len(dt_eligible) > TRACE_STYLE_VARY_THRESHOLD
+            )
             for hname, col, tup, dt_name, y_name, idx in dt_eligible:
                 t_safe = _tup_suffix(tup)
                 xy_name = safe_dsname(
@@ -1655,15 +1681,12 @@ def build_unit_overlay_pages(doc, file_records,
                         xy.key.val = "%s.%s" % (hname, col)
                 except Exception:
                     pass
-                try:
-                    xy.marker.val = "circle"
-                    xy.markerSize.val = "2pt"
-                    xy.PlotLine.hide.val = True
-                    colour = _OVERLAY_COLORS[idx % len(_OVERLAY_COLORS)]
-                    xy.MarkerFill.color.val = colour
-                    xy.MarkerLine.color.val = colour
-                except Exception:
-                    pass
+                # v0.0.13: identity matches the seconds overlay so the
+                # same (col, tup) entry keeps its color/style.
+                apply_trace_style(
+                    xy, identity_key=(col, tup),
+                    vary_style=vary_style_overlay_dt,
+                )
             if log_cb:
                 log_cb("  Datetime-overlay page '%s_dt': %d trace(s)"
                        % (page_name, len(dt_eligible)))
