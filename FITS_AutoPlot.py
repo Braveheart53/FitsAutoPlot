@@ -71,56 +71,6 @@ Date: 2026-05-16
 #             files where image HDUs are unused -- measurable speedup on
 #             large batches.  (No 0.0.6: aligned with sibling plugin
 #             version stream.)
-Date: 2026-05-16
-# %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
-# Date: 2026-05-16
-# Date: 2026-05-16
-# %%%% 0.0.12: Combined-in-time overlay semantics.  build_unit_overlay_pages
-#              now collapses each (unit, column) onto a single time-sorted
-#              xy trace stitched across every file that contributes that
-#              column.  The legend names the column (e.g. 'DELTAT'); the
-#              file boundaries disappear into the time series.  The
-#              datetime-axis duplicate overlay does the same with the
-#              concatenated time array converted to Veusz seconds.
-#              Channel-tag row model: text columns named in
-#              TAG_COLUMN_HINTS (e.g. CHANNELA, CHANNELB) are treated as
-#              row-tags that identify which channel-pair each row of
-#              numeric data belongs to.  They are NOT plotted as series.
-#              Instead each numeric column (e.g. DELTAT) is split into
-#              one trace per unique tag-tuple (e.g. ('CHA1','CHB2'))
-#              both on per-file pages and on cross-file overlay pages.
-Date: 2026-05-16
-# %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
-#              checkbox ("Duplicate plots with datetime X axis") asks
-#              every per-file page and every cross-file unit-overlay
-#              page to be cloned with a parallel Veusz date-time x
-#              dataset (seconds since 2009-01-01 UTC).  The clones use
-#              the ``YYYY-MM-DD HH:MM:SS`` tick label format (Veusz
-#              %VDx tokens) rotated 45 degrees, so the cadence sits at
-#              a readable density.  The original numeric (MJD) pages
-#              are unchanged.
-#                * push_to_veusz() and _build_pages() take the new
-#                  ``datetime_duplicate`` kwarg.  The duplicate-pages
-#                  pass runs after the original page so the project
-#                  tree shows them side-by-side.
-#                * build_unit_overlay_pages() also gained
-#                  ``datetime_duplicate``; the cross-file overlay is
-#                  cloned once per unit using the same dt datasets.
-#                * The date-time companion dataset is emitted with the
-#                  suffix ``__dt`` (sorted by the same sort key); it is
-#                  built only when the sort key is an MJD-flavoured
-#                  column (DMJD, MJD, JD-with-2400000.5-correction).
-#                  TIME / TIMESTAMP columns are skipped with a log note
-#                  because their epoch is ambiguous.
-# %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
-#              When the 'Use GPU acceleration (CuPy)' checkbox is
-#              checked and CuPy is importable on the host (Windows or
-#              Linux), large time-axis sorts are dispatched to
-#              ``gpu_argsort`` from ``_autoplot_common`` -- typically
-#              2.7-10x faster than NumPy on consumer GPUs once N exceeds
-#              ~200k samples.  Smaller files still use NumPy.  CuPy is a
-#              soft dependency: the checkbox is disabled and tooltipped
-#              when CuPy is absent.
 # %%%% 0.0.9: Per-plot broken-x-axis on time gaps + unit-overlay pages.
 #             FITSProcessor.read() now also captures per-column unit
 #             strings (qt[col].unit if set, else TUNIT header), exposed
@@ -151,6 +101,56 @@ Date: 2026-05-16
 #                 the full standalone Veusz GUI in the current Python env
 #                 (``python -m veusz <fn>``) without leaving the AutoPlot
 #                 session.
+# %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
+#              When the 'Use GPU acceleration (CuPy)' checkbox is
+#              checked and CuPy is importable on the host (Windows or
+#              Linux), large time-axis sorts are dispatched to
+#              ``gpu_argsort`` from ``_autoplot_common`` -- typically
+#              2.7-10x faster than NumPy on consumer GPUs once N exceeds
+#              ~200k samples.  Smaller files still use NumPy.  CuPy is a
+#              soft dependency: the checkbox is disabled and tooltipped
+#              when CuPy is absent.
+Date: 2026-05-16
+# %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
+Date: 2026-05-16
+# %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
+#              checkbox ("Duplicate plots with datetime X axis") asks
+#              every per-file page and every cross-file unit-overlay
+#              page to be cloned with a parallel Veusz date-time x
+#              dataset (seconds since 2009-01-01 UTC).  The clones use
+#              the ``YYYY-MM-DD HH:MM:SS`` tick label format (Veusz
+#              %VDx tokens) rotated 45 degrees, so the cadence sits at
+#              a readable density.  The original numeric (MJD) pages
+#              are unchanged.
+#                * push_to_veusz() and _build_pages() take the new
+#                  ``datetime_duplicate`` kwarg.  The duplicate-pages
+#                  pass runs after the original page so the project
+#                  tree shows them side-by-side.
+#                * build_unit_overlay_pages() also gained
+#                  ``datetime_duplicate``; the cross-file overlay is
+#                  cloned once per unit using the same dt datasets.
+#                * The date-time companion dataset is emitted with the
+#                  suffix ``__dt`` (sorted by the same sort key); it is
+#                  built only when the sort key is an MJD-flavoured
+#                  column (DMJD, MJD, JD-with-2400000.5-correction).
+#                  TIME / TIMESTAMP columns are skipped with a log note
+#                  because their epoch is ambiguous.
+# Date: 2026-05-16
+# %%%% 0.0.12: Combined-in-time overlay semantics.  build_unit_overlay_pages
+#              now collapses each (unit, column) onto a single time-sorted
+#              xy trace stitched across every file that contributes that
+#              column.  The legend names the column (e.g. 'DELTAT'); the
+#              file boundaries disappear into the time series.  The
+#              datetime-axis duplicate overlay does the same with the
+#              concatenated time array converted to Veusz seconds.
+#              Channel-tag row model: text columns named in
+#              TAG_COLUMN_HINTS (e.g. CHANNELA, CHANNELB) are treated as
+#              row-tags that identify which channel-pair each row of
+#              numeric data belongs to.  They are NOT plotted as series.
+#              Instead each numeric column (e.g. DELTAT) is split into
+#              one trace per unique tag-tuple (e.g. ('CHA1','CHB2'))
+#              both on per-file pages and on cross-file overlay pages.
+
 Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication, open AutoPlot main window, run event loop.
