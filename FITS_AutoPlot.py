@@ -26,6 +26,20 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 
 # %%%% 0.0.1: Initial port of FITS_AutoPlot to the Touchstone-style GUI
 Date: 2026-05-16
+# %%%% 0.0.2: Added optional MJD -> YYYY-MM-DD_HH:MM:SS string conversion.
+#             A new "Generate MJD->date strings" checkbox appears under the
+#             Processing Options form.  When ticked, every numeric column
+#             whose name matches an MJD/JD/TIME hint produces an additional
+#             Veusz text dataset suffixed ``__datestr`` (also tagged with
+#             the file's base name plus ``datestr``).
+Date: 2026-05-16
+# %%%% 0.0.3: NaN values in numeric columns are now explicitly preserved as
+#             NaN floats in Veusz numeric datasets (Veusz handles NaN
+#             natively; samples are skipped only at plot time, not dropped
+#             from the dataset).  The corresponding date-string text
+#             datasets use the sentinel ``"NaN"`` for non-finite MJDs so
+#             array lengths stay aligned with their numeric companions.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication, open AutoPlot main window, run event loop.
         FITSAutoPlotWindow: qtpy main window subclassing AutoPlotMainWindow;
@@ -101,6 +115,7 @@ from _autoplot_common import (   # noqa: E402
     MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
     apply_theme, open_embedded, save_vszh5,
     run_in_threadpool, open_maybe_gzipped, safe_dsname,
+    mjd_to_datestr,
 )
 
 # ============================================================================
@@ -235,7 +250,8 @@ class FITSProcessor:
 # VEUSZ INTEGRATION  (runs on the GUI thread)
 # ============================================================================
 def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
-                  backend: str, log_cb=None) -> None:
+                  backend: str, log_cb=None,
+                  emit_datestr: bool = False) -> None:
     """
     Push a single processed FITS file into the running embedded Veusz
     document.
@@ -311,6 +327,10 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                     # Older Veusz: drop text columns silently
                     continue
             else:
+                # NaN-preserving: Veusz natively supports NaN in numeric
+                # datasets, so we push the float array through unchanged.
+                # Samples with NaN are simply skipped by xy plots; the row
+                # is NOT removed from the dataset.
                 doc.SetData(ds_name, np.ascontiguousarray(arr_s, dtype=float))
             sorted_names.append(ds_name)
 
@@ -328,6 +348,44 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             doc.TagDatasets("sorted", sorted_names)
         if log_cb:
             log_cb("  Column datasets created: %d" % len(sorted_names))
+
+    # ---- 2b) Optional MJD -> date-string text datasets -------------------
+    if emit_datestr:
+        datestr_names = []
+        for (hname, col), arr in data["columns"].items():
+            if col.upper() not in [k.upper() for k in SORTED_KEY_HINT]:
+                continue
+            arr = np.asarray(arr)
+            if arr.dtype.kind not in ("f", "i", "u"):
+                continue
+            try:
+                date_strings = mjd_to_datestr(arr.astype(float))
+            except Exception as exc:
+                if log_cb:
+                    log_cb("  MJD->date conversion failed for %s.%s: %s"
+                           % (hname, col, exc))
+                continue
+            ds_raw = "%s__%s__%s__datestr" % (base, safe_dsname(hname), safe_dsname(col))
+            ds_sorted = "%s__%s__%s__datestr_sorted" % (
+                base, safe_dsname(hname), safe_dsname(col)
+            )
+            try:
+                doc.SetDataText(ds_raw, list(date_strings))
+                idx = np.argsort(arr.astype(float))
+                doc.SetDataText(ds_sorted, list(np.asarray(date_strings)[idx]))
+            except Exception as exc:
+                if log_cb:
+                    log_cb("  SetDataText failed for %s: %s" % (ds_raw, exc))
+                continue
+            datestr_names.extend([ds_raw, ds_sorted])
+        if datestr_names:
+            try:
+                doc.TagDatasets(base, datestr_names)
+                doc.TagDatasets("datestr", datestr_names)
+            except Exception:
+                pass
+            if log_cb:
+                log_cb("  Date-string datasets created: %d" % len(datestr_names))
 
     # ---- 3) Build the plots ---------------------------------------------
     _build_pages(doc, base, data, sorted_names)
@@ -486,6 +544,12 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.show_embed_cb.setChecked(True)
         form.addRow(self.show_embed_cb)
 
+        self.datestr_cb = QCheckBox(
+            "Generate MJD -> date strings (YYYY-MM-DD_HH:MM:SS) datasets"
+        )
+        self.datestr_cb.setChecked(False)
+        form.addRow(self.datestr_cb)
+
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
         if not self.selected_files:
@@ -532,13 +596,15 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
     def _on_worker_done(self, results: Dict[str, Any]) -> None:
         backend_idx = self.backend_combo.currentIndex()
         backend = ["both", "veusz", "astropy"][backend_idx]
+        emit_datestr = bool(self.datestr_cb.isChecked())
         for path, data in results.items():
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
                 continue
             self.log("Inserting datasets for %s" % os.path.basename(path))
             try:
-                push_to_veusz(self.veusz_doc, path, data, backend, log_cb=self.log)
+                push_to_veusz(self.veusz_doc, path, data, backend,
+                              log_cb=self.log, emit_datestr=emit_datestr)
             except Exception as exc:
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
         self.log("Batch complete.")

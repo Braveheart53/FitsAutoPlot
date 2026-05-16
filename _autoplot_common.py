@@ -32,6 +32,17 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 
 # %%%% 0.0.1: Initial implementation of shared infrastructure
 Date: 2026-05-16
+# %%%% 0.0.2: Added mjd_to_datestr() helper for MJD -> YYYY-MM-DD_HH:MM:SS
+#             string conversion used by all four AutoPlot modules.
+Date: 2026-05-16
+# %%%% 0.0.3: NaN-preserving dataset emission policy. Numeric datasets keep
+#             NaN floats (Veusz natively supports NaN in numeric datasets;
+#             plots simply skip NaN samples). Text datasets cannot carry a
+#             true NaN, so non-finite MJD inputs to mjd_to_datestr() now
+#             yield the explicit sentinel string ``"NaN"`` (length-preserving)
+#             rather than an empty string -- this prevents NaN rows from
+#             being silently dropped or confused with a missing token.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         make_dark_palette/make_light_palette/apply_theme: textual menu theme
             switching for dark vs light mode (View menu).
@@ -562,6 +573,116 @@ def open_maybe_gzipped(path: str):
     if path.lower().endswith(".gz"):
         return gzip.open(path, "rb")
     return open(path, "rb")
+
+
+# ---------------------------------------------------------------------------
+# MJD -> date string conversion
+# ---------------------------------------------------------------------------
+# Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC.
+# JD = MJD + 2400000.5  -- we implement the conversion directly without
+# astropy.time so that the helper can run in light-weight contexts
+# (Veusz plugin call paths, etc.) without paying the astropy import cost.
+MJD_EPOCH_JD_OFFSET = 2400000.5
+
+
+def mjd_to_datestr(mjd_arr: "np.ndarray",
+                   fmt: str = "%Y-%m-%d_%H:%M:%S") -> "np.ndarray":
+    """
+    Convert an array of Modified Julian Dates (UTC, double precision) into
+    an array of formatted timestamp strings.
+
+    Parameters
+    ----------
+    mjd_arr : array-like of float
+        MJD values.  NaN/Inf and non-finite entries are NEVER dropped --
+        the output array is always the same length as ``mjd_arr``.  Veusz
+        text datasets cannot carry a true NaN, so non-finite MJDs become
+        the sentinel string ``"NaN"`` (rather than "") to make the missing
+        sample explicit and visually distinguishable.
+    fmt : str, optional
+        ``strftime`` format string; defaults to ``YYYY-MM-DD_HH:MM:SS``.
+
+    Returns
+    -------
+    numpy.ndarray of dtype ``<U`` (Unicode) with one string per input MJD.
+
+    Notes
+    -----
+    Implementation uses Fliegel & Van Flandern's integer Julian-day-number
+    algorithm so it is vectorisable, deterministic and tz-free (UTC).
+    """
+    a = np.asarray(mjd_arr, dtype=float)
+    out = np.empty(a.shape, dtype=object)
+    finite = np.isfinite(a)
+    # Replace non-finite slots with 0 for the vectorised math; we mask them
+    # back to the sentinel "NaN" string at the end.  This avoids
+    # RuntimeWarnings from the int64 cast when NaN/Inf values are present,
+    # and crucially preserves array length so callers never "drop" rows.
+    a_safe = np.where(finite, a, 0.0)
+    # integer part of JD (Julian Day Number) + fractional day
+    jd = a_safe + MJD_EPOCH_JD_OFFSET
+    # Split into integer JDN and fractional day-of-day
+    jdn = np.floor(jd + 0.5).astype(np.int64)
+    frac = (jd + 0.5) - jdn   # in [0, 1)
+    # Fliegel & Van Flandern algorithm
+    L = jdn + 68569
+    N = (4 * L) // 146097
+    L = L - (146097 * N + 3) // 4
+    I = (4000 * (L + 1)) // 1461001
+    L = L - (1461 * I) // 4 + 31
+    J = (80 * L) // 2447
+    day = L - (2447 * J) // 80
+    L = J // 11
+    month = J + 2 - 12 * L
+    year = 100 * (N - 49) + I + L
+    # time of day
+    seconds_of_day = frac * 86400.0
+    hh = np.floor(seconds_of_day / 3600.0).astype(np.int64)
+    mm = np.floor((seconds_of_day - hh * 3600.0) / 60.0).astype(np.int64)
+    ss = seconds_of_day - hh * 3600.0 - mm * 60.0
+    # Compose strings (fast path: avoid datetime allocation per element)
+    import datetime as _dt
+    n = a.size
+    flat_out = np.empty(n, dtype=object)
+    a_f = a.reshape(-1)
+    fin_f = finite.reshape(-1)
+    yr = year.reshape(-1)
+    mo = month.reshape(-1)
+    dy = day.reshape(-1)
+    hr = hh.reshape(-1)
+    mi = mm.reshape(-1)
+    se = ss.reshape(-1)
+    for k in range(n):
+        if not fin_f[k]:
+            # NaN-preserving sentinel: Veusz text datasets have no native
+            # NaN, but we must keep array length consistent with the
+            # numeric companion so downstream sorts/joins line up.
+            flat_out[k] = "NaN"
+            continue
+        # Re-use strftime so callers can request any format they like.
+        try:
+            # round seconds to int for display while preserving the float
+            # microsecond if the format requests it.
+            sec_int = int(round(float(se[k])))
+            # handle wrap-around if rounding nudged seconds to 60
+            extra_min = sec_int // 60
+            sec_int = sec_int % 60
+            mi_eff = int(mi[k]) + extra_min
+            extra_hr = mi_eff // 60
+            mi_eff = mi_eff % 60
+            hr_eff = int(hr[k]) + extra_hr
+            dt = _dt.datetime(int(yr[k]), int(mo[k]), int(dy[k]),
+                              hr_eff % 24, mi_eff, sec_int)
+            # If hour wrapped, advance the date by one day
+            if hr_eff >= 24:
+                dt = dt + _dt.timedelta(days=hr_eff // 24)
+            flat_out[k] = dt.strftime(fmt)
+        except Exception:
+            # Defensive: bad calendar values from a corrupt MJD also map
+            # to the NaN sentinel (still length-preserving).
+            flat_out[k] = "NaN"
+    out = flat_out.reshape(a.shape)
+    return np.asarray(out.tolist())
 
 
 def safe_dsname(name: str) -> str:

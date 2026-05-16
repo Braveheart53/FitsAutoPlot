@@ -31,6 +31,21 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 
 # %%%% 0.0.1: Initial implementation, FranksProcessed file support
 Date: 2026-05-16
+# %%%% 0.0.2: Added "Generate MJD->date strings" checkbox.  Whenever the
+#             parsed file contains an MJD column, ticking the option emits
+#             two additional Veusz text datasets (raw + sorted) of
+#             YYYY-MM-DD_HH:MM:SS strings tagged with the file's base name
+#             plus ``datestr``.
+Date: 2026-05-16
+# %%%% 0.0.3: NaN-preserving emission policy.  When a Franks token is
+#             missing or non-numeric the parser now records ``NaN`` in the
+#             numeric column (length-preserving) AND keeps the text token
+#             ("" for fully missing) in the text companion -- rows are
+#             never dropped.  Veusz numeric datasets carry the NaN through;
+#             non-finite MJDs in the optional date-string text datasets
+#             become the sentinel string ``"NaN"`` so all per-row arrays
+#             retain the same length and stay index-aligned.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication and open the AutoPlot main window.
         FranksAutoPlotWindow: qtpy main window with the Touchstone-style
@@ -90,6 +105,7 @@ from _autoplot_common import (   # noqa: E402
     AutoPlotMainWindow,
     MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
     open_embedded, save_vszh5, run_in_threadpool, safe_dsname,
+    mjd_to_datestr,
 )
 
 # ============================================================================
@@ -208,7 +224,11 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
             except ValueError:
                 numeric_columns[n].append(np.nan)
 
-    # Decide which columns are usefully numeric (mostly not-nan) vs text
+    # Decide which columns are usefully numeric (mostly not-nan) vs text.
+    # NaN preservation: numeric columns keep their NaN floats verbatim --
+    # we never strip rows.  Veusz numeric datasets natively support NaN
+    # (samples are skipped at plot time only).  Text columns also keep
+    # every row (missing tokens recorded as "" earlier in this loop).
     for n in names:
         arr_num = np.asarray(numeric_columns[n], dtype=float)
         finite_frac = np.isfinite(arr_num).mean() if arr_num.size else 0.0
@@ -230,7 +250,8 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
 # ============================================================================
 # VEUSZ INTEGRATION
 # ============================================================================
-def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None) -> None:
+def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
+                         emit_datestr: bool = False) -> None:
     """Push parsed Franks columns into the running embedded Veusz document."""
     base = data["base_name"]
     cols = data["columns"]
@@ -259,6 +280,8 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None) -> None:
                 else:
                     doc.SetDataText(sorted_name, values)
             else:
+                # NaN-preserving: Veusz handles NaN natively in numeric
+                # datasets, so we push the float array through unchanged.
                 fa = np.ascontiguousarray(arr, dtype=float)
                 doc.SetData(raw_name, fa)
                 if sort_idx is not None:
@@ -279,6 +302,31 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None) -> None:
         doc.TagDatasets("sorted", sorted_names)
     except Exception:
         pass
+
+    # ---- Optional MJD -> date-string text datasets -----------------------
+    if emit_datestr and sort_key is not None and sort_key in cols:
+        arr_mjd = np.asarray(cols[sort_key])
+        if arr_mjd.dtype.kind in ("f", "i", "u"):
+            try:
+                date_strings = mjd_to_datestr(arr_mjd.astype(float))
+                raw_ds = "%s__%s__datestr" % (base, safe_dsname(sort_key))
+                sorted_ds = "%s__%s__datestr_sorted" % (base, safe_dsname(sort_key))
+                doc.SetDataText(raw_ds, list(date_strings))
+                if sort_idx is not None:
+                    doc.SetDataText(sorted_ds,
+                                    list(np.asarray(date_strings)[sort_idx]))
+                else:
+                    doc.SetDataText(sorted_ds, list(date_strings))
+                try:
+                    doc.TagDatasets(base, [raw_ds, sorted_ds])
+                    doc.TagDatasets("datestr", [raw_ds, sorted_ds])
+                except Exception:
+                    pass
+                if log_cb:
+                    log_cb("  Date-string datasets created (2)")
+            except Exception as exc:
+                if log_cb:
+                    log_cb("  MJD->date conversion failed: %s" % exc)
 
     # Build pages: one page named after the file, one graph per numeric col vs MJD
     page = doc.Root.Add("page", name=safe_dsname(base))
@@ -395,6 +443,12 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.show_embed_cb.setChecked(True)
         form.addRow(self.show_embed_cb)
 
+        self.datestr_cb = QCheckBox(
+            "Generate MJD -> date strings (YYYY-MM-DD_HH:MM:SS) datasets"
+        )
+        self.datestr_cb.setChecked(False)
+        form.addRow(self.datestr_cb)
+
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
         if not self.selected_files:
@@ -437,13 +491,15 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.progress_bar.setVisible(False)
 
     def _on_done(self, results: Dict[str, Any]) -> None:
+        emit_datestr = bool(self.datestr_cb.isChecked())
         for path, data in results.items():
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
                 continue
             self.log("Inserting datasets for %s" % os.path.basename(path))
             try:
-                push_franks_to_veusz(self.veusz_doc, data, log_cb=self.log)
+                push_franks_to_veusz(self.veusz_doc, data, log_cb=self.log,
+                                     emit_datestr=emit_datestr)
             except Exception as exc:
                 self.log("  push failed: %s" % exc)
         self.log("Batch complete.")
