@@ -74,6 +74,46 @@ Date: 2026-05-16
 Date: 2026-05-16
 # %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
 # Date: 2026-05-16
+# Date: 2026-05-16
+# %%%% 0.0.12: Combined-in-time overlay semantics.  build_unit_overlay_pages
+#              now collapses each (unit, column) onto a single time-sorted
+#              xy trace stitched across every file that contributes that
+#              column.  The legend names the column (e.g. 'DELTAT'); the
+#              file boundaries disappear into the time series.  The
+#              datetime-axis duplicate overlay does the same with the
+#              concatenated time array converted to Veusz seconds.
+Date: 2026-05-16
+# %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
+#              checkbox ("Duplicate plots with datetime X axis") asks
+#              every per-file page and every cross-file unit-overlay
+#              page to be cloned with a parallel Veusz date-time x
+#              dataset (seconds since 2009-01-01 UTC).  The clones use
+#              the ``YYYY-MM-DD HH:MM:SS`` tick label format (Veusz
+#              %VDx tokens) rotated 45 degrees, so the cadence sits at
+#              a readable density.  The original numeric (MJD) pages
+#              are unchanged.
+#                * push_to_veusz() and _build_pages() take the new
+#                  ``datetime_duplicate`` kwarg.  The duplicate-pages
+#                  pass runs after the original page so the project
+#                  tree shows them side-by-side.
+#                * build_unit_overlay_pages() also gained
+#                  ``datetime_duplicate``; the cross-file overlay is
+#                  cloned once per unit using the same dt datasets.
+#                * The date-time companion dataset is emitted with the
+#                  suffix ``__dt`` (sorted by the same sort key); it is
+#                  built only when the sort key is an MJD-flavoured
+#                  column (DMJD, MJD, JD-with-2400000.5-correction).
+#                  TIME / TIMESTAMP columns are skipped with a log note
+#                  because their epoch is ambiguous.
+# %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
+#              When the 'Use GPU acceleration (CuPy)' checkbox is
+#              checked and CuPy is importable on the host (Windows or
+#              Linux), large time-axis sorts are dispatched to
+#              ``gpu_argsort`` from ``_autoplot_common`` -- typically
+#              2.7-10x faster than NumPy on consumer GPUs once N exceeds
+#              ~200k samples.  Smaller files still use NumPy.  CuPy is a
+#              soft dependency: the checkbox is disabled and tooltipped
+#              when CuPy is absent.
 # %%%% 0.0.9: Per-plot broken-x-axis on time gaps + unit-overlay pages.
 #             FITSProcessor.read() now also captures per-column unit
 #             strings (qt[col].unit if set, else TUNIT header), exposed
@@ -181,10 +221,23 @@ from _autoplot_common import (   # noqa: E402
     MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
     apply_theme, open_embedded, save_vszh5,
     run_in_threadpool, open_maybe_gzipped, safe_dsname,
+    gpu_argsort, is_gpu_available, enable_gpu, gpu_backend_name,
+    set_gpu_argsort_threshold,
     mjd_to_datestr,
     register_nrao_fits_units, suppress_fits_unit_warnings,
     detect_time_breaks, make_broken_x_axis,
+    mjd_to_veusz_seconds, style_datetime_x_axis,
+    MJD_VEUSZ_EPOCH_MJD,
+    DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
+    DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
 )
+
+# v0.0.11: list of FITS sort-key column names that we treat as MJD-valued
+# for the purposes of building a Veusz date-time companion dataset.  JD is
+# included separately because it needs a -2400000.5 offset before the
+# standard MJD->Veusz-seconds conversion.
+MJD_LIKE_SORT_KEYS = ("DMJD", "MJD")
+JD_LIKE_SORT_KEYS = ("JD",)
 
 # Register the NRAO non-standard FITS unit aliases ('none', 'NanoSeconds')
 # once at module load so QTable.read no longer emits UnitsWarning when
@@ -374,7 +427,8 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   skip_images: bool = False,
                   plot_individual: bool = True,
                   gap_k: float = 10.0,
-                  gap_absolute: float = 0.0) -> None:
+                  gap_absolute: float = 0.0,
+                  datetime_duplicate: bool = False) -> None:
     """
     Push a single processed FITS file into the running embedded Veusz
     document.
@@ -470,7 +524,12 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         sort_idx_by_hdu: Dict[str, np.ndarray] = {}
         if sort_key is not None:
             hkey, ckey = sort_key
-            sort_idx_by_hdu[hkey] = np.argsort(np.asarray(data["columns"][sort_key]))
+            # v0.0.10: gpu_argsort uses CuPy on large arrays when enabled
+            # by the GUI; otherwise falls through to NumPy.  Result is a
+            # NumPy int64 index array either way.
+            sort_idx_by_hdu[hkey] = gpu_argsort(
+                np.asarray(data["columns"][sort_key])
+            )
 
         for (hname, col), arr in data["columns"].items():
             arr = np.asarray(arr)
@@ -527,6 +586,57 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 sorted_names.append(ds_name)
                 _tick()
 
+        # ---- 2a) Optional datetime companion dataset (v0.0.11) -----------
+        # When the user asked for datetime-duplicate plots, build a single
+        # Veusz date-time dataset from the file's sort key.  We require an
+        # MJD-like (or JD-like) sort key because we have to know the epoch
+        # to map numeric values onto Veusz's internal date-time seconds.
+        datetime_x_name = None
+        if datetime_duplicate and sort_key is not None:
+            sk_hdu, sk_col = sort_key
+            upper_sk = sk_col.upper()
+            arr_mjd = None
+            if upper_sk in MJD_LIKE_SORT_KEYS:
+                try:
+                    arr_mjd = np.asarray(
+                        data["columns"][sort_key], dtype=float
+                    )
+                except Exception:
+                    arr_mjd = None
+            elif upper_sk in JD_LIKE_SORT_KEYS:
+                try:
+                    arr_mjd = np.asarray(
+                        data["columns"][sort_key], dtype=float
+                    ) - 2400000.5
+                except Exception:
+                    arr_mjd = None
+            if arr_mjd is not None:
+                # Apply the same sort permutation the sorted column got, so
+                # the date-time x lines up row-for-row with the y datasets.
+                if sk_hdu in sort_idx_by_hdu:
+                    try:
+                        arr_mjd = arr_mjd[sort_idx_by_hdu[sk_hdu]]
+                    except Exception:
+                        pass
+                secs = mjd_to_veusz_seconds(arr_mjd)
+                dt_name = "%s__%s__%s__dt" % (
+                    base, safe_dsname(sk_hdu), safe_dsname(sk_col)
+                )
+                try:
+                    doc.SetDataDateTime(dt_name, list(secs))
+                    datetime_x_name = dt_name
+                    sorted_names.append(dt_name)
+                    if log_cb:
+                        log_cb("  Datetime-duplicate dataset: %s"
+                               % dt_name)
+                except Exception as exc:
+                    if log_cb:
+                        log_cb("  SetDataDateTime failed for %s: %s"
+                               % (dt_name, exc))
+            elif log_cb:
+                log_cb("  Datetime duplicate skipped: %s epoch unknown"
+                       % sk_col)
+
         if sorted_names:
             doc.TagDatasets(base, sorted_names)
             doc.TagDatasets("sorted", sorted_names)
@@ -555,7 +665,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             )
             try:
                 doc.SetDataText(ds_raw, list(date_strings))
-                idx = np.argsort(arr.astype(float))
+                idx = gpu_argsort(arr.astype(float))  # v0.0.10
                 doc.SetDataText(ds_sorted, list(np.asarray(date_strings)[idx]))
             except Exception as exc:
                 if log_cb:
@@ -580,12 +690,17 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         # When the user opted to skip image HDUs, pass a shallow-copied
         # data dict with an empty images map so _build_pages doesn't try
         # to render image pages for HDUs that were never read.
+        # v0.0.11: forward datetime_x_name so _build_pages can clone each
+        # per-HDU page against the date-time companion dataset.
+        _dt_x = locals().get("datetime_x_name", None)
         if skip_images:
             _build_pages(doc, base, dict(data, images={}), sorted_names,
-                         gap_k=gap_k, gap_absolute=gap_absolute)
+                         gap_k=gap_k, gap_absolute=gap_absolute,
+                         datetime_x_name=_dt_x)
         else:
             _build_pages(doc, base, data, sorted_names,
-                         gap_k=gap_k, gap_absolute=gap_absolute)
+                         gap_k=gap_k, gap_absolute=gap_absolute,
+                         datetime_x_name=_dt_x)
     elif log_cb:
         log_cb("  Per-file plot pages skipped (combined plots only).")
 
@@ -600,7 +715,8 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
 def _build_pages(doc, base: str, data: Dict[str, Any],
                  sorted_names: List[str],
                  gap_k: float = 10.0,
-                 gap_absolute: float = 0.0) -> None:
+                 gap_absolute: float = 0.0,
+                 datetime_x_name=None) -> None:
     """Create one Veusz page per HDU with the appropriate plot widgets.
 
     When the x-axis column has large gaps (per ``detect_time_breaks`` with
@@ -675,6 +791,59 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
             except Exception:
                 pass
 
+        # ---- v0.0.11: datetime-duplicate page ----------------------------
+        # When the caller supplied a datetime companion x dataset (built
+        # earlier in push_to_veusz), build a parallel page right after the
+        # original one with the same y datasets but the date-time x.  All
+        # styling is shared; the only differences are the page name suffix,
+        # the xData reference and the angled date-formatted tick labels.
+        if datetime_x_name:
+            page_dt = doc.Root.Add(
+                "page",
+                name=safe_dsname("%s_%s_dt" % (base, hname))
+            )
+            try:
+                page_dt.notes.val = "\n".join(
+                    data.get("header", [])
+                    + ["", "Datetime-axis duplicate (v0.0.11)."]
+                )
+            except Exception:
+                pass
+            grid_dt = page_dt.Add("grid", columns=2)
+            for c, ds in cols:
+                if ds == x_name:
+                    continue
+                graph = grid_dt.Add(
+                    "graph", name=safe_dsname("g_%s_dt" % c)
+                )
+                try:
+                    graph.y.label.val = c
+                    graph.y.GridLines.hide.val = False
+                except Exception:
+                    pass
+                # Reuse the same break_pairs we just computed -- the gaps
+                # are properties of the underlying x data, not of which
+                # axis flavour displays it.
+                if break_pairs:
+                    ax = make_broken_x_axis(
+                        graph, break_pairs,
+                        label=x_col[0], show_gridlines=True,
+                    )
+                    style_datetime_x_axis(ax, label=x_col[0])
+                else:
+                    style_datetime_x_axis(graph.x, label=x_col[0])
+                xy = graph.Add("xy", name=safe_dsname("xy_%s_dt" % c))
+                xy.xData.val = datetime_x_name
+                xy.yData.val = ds
+                xy.marker.val = "circle"
+                try:
+                    xy.markerSize.val = "2pt"
+                    xy.PlotLine.hide.val = True
+                    xy.MarkerFill.color.val = "blue"
+                    xy.MarkerLine.color.val = "blue"
+                except Exception:
+                    pass
+
     # Image pages -- explicit early-exit when no image HDUs exist in the
     # file.  This is the normal case for NRAO 1PPS-delta FITS (the only
     # table HDU is OnePpsDeltas), so we don't even enter the page-
@@ -710,7 +879,8 @@ _OVERLAY_COLORS = [
 
 
 def build_unit_overlay_pages(doc, file_records,
-                              gap_k=10.0, gap_absolute=0.0, log_cb=None):
+                              gap_k=10.0, gap_absolute=0.0, log_cb=None,
+                              datetime_duplicate=False):
     """
     Build one overlay page per distinct unit string across the loaded
     batch.  Each overlay page contains a single graph that plots every
@@ -736,10 +906,27 @@ def build_unit_overlay_pages(doc, file_records,
     """
     if not file_records:
         return
-    # group: unit_str -> list of (file_base, hname, col, x_ds, y_ds)
-    by_unit = {}  # type: Dict[str, List[Tuple[str, str, str, str, str]]]
-    # accumulate x samples across files per unit for gap detection
-    x_samples_by_unit = {}  # type: Dict[str, List[np.ndarray]]
+    # v0.0.12: Combined-in-time overlay semantics.
+    # ---------------------------------------------------------------
+    # Old behaviour (v0.0.9 -- v0.0.11): emit one xy trace per
+    # (file, hdu, column) so a 12-file run that all carry DELTAT would
+    # produce 12 DELTAT traces on the seconds page.
+    # New behaviour (v0.0.12): for each (unit, hdu, column) group,
+    # concatenate all contributing files' x and y arrays into a single
+    # time-sorted series and emit ONE xy trace per (hdu, column) on the
+    # unit page.  Each trace is bound to a freshly pushed pair of
+    # ``OverlayCat__{unit}__{hdu}__{col}__x__sorted`` and ``__y__sorted``
+    # datasets.  When datetime_duplicate is True and every file in the
+    # group has an MJD/JD-like sort key, a companion
+    # ``__x__dt`` Veusz date-time dataset is pushed in matching order
+    # and used as x on the duplicate page.
+    # ---------------------------------------------------------------
+    # group key: (unit_str, hname, col)
+    #   -> list of dicts: {base, x, y, mjd_or_none}
+    groups = {}
+    # accumulate x samples across files per unit for gap detection on
+    # the unit page (combined across all columns sharing the unit).
+    x_samples_by_unit = {}
     for rec in file_records:
         base = rec.get("base")
         cols = rec.get("columns") or {}
@@ -749,42 +936,67 @@ def build_unit_overlay_pages(doc, file_records,
             # without a time axis we cannot overlay against time
             continue
         x_hdu, x_col = sort_key
-        x_ds = "%s__%s__%s__sorted" % (
-            base, safe_dsname(x_hdu), safe_dsname(x_col)
-        )
         try:
             x_arr = np.asarray(cols[sort_key], dtype=float)
         except Exception:
             continue
+        # If the sort key is MJD/JD-like, convert to MJD-equivalent for
+        # the datetime overlay.  JD is shifted by 2400000.5.
+        mjd_arr = None
+        sk_upper = x_col.upper()
+        if datetime_duplicate and sk_upper in ("DMJD", "MJD", "JD"):
+            try:
+                if sk_upper == "JD":
+                    mjd_arr = x_arr - 2400000.5
+                else:
+                    mjd_arr = x_arr.copy()
+            except Exception:
+                mjd_arr = None
         for (hname, col), arr in cols.items():
             if (hname, col) == sort_key:
                 continue
             arr = np.asarray(arr)
             if arr.dtype.kind not in ("f", "i", "u"):
                 continue  # skip text columns
+            try:
+                y_arr = np.asarray(arr, dtype=float)
+            except Exception:
+                continue
+            if y_arr.shape != x_arr.shape:
+                # length mismatch -- cannot align this column safely
+                continue
             unit_str = units.get((hname, col), "") or ""
             unit_str = str(unit_str).strip()
-            y_ds = "%s__%s__%s__sorted" % (
-                base, safe_dsname(hname), safe_dsname(col)
-            )
-            by_unit.setdefault(unit_str, []).append(
-                (base, hname, col, x_ds, y_ds)
-            )
+            gkey = (unit_str, hname, col)
+            groups.setdefault(gkey, []).append({
+                "base": base,
+                "x": x_arr,
+                "y": y_arr,
+                "mjd": mjd_arr,
+            })
             x_samples_by_unit.setdefault(unit_str, []).append(x_arr)
 
-    if not by_unit:
+    if not groups:
         if log_cb:
             log_cb("  No columns suitable for unit-overlay pages.")
         return
 
-    for unit_str, traces in by_unit.items():
+    # Bucket groups by unit so we still emit one page per unit, with
+    # one xy trace per (hdu, col) on that page.
+    by_unit = {}
+    for (unit_str, hname, col), members in groups.items():
+        by_unit.setdefault(unit_str, []).append((hname, col, members))
+
+    for unit_str, col_entries in by_unit.items():
         unit_label = unit_str if unit_str else "(dimensionless)"
         page_name = safe_dsname("Overlay_%s" % (unit_str or "none"))
         page = doc.Root.Add("page", name=page_name)
         try:
             page.notes.val = (
-                "Combined overlay of all columns with unit '%s' "
-                "across the loaded batch." % unit_label
+                "Combined-in-time overlay of all columns with unit "
+                "'%s' across the loaded batch (v0.0.12: one trace per "
+                "column, time-sorted concatenation across files)."
+                % unit_label
             )
         except Exception:
             pass
@@ -812,20 +1024,60 @@ def build_unit_overlay_pages(doc, file_records,
                 graph.x.GridLines.hide.val = False
             except Exception:
                 pass
-        # Build a key so the legend names each trace by (file, column).
         try:
             key = graph.Add("key", name="key1")
             key.Border.hide.val = False
         except Exception:
             pass
-        # One xy trace per (file, column) sharing this unit.
-        for i, (b, hn, col, x_ds, y_ds) in enumerate(traces):
-            xy_name = safe_dsname("xy_%s_%s_%s" % (b, hn, col))
-            xy = graph.Add("xy", name=xy_name)
-            xy.xData.val = x_ds
-            xy.yData.val = y_ds
+
+        # Track which (hname, col) groups produced datetime-eligible
+        # concatenations (every contributing file had an MJD-like sort
+        # key).  Used to decide whether to emit the dt duplicate page.
+        dt_eligible = []  # list of (hname, col, dt_x_name, y_name)
+        u_safe = safe_dsname(unit_str or "none")
+        for i, (hname, col, members) in enumerate(col_entries):
+            # Concatenate and time-sort this (unit, hdu, col) group.
             try:
-                xy.key.val = "%s : %s.%s" % (b, hn, col)
+                xs = np.concatenate([m["x"] for m in members])
+                ys = np.concatenate([m["y"] for m in members])
+            except Exception:
+                continue
+            if xs.size == 0:
+                continue
+            # v0.0.12: use GPU-aware stable sort.  gpu_argsort routes to
+            # CuPy when enabled AND xs is large enough, else falls back
+            # to numpy.argsort(kind='mergesort').  NaNs end up at the tail.
+            try:
+                order = gpu_argsort(xs)
+            except Exception:
+                try:
+                    order = np.argsort(xs, kind="mergesort")
+                except Exception:
+                    order = np.argsort(xs)
+            xs_s = xs[order]
+            ys_s = ys[order]
+            h_safe = safe_dsname(hname)
+            c_safe = safe_dsname(col)
+            x_name = "OverlayCat__%s__%s__%s__x__sorted" % (
+                u_safe, h_safe, c_safe
+            )
+            y_name = "OverlayCat__%s__%s__%s__y__sorted" % (
+                u_safe, h_safe, c_safe
+            )
+            try:
+                doc.SetData(x_name, xs_s)
+                doc.SetData(y_name, ys_s)
+            except Exception as _exc:
+                if log_cb:
+                    log_cb("  Overlay '%s.%s' SetData failed: %s"
+                           % (hname, col, _exc))
+                continue
+            xy_name = safe_dsname("xy_%s_%s" % (hname, col))
+            xy = graph.Add("xy", name=xy_name)
+            xy.xData.val = x_name
+            xy.yData.val = y_name
+            try:
+                xy.key.val = "%s.%s" % (hname, col)
             except Exception:
                 pass
             try:
@@ -837,9 +1089,87 @@ def build_unit_overlay_pages(doc, file_records,
                 xy.MarkerLine.color.val = colour
             except Exception:
                 pass
+
+            # Datetime companion -- only if EVERY member has an MJD array.
+            if datetime_duplicate and all(
+                m.get("mjd") is not None for m in members
+            ):
+                try:
+                    mjds = np.concatenate(
+                        [np.asarray(m["mjd"], dtype=float)
+                         for m in members]
+                    )
+                    mjds_s = mjds[order]
+                    dt_secs = mjd_to_veusz_seconds(mjds_s)
+                    dt_name = "OverlayCat__%s__%s__%s__x__dt" % (
+                        u_safe, h_safe, c_safe
+                    )
+                    doc.SetDataDateTime(dt_name, list(dt_secs))
+                    dt_eligible.append((hname, col, dt_name, y_name, i))
+                except Exception as _exc:
+                    if log_cb:
+                        log_cb("  Overlay '%s.%s' datetime build failed: %s"
+                               % (hname, col, _exc))
+
         if log_cb:
-            log_cb("  Overlay page '%s': %d trace(s)" %
-                   (unit_label, len(traces)))
+            log_cb("  Overlay page '%s': %d trace(s) (time-combined)"
+                   % (unit_label, len(col_entries)))
+
+        # ---- v0.0.11/0.0.12: datetime-duplicate overlay page ----------
+        if datetime_duplicate and dt_eligible:
+            page_dt = doc.Root.Add(
+                "page", name=safe_dsname("%s_dt" % page_name)
+            )
+            try:
+                page_dt.notes.val = (
+                    "Datetime-axis duplicate of '%s' "
+                    "(v0.0.12 combined-in-time)."
+                    % page_name
+                )
+            except Exception:
+                pass
+            graph_dt = page_dt.Add("graph", name="g_overlay_dt")
+            try:
+                graph_dt.y.label.val = unit_label
+                graph_dt.y.GridLines.hide.val = False
+            except Exception:
+                pass
+            if break_pairs:
+                ax = make_broken_x_axis(
+                    graph_dt, break_pairs,
+                    label="time", show_gridlines=True,
+                )
+                style_datetime_x_axis(ax, label="time")
+            else:
+                style_datetime_x_axis(graph_dt.x, label="time")
+            try:
+                key_dt = graph_dt.Add("key", name="key1_dt")
+                key_dt.Border.hide.val = False
+            except Exception:
+                pass
+            for hname, col, dt_name, y_name, idx in dt_eligible:
+                xy_name = safe_dsname(
+                    "xy_%s_%s_dt" % (hname, col)
+                )
+                xy = graph_dt.Add("xy", name=xy_name)
+                xy.xData.val = dt_name
+                xy.yData.val = y_name
+                try:
+                    xy.key.val = "%s.%s" % (hname, col)
+                except Exception:
+                    pass
+                try:
+                    xy.marker.val = "circle"
+                    xy.markerSize.val = "2pt"
+                    xy.PlotLine.hide.val = True
+                    colour = _OVERLAY_COLORS[idx % len(_OVERLAY_COLORS)]
+                    xy.MarkerFill.color.val = colour
+                    xy.MarkerLine.color.val = colour
+                except Exception:
+                    pass
+            if log_cb:
+                log_cb("  Datetime-overlay page '%s_dt': %d trace(s)"
+                       % (page_name, len(dt_eligible)))
 
 
 # ============================================================================
@@ -966,6 +1296,25 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.combined_only_cb.setChecked(False)
         form.addRow(self.combined_only_cb)
 
+        # --- Datetime-duplicate plots (v0.0.11) ---------------------------
+        # When ticked, every per-file page and every cross-file overlay
+        # page is duplicated against a parallel Veusz date-time x axis
+        # (tick labels: YYYY-MM-DD HH:MM:SS, rotated 45 deg).
+        self.datetime_dup_cb = QCheckBox(
+            "Duplicate plots with datetime X axis (YYYY-MM-DD HH:MM:SS)"
+        )
+        self.datetime_dup_cb.setChecked(False)
+        form.addRow(self.datetime_dup_cb)
+
+        # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
+        self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
+        self.gpu_cb.setChecked(False)
+        _gpu_ok = is_gpu_available()
+        self.gpu_cb.setEnabled(_gpu_ok)
+        self.gpu_cb.setToolTip(gpu_backend_name())
+        form.addRow(self.gpu_cb)
+        self.log("GPU backend: %s" % gpu_backend_name())
+
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
         if not self.selected_files:
@@ -1017,6 +1366,10 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         gap_k = float(self.gap_k_spin.value())
         gap_absolute = float(self.gap_abs_spin.value())
         plot_individual = not bool(self.combined_only_cb.isChecked())
+        # v0.0.11: datetime-duplicate toggle
+        datetime_duplicate = bool(self.datetime_dup_cb.isChecked())
+        # v0.0.10: drive the process-wide GPU flag from the checkbox
+        enable_gpu(self.gpu_cb.isChecked() and self.gpu_cb.isEnabled())
         # Keep the GUI responsive across hundreds of files: pump the Qt
         # event loop between every push so the log pane scrolls live and
         # the window doesn't appear "stuck" during a long batch insert.
@@ -1053,7 +1406,8 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                               skip_images=skip_images,
                               plot_individual=plot_individual,
                               gap_k=gap_k,
-                              gap_absolute=gap_absolute)
+                              gap_absolute=gap_absolute,
+                              datetime_duplicate=datetime_duplicate)
             except Exception as exc:
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
             else:
@@ -1075,6 +1429,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                     self.veusz_doc, file_records,
                     gap_k=gap_k, gap_absolute=gap_absolute,
                     log_cb=self.log,
+                    datetime_duplicate=datetime_duplicate,
                 )
             except Exception as exc:
                 self.log("  build_unit_overlay_pages failed: %s" % exc)

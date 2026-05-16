@@ -85,6 +85,58 @@ Date: 2026-05-16
 #             ``veusz.embed.Embedded`` is documented as single-threaded --
 #             all document operations must come from one thread.
 Date: 2026-05-16
+# %%%% 0.0.10: Optional GPU acceleration via CuPy.  Added
+#              ``is_gpu_available()``, ``enable_gpu(flag)`` (process-wide
+#              toggle), ``set_gpu_argsort_threshold(n)``, and
+#              ``gpu_argsort(arr, force=None)`` which returns the same
+#              ``np.argsort`` index array but uses CuPy under the hood
+#              when the array is large enough (default >= 200 000
+#              samples; tuneable via the setter) and CuPy is importable.
+#              CuPy is a soft dependency -- import failure is silent and
+#              the helpers always fall through to NumPy.  Used by the
+#              per-file argsort step in push_to_veusz()/
+#              push_franks_to_veusz() (the dominant O(N log N) cost when
+#              N is large).  CuPy's radix-sort on the GPU is typically
+#              2.7-10x faster than NumPy's SIMD sort once the array is
+#              big enough to amortise the host<->device transfer (see
+#              https://gist.github.com/magnium/cf96160d248a79f9463439695a7748e8).
+#              Small-array workloads continue to use NumPy on the CPU.
+#              GUI surfaces gained a 'Use GPU acceleration (CuPy)'
+#              checkbox that is disabled and tooltipped when CuPy is not
+#              importable on the host -- there is no install or
+#              configuration burden when CuPy is absent.
+Date: 2026-05-16
+# %%%% 0.0.12: Combined-in-time overlay semantics.  The unit-overlay
+#               builders now stitch every file's samples for a given
+#               (unit, column) into a single time-sorted xy trace -- one
+#               line per column instead of N lines per file.  The
+#               concatenated x is also emitted as a Veusz date-time
+#               dataset for the datetime-duplicate page.
+Date: 2026-05-16
+# %%%% 0.0.11: Added datetime-duplicate plot support.  Plots whose x axis
+#              is a Modified Julian Date column (or any column known to be
+#              MJD-valued via the ``SORTED_KEY_HINT`` convention) can now
+#              optionally be duplicated with a parallel x axis that uses a
+#              proper Veusz date-time dataset and a YYYY-MM-DD HH:MM:SS
+#              tick label format.
+#                * ``MJD_VEUSZ_EPOCH_MJD`` = 54832.0 (MJD of 2009-01-01)
+#                  -- Veusz stores date-time datasets as seconds since
+#                  2009-01-01 UTC, see veusz/utils/dates.py.
+#                * ``mjd_to_veusz_seconds(mjd_arr)`` returns a 1-D float64
+#                  numpy array of Veusz date-time seconds; NaN-preserving
+#                  (non-finite MJD -> NaN seconds so the datetime dataset
+#                  keeps the same length and Veusz simply skips that
+#                  sample on plotting).
+#                * ``style_datetime_x_axis(axis, rotate_deg, fmt,
+#                  major_ticks_target)`` applies a date format string,
+#                  rotates tick labels, and sets a target number of major
+#                  ticks so the cadence is readable for typical batches.
+#                  The default 45-degree rotation keeps a 19-character
+#                  ``YYYY-MM-DD HH:MM:SS`` label legible without major
+#                  visual overlap.  Compatible with both Veusz 3.4 and 4.1
+#                  (the TickLabels.format / TickLabels.rotate /
+#                  MajorTicks.number settings are stable since Veusz 1.x).
+Date: 2026-05-16
 # %%%% 0.0.9: Added broken-axis helpers used by FITS_AutoPlot and
 #             Franks_AutoPlot to generate plots that handle large time
 #             gaps without dead-space:
@@ -634,6 +686,284 @@ def make_broken_x_axis(graph, break_pairs, label="", show_gridlines=True):
 
 
 # ---------------------------------------------------------------------------
+# %% DATETIME-DUPLICATE PLOT HELPERS (v0.0.11)
+# ---------------------------------------------------------------------------
+#
+# Veusz stores date-time datasets internally as a float64 array of seconds
+# since 2009-01-01 00:00:00 UTC (see veusz/utils/dates.py, ``offsetdate``).
+# Modified Julian Date 54832.0 corresponds to that same epoch.  Therefore
+# the conversion from MJD to a Veusz date-time scalar is simply:
+#
+#     veusz_seconds = (mjd - 54832.0) * 86400.0
+#
+# When a date-time dataset is bound to an xy widget's ``xData``, Veusz
+# automatically formats the tick labels using its ``%VDx`` strftime tokens
+# instead of the default ``%Vg`` numeric formatter.  The default tick label
+# rotation is 0; we set it to 45 degrees so a 19-character
+# ``YYYY-MM-DD HH:MM:SS`` label fits without overlapping its neighbours at
+# typical sampling cadences.
+#
+# These helpers are pure-numpy (no astropy / no datetime allocations) so
+# they are cheap enough to call inside the plugin path on every file.
+
+# MJD that corresponds to Veusz's internal date-time zero (2009-01-01 UTC).
+MJD_VEUSZ_EPOCH_MJD = 54832.0
+# Default datetime tick-label format string used everywhere we render a
+# duplicate-with-datetime-axis page.  %VDx tokens are Veusz's strftime-ish
+# tokens, defined in the manual under "Axis numeric scales".  Result:
+#     2024-03-15 14:30:00
+DEFAULT_DATETIME_TICK_FORMAT = "%VDY-%VDm-%VDd %VDH:%VDM:%VDS"
+# Default tick label rotation -- 45 degrees keeps a 19-character label
+# readable at typical cadences.  Veusz accepts integer or stringified
+# integer degrees ("45" or 45 both work).
+DEFAULT_DATETIME_TICK_ROTATE_DEG = 45
+# Target number of major ticks along the x axis.  Veusz auto-picks the
+# spacing to satisfy roughly this many major ticks; we keep it modest so
+# the rotated date strings have room to breathe.
+DEFAULT_DATETIME_MAJOR_TICKS_TARGET = 8
+
+
+def mjd_to_veusz_seconds(mjd_arr):
+    # type: (np.ndarray) -> np.ndarray
+    """
+    Convert an array of Modified Julian Dates (UTC) to the float-seconds
+    units Veusz uses internally for date-time datasets.  Non-finite MJD
+    inputs become NaN seconds, which Veusz silently skips on plots while
+    preserving the dataset length (so a date-time dataset stays aligned
+    with its companion numeric dataset row-for-row).
+    """
+    a = np.asarray(mjd_arr, dtype=float).ravel()
+    finite = np.isfinite(a)
+    out = np.full(a.shape, np.nan, dtype=float)
+    # vectorised: (mjd - epoch) * 86400 seconds/day
+    out[finite] = (a[finite] - MJD_VEUSZ_EPOCH_MJD) * 86400.0
+    return out
+
+
+def _coerce_axis_setting_to_str(value):
+    """Some Veusz axis settings (rotate, in particular) are documented as
+    accepting either an int or its string form.  Older Veusz versions
+    sometimes reject the int -- the safe move is to pass a string."""
+    if isinstance(value, str):
+        return value
+    try:
+        return str(int(round(float(value))))
+    except Exception:
+        return str(value)
+
+
+def style_datetime_x_axis(axis,
+                          rotate_deg=DEFAULT_DATETIME_TICK_ROTATE_DEG,
+                          fmt=DEFAULT_DATETIME_TICK_FORMAT,
+                          major_ticks_target=DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
+                          label=""):
+    """
+    Apply the standard datetime tick-label format and angled rotation to
+    an axis widget.  Works on both plain ``axis`` and ``axis-broken``
+    widgets because both share the same TickLabels / MajorTicks setting
+    groups.
+
+    Each ``try/except`` is independent so that the most-supported
+    settings (format, rotate) still land even if a less-supported one
+    (MajorTicks/number) is renamed on an exotic Veusz build.
+
+    Compatible with both Veusz 3.4 and 4.1 (these setting groups exist
+    unchanged since Veusz 1.x).
+    """
+    if axis is None:
+        return axis
+    # Date format string for tick labels.
+    try:
+        axis.TickLabels.format.val = str(fmt)
+    except Exception:
+        pass
+    # Angled rotation so a 19-char date+time string fits.
+    try:
+        axis.TickLabels.rotate.val = _coerce_axis_setting_to_str(rotate_deg)
+    except Exception:
+        # Some Veusz builds expect a numeric value; try that too.
+        try:
+            axis.TickLabels.rotate.val = int(round(float(rotate_deg)))
+        except Exception:
+            pass
+    # Target tick density.
+    try:
+        axis.MajorTicks.number.val = int(major_ticks_target)
+    except Exception:
+        pass
+    # Axis label, if requested.
+    if label:
+        try:
+            axis.label.val = str(label)
+        except Exception:
+            pass
+    # Force gridlines on so the date-aware plot stays readable when many
+    # ticks land close together.
+    try:
+        axis.GridLines.hide.val = False
+    except Exception:
+        pass
+    return axis
+
+
+# ---------------------------------------------------------------------------
+# %% GPU ACCELERATION HELPERS (CuPy, optional)
+# ============================================================================
+#
+# Design notes:
+#   * CuPy is a SOFT dependency.  We try to import it once at module load,
+#     and every public helper degrades to NumPy when the import fails or
+#     when the user toggles the global flag off.
+#   * The GPU is only used when the input array is big enough to amortise
+#     the host<->device transfer.  The default 200 000 element threshold
+#     was picked from public benchmarks where CuPy first overtakes NumPy
+#     sort/argsort on a mid-range consumer GPU (see the 0.0.10 revision
+#     note above).  The threshold is settable from the GUI.
+#   * Only the argsort step is GPU-accelerated.  detect_time_breaks does
+#     a tiny sort + diff that is overwhelmed by H2D transfer; we leave
+#     it on the CPU.  Image-HDU dataset transfers are dominated by the
+#     embedded-Veusz round-trip and gain nothing from GPU.
+
+try:                       # CuPy is OPTIONAL.
+    import cupy as _cp     # type: ignore
+    _HAS_CUPY = True
+except Exception:          # pragma: no cover -- depends on host
+    _cp = None
+    _HAS_CUPY = False
+
+# Process-wide enable flag (driven by the GUI checkbox).  Off by default.
+_GPU_ENABLED = False
+# Minimum array size at which we attempt the GPU sort.  Tuneable.
+_GPU_ARGSORT_THRESHOLD = 200_000
+
+
+def is_gpu_available() -> bool:
+    """True iff CuPy imported successfully AND at least one CUDA device is
+    visible to it.  Cheap: we cache the runtime-device check after the
+    first call so the GUI can poll this on every refresh."""
+    if not _HAS_CUPY:
+        return False
+    cached = getattr(is_gpu_available, "_cache", None)
+    if cached is not None:
+        return bool(cached)
+    try:
+        n = int(_cp.cuda.runtime.getDeviceCount())
+        ok = n > 0
+    except Exception:
+        ok = False
+    setattr(is_gpu_available, "_cache", ok)
+    return ok
+
+
+def gpu_backend_name() -> str:
+    """Short string describing the GPU backend status for the GUI/log."""
+    if not _HAS_CUPY:
+        return "CuPy not installed -- CPU only"
+    if not is_gpu_available():
+        return "CuPy installed but no CUDA device -- CPU only"
+    try:
+        dev = _cp.cuda.Device(0)
+        try:
+            # CuPy 11+/12+
+            props = _cp.cuda.runtime.getDeviceProperties(0)
+            name = props.get("name", b"GPU")
+            if isinstance(name, bytes):
+                name = name.decode("ascii", "replace")
+        except Exception:
+            name = "CUDA device 0"
+        return "CuPy ready: %s" % name
+    except Exception:
+        return "CuPy ready"
+
+
+def enable_gpu(flag: bool) -> None:
+    """Toggle the process-wide GPU acceleration flag.  Safe to call even
+    when CuPy is not installed (it will simply have no effect)."""
+    global _GPU_ENABLED
+    _GPU_ENABLED = bool(flag) and is_gpu_available()
+
+
+def gpu_enabled() -> bool:
+    """Return the current global GPU-enabled state."""
+    return bool(_GPU_ENABLED)
+
+
+def set_gpu_argsort_threshold(n: int) -> None:
+    """Set the minimum array size (samples) at which the optional CuPy
+    path is used.  Smaller arrays fall through to NumPy."""
+    global _GPU_ARGSORT_THRESHOLD
+    try:
+        _GPU_ARGSORT_THRESHOLD = max(0, int(n))
+    except Exception:
+        pass
+
+
+def get_gpu_argsort_threshold() -> int:
+    return int(_GPU_ARGSORT_THRESHOLD)
+
+
+def gpu_argsort(arr, force=None):
+    """
+    Return ``np.argsort(arr)`` (ascending, int64) with optional CuPy
+    acceleration.
+
+    Parameters
+    ----------
+    arr : array_like
+        1-D numeric array.
+    force : None or bool
+        * None (default) -- use GPU iff ``gpu_enabled()`` is True AND the
+          array is large enough AND CuPy is available.
+        * True -- attempt GPU regardless of size (still falls back to
+          NumPy if anything fails).
+        * False -- always use NumPy (useful for inner loops where the
+          caller already decided).
+
+    The function is type-stable: it always returns a NumPy ``int64``
+    array, so callers using ``arr[idx]`` work unchanged whether CuPy was
+    used or not.
+    """
+    a = np.asarray(arr)
+    n = a.size
+    use_gpu = False
+    if force is True:
+        use_gpu = _HAS_CUPY and is_gpu_available()
+    elif force is False:
+        use_gpu = False
+    else:
+        use_gpu = (gpu_enabled()
+                   and n >= _GPU_ARGSORT_THRESHOLD
+                   and _HAS_CUPY
+                   and is_gpu_available())
+    if not use_gpu:
+        return np.argsort(a, kind="stable")
+    try:
+        # Transfer -> sort -> bring index array back.
+        g = _cp.asarray(a)
+        gi = _cp.argsort(g)
+        idx = _cp.asnumpy(gi).astype(np.int64, copy=False)
+        # Free GPU memory promptly so subsequent files do not OOM the
+        # device.
+        del g
+        del gi
+        try:
+            _cp.get_default_memory_pool().free_all_blocks()
+        except Exception:
+            pass
+        return idx
+    except Exception:
+        # Any failure -- fall back to NumPy silently.  The GUI logs a
+        # one-time warning on first failure.
+        if not getattr(gpu_argsort, "_warned", False):
+            setattr(gpu_argsort, "_warned", True)
+            import warnings
+            warnings.warn("gpu_argsort: CuPy path failed -- using NumPy. "
+                          "Future calls will continue silently.",
+                          RuntimeWarning, stacklevel=2)
+        return np.argsort(a, kind="stable")
+
+
+# ============================================================================
 # %% COMMON GUI BUILDING BLOCKS
 # ---------------------------------------------------------------------------
 class AutoPlotMainWindow(QMainWindow):
