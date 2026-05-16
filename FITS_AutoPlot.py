@@ -40,6 +40,13 @@ Date: 2026-05-16
 #             datasets use the sentinel ``"NaN"`` for non-finite MJDs so
 #             array lengths stay aligned with their numeric companions.
 Date: 2026-05-16
+# %%%% 0.0.4: Register the NRAO non-standard FITS unit aliases (``'none'``
+#             on CHANNELA/CHANNELB, ``'NanoSeconds'`` on DELTAT) at module
+#             load via register_nrao_fits_units(), and wrap fits.open /
+#             QTable.read in suppress_fits_unit_warnings() so a 900-file
+#             batch no longer floods the log with harmless UnitsWarning
+#             and "kept as MaskedColumn" messages.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication, open AutoPlot main window, run event loop.
         FITSAutoPlotWindow: qtpy main window subclassing AutoPlotMainWindow;
@@ -116,7 +123,13 @@ from _autoplot_common import (   # noqa: E402
     apply_theme, open_embedded, save_vszh5,
     run_in_threadpool, open_maybe_gzipped, safe_dsname,
     mjd_to_datestr,
+    register_nrao_fits_units, suppress_fits_unit_warnings,
 )
+
+# Register the NRAO non-standard FITS unit aliases ('none', 'NanoSeconds')
+# once at module load so QTable.read no longer emits UnitsWarning when
+# batch-processing 1PPS-delta files.
+register_nrao_fits_units()
 
 # ============================================================================
 # SCRIPT-LEVEL KNOBS  (kept at the top per spec)
@@ -204,7 +217,8 @@ class FITSProcessor:
             "tmp_uncompressed": did_decompress,
             "base_name": base,
         }
-        with fits.open(local_path, memmap=True) as hdul:
+        with suppress_fits_unit_warnings(), \
+                fits.open(local_path, memmap=True) as hdul:
             # Collect a compact header dump from PRIMARY
             try:
                 out["header"] = [
@@ -220,7 +234,12 @@ class FITSProcessor:
                 if hdu.data is None:
                     continue
                 if isinstance(hdu, fits.BinTableHDU) or isinstance(hdu, fits.TableHDU):
-                    qt = QTable.read(hdu)
+                    # suppress_fits_unit_warnings() above already covers
+                    # QTable.read; this nested call is harmless and ensures
+                    # the filter is active even if a subclass changes the
+                    # outer context (defensive).
+                    with suppress_fits_unit_warnings():
+                        qt = QTable.read(hdu)
                     for col in qt.colnames:
                         try:
                             data = np.asarray(qt[col])
@@ -485,13 +504,17 @@ class FITSBatchWorker(QThread):
 
     def run(self) -> None:
         try:
-            proc = FITSProcessor(self.backend, self.cache)
-            work = [(p, proc.read, (p,)) for p in self.files]
-            results = run_in_threadpool(
-                work,
-                max_workers=self.max_threads,
-                progress_cb=lambda d, t, k: self.progress.emit(d, t, k),
-            )
+            # Outer suppressor: in addition to the inner wraps inside
+            # FITSProcessor.read(), this keeps the worker thread free of
+            # the noisy NRAO FITS UnitsWarnings during the whole batch.
+            with suppress_fits_unit_warnings():
+                proc = FITSProcessor(self.backend, self.cache)
+                work = [(p, proc.read, (p,)) for p in self.files]
+                results = run_in_threadpool(
+                    work,
+                    max_workers=self.max_threads,
+                    progress_cb=lambda d, t, k: self.progress.emit(d, t, k),
+                )
             self.finished_ok.emit(results)
         except Exception as exc:
             self.failed.emit("%s\n%s" % (exc, traceback.format_exc()))

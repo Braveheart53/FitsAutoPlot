@@ -43,6 +43,17 @@ Date: 2026-05-16
 #             rather than an empty string -- this prevents NaN rows from
 #             being silently dropped or confused with a missing token.
 Date: 2026-05-16
+# %%%% 0.0.4: Added register_nrao_fits_units() and suppress_fits_unit_warnings()
+#             helpers.  NRAO 1PPS-delta FITS files carry non-standard unit
+#             strings (``'none'`` on CHANNELA/CHANNELB, ``'NanoSeconds'`` on
+#             DELTAT) that astropy.io.fits / QTable.read flag with a noisy
+#             UnitsWarning -- and astropy.table additionally warns that the
+#             text columns are kept as MaskedColumn because the unit cannot
+#             be converted to a Quantity.  The new helpers register these
+#             unit aliases with astropy.units and provide a context manager
+#             that filters the residual harmless warnings so a 900-file
+#             batch run no longer floods the log.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         make_dark_palette/make_light_palette/apply_theme: textual menu theme
             switching for dark vs light mode (View menu).
@@ -85,6 +96,9 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import warnings
+import contextlib
 
 import numpy as np
 
@@ -683,6 +697,120 @@ def mjd_to_datestr(mjd_arr: "np.ndarray",
             flat_out[k] = "NaN"
     out = flat_out.reshape(a.shape)
     return np.asarray(out.tolist())
+
+
+# ---------------------------------------------------------------------------
+# NRAO FITS unit-warning helpers
+# ---------------------------------------------------------------------------
+# NRAO 1PPS-delta FITS files use non-standard FITS unit strings:
+#   * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit)
+#   * DELTAT  carries unit='NanoSeconds'    (should be FITS 'ns')
+# astropy.units flags both as UnitsWarning, and astropy.table follows up
+# with a "kept as MaskedColumn...convert to Quantity failed" warning for
+# the text columns.  The two helpers below register the unit aliases and
+# provide a context manager that filters the residual harmless warnings.
+_NRAO_UNITS_REGISTERED = False
+
+
+def register_nrao_fits_units() -> None:
+    """
+    Register the non-standard NRAO FITS unit aliases with astropy.units so
+    that ``QTable.read`` / ``Table.read`` no longer emit a UnitsWarning.
+
+    Idempotent -- safe to call from every worker thread, and from every
+    plugin invocation.  Falls back silently if astropy is not importable
+    (this module is also used by code paths that never touch FITS).
+    """
+    global _NRAO_UNITS_REGISTERED
+    if _NRAO_UNITS_REGISTERED:
+        return
+    try:
+        from astropy import units as u
+    except Exception:
+        # astropy is not available in this process; nothing to do.
+        _NRAO_UNITS_REGISTERED = True
+        return
+    new_units = []
+    # 'none' -- placeholder unit used on text columns.  Map it to a custom
+    # dimensionless unit so the FITS unit parser accepts it.
+    try:
+        u.Unit("none")
+    except Exception:
+        try:
+            none_unit = u.def_unit(
+                "none",
+                represents=u.dimensionless_unscaled,
+                doc="NRAO placeholder unit on text columns (treated as "
+                    "dimensionless).",
+            )
+            new_units.append(none_unit)
+        except Exception:
+            pass
+    # 'NanoSeconds' -- should be FITS 'ns'.  Define as an explicit alias
+    # for u.nanosecond so callers can still get proper time arithmetic.
+    try:
+        u.Unit("NanoSeconds")
+    except Exception:
+        try:
+            ns_unit = u.def_unit(
+                ["NanoSeconds", "nanoseconds", "NanoSecond", "nanosecond_alias"],
+                represents=u.ns,
+                doc="NRAO-style alias for the SI nanosecond.",
+            )
+            new_units.append(ns_unit)
+        except Exception:
+            pass
+    if new_units:
+        try:
+            u.add_enabled_units(new_units)
+        except Exception:
+            pass
+    _NRAO_UNITS_REGISTERED = True
+
+
+@contextlib.contextmanager
+def suppress_fits_unit_warnings():
+    """
+    Context manager that filters the harmless FITS unit-related warnings
+    emitted by ``astropy.io.fits`` and ``astropy.table`` when reading
+    NRAO 1PPS-delta files.  Real problems (corrupt headers, bad casts,
+    etc.) still propagate because the filter is narrow.
+
+    Use this around ``QTable.read``/``Table.read``/``fits.open`` calls in
+    worker threads to keep the log readable across hundreds of files.
+    """
+    with warnings.catch_warnings():
+        # UnitsWarning -- emitted when a non-standard unit string is parsed.
+        try:
+            from astropy.units import UnitsWarning  # type: ignore
+            warnings.simplefilter("ignore", UnitsWarning)
+        except Exception:
+            pass
+        # AstropyUserWarning -- emitted by astropy.table for the
+        # "kept as MaskedColumn ... attempt to convert it to Quantity failed"
+        # message.  Filter only this specific message text so other
+        # AstropyUserWarning instances still surface.
+        try:
+            from astropy.utils.exceptions import AstropyUserWarning  # type: ignore
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*kept as a? ?MaskedColumn.*",
+                category=AstropyUserWarning,
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*has a unit but is kept.*",
+                category=AstropyUserWarning,
+            )
+        except Exception:
+            pass
+        # As a final safety net, hide the generic "did not parse as fits unit"
+        # message regardless of which category astropy raises it under.
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*did not parse as fits unit.*",
+        )
+        yield
 
 
 def safe_dsname(name: str) -> str:
