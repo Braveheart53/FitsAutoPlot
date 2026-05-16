@@ -88,10 +88,11 @@ Date: 2026-05-16
         user can pivot back to the unsorted representation if desired.
 =============================================================================
 """
+# %% Imports
 from __future__ import annotations
 
 # ============================================================================
-# IMPORTS - Standard library
+# %%% IMPORTS - Standard library
 # ============================================================================
 import gzip
 import os
@@ -102,20 +103,20 @@ import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 # ============================================================================
-# IMPORTS - Scientific
+# %%% IMPORTS - Scientific
 # ============================================================================
 import numpy as np
 from astropy.io import fits
 from astropy.table import QTable
 
 # ============================================================================
-# IMPORTS - Veusz embedded (deferred to runtime in workers, OK at module
+# %%% IMPORTS - Veusz embedded (deferred to runtime in workers, OK at module
 #           level here because the standalone GUI is also a Veusz client)
 # ============================================================================
 import veusz.embed as vz_embed
 
 # ============================================================================
-# IMPORTS - shared GUI / threading / cache helpers
+# %%% IMPORTS - shared GUI / threading / cache helpers
 # ============================================================================
 # Allow this file to be launched directly even if _autoplot_common.py lives
 # in the same folder but the folder is not on sys.path.
@@ -141,7 +142,7 @@ from _autoplot_common import (   # noqa: E402
 register_nrao_fits_units()
 
 # ============================================================================
-# SCRIPT-LEVEL KNOBS  (kept at the top per spec)
+# %% SCRIPT-LEVEL KNOBS  (kept at the top per spec)
 # ============================================================================
 MAX_THREADS = max(1, (os.cpu_count() or 4))   # used by ThreadPoolExecutor
 DEFAULT_RSS_HIGH_WATER_MB = 1024              # spill threshold per process
@@ -151,7 +152,7 @@ ALLOWED_EXT = (".fits", ".fit", ".fits.gz", ".fit.gz")
 
 
 # ============================================================================
-# PER-FILE PROCESSOR
+# %% PER-FILE PROCESSOR
 # ============================================================================
 class FITSProcessor:
     """
@@ -275,7 +276,7 @@ class FITSProcessor:
 
 
 # ============================================================================
-# VEUSZ INTEGRATION  (runs on the GUI thread)
+# %% VEUSZ INTEGRATION  (runs on the GUI thread)
 # ============================================================================
 def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   backend: str, log_cb=None,
@@ -511,7 +512,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
 
 
 # ============================================================================
-# WORKER THREAD (parallel read)
+# %% WORKER THREAD (parallel read)
 # ============================================================================
 class FITSBatchWorker(QThread):
     """Background QThread that reads a batch of FITS files concurrently."""
@@ -548,7 +549,7 @@ class FITSBatchWorker(QThread):
 
 
 # ============================================================================
-# MAIN WINDOW
+# %% MAIN WINDOW
 # ============================================================================
 class FITSAutoPlotWindow(AutoPlotMainWindow):
     """Top-level window for the FITS AutoPlot script."""
@@ -710,7 +711,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
 
 
 # ============================================================================
-# ENTRY POINT
+# %% ENTRY POINT
 # ============================================================================
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)

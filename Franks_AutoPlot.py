@@ -52,6 +52,10 @@ Date: 2026-05-16
 #             batch insert -- previously the window could appear stuck
 #             when processing many .t00new files in one batch.
 #             (No 0.0.4: aligned with FITS_AutoPlot.py version stream.)
+# %%%% 0.0.6: Added Spyder IDE cell markers (# %% / # %%%) at all major
+#             section banners and import subsections so the file can be
+#             navigated and run cell-by-cell in Spyder's Outline view.
+#             Cosmetic only -- no behavior change.
 Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication and open the AutoPlot main window.
@@ -77,10 +81,11 @@ Date: 2026-05-16
         compare them, and both are tagged accordingly.
 =============================================================================
 """
+# %% Imports
 from __future__ import annotations
 
 # ============================================================================
-# IMPORTS - Standard library
+# %%% IMPORTS - Standard library
 # ============================================================================
 import os
 import re
@@ -89,17 +94,17 @@ import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 # ============================================================================
-# IMPORTS - Scientific
+# %%% IMPORTS - Scientific
 # ============================================================================
 import numpy as np
 
 # ============================================================================
-# IMPORTS - Veusz embedded
+# %%% IMPORTS - Veusz embedded
 # ============================================================================
 import veusz.embed as vz_embed
 
 # ============================================================================
-# IMPORTS - shared GUI helpers
+# %%% IMPORTS - shared GUI helpers
 # ============================================================================
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
@@ -116,7 +121,7 @@ from _autoplot_common import (   # noqa: E402
 )
 
 # ============================================================================
-# SCRIPT-LEVEL KNOBS
+# %% SCRIPT-LEVEL KNOBS
 # ============================================================================
 MAX_THREADS = max(1, (os.cpu_count() or 4))
 DEFAULT_RSS_HIGH_WATER_MB = 1024
@@ -129,7 +134,7 @@ TIMEDAT_COLUMNS = ["MJD", "EECO_REF", "NIST_REF", "NS", "DATE"]
 
 
 # ============================================================================
-# FILE PARSER
+# %% FILE PARSER
 # ============================================================================
 def _detect_flavour(path: str) -> str:
     name = os.path.basename(path).lower()
@@ -255,7 +260,7 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
 
 
 # ============================================================================
-# VEUSZ INTEGRATION
+# %% VEUSZ INTEGRATION
 # ============================================================================
 def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                          emit_datestr: bool = False) -> None:
@@ -379,7 +384,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
 
 
 # ============================================================================
-# WORKER THREAD
+# %% WORKER THREAD
 # ============================================================================
 class FranksBatchWorker(QThread):
     """Background QThread that parses Franks files in parallel."""
@@ -408,7 +413,7 @@ class FranksBatchWorker(QThread):
 
 
 # ============================================================================
-# MAIN WINDOW
+# %% MAIN WINDOW
 # ============================================================================
 class FranksAutoPlotWindow(AutoPlotMainWindow):
     """Top-level window for the Franks AutoPlot script."""
@@ -561,7 +566,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 
 
 # ============================================================================
-# ENTRY POINT
+# %% ENTRY POINT
 # ============================================================================
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)

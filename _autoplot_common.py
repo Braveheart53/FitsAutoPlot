@@ -54,6 +54,12 @@ Date: 2026-05-16
 #             that filters the residual harmless warnings so a 900-file
 #             batch run no longer floods the log.
 Date: 2026-05-16
+# %%%% 0.0.5: Added Spyder-style cell markers (``# %% TITLE`` for top-level
+#             sections, ``# %%% TITLE`` for nested sections) on the
+#             existing dashed banner blocks so the file is navigable in
+#             Spyder's Outline / cell navigator.  Pure cosmetic change --
+#             no runtime behaviour modified.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         make_dark_palette/make_light_palette/apply_theme: textual menu theme
             switching for dark vs light mode (View menu).
@@ -85,6 +91,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
+# %%% IMPORTS - Standard library
 import gc
 import os
 import sys
@@ -94,18 +101,17 @@ import time
 import uuid
 import gzip
 import shutil
+import warnings
+import contextlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import warnings
-import contextlib
-
+# %%% IMPORTS - Scientific
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# %%% QT Imports
-# Qt imports via qtpy (with frozen-bundle fallback to PySide6, matching the
+# %%% Qt imports via qtpy (with frozen-bundle fallback to PySide6, matching the
 # pattern used elsewhere in the FitsAutoPlot repo).
 # ---------------------------------------------------------------------------
 if getattr(sys, "frozen", False):
