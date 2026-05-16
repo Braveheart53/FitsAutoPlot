@@ -1644,6 +1644,47 @@ def suppress_fits_unit_warnings():
         yield
 
 
+def set_datetime_dataset(doc, name, secs, log_cb=None):
+    """Push a Veusz datetime dataset, coercing values to plain floats.
+
+    Veusz' embedded ``SetDataDateTime`` is strict on some builds: it
+    refuses NumPy scalars (``np.float64``) and silently truncates lists
+    containing NaN.  This wrapper converts the iterable to a plain
+    Python ``list[float]`` with NaN replaced by ``0.0`` before pushing,
+    and logs both success AND failure verbosely so the duplicate-page
+    path becomes diagnosable from the log panel.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        import math
+        clean = []
+        bad = 0
+        for v in secs:
+            try:
+                f = float(v)
+            except Exception:
+                bad += 1
+                f = 0.0
+            if not math.isfinite(f):
+                bad += 1
+                f = 0.0
+            clean.append(f)
+        if log_cb and bad:
+            log_cb("    note: %d non-finite/non-numeric "
+                   "datetime sample(s) replaced with 0.0 in %s"
+                   % (bad, name))
+        doc.SetDataDateTime(name, clean)
+        if log_cb:
+            log_cb("    +datetime dataset %s (%d samples)"
+                   % (name, len(clean)))
+        return True
+    except Exception as exc:
+        if log_cb:
+            log_cb("    SetDataDateTime FAILED for %s: %s" % (name, exc))
+        return False
+
+
 def safe_dsname(name: str) -> str:
     """Sanitize an arbitrary string for use as a Veusz dataset name."""
     out = []
@@ -1656,3 +1697,128 @@ def safe_dsname(name: str) -> str:
     if s and s[0].isdigit():
         s = "ds_" + s
     return s or "dataset"
+
+
+# ============================================================================
+# %%% TRACE-STYLE PALETTE (v0.0.13)
+# ----------------------------------------------------------------------------
+# Identity-stable color + line-style assignment.  The plotting helpers in
+# FITS_AutoPlot.py and Franks_AutoPlot.py call ``apply_trace_style`` for
+# every xy widget so that ``(column, tag_tuple)`` always maps to the
+# same (color, line-style) pair across every plot in the project (per-
+# file pages, datetime-duplicate pages, and cross-file overlays).
+#
+# Rules:
+#   * Color is primary -- a 16-color palette indexed by a stable hash of
+#     the identity key (column, tag_tuple).
+#   * Line is shown by default.
+#   * Line style is fixed ``solid`` while a graph has <= 16 traces.
+#     Once the trace count on a graph exceeds 16, callers pass
+#     ``vary_style=True`` and the style cycles
+#     solid -> dashed -> dotted -> dash-dot, also keyed by the same
+#     stable hash so the same identity gets the same style everywhere
+#     it appears.
+#   * Markers stay visible at 1pt so dense traces still have anchors.
+# ============================================================================
+TRACE_COLOR_PALETTE = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
+    "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
+    "#bcbd22", "#17becf", "#aec7e8", "#ffbb78",
+    "#98df8a", "#ff9896", "#c5b0d5", "#c49c94",
+]
+TRACE_LINE_STYLES = ["solid", "dashed", "dotted", "dash-dot"]
+
+# Style threshold: when the number of traces on a graph reaches this
+# value, callers should pass ``vary_style=True`` so the line-style
+# cycle activates.  Below the threshold every trace stays solid.
+TRACE_STYLE_VARY_THRESHOLD = len(TRACE_COLOR_PALETTE)  # 16
+
+
+def _stable_index(key, modulus):
+    """Deterministic non-negative index in ``[0, modulus)``.
+
+    Uses Python's ``hash`` on the canonical string form of the key.
+    Python's per-process hash randomisation does NOT apply to str hashes
+    when the same interpreter session is used end-to-end, BUT to be
+    fully reproducible across processes we md5 the string form.
+    """
+    import hashlib
+    if isinstance(key, (list, tuple)):
+        skey = "|".join("" if k is None else str(k) for k in key)
+    else:
+        skey = "" if key is None else str(key)
+    h = hashlib.md5(skey.encode("utf-8", "replace")).digest()
+    # 4 bytes -> unsigned int
+    n = (h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]
+    return n % max(1, int(modulus))
+
+
+def trace_style_for(identity_key, vary_style=False):
+    """Return ``(color_hex, line_style_str)`` for an identity key.
+
+    Parameters
+    ----------
+    identity_key : hashable
+        Recommended: ``(column_name, tag_tuple)``.  ``tag_tuple`` may be
+        ``(None,)`` for untagged HDUs.
+    vary_style : bool
+        When ``False`` (default), line style is always ``"solid"``.
+        When ``True``, the style cycles through ``TRACE_LINE_STYLES``
+        keyed by the same stable hash, so the same identity gets the
+        same style on every graph that varies styles.
+    """
+    color = TRACE_COLOR_PALETTE[
+        _stable_index(identity_key, len(TRACE_COLOR_PALETTE))
+    ]
+    if vary_style:
+        style = TRACE_LINE_STYLES[
+            _stable_index(identity_key, len(TRACE_LINE_STYLES))
+        ]
+    else:
+        style = "solid"
+    return color, style
+
+
+def apply_trace_style(xy, identity_key, vary_style=False,
+                      show_line=True, marker="circle",
+                      marker_size="1pt", line_width="1pt"):
+    """Apply identity-stable color + line style + markers to a Veusz xy.
+
+    All attribute writes are wrapped in try/except so older Veusz
+    versions that lack a property simply ignore that one tweak.
+    """
+    color, style = trace_style_for(identity_key, vary_style=vary_style)
+    try:
+        xy.marker.val = marker
+    except Exception:
+        pass
+    try:
+        xy.markerSize.val = marker_size
+    except Exception:
+        pass
+    try:
+        xy.MarkerFill.color.val = color
+    except Exception:
+        pass
+    try:
+        xy.MarkerLine.color.val = color
+    except Exception:
+        pass
+    try:
+        xy.PlotLine.hide.val = not bool(show_line)
+    except Exception:
+        pass
+    try:
+        xy.PlotLine.color.val = color
+    except Exception:
+        pass
+    try:
+        xy.PlotLine.style.val = style
+    except Exception:
+        pass
+    try:
+        xy.PlotLine.width.val = line_width
+    except Exception:
+        pass
+    return color, style
+
