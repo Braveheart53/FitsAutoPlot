@@ -56,6 +56,22 @@ Date: 2026-05-16
 #             inside _on_worker_done() so a 900-file batch insert no
 #             longer makes the GUI look frozen.
 Date: 2026-05-16
+# %%%% 0.0.7: Added two new progress bars in the GUI -- a 'Parsing/pushing'
+#             file-level bar that ticks once per file as push_to_veusz()
+#             finishes that file (separate from the original 'Reading'
+#             worker-thread bar), and a 'Current file - columns' bar that
+#             ticks per Veusz dataset (raw, sorted, image, datestr) as the
+#             file's columns are poured into the document. push_to_veusz()
+#             gained a ``column_cb(done, total)`` parameter and counts its
+#             own operations so callers don't have to.
+#             Also added a 'Skip image HDUs' checkbox to the options form
+#             (and a ``skip_images`` field on FITSProcessor and a kwarg on
+#             push_to_veusz) that completely bypasses the image-HDU read,
+#             push and page-build paths.  Useful for NRAO 1PPS-delta
+#             files where image HDUs are unused -- measurable speedup on
+#             large batches.  (No 0.0.6: aligned with sibling plugin
+#             version stream.)
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication, open AutoPlot main window, run event loop.
         FITSAutoPlotWindow: qtpy main window subclassing AutoPlotMainWindow;
@@ -179,12 +195,16 @@ class FITSProcessor:
     """
 
     def __init__(self, backend: str, cache: MemoryAwareCache,
-                 linked: bool = False) -> None:
+                 linked: bool = False, skip_images: bool = False) -> None:
         if backend not in ("veusz", "astropy", "both"):
             raise ValueError("backend must be 'veusz', 'astropy' or 'both'")
         self.backend = backend
         self.cache = cache
         self.linked = linked
+        # When True, skip the image-HDU read/store path entirely.  Useful
+        # for NRAO 1PPS-delta files where the image HDUs are not used and
+        # the user just wants the OnePpsDeltas BinTableHDU columns.
+        self.skip_images = bool(skip_images)
 
     # ------------------------------------------------------------------
     def _open(self, path: str):
@@ -266,7 +286,12 @@ class FITSProcessor:
                                     sort_key = (hname, col)
                                     break
                 else:
-                    # Image / primary array HDU
+                    # Image / primary array HDU.  Honor the user-requested
+                    # skip_images flag: when set, we don't even read the
+                    # array off disk -- a big win for large image-bearing
+                    # FITS files when the user only cares about table HDUs.
+                    if self.skip_images:
+                        continue
                     data = np.asarray(hdu.data)
                     out["images"][hname] = self.cache.store(
                         "%s.%s.IMAGE" % (base, hname), data
@@ -280,7 +305,9 @@ class FITSProcessor:
 # ============================================================================
 def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   backend: str, log_cb=None,
-                  emit_datestr: bool = False) -> None:
+                  emit_datestr: bool = False,
+                  column_cb=None,
+                  skip_images: bool = False) -> None:
     """
     Push a single processed FITS file into the running embedded Veusz
     document.
@@ -302,6 +329,33 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
     raw_names: List[str] = []
     sorted_names: List[str] = []
 
+    # ---- column-level progress book-keeping ------------------------------
+    # Pre-count the operations the caller will see ticking on the column bar:
+    # one tick per Veusz native dataset added (raw), one per sorted column,
+    # one per image HDU, one per datestr emission.
+    _n_raw = 0  # known only after ImportFileFITS returns
+    _n_sorted = len(data.get("columns") or {})
+    _n_images = 0 if skip_images else len(data.get("images") or {})
+    _n_datestr = 0
+    if emit_datestr:
+        _hints = [k.upper() for k in SORTED_KEY_HINT]
+        for (_h, _c) in (data.get("columns") or {}):
+            if _c.upper() in _hints:
+                _n_datestr += 1
+    _col_total = _n_sorted + _n_images + _n_datestr  # raw added later
+    _col_done = 0
+
+    def _tick(n: int = 1) -> None:
+        # Local helper so each successful sub-push advances the GUI bar by
+        # one unit.  Safe no-op when the caller didn't supply a callback.
+        nonlocal _col_done
+        _col_done += n
+        if column_cb is not None:
+            try:
+                column_cb(_col_done, _col_total)
+            except Exception:
+                pass
+
     # ---- 1) Veusz native import (raw datasets) ---------------------------
     if backend in ("veusz", "both") and not data["tmp_uncompressed"]:
         try:
@@ -313,6 +367,14 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 linked=False,         # we already point at a real file
             )
             added = [n for n in doc.GetDatasets() if n not in existing]
+            # extend the column-bar total to include the raw datasets we are
+            # about to rename / tag, so the bar grows rather than overflowing
+            _col_total_ref = _col_total + len(added)
+            if column_cb is not None:
+                try:
+                    column_cb(_col_done, _col_total_ref)
+                except Exception:
+                    pass
             for n in added:
                 # rename with base prefix so multi-file runs don't collide
                 new_name = "%s__%s__raw" % (base, safe_dsname(n))
@@ -321,6 +383,12 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 except Exception:
                     new_name = n
                 raw_names.append(new_name)
+                _col_done += 1
+                if column_cb is not None:
+                    try:
+                        column_cb(_col_done, _col_total_ref)
+                    except Exception:
+                        pass
             doc.TagDatasets(base, raw_names)
             doc.TagDatasets("raw", raw_names)
             if log_cb:
@@ -362,12 +430,19 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 # is NOT removed from the dataset.
                 doc.SetData(ds_name, np.ascontiguousarray(arr_s, dtype=float))
             sorted_names.append(ds_name)
+            _tick()
 
         # Image HDU push (skip explicitly when there are no images so the
         # log makes it obvious to the user that nothing image-shaped was
         # found in this file -- NRAO 1PPS-delta files contain only the
         # OnePpsDeltas BinTableHDU, so 'images' is normally empty).
-        images_dict = data.get("images") or {}
+        # Also honor the user-requested skip_images flag.
+        if skip_images:
+            if log_cb:
+                log_cb("  Image HDUs skipped (user requested).")
+            images_dict = {}
+        else:
+            images_dict = data.get("images") or {}
         if not images_dict:
             if log_cb:
                 log_cb("  No image HDUs in this file -- skipping image push.")
@@ -383,6 +458,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                         np.ascontiguousarray(img.ravel(), dtype=float),
                     )
                 sorted_names.append(ds_name)
+                _tick()
 
         if sorted_names:
             doc.TagDatasets(base, sorted_names)
@@ -429,7 +505,13 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 log_cb("  Date-string datasets created: %d" % len(datestr_names))
 
     # ---- 3) Build the plots ---------------------------------------------
-    _build_pages(doc, base, data, sorted_names)
+    # When the user opted to skip image HDUs, pass a shallow-copied
+    # data dict with an empty images map so _build_pages doesn't try
+    # to render image pages for HDUs that were never read.
+    if skip_images:
+        _build_pages(doc, base, dict(data, images={}), sorted_names)
+    else:
+        _build_pages(doc, base, data, sorted_names)
 
     # cleanup any temporary uncompressed copy
     if data["tmp_uncompressed"]:
@@ -523,12 +605,14 @@ class FITSBatchWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, files: List[str], backend: str, max_threads: int,
-                 cache: MemoryAwareCache, parent=None) -> None:
+                 cache: MemoryAwareCache, parent=None,
+                 skip_images: bool = False) -> None:
         super().__init__(parent)
         self.files = files
         self.backend = backend
         self.max_threads = max_threads
         self.cache = cache
+        self.skip_images = bool(skip_images)
 
     def run(self) -> None:
         try:
@@ -536,7 +620,8 @@ class FITSBatchWorker(QThread):
             # FITSProcessor.read(), this keeps the worker thread free of
             # the noisy NRAO FITS UnitsWarnings during the whole batch.
             with suppress_fits_unit_warnings():
-                proc = FITSProcessor(self.backend, self.cache)
+                proc = FITSProcessor(self.backend, self.cache,
+                                     skip_images=self.skip_images)
                 work = [(p, proc.read, (p,)) for p in self.files]
                 results = run_in_threadpool(
                     work,
@@ -601,6 +686,15 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.datestr_cb.setChecked(False)
         form.addRow(self.datestr_cb)
 
+        # Speed knob: skip image HDUs entirely.  NRAO 1PPS-delta files
+        # have no useful image HDUs, so this can speed up processing
+        # measurably for large batches.
+        self.skip_images_cb = QCheckBox(
+            "Skip image HDUs (faster -- recommended for NRAO 1PPS files)"
+        )
+        self.skip_images_cb.setChecked(False)
+        form.addRow(self.skip_images_cb)
+
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
         if not self.selected_files:
@@ -618,13 +712,12 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
 
         self.process_button.setEnabled(False)
         self.save_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, len(self.selected_files))
-        self.progress_bar.setValue(0)
+        self.show_progress_bars(len(self.selected_files))
 
         self.worker = FITSBatchWorker(
             self.selected_files, backend, int(self.thread_spin.value()),
-            self.cache, parent=self
+            self.cache, parent=self,
+            skip_images=bool(self.skip_images_cb.isChecked()),
         )
         self.worker.progress.connect(self._on_worker_progress)
         self.worker.finished_ok.connect(self._on_worker_done)
@@ -642,34 +735,53 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.log("Batch failed: %s" % msg)
         QMessageBox.critical(self, "Batch failed", msg)
         self.process_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
+        self.hide_progress_bars()
 
     def _on_worker_done(self, results: Dict[str, Any]) -> None:
         backend_idx = self.backend_combo.currentIndex()
         backend = ["both", "veusz", "astropy"][backend_idx]
         emit_datestr = bool(self.datestr_cb.isChecked())
+        skip_images = bool(self.skip_images_cb.isChecked())
         # Keep the GUI responsive across hundreds of files: pump the Qt
         # event loop between every push so the log pane scrolls live and
         # the window doesn't appear "stuck" during a long batch insert.
         app = QApplication.instance()
         total = len(results)
+        # Build a column-progress callback that updates the per-file bar.
+        # Defined here so it captures the GUI handles, then passed into
+        # push_to_veusz() which counts column-level operations.
+        def _col_cb(done: int, total_ops: int) -> None:
+            if self.column_progress_bar.maximum() != max(1, total_ops):
+                self.column_progress_bar.setRange(0, max(1, total_ops))
+            self.column_progress_bar.setValue(done)
+            if app is not None:
+                app.processEvents()
         for idx, (path, data) in enumerate(results.items(), start=1):
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
+                self.parse_progress_bar.setValue(idx)
                 if app is not None:
                     app.processEvents()
                 continue
             self.log("Inserting datasets [%d/%d] %s"
                      % (idx, total, os.path.basename(path)))
+            # Pre-size the column bar from what the read pass produced.
+            n_cols = len(data.get("columns") or {})
+            n_imgs = 0 if skip_images else len(data.get("images") or {})
+            self.begin_column_progress(os.path.basename(path),
+                                       max(1, n_cols + n_imgs))
             try:
                 push_to_veusz(self.veusz_doc, path, data, backend,
-                              log_cb=self.log, emit_datestr=emit_datestr)
+                              log_cb=self.log, emit_datestr=emit_datestr,
+                              column_cb=_col_cb,
+                              skip_images=skip_images)
             except Exception as exc:
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
+            self.parse_progress_bar.setValue(idx)
             if app is not None:
                 app.processEvents()
         self.log("Batch complete.")
-        self.progress_bar.setVisible(False)
+        self.hide_progress_bars()
         self.process_button.setEnabled(True)
         self.save_button.setEnabled(True)
 

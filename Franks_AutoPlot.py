@@ -57,6 +57,13 @@ Date: 2026-05-16
 #             navigated and run cell-by-cell in Spyder's Outline view.
 #             Cosmetic only -- no behavior change.
 Date: 2026-05-16
+# %%%% 0.0.7: Added two new progress bars in the GUI -- a 'Parsing/pushing'
+#             file-level bar that ticks once per file as push_franks_to_veusz()
+#             finishes that file, and a 'Current file - columns' bar that
+#             ticks per source column.  push_franks_to_veusz() gained a
+#             ``column_cb(done, total)`` parameter.  No skip-images knob
+#             here (Franks files have no image HDUs).
+Date: 2026-05-16
 # %%%%% Function Descriptions
         main: build QApplication and open the AutoPlot main window.
         FranksAutoPlotWindow: qtpy main window with the Touchstone-style
@@ -263,14 +270,35 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
 # %% VEUSZ INTEGRATION
 # ============================================================================
 def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
-                         emit_datestr: bool = False) -> None:
-    """Push parsed Franks columns into the running embedded Veusz document."""
+                         emit_datestr: bool = False,
+                         column_cb=None) -> None:
+    """Push parsed Franks columns into the running embedded Veusz document.
+
+    ``column_cb(done, total)`` -- optional, ticked once per source column
+    successfully pushed (raw+sorted counted as one) so callers can drive a
+    per-file column progress bar from the GUI thread.
+    """
     base = data["base_name"]
     cols = data["columns"]
     sort_key = data["sort_key"]
 
     raw_names: List[str] = []
     sorted_names: List[str] = []
+
+    # Column-bar plan: one tick per source column plus (optionally) one for
+    # the datestr emission step.
+    _col_total = len(cols) + (1 if emit_datestr and sort_key is not None
+                              and sort_key in cols else 0)
+    _col_done = 0
+
+    def _tick(n: int = 1) -> None:
+        nonlocal _col_done
+        _col_done += n
+        if column_cb is not None:
+            try:
+                column_cb(_col_done, _col_total)
+            except Exception:
+                pass
 
     # Compute sort permutation once
     if sort_key is not None and sort_key in cols:
@@ -306,6 +334,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
             continue
         raw_names.append(raw_name)
         sorted_names.append(sorted_name)
+        _tick()
 
     # Tag everything
     try:
@@ -336,6 +365,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                     pass
                 if log_cb:
                     log_cb("  Date-string datasets created (2)")
+                _tick()
             except Exception as exc:
                 if log_cb:
                     log_cb("  MJD->date conversion failed: %s" % exc)
@@ -476,9 +506,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 
         self.process_button.setEnabled(False)
         self.save_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, len(self.selected_files))
-        self.progress_bar.setValue(0)
+        self.show_progress_bars(len(self.selected_files))
 
         self.worker = FranksBatchWorker(
             self.selected_files, int(self.thread_spin.value()),
@@ -500,7 +528,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.log("Batch failed: %s" % msg)
         QMessageBox.critical(self, "Batch failed", msg)
         self.process_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
+        self.hide_progress_bars()
 
     def _on_done(self, results: Dict[str, Any]) -> None:
         emit_datestr = bool(self.datestr_cb.isChecked())
@@ -509,23 +537,34 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         # window doesn't appear "stuck" during a long batch insert.
         app = QApplication.instance()
         total = len(results)
+        def _col_cb(done: int, total_ops: int) -> None:
+            if self.column_progress_bar.maximum() != max(1, total_ops):
+                self.column_progress_bar.setRange(0, max(1, total_ops))
+            self.column_progress_bar.setValue(done)
+            if app is not None:
+                app.processEvents()
         for idx, (path, data) in enumerate(results.items(), start=1):
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
+                self.parse_progress_bar.setValue(idx)
                 if app is not None:
                     app.processEvents()
                 continue
             self.log("Inserting datasets [%d/%d] %s"
                      % (idx, total, os.path.basename(path)))
+            n_cols = len(data.get("columns") or {})
+            self.begin_column_progress(os.path.basename(path), max(1, n_cols))
             try:
                 push_franks_to_veusz(self.veusz_doc, data, log_cb=self.log,
-                                     emit_datestr=emit_datestr)
+                                     emit_datestr=emit_datestr,
+                                     column_cb=_col_cb)
             except Exception as exc:
                 self.log("  push failed: %s" % exc)
+            self.parse_progress_bar.setValue(idx)
             if app is not None:
                 app.processEvents()
         self.log("Batch complete.")
-        self.progress_bar.setVisible(False)
+        self.hide_progress_bars()
         self.process_button.setEnabled(True)
         self.save_button.setEnabled(True)
 

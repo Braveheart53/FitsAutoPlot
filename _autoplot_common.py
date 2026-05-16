@@ -60,6 +60,12 @@ Date: 2026-05-16
 #             Spyder's Outline / cell navigator.  Pure cosmetic change --
 #             no runtime behaviour modified.
 Date: 2026-05-16
+# %%%% 0.0.6: AutoPlotMainWindow now provides three labelled progress bars
+#             (read / parse / per-column) plus helper methods
+#             ``show_progress_bars()``, ``hide_progress_bars()``,
+#             ``begin_column_progress()`` and ``tick_column_progress()``.
+#             Subclasses use these to drive a multi-stage progress UI.
+Date: 2026-05-16
 # %%%%% Function Descriptions
         make_dark_palette/make_light_palette/apply_theme: textual menu theme
             switching for dark vs light mode (View menu).
@@ -504,10 +510,32 @@ class AutoPlotMainWindow(QMainWindow):
         self.status_text.setMinimumHeight(150)
         root.addWidget(self.status_text)
 
-        # Progress + buttons
+        # Progress bars (read + parse/push + per-column)
+        # %% Progress bars
+        # ``progress_bar``        : file-level read/parse progress (worker thread)
+        # ``parse_progress_bar``  : file-level Veusz-push progress  (GUI thread)
+        # ``column_progress_bar`` : per-column progress within the file currently
+        #                           being pushed                  (GUI thread)
+        self.progress_label = QLabel("Reading files:")
+        self.progress_label.setVisible(False)
+        root.addWidget(self.progress_label)
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         root.addWidget(self.progress_bar)
+
+        self.parse_progress_label = QLabel("Parsing / pushing to Veusz:")
+        self.parse_progress_label.setVisible(False)
+        root.addWidget(self.parse_progress_label)
+        self.parse_progress_bar = QProgressBar()
+        self.parse_progress_bar.setVisible(False)
+        root.addWidget(self.parse_progress_bar)
+
+        self.column_progress_label = QLabel("Current file - columns:")
+        self.column_progress_label.setVisible(False)
+        root.addWidget(self.column_progress_label)
+        self.column_progress_bar = QProgressBar()
+        self.column_progress_bar.setVisible(False)
+        root.addWidget(self.column_progress_bar)
 
         bbox = QHBoxLayout()
         self.process_button = QPushButton("Process Files")
@@ -569,6 +597,36 @@ class AutoPlotMainWindow(QMainWindow):
 
     def update_mem_label(self, rss_mb: float) -> None:
         self.mem_label.setText("RSS: %.1f MiB" % rss_mb)
+
+    # ----- progress helpers ------------------------------------------------
+    def show_progress_bars(self, n_files: int) -> None:
+        """Make all three progress bars visible and size the file-level ones to
+        ``n_files``.  The column bar is sized lazily as each file is pushed."""
+        for w in (self.progress_label, self.progress_bar,
+                  self.parse_progress_label, self.parse_progress_bar,
+                  self.column_progress_label, self.column_progress_bar):
+            w.setVisible(True)
+        self.progress_bar.setRange(0, max(1, n_files))
+        self.progress_bar.setValue(0)
+        self.parse_progress_bar.setRange(0, max(1, n_files))
+        self.parse_progress_bar.setValue(0)
+        self.column_progress_bar.setRange(0, 1)
+        self.column_progress_bar.setValue(0)
+
+    def hide_progress_bars(self) -> None:
+        for w in (self.progress_label, self.progress_bar,
+                  self.parse_progress_label, self.parse_progress_bar,
+                  self.column_progress_label, self.column_progress_bar):
+            w.setVisible(False)
+
+    def begin_column_progress(self, file_label: str, n_cols: int) -> None:
+        """Reset the column bar at the start of pushing one file."""
+        self.column_progress_label.setText("Current file - columns: %s" % file_label)
+        self.column_progress_bar.setRange(0, max(1, n_cols))
+        self.column_progress_bar.setValue(0)
+
+    def tick_column_progress(self, done: int) -> None:
+        self.column_progress_bar.setValue(done)
 
     # ----- abstract hooks ---------------------------------------------------
     def _process_files(self) -> None:
