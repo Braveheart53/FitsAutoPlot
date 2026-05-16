@@ -1,0 +1,35 @@
+CSV/TSV AutoPlot V6 Log - 2026-02-10 08:48:44
+============================================================
+
+[08:48:44] WARNING: Y column 'Magnitude [dBm]' not found in DATASET000.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET001.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET001.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET002.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET002.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET003.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET003.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET004.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET004.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET005.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET005.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET006.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET006.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET007.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET007.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET008.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET008.csv - skipping
+[08:48:44] WARNING: Y column 'Magnitude [dBm]' not found in DATASET010.csv - skipping
+[08:48:44] WARNING: Y column 'Magnitude [dBm]' not found in DATASET012.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET014.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET014.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET015.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET015.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET016.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET016.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET017.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET017.csv - skipping
+[08:48:44] WARNING: Y column 'Magnitude [dBm]' not found in DATASET020.csv - skipping
+[08:48:44] WARNING: Y column 'Min. [dBm]' not found in DATASET023.csv - skipping
+[08:48:44] WARNING: Y column 'Max. [dBm]' not found in DATASET023.csv - skipping
+[08:48:44] Created 18 pages: 1 overlay + 17 individual file pages
+[08:49:06] Saved Veusz project: G:/My Drive/Work/GBO/TKu_Timing_ReferenceSignal/T4_Maser_100MHz_R&S_FSP6_Data/T4_Timing_Plots_Format1_20260210.vszh5
