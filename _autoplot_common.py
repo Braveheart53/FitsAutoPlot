@@ -30,6 +30,62 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (proper date ticks).
+# Date: 2026-05-16
+#              v0.0.15 made the dt_labels page bind xData to a per-point
+#              TEXT dataset and set axis mode='labels' so Veusz pulled
+#              tick strings from the plotter.  That works but yields
+#              UNIFORM sample spacing (one tick per index 0..N-1) and
+#              uneven tick collisions on long traces.  v0.0.16 swaps
+#              that for a true datetime axis:
+#
+#                * NEW: ``build_dtnum_dataset(doc, name, mjd_array)`` --
+#                  pushes a numeric Veusz-datetime-seconds dataset (the
+#                  internal numeric format Veusz uses for its native
+#                  datetime axis: seconds since 2009-01-01 UTC).  We do
+#                  NOT use ``SetDataDateTime`` here because the v0.0.13
+#                  audit showed that path fires hundreds of internal
+#                  exceptions on Veusz 3.4 -- a plain numeric dataset
+#                  with the axis itself flipped to mode='datetime'
+#                  is just as date-aware on the axis side and avoids
+#                  Veusz 3.4's broken DatasetDateTime code path.
+#                * NEW: ``configure_axis_datetime_mode(axis, ...)`` --
+#                  sets ``axis.mode.val = 'datetime'`` and applies the
+#                  shared ``style_datetime_x_axis`` formatting (date
+#                  tick label format, rotation, gridlines).  Works on
+#                  both ``axis`` and ``axis-broken`` because the v0.0.9
+#                  ``style_datetime_x_axis`` already does.
+#                * NEW: ``mjd_break_pairs_to_dtsec(pairs)`` -- converts
+#                  a list of MJD (start, end) gap pairs (the output of
+#                  ``detect_time_breaks`` on an MJD x array) into Veusz
+#                  datetime seconds so the same pairs can drive an
+#                  ``axis-broken`` widget on the dt_labels page when
+#                  one was installed on the numeric-seconds dt page.
+#                  The numeric-seconds dt page detects breaks in the
+#                  SECONDS x array, not the MJD array, so it has its
+#                  own (already-correct) break pairs; the dt_labels
+#                  page detects breaks in the MJD array (which is what
+#                  the AutoPlot scripts hold) and converts to Veusz
+#                  seconds via this helper.
+#                * ``build_textx_dataset`` and ``configure_axis_labels_mode``
+#                  are retained as deprecated back-compat shims so any
+#                  external scripts that imported them keep working.
+#                * GUI/plugin field surface is UNCHANGED from v0.0.15:
+#                  the same density spinbox + two emit checkboxes drive
+#                  both dt variants; only the under-the-hood encoding
+#                  of the dt_labels page changes.
+#                * Broken-axis parity: when the numeric-x dt page gets
+#                  a broken axis on a file/overlay, the dt_labels page
+#                  for the same file/overlay now ALSO gets a broken
+#                  axis, computed from the same gap thresholds applied
+#                  to the MJD x array.  Previously the dt_labels page
+#                  always rendered a continuous axis.
+#                * GPU + parallelization re-audit: ``build_dtnum_dataset``
+#                  is O(N) per trace (one vectorised
+#                  ``mjd_to_veusz_seconds`` call); no new sort sites.
+#                * Revision history kept in DESCENDING semantic-version
+#                  order across every shared file.
+#
 # %%%% 0.0.15: Continuous datetime-label density + text-x dt-page variant.
 # Date: 2026-05-16
 #              Two GUI/plugin changes layered on top of v0.0.14:
@@ -2587,3 +2643,171 @@ def configure_axis_labels_mode(axis_widget,
         except Exception:
             pass
     return axis_widget
+
+
+# ============================================================================
+# %%% v0.0.16 datetime-mode helpers for the dt_labels page
+# ----------------------------------------------------------------------------
+# build_dtnum_dataset / configure_axis_datetime_mode / mjd_break_pairs_to_dtsec
+#
+# These replace the v0.0.15 text-x / labels-mode approach for the dt_labels
+# page.  Instead of binding a per-point TEXT dataset to xData and setting the
+# axis to mode='labels', v0.0.16 binds a NUMERIC Veusz-datetime-seconds
+# dataset to xData and sets the axis to mode='datetime'.  Sample spacing is
+# then proportional to elapsed time, and the axis is responsible for tick
+# formatting via Veusz's DateTicks class.
+#
+# We deliberately do NOT call ``SetDataDateTime`` here because the v0.0.13
+# audit logged that ``DatasetDateTime`` round-trips fire hundreds of
+# internal exceptions on Veusz 3.4; the plain-numeric / axis-side approach
+# is just as date-aware on the axis and works identically on Veusz 3.4
+# and 4.1.
+# ============================================================================
+
+def build_dtnum_dataset(doc, name, mjd_array, log_cb=None):
+    """Push a numeric Veusz-datetime-seconds dataset for use as xData.
+
+    Builds a plain ``SetData`` numeric array whose values are seconds since
+    2009-01-01 UTC (Veusz's internal datetime numeric format).  Non-finite
+    MJD inputs become NaN seconds so the dataset stays length-aligned with
+    the companion y dataset.
+
+    Bind this dataset to ``xy.xData.val`` and then call
+    :func:`configure_axis_datetime_mode` on the parent x axis -- the axis
+    will then render proper date ticks with elapsed-time-proportional
+    spacing.
+
+    Parameters
+    ----------
+    doc : veusz.embed.Embedded
+        Active embedded Veusz document.
+    name : str
+        Veusz dataset name to create.
+    mjd_array : array-like of float
+        Modified Julian Date values, same length as the trace's y data.
+    log_cb : callable, optional
+        ``log_cb(str)`` for progress messages.
+
+    Returns
+    -------
+    str or None
+        ``name`` on success, ``None`` on any failure.
+    """
+    try:
+        arr = np.asarray(mjd_array, dtype=float)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    dtnum build failed for %s: %s" % (name, exc))
+        return None
+    n = int(arr.size)
+    if n == 0:
+        if log_cb:
+            log_cb("    dtnum skipped for %s: empty input" % name)
+        return None
+    try:
+        secs = mjd_to_veusz_seconds(arr)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    dtnum mjd_to_veusz_seconds failed for %s: %s"
+                   % (name, exc))
+        return None
+    try:
+        doc.SetData(name, secs)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    SetData failed for %s: %s" % (name, exc))
+        return None
+    if log_cb:
+        log_cb("    +dtnum xData %s (%d points, seconds since 2009-01-01 "
+               "UTC)" % (name, n))
+    return name
+
+
+def configure_axis_datetime_mode(axis_widget,
+                                 fmt=DEFAULT_DATETIME_TICK_FORMAT,
+                                 rotate_deg=DEFAULT_DATETIME_TICK_ROTATE_DEG,
+                                 major_ticks_target=
+                                     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
+                                 label=""):
+    """Switch a Veusz x axis to ``mode='datetime'`` and style its ticks.
+
+    Use after the parent xy widget's ``xData`` has been bound to a
+    numeric Veusz-datetime-seconds dataset (e.g. one produced by
+    :func:`build_dtnum_dataset`).  Veusz then uses ``axisticks.DateTicks``
+    for tick placement and ``TickLabels.format`` for tick formatting.
+
+    Works on both plain ``axis`` and ``axis-broken`` widgets because
+    ``AxisBroken`` is a subclass of ``axis.Axis`` and therefore inherits
+    the ``mode`` setting and the TickLabels / MajorTicks groups
+    unchanged.  Compatible with both Veusz 3.4 and 4.1.
+
+    Parameters
+    ----------
+    axis_widget : Veusz axis widget
+        The dt_labels-page x axis (plain ``x`` or ``axis-broken``).
+    fmt : str, optional
+        Veusz date-format string for tick labels.
+    rotate_deg : float, optional
+        Tick label rotation in degrees.
+    major_ticks_target : int, optional
+        Hint for ``MajorTicks.number``.
+    label : str, optional
+        Axis label to set if non-empty.
+
+    Returns
+    -------
+    The axis widget (for chaining).  All attribute writes are guarded.
+    """
+    if axis_widget is None:
+        return axis_widget
+    try:
+        axis_widget.mode.val = "datetime"
+    except Exception:
+        # Older Veusz builds (unknown) might use a different setting name;
+        # fall through and let style_datetime_x_axis still apply.
+        pass
+    return style_datetime_x_axis(
+        axis_widget,
+        rotate_deg=rotate_deg,
+        fmt=fmt,
+        major_ticks_target=major_ticks_target,
+        label=label,
+    )
+
+
+def mjd_break_pairs_to_dtsec(pairs):
+    """Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
+
+    The output is suitable to drive an ``axis-broken`` widget on a
+    dt_labels (mode='datetime') page whose xData is in Veusz datetime
+    seconds.  The pair shrink-by-epsilon already applied by
+    :func:`detect_time_breaks` is preserved because the conversion is
+    monotonic-affine (multiply by 86400, then translate).
+
+    Parameters
+    ----------
+    pairs : list of (float, float)
+        MJD gap pairs as returned by :func:`detect_time_breaks`.
+
+    Returns
+    -------
+    list of (float, float)
+        Same pairs in Veusz datetime seconds.  Empty list if input is
+        empty.
+    """
+    if not pairs:
+        return []
+    out = []
+    for s, e in pairs:
+        try:
+            s2 = float(
+                (float(s) - MJD_VEUSZ_EPOCH_MJD) * 86400.0
+            )
+            e2 = float(
+                (float(e) - MJD_VEUSZ_EPOCH_MJD) * 86400.0
+            )
+            if e2 > s2:
+                out.append((s2, e2))
+        except Exception:
+            continue
+    return out

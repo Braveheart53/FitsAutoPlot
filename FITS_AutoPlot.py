@@ -24,6 +24,54 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (true date ticks).
+# Date: 2026-05-16
+#                * The v0.0.15 dt_labels page used a per-point text
+#                  dataset bound to xData with axis mode='labels'.  That
+#                  works for compact "strip" views but the axis is
+#                  uniform-sample-spaced and gives no proper date tick
+#                  cadence (and no broken-axis support).
+#                * v0.0.16 emits a NEW numeric dataset alongside the
+#                  text-x dataset: ``__datelabels_dtnum``.  Values are
+#                  Veusz datetime seconds (seconds since 2009-01-01
+#                  UTC), computed from MJD by
+#                  ``mjd_to_veusz_seconds`` (NaN-preserving, vectorised).
+#                  The dt_labels page now binds xData to this numeric
+#                  dataset and sets the axis to ``mode='datetime'``
+#                  via the new helper ``configure_axis_datetime_mode``.
+#                  Veusz renders proper date ticks (DateTicks class on
+#                  Axis / AxisBroken).
+#                * Broken-axis parity: when the seconds-axis (dt) page
+#                  gets a broken x-axis for time gaps, the dt_labels
+#                  page now gets one too.  The MJD break_pairs computed
+#                  for break detection are mapped to Veusz seconds by
+#                  the new helper ``mjd_break_pairs_to_dtsec`` and
+#                  installed via ``make_broken_x_axis`` BEFORE
+#                  configure_axis_datetime_mode (AxisBroken extends
+#                  Axis so it inherits the mode property).
+#                * v0.0.15 text-x dataset (``__datelabels_textx``) is
+#                  still emitted for back-compat; the dt_labels render
+#                  prefers dtnum and falls back to textx only if dtnum
+#                  failed to build (e.g. all-NaN MJDs).
+#                * Tagged HDU, untagged HDU, and overlay dt_labels
+#                  pages all share this pattern.  Overlay break_pairs
+#                  are computed from concatenated MJDs across every
+#                  eligible (hdu, col, tag) trace on the page.
+#                * Plugin fields/GUI unchanged in 0.0.16 (no new
+#                  user-facing controls); plugin headers bumped to
+#                  0.0.16 only to keep versions in lock-step.
+#                * Why not SetDataDateTime? On Veusz 3.4 that path
+#                  fires hundreds of internal exceptions in
+#                  DatasetDateTime construction; axis-side mode
+#                  ='datetime' on a plain numeric dataset is the
+#                  documented, working alternative.
+#                * GUI: "Absolute gap (units of x; 0=auto)" spinbox is
+#                  renamed "Manual gap (hours; 0=auto)" and now expects
+#                  HOURS as input.  The widget value is divided by 24
+#                  before being passed to detect_time_breaks so MJD-axis
+#                  time gaps are specified in a familiar unit.  Same
+#                  change is mirrored in the plugin dialog.
+#
 # %%%% 0.0.15: Density-pct date labels + text-x dt_labels page variant.
 # Date: 2026-05-16
 #                * v0.0.14 dropped the SetDataDateTime path entirely.
@@ -340,6 +388,9 @@ from _autoplot_common import (   # noqa: E402
     build_sparse_datestr_dataset, build_full_datestr_dataset,
     build_density_datestr_dataset, build_textx_dataset,
     style_xy_datetime_labels, configure_axis_labels_mode,
+    # v0.0.16: dt_labels via mode='datetime' + broken-axis parity
+    build_dtnum_dataset, configure_axis_datetime_mode,
+    mjd_break_pairs_to_dtsec,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
@@ -1018,6 +1069,16 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                     safe_dsname(sk_col), tag_suffix,
                                 )
                             )
+                            # v0.0.16: numeric Veusz-datetime-seconds
+                            # dataset that drives the dt_labels page
+                            # under axis mode='datetime' instead of the
+                            # v0.0.15 text-x / labels-mode approach.
+                            dtnum_name = (
+                                "%s__%s__%s__%s__datelabels_dtnum" % (
+                                    base, safe_dsname(sk_hdu),
+                                    safe_dsname(sk_col), tag_suffix,
+                                )
+                            )
                             ok_density = build_density_datestr_dataset(
                                 doc, density_name,
                                 np.asarray(sub, dtype=float),
@@ -1025,7 +1086,10 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                 log_cb=log_cb,
                             )
                             # v0.0.15: text-x dataset (per-point, no ""
-                            # gaps) used as xData on the dt_labels page.
+                            # gaps).  Kept for back-compat -- the
+                            # v0.0.16 dt_labels page does NOT bind it
+                            # to xData anymore, but external code that
+                            # imports build_textx_dataset still works.
                             ok_textx = None
                             if datetime_emit_text_dt:
                                 ok_textx = build_textx_dataset(
@@ -1033,7 +1097,24 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                     np.asarray(sub, dtype=float),
                                     log_cb=log_cb,
                                 )
-                            if ok_density or ok_textx:
+                            # v0.0.16: numeric Veusz-seconds xData for
+                            # the dt_labels page (datetime-mode axis).
+                            ok_dtnum = None
+                            if datetime_emit_text_dt:
+                                ok_dtnum = build_dtnum_dataset(
+                                    doc, dtnum_name,
+                                    np.asarray(sub, dtype=float),
+                                    log_cb=log_cb,
+                                )
+                            # v0.0.16: stash the MJD-domain x source for
+                            # per-tag broken-axis detection on the
+                            # dt_labels page.  This is the same MJD
+                            # subarray after the per-tag sort, so
+                            # detect_time_breaks on it yields gap pairs
+                            # in MJD space (convert via
+                            # mjd_break_pairs_to_dtsec at render time).
+                            mjd_for_breaks = np.asarray(sub, dtype=float)
+                            if ok_density or ok_textx or ok_dtnum:
                                 bucket = per_tag_sorted_names \
                                     .setdefault(sk_hdu, {}) \
                                     .setdefault(tup, {})
@@ -1047,6 +1128,16 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                         textx_name
                                     )
                                     sorted_names.append(textx_name)
+                                if ok_dtnum:
+                                    bucket["__datelabels_dtnum__"] = (
+                                        dtnum_name
+                                    )
+                                    sorted_names.append(dtnum_name)
+                                    # Stash MJD source for v0.0.16
+                                    # broken-axis parity on dt_labels.
+                                    bucket["__datelabels_mjd__"] = (
+                                        mjd_for_breaks
+                                    )
                                 # v0.0.14 keys kept for back-compat with
                                 # any external code that read them.  We
                                 # alias both to the single density ds.
@@ -1084,6 +1175,10 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                     textx_name = "%s__%s__%s__datelabels_textx" % (
                         base, safe_dsname(sk_hdu), safe_dsname(sk_col)
                     )
+                    # v0.0.16: numeric Veusz-seconds dataset name.
+                    dtnum_name = "%s__%s__%s__datelabels_dtnum" % (
+                        base, safe_dsname(sk_hdu), safe_dsname(sk_col)
+                    )
                     ok_density = build_density_datestr_dataset(
                         doc, density_name, arr_mjd,
                         density_pct=datetime_label_density_pct,
@@ -1094,21 +1189,46 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                         ok_textx = build_textx_dataset(
                             doc, textx_name, arr_mjd, log_cb=log_cb,
                         )
+                    # v0.0.16: numeric Veusz-seconds xData for the
+                    # dt_labels page (datetime-mode axis).
+                    ok_dtnum = None
+                    if datetime_emit_text_dt:
+                        ok_dtnum = build_dtnum_dataset(
+                            doc, dtnum_name, arr_mjd, log_cb=log_cb,
+                        )
                     if ok_density:
                         sorted_names.append(density_name)
                     if ok_textx:
                         sorted_names.append(textx_name)
-                    if ok_density or ok_textx:
+                    if ok_dtnum:
+                        sorted_names.append(dtnum_name)
+                    if ok_density or ok_textx or ok_dtnum:
                         # v0.0.15: stash both names on the data record
                         # so _build_pages can clone the appropriate
                         # dt page variants.  v0.0.14 keys aliased to
                         # the density ds for back-compat.
+                        # v0.0.16: stash the dtnum name + MJD source so
+                        # the dt_labels page can render mode='datetime'
+                        # and (if break_pairs is non-empty) install a
+                        # broken axis.
                         data["_datelabels_density"] = (
                             density_name if ok_density else None
                         )
                         data["_datelabels_textx"] = (
                             textx_name if ok_textx else None
                         )
+                        data["_datelabels_dtnum"] = (
+                            dtnum_name if ok_dtnum else None
+                        )
+                        # Source MJDs for the per-trace break detection
+                        # on the dt_labels page (mapped to Veusz seconds
+                        # at render time).
+                        try:
+                            data["_datelabels_mjd"] = np.asarray(
+                                arr_mjd, dtype=float
+                            )
+                        except Exception:
+                            data["_datelabels_mjd"] = None
                         data["_datelabels_sparse"] = data["_datelabels_density"]
                         data["_datelabels_full"] = data["_datelabels_density"]
                         # Trigger the dt-page clone in _build_pages.
@@ -1459,8 +1579,16 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         xy, identity_key=(col, tup),
                         vary_style=vary_style_dt,
                     )
-        # ---- text-x dt_labels page (v0.0.15) ----------------------------
-        if has_textx and datetime_emit_text_dt:
+        # ---- dt_labels page (v0.0.16: mode='datetime', numeric dtsec) ----
+        # v0.0.16 swap: bind xData to a numeric Veusz-datetime-seconds
+        # dataset and switch axis to mode='datetime' so Veusz renders
+        # proper date ticks.  Broken-axis parity: the same MJD
+        # break_pairs detected above are mapped to dtsec and installed
+        # via make_broken_x_axis when non-empty.
+        has_dtnum = any(
+            "__datelabels_dtnum__" in b for b in tag_map.values()
+        )
+        if (has_textx or has_dtnum) and datetime_emit_text_dt:
             page_dtl = doc.Root.Add(
                 "page",
                 name=safe_dsname("%s_%s_dt_labels" % (base, hname)),
@@ -1469,12 +1597,20 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 page_dtl.notes.val = "\n".join(
                     data.get("header", [])
                     + ["",
-                       "Datetime-axis duplicate (text x + axis mode"
-                       "='labels'; uniform sample spacing)."]
+                       "Datetime-axis duplicate (numeric dtsec + axis "
+                       "mode='datetime'; broken-axis parity with dt page)."]
                 )
             except Exception:
                 pass
             grid_dtl = page_dtl.Add("grid", columns=2)
+            # v0.0.16: compute dtsec break pairs from the same MJD
+            # break_pairs used by the numeric dt page so that any gaps
+            # rendered as breaks on the seconds-axis page are also
+            # rendered as breaks here.
+            try:
+                dt_break_pairs = mjd_break_pairs_to_dtsec(break_pairs)
+            except Exception:
+                dt_break_pairs = []
             for col in meas_cols:
                 graph = grid_dtl.Add(
                     "graph", name=safe_dsname("g_%s_dtl" % col)
@@ -1484,27 +1620,21 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     graph.y.GridLines.hide.val = False
                 except Exception:
                     pass
+                # v0.0.16: install broken x-axis FIRST (when needed) so
+                # the subsequent configure_axis_datetime_mode call lands
+                # on the broken-axis widget (AxisBroken extends Axis and
+                # inherits the mode property).
+                if dt_break_pairs:
+                    try:
+                        make_broken_x_axis(
+                            graph, dt_break_pairs,
+                            label=x_label, show_gridlines=True,
+                        )
+                    except Exception:
+                        pass
                 try:
-                    graph.x.label.val = x_label + " (text)"
-                except Exception:
-                    pass
-                # Determine total points from the longest tag bucket so
-                # the tick cap can scale to the actual trace length.
-                try:
-                    n_points = max(
-                        (int(np.asarray(b.get("__x__") or [], dtype=object).size)
-                         if b.get("__x__") else 0)
-                        for b in tag_map.values()
-                    )
-                except Exception:
-                    n_points = 0
-                # Switch the x axis to labels mode driven by the text
-                # dataset on the xy widgets we are about to add.
-                try:
-                    configure_axis_labels_mode(
-                        graph.x,
-                        density_pct=datetime_label_density_pct,
-                        total_points=n_points,
+                    configure_axis_datetime_mode(
+                        graph.x, label=x_label,
                     )
                 except Exception:
                     pass
@@ -1518,8 +1648,13 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 )
                 for i, (tup, bucket) in enumerate(sorted(tag_map.items())):
                     y_ds = bucket.get(col)
+                    # v0.0.16: prefer the new numeric dtsec dataset; fall
+                    # back to the v0.0.15 text-x dataset only if dtnum
+                    # was not emitted (legacy compatibility).
+                    dtnum_ds = bucket.get("__datelabels_dtnum__")
                     textx_ds = bucket.get("__datelabels_textx__")
-                    if not y_ds or not textx_ds:
+                    x_ds = dtnum_ds or textx_ds
+                    if not y_ds or not x_ds:
                         continue
                     tag_label = ".".join(t or "NA" for t in tup)
                     xy = graph.Add(
@@ -1528,12 +1663,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                             "xy_%s_%s_dtl" % (col, tag_label)
                         ),
                     )
-                    # xData = text dataset.  Veusz xy widget's
-                    # getAxisLabels returns (strings, arange(N)) so the
-                    # parent axis in labels mode plots samples at
-                    # integer positions and labels them with date
-                    # strings.
-                    xy.xData.val = textx_ds
+                    xy.xData.val = x_ds
                     xy.yData.val = y_ds
                     try:
                         xy.key.val = tag_label
@@ -1670,8 +1800,14 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         xy, identity_key=(c, (None,)), vary_style=False,
                     )
 
-            # ---- text-x dt_labels page (v0.0.15 new) ----------------
-            if datetime_emit_text_dt and label_textx:
+            # ---- dt_labels page (v0.0.16 mode='datetime') -----------
+            # v0.0.16 swap: prefer numeric dtsec dataset and switch axis
+            # to mode='datetime' for true date ticks; install broken
+            # x-axis when the seconds-axis page has one (MJD break pairs
+            # mapped to Veusz seconds).
+            label_dtnum = data.get("_datelabels_dtnum")
+            label_mjd = data.get("_datelabels_mjd")
+            if datetime_emit_text_dt and (label_dtnum or label_textx):
                 page_dtL = doc.Root.Add(
                     "page",
                     name=safe_dsname("%s_%s_dt_labels" % (base, hname))
@@ -1680,23 +1816,22 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     page_dtL.notes.val = "\n".join(
                         data.get("header", [])
                         + ["",
-                           "Datetime-axis duplicate (v0.0.15 text-x; "
-                           "xData=text dataset, axis mode='labels'). "
-                           "Sample spacing is uniform, not proportional "
-                           "to elapsed time."]
+                           "Datetime-axis duplicate (v0.0.16 numeric "
+                           "dtsec + axis mode='datetime'; broken-axis "
+                           "parity with dt page)."]
                     )
                 except Exception:
                     pass
                 grid_dtL = page_dtL.Add("grid", columns=2)
-                # total_points used to scale MajorTicks.number on the
-                # labels-mode axis (see configure_axis_labels_mode).
-                total_points = 0
+                # Compute dtsec break pairs from the MJD break pairs used
+                # by the numeric-x dt page.
                 try:
-                    xv = data.get(x_col[1])
-                    if xv is not None:
-                        total_points = int(len(xv))
+                    dt_break_pairs_unt = mjd_break_pairs_to_dtsec(
+                        break_pairs
+                    )
                 except Exception:
-                    total_points = 0
+                    dt_break_pairs_unt = []
+                x_ds_dtl = label_dtnum or label_textx
                 for c, ds in cols:
                     if ds == x_name:
                         continue
@@ -1708,24 +1843,25 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         graph.y.GridLines.hide.val = False
                     except Exception:
                         pass
+                    # Install broken x-axis (when needed) BEFORE
+                    # configuring datetime mode -- AxisBroken extends
+                    # Axis so it inherits the mode property.
+                    if dt_break_pairs_unt:
+                        try:
+                            make_broken_x_axis(
+                                graph, dt_break_pairs_unt,
+                                label=x_col[0], show_gridlines=True,
+                            )
+                        except Exception:
+                            pass
                     try:
-                        graph.x.label.val = x_col[0]
-                        graph.x.GridLines.hide.val = False
-                    except Exception:
-                        pass
-                    # Set axis to labels mode and scale tick count by
-                    # the same density_pct so the user gets a coherent
-                    # "sparse vs dense" experience across both pages.
-                    try:
-                        configure_axis_labels_mode(
-                            graph.x,
-                            total_points=total_points,
-                            density_pct=datetime_label_density_pct,
+                        configure_axis_datetime_mode(
+                            graph.x, label=x_col[0],
                         )
                     except Exception:
                         pass
                     xy = graph.Add("xy", name=safe_dsname("xy_%s_dtL" % c))
-                    xy.xData.val = label_textx       # text dataset -> axis labels
+                    xy.xData.val = x_ds_dtl       # numeric dtsec
                     xy.yData.val = ds
                     apply_trace_style(
                         xy, identity_key=(c, (None,)), vary_style=False,
@@ -2100,23 +2236,37 @@ def build_unit_overlay_pages(doc, file_records,
                         "OverlayCat__%s__%s__%s__%s__datelabels_textx"
                         % (u_safe, h_safe, c_safe, t_safe)
                     )
+                    # v0.0.16: numeric Veusz-datetime-seconds dataset
+                    # alongside the text-x dataset so the dt_labels
+                    # overlay can render with axis mode='datetime'.
+                    dtnum_name = (
+                        "OverlayCat__%s__%s__%s__%s__datelabels_dtnum"
+                        % (u_safe, h_safe, c_safe, t_safe)
+                    )
                     ok_density = build_density_datestr_dataset(
                         doc, density_name, mjds_s,
                         density_pct=datetime_label_density_pct,
                         log_cb=log_cb,
                     )
                     ok_textx = False
+                    ok_dtnum = False
                     if datetime_emit_text_dt:
                         ok_textx = build_textx_dataset(
                             doc, textx_name, mjds_s, log_cb=log_cb,
                         )
-                    if ok_density or ok_textx:
+                        # v0.0.16: emit numeric dtsec dataset
+                        ok_dtnum = build_dtnum_dataset(
+                            doc, dtnum_name, mjds_s, log_cb=log_cb,
+                        )
+                    if ok_density or ok_textx or ok_dtnum:
                         dt_eligible.append((
                             hname, col, tup,
                             (density_name if ok_density else None),
                             (textx_name if ok_textx else None),
                             x_name, y_name, i,
                             int(mjds_s.size),
+                            (dtnum_name if ok_dtnum else None),
+                            np.asarray(mjds_s, dtype=float),
                         ))
                 except Exception as _exc:
                     if log_cb:
@@ -2178,7 +2328,8 @@ def build_unit_overlay_pages(doc, file_records,
                     len(dt_eligible) > TRACE_STYLE_VARY_THRESHOLD
                 )
                 for (hname, col, tup, density_name, textx_name,
-                     xnum_name, y_name, idx, _npts) in dt_eligible:
+                     xnum_name, y_name, idx, _npts,
+                     _dtnum_name, _mjds_arr) in dt_eligible:
                     t_safe = _tup_suffix(tup)
                     xy_name = safe_dsname(
                         "xy_%s_%s_%s_dt" % (hname, col, t_safe)
@@ -2210,9 +2361,13 @@ def build_unit_overlay_pages(doc, file_records,
                            % (page_name, len(dt_eligible),
                               datetime_label_density_pct))
 
-            # ---- text-x dt_labels overlay page -----------------------
+            # ---- dt_labels overlay page (v0.0.16 mode='datetime') ----
+            # v0.0.16 swap: bind xData to per-trace numeric Veusz-
+            # datetime-seconds dataset; axis mode='datetime'; broken-
+            # axis parity derived from concatenated MJD break detection
+            # across all eligible overlay traces.
             if datetime_emit_text_dt and any(
-                e[4] for e in dt_eligible
+                e[9] or e[4] for e in dt_eligible
             ):
                 page_dtL = doc.Root.Add(
                     "page", name=safe_dsname("%s_dt_labels" % page_name)
@@ -2220,9 +2375,8 @@ def build_unit_overlay_pages(doc, file_records,
                 try:
                     page_dtL.notes.val = (
                         "Datetime-axis duplicate of '%s' "
-                        "(v0.0.15 text-x; xData=text dataset, axis "
-                        "mode='labels'). Sample spacing is uniform, "
-                        "not proportional to elapsed time."
+                        "(v0.0.16 numeric dtsec + axis "
+                        "mode='datetime'; broken-axis parity)."
                         % page_name
                     )
                 except Exception:
@@ -2233,26 +2387,39 @@ def build_unit_overlay_pages(doc, file_records,
                     graph_dtL.y.GridLines.hide.val = False
                 except Exception:
                     pass
+                # v0.0.16: compute combined-MJD break pairs across all
+                # eligible overlay traces, then map MJD->dtsec for the
+                # broken-axis pairs.
+                dt_break_pairs_ov = []
                 try:
-                    graph_dtL.x.label.val = "time"
-                    graph_dtL.x.GridLines.hide.val = False
+                    mjd_arrays = [
+                        e[10] for e in dt_eligible
+                        if e[10] is not None and e[10].size
+                    ]
+                    if mjd_arrays:
+                        mjd_all = np.concatenate(mjd_arrays)
+                        mjd_breaks = detect_time_breaks(
+                            mjd_all, k_factor=gap_k,
+                            absolute_gap=gap_absolute,
+                        )
+                        dt_break_pairs_ov = mjd_break_pairs_to_dtsec(
+                            mjd_breaks
+                        )
                 except Exception:
-                    pass
-                # Axis tick count scales with density_pct * N.  Use the
-                # largest eligible-trace size as N so all overlaid
-                # traces share a coherent label cadence.
-                total_points_dtL = 0
+                    dt_break_pairs_ov = []
+                # Install broken x-axis BEFORE datetime-mode configure
+                # so the AxisBroken widget receives the mode setting.
+                if dt_break_pairs_ov:
+                    try:
+                        make_broken_x_axis(
+                            graph_dtL, dt_break_pairs_ov,
+                            label="time", show_gridlines=True,
+                        )
+                    except Exception:
+                        pass
                 try:
-                    total_points_dtL = max(
-                        int(e[8]) for e in dt_eligible if e[4]
-                    )
-                except Exception:
-                    total_points_dtL = 0
-                try:
-                    configure_axis_labels_mode(
-                        graph_dtL.x,
-                        total_points=total_points_dtL,
-                        density_pct=datetime_label_density_pct,
+                    configure_axis_datetime_mode(
+                        graph_dtL.x, label="time",
                     )
                 except Exception:
                     pass
@@ -2265,15 +2432,19 @@ def build_unit_overlay_pages(doc, file_records,
                     len(dt_eligible) > TRACE_STYLE_VARY_THRESHOLD
                 )
                 for (hname, col, tup, density_name, textx_name,
-                     xnum_name, y_name, idx, _npts) in dt_eligible:
-                    if not textx_name:
+                     xnum_name, y_name, idx, _npts,
+                     dtnum_name, _mjds_arr) in dt_eligible:
+                    # v0.0.16: prefer numeric dtsec dataset; fall back
+                    # to text-x for legacy emission paths.
+                    x_ds_dtL = dtnum_name or textx_name
+                    if not x_ds_dtL:
                         continue
                     t_safe = _tup_suffix(tup)
                     xy_name = safe_dsname(
                         "xy_%s_%s_%s_dtL" % (hname, col, t_safe)
                     )
                     xy = graph_dtL.Add("xy", name=xy_name)
-                    xy.xData.val = textx_name       # text dataset -> axis labels
+                    xy.xData.val = x_ds_dtL
                     xy.yData.val = y_name
                     try:
                         tlab = _tup_label(tup)
@@ -2289,9 +2460,10 @@ def build_unit_overlay_pages(doc, file_records,
                     )
                 if log_cb:
                     log_cb("  Datetime-overlay page '%s_dt_labels': %d "
-                           "trace(s) (text-x, axis mode=labels)"
+                           "trace(s) (numeric dtsec, mode='datetime')"
                            % (page_name,
-                              sum(1 for e in dt_eligible if e[4])))
+                              sum(1 for e in dt_eligible
+                                  if (e[9] or e[4]))))
 
 
 # ============================================================================
@@ -2409,7 +2581,11 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.gap_abs_spin.setDecimals(6)
         self.gap_abs_spin.setSingleStep(1.0)
         self.gap_abs_spin.setValue(0.0)
-        form.addRow(QLabel("Absolute gap (units of x; 0=auto):"),
+        # v0.0.16: user-facing absolute-gap input is in HOURS for the
+        # primary MJD-axis use case (1 hour = 1/24 MJD-day).  The value
+        # is converted to days when calling detect_time_breaks.  Set 0
+        # to fall back to the K * median(dt) heuristic.
+        form.addRow(QLabel("Manual gap (hours; 0=auto):"),
                     self.gap_abs_spin)
 
         self.combined_only_cb = QCheckBox(
@@ -2532,7 +2708,10 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         skip_images = bool(self.skip_images_cb.isChecked())
         # v0.0.9 broken-axis / overlay knobs
         gap_k = float(self.gap_k_spin.value())
-        gap_absolute = float(self.gap_abs_spin.value())
+        # v0.0.16: spinbox is now in HOURS -- convert to MJD-days for
+        # detect_time_breaks (which compares against the x-array units).
+        gap_absolute_hours = float(self.gap_abs_spin.value())
+        gap_absolute = gap_absolute_hours / 24.0
         plot_individual = not bool(self.combined_only_cb.isChecked())
         # v0.0.11: datetime-duplicate toggle
         datetime_duplicate = bool(self.datetime_dup_cb.isChecked())
