@@ -30,6 +30,46 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
+# Date: 2026-05-16
+#              Fixes a unit-mismatch bug where the GUI "Manual gap
+#              (hours)" spinbox was converted to MJD-days but compared
+#              directly against ``np.diff(x)`` even when ``x`` was not
+#              in days.  For FITS files whose sort_key column is
+#              ``TIME`` / ``TIMESTAMP`` (seconds-of-day, 0-86400 range)
+#              the day-scale threshold became microscopic compared to
+#              the second-scale diffs and every diff exceeded it,
+#              manufacturing a broken X axis on the per-file pages and
+#              the seconds-axis overlay even when no real gap existed.
+#              The dt_labels overlay was unaffected because its break
+#              detection already ran in MJD-space.
+#
+#                * NEW: ``column_unit_factor_from_day(col_name)`` --
+#                  returns 1.0 for day-scale time columns (MJD, DMJD,
+#                  JD) and 86400.0 for second-scale time columns
+#                  (TIME, TIMESTAMP, SECONDS, UT_SECONDS, ELAPSED,
+#                  ...).  Case-insensitive, whitespace-trimmed.
+#                  Unknown names default to 1.0 (the safer choice).
+#                  Backed by two module-level constants
+#                  ``DAY_SCALE_COLUMN_NAMES`` and
+#                  ``SECOND_SCALE_COLUMN_NAMES``.
+#                * NEW: ``detect_time_breaks_unit_aware(x, col_name,
+#                  k_factor, absolute_gap_days)`` -- thin wrapper that
+#                  multiplies the day-scaled threshold by the column
+#                  factor before calling ``detect_time_breaks``.  All
+#                  per-file and overlay break-detection call sites in
+#                  FITS_AutoPlot and Franks_AutoPlot now route through
+#                  this wrapper.  The K-factor auto path is unchanged
+#                  (its threshold is derived from ``median(|diff(x)|)``
+#                  in column units, so no conversion is needed).
+#                * No behavior change for Franks_AutoPlot in practice
+#                  because its sort_key is hard-coded to ``MJD``
+#                  (factor = 1.0), but the call sites still moved to
+#                  the unit-aware helper so future column-name changes
+#                  are handled automatically.
+#                * Revision history kept in DESCENDING semantic-version
+#                  order.
+#
 # %%%% 0.0.17: Minimized .vszh5 save + sentinel-tag dt overlay filter.
 # Date: 2026-05-16
 #              Two user-facing additions and one correctness fix:
@@ -1284,6 +1324,118 @@ def detect_time_breaks(x, k_factor=10.0, absolute_gap=0.0):
         if e2 > s2:
             pairs.append((s2, e2))
     return pairs
+
+
+# %%% column_unit_factor_from_day
+# v0.0.18: Map a sort-key column name to the multiplier that converts
+# an MJD-day-scaled threshold into the column's own units.  The user-
+# facing "Manual gap (hours)" spinbox is converted to MJD-days in the
+# GUI (``gap_absolute_days = hours / 24``), but ``detect_time_breaks``
+# compares that threshold directly against ``np.diff(x)``.  When ``x``
+# is *not* in MJD-days the threshold silently becomes meaningless
+# (e.g. 5.0 days compared against seconds-of-day diffs in the 0.01-
+# range -> every diff is below threshold; or 0.0833 days compared
+# against MJD diffs of ~1e-5 -> every diff is above threshold).  This
+# helper makes the conversion explicit and table-driven so callers can
+# pass either ``x`` and the column name (preferred) or pre-convert the
+# threshold themselves.
+#
+# Recognized column names (case-insensitive):
+#
+#   * Day-scale (factor = 1.0):     MJD, DMJD, JD, MJDS_DAYS
+#   * Second-scale (factor = 86400):TIME, TIMESTAMP, TIMESTAMP_SEC,
+#                                   SECONDS, SEC, UT_SECONDS,
+#                                   UTSECONDS, UT, ELAPSED, ELAPSED_S,
+#                                   T_SEC, DURATION_S
+#
+# Unknown column names default to 1.0 (i.e. assume MJD-day units),
+# which is the safe choice when the column appears to be a generic
+# time axis: a too-large threshold yields zero false breaks rather
+# than a wall of false breaks.
+DAY_SCALE_COLUMN_NAMES = frozenset((
+    "MJD", "DMJD", "JD", "MJDS_DAYS",
+))
+SECOND_SCALE_COLUMN_NAMES = frozenset((
+    "TIME", "TIMESTAMP", "TIMESTAMP_SEC",
+    "SECONDS", "SEC", "UT_SECONDS", "UTSECONDS",
+    "UT", "ELAPSED", "ELAPSED_S", "T_SEC", "DURATION_S",
+))
+
+
+def column_unit_factor_from_day(col_name):
+    # type: (Optional[str]) -> float
+    """Return the multiplier that converts a day-scale threshold into
+    the units of the column named ``col_name``.
+
+    Returns 1.0 for day-scale time columns (MJD/DMJD/JD), 86400.0 for
+    second-scale time columns (TIME/TIMESTAMP/SECONDS/...), and 1.0
+    for unknown/None inputs.  Comparison is case-insensitive and
+    whitespace-trimmed.
+    """
+    if col_name is None:
+        return 1.0
+    try:
+        key = str(col_name).strip().upper()
+    except Exception:
+        return 1.0
+    if not key:
+        return 1.0
+    if key in DAY_SCALE_COLUMN_NAMES:
+        return 1.0
+    if key in SECOND_SCALE_COLUMN_NAMES:
+        return 86400.0
+    return 1.0
+
+
+# %%% detect_time_breaks_unit_aware
+def detect_time_breaks_unit_aware(x, col_name,
+                                  k_factor=10.0,
+                                  absolute_gap_days=0.0):
+    # type: (np.ndarray, Optional[str], float, float) -> List[Tuple[float, float]]
+    """Unit-aware wrapper around ``detect_time_breaks``.
+
+    The user-facing threshold is always expressed in MJD-days (the GUI
+    converts the "Manual gap (hours)" spinbox via ``hours / 24``).
+    When the x-array is in a different unit (e.g. seconds-of-day for
+    a TIME/TIMESTAMP column) the threshold must be scaled to that
+    unit before ``np.diff(x)`` is compared against it.  This wrapper
+    consults ``column_unit_factor_from_day(col_name)`` to do that
+    conversion automatically.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        1-D array of time samples in the column's native units.
+    col_name : str or None
+        Name of the column ``x`` was read from.  Used to look up
+        the unit conversion factor.  Pass ``None`` if no name is
+        available -- the threshold is then assumed to be already in
+        the column's units.
+    k_factor : float
+        Forwarded unchanged to ``detect_time_breaks``.  The auto-
+        threshold is ``k_factor * median(|diff(x)|)`` which is
+        already in column units, so no conversion is needed.
+    absolute_gap_days : float
+        User-entered threshold in MJD-days.  Pass 0.0 (or negative)
+        to disable the absolute threshold and rely on the K-factor
+        auto-detection.
+
+    Returns
+    -------
+    list of (start, end) pairs in the column's native units.
+    """
+    try:
+        factor = column_unit_factor_from_day(col_name)
+    except Exception:
+        factor = 1.0
+    try:
+        ag_days = float(absolute_gap_days)
+    except (TypeError, ValueError):
+        ag_days = 0.0
+    abs_gap_col = ag_days * factor if ag_days > 0.0 else 0.0
+    return detect_time_breaks(
+        x, k_factor=k_factor, absolute_gap=abs_gap_col,
+    )
 
 
 # %%% break_pairs_to_breakpoints

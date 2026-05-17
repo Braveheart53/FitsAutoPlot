@@ -29,6 +29,21 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
+# Date: 2026-05-16
+#              Mirrors the FITS_AutoPlot v0.0.18 fix.  All break-
+#              detection call sites in Franks_AutoPlot now route
+#              through ``detect_time_breaks_unit_aware(x, col_name,
+#              k_factor=gap_k, absolute_gap_days=gap_absolute)`` from
+#              _autoplot_common.  Franks always uses ``MJD`` as the
+#              sort key (day-scale, factor = 1.0) so behavior is
+#              unchanged in practice; the call sites stay in sync
+#              with FITS_AutoPlot for future-proofing against
+#              column-name changes.  New imports:
+#              ``detect_time_breaks_unit_aware``,
+#              ``column_unit_factor_from_day``.  Revision history
+#              kept in DESCENDING semantic-version order.
+#
 # %%%% 0.0.17: Minimized .vszh5 save (GUI checkboxes).
 # Date: 2026-05-16
 #              Two new checkboxes on the Franks GUI:
@@ -1335,9 +1350,12 @@ def build_unit_overlay_pages_franks(doc, file_records,
             dt_break_pairs_ov = []
             try:
                 if dt_mjds_sorted is not None and dt_mjds_sorted.size:
-                    mjd_breaks = detect_time_breaks(
-                        dt_mjds_sorted, k_factor=gap_k,
-                        absolute_gap=gap_absolute,
+                    # v0.0.18: unit-aware helper for parity (MJD,
+                    # factor=1.0 -> behavior unchanged).
+                    mjd_breaks = detect_time_breaks_unit_aware(
+                        dt_mjds_sorted, "MJD",
+                        k_factor=gap_k,
+                        absolute_gap_days=gap_absolute,
                     )
                     dt_break_pairs_ov = mjd_break_pairs_to_dtsec(
                         mjd_breaks

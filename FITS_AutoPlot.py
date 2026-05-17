@@ -24,6 +24,39 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
+# Date: 2026-05-16
+#              The GUI "Manual gap (hours)" spinbox is converted to
+#              MJD-days in submit_handler (``gap_absolute = hours /
+#              24``).  Pre-v0.0.18 that day-scaled threshold was
+#              passed directly to ``detect_time_breaks(x, ...)`` even
+#              when ``x`` was in seconds-of-day units (sort_key
+#              column == TIME / TIMESTAMP), which made the threshold
+#              microscopic compared to second-scale diffs and
+#              manufactured false broken-X axes on the per-file and
+#              seconds-overlay pages.
+#
+#                * All three break-detection call sites in
+#                  ``_build_pages`` (tagged-HDU page, untagged-HDU
+#                  page, unit-overlay seconds page) now call
+#                  ``detect_time_breaks_unit_aware(x, col_name,
+#                  k_factor=gap_k, absolute_gap_days=gap_absolute)``
+#                  which converts the day-scale threshold to the
+#                  column's native units (1.0 for MJD/DMJD/JD,
+#                  86400.0 for TIME/TIMESTAMP/SECONDS-style).
+#                * The dt_labels overlay page (MJD-array break
+#                  detection) also routes through the unit-aware
+#                  helper with col_name="MJD" for parity; behavior
+#                  is unchanged since the conversion factor is 1.0.
+#                * Overlay path now tracks ``sort_col_name_by_unit``
+#                  (first observed sort-key column per unit) so the
+#                  combined-x break detection knows what units it is
+#                  working with.
+#                * New imports: ``detect_time_breaks_unit_aware``,
+#                  ``column_unit_factor_from_day``.
+#                * Revision history kept in DESCENDING semantic-
+#                  version order.
+#
 # %%%% 0.0.17: Minimized .vszh5 save + sentinel-tag dt overlay filter.
 # Date: 2026-05-16
 #              New GUI checkboxes + correctness fix on the dt overlay
@@ -415,6 +448,8 @@ from _autoplot_common import (   # noqa: E402
     mjd_to_datestr,
     register_nrao_fits_units, suppress_fits_unit_warnings,
     detect_time_breaks, make_broken_x_axis,
+    # v0.0.18: unit-aware break detection (manual gap units fix)
+    detect_time_breaks_unit_aware, column_unit_factor_from_day,
     mjd_to_veusz_seconds, style_datetime_x_axis,
     set_datetime_dataset,
     # v0.0.13: identity-stable trace styling
@@ -1467,8 +1502,18 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
             ) if sort_key and sort_key[0] == hname else np.empty(0, dtype=float)
         except Exception:
             x_full = np.empty(0, dtype=float)
-        break_pairs = detect_time_breaks(
-            x_full, k_factor=gap_k, absolute_gap=gap_absolute
+        # v0.0.18: route through unit-aware break detection so the
+        # GUI "Manual gap (hours)" -> MJD-days threshold is converted
+        # to the column's native units (seconds for TIME/TIMESTAMP,
+        # days for MJD/DMJD/JD).  Pre-v0.0.18 this passed the
+        # day-scaled threshold against second-scale diffs and
+        # manufactured false break-axes on every per-file page.
+        _sort_col_name = (
+            sort_key[1] if sort_key and sort_key[0] == hname else None
+        )
+        break_pairs = detect_time_breaks_unit_aware(
+            x_full, _sort_col_name,
+            k_factor=gap_k, absolute_gap_days=gap_absolute,
         )
 
         # Discover the set of measurement columns by union over tag buckets.
@@ -1733,8 +1778,11 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
             x_arr = np.asarray(data["columns"][(hname, x_col[0])], dtype=float)
         except Exception:
             x_arr = np.empty(0, dtype=float)
-        break_pairs = detect_time_breaks(
-            x_arr, k_factor=gap_k, absolute_gap=gap_absolute
+        # v0.0.18: unit-aware break detection (see _build_pages tagged-
+        # HDU site for rationale).
+        break_pairs = detect_time_breaks_unit_aware(
+            x_arr, x_col[0],
+            k_factor=gap_k, absolute_gap_days=gap_absolute,
         )
         for c, ds in cols:
             if ds == x_name:
@@ -2017,6 +2065,13 @@ def build_unit_overlay_pages(doc, file_records,
     # accumulate x samples across files per unit for gap detection on
     # the unit page (combined across all columns sharing the unit).
     x_samples_by_unit = {}
+    # v0.0.18: track the sort-key column name (e.g. "DMJD", "TIME")
+    # for each unit page so the overlay can route through the unit-
+    # aware break detector.  We record the FIRST observed sort column
+    # name per unit; mixed-column batches are rare in practice and
+    # falling back to the first name is no worse than the pre-v0.0.18
+    # behavior of ignoring units entirely.
+    sort_col_name_by_unit = {}
     for rec in file_records:
         base = rec.get("base")
         cols = rec.get("columns") or {}
@@ -2095,6 +2150,7 @@ def build_unit_overlay_pages(doc, file_records,
                     })
                     x_samples_by_unit.setdefault(
                         unit_str, []).append(x_slice)
+                    sort_col_name_by_unit.setdefault(unit_str, x_col)
             else:
                 # untagged HDU -- legacy single trace
                 gkey = (unit_str, hname, col, (None,))
@@ -2106,6 +2162,7 @@ def build_unit_overlay_pages(doc, file_records,
                 })
                 x_samples_by_unit.setdefault(
                     unit_str, []).append(x_arr_full)
+                sort_col_name_by_unit.setdefault(unit_str, x_col)
 
     if not groups:
         if log_cb:
@@ -2155,8 +2212,14 @@ def build_unit_overlay_pages(doc, file_records,
         x_all = np.concatenate(
             [a for a in x_samples_by_unit.get(unit_str, []) if a.size]
         ) if x_samples_by_unit.get(unit_str) else np.empty(0, dtype=float)
-        break_pairs = detect_time_breaks(
-            x_all, k_factor=gap_k, absolute_gap=gap_absolute
+        # v0.0.18: unit-aware break detection so the day-scaled
+        # manual-gap threshold is converted to the seconds-axis
+        # units when the sort key is TIME/TIMESTAMP.  The MJD-keyed
+        # dt_labels overlay (below) keeps its own MJD-array detection.
+        _ov_sort_col = sort_col_name_by_unit.get(unit_str)
+        break_pairs = detect_time_breaks_unit_aware(
+            x_all, _ov_sort_col,
+            k_factor=gap_k, absolute_gap_days=gap_absolute,
         )
         if break_pairs:
             make_broken_x_axis(graph, break_pairs,
@@ -2443,9 +2506,15 @@ def build_unit_overlay_pages(doc, file_records,
                     ]
                     if mjd_arrays:
                         mjd_all = np.concatenate(mjd_arrays)
-                        mjd_breaks = detect_time_breaks(
-                            mjd_all, k_factor=gap_k,
-                            absolute_gap=gap_absolute,
+                        # v0.0.18: route through unit-aware helper for
+                        # parity with the seconds-overlay path.  mjd_all
+                        # is already day-scaled (factor = 1.0) so the
+                        # behavior is unchanged, but the call site no
+                        # longer assumes implicit MJD-day units.
+                        mjd_breaks = detect_time_breaks_unit_aware(
+                            mjd_all, "MJD",
+                            k_factor=gap_k,
+                            absolute_gap_days=gap_absolute,
                         )
                         dt_break_pairs_ov = mjd_break_pairs_to_dtsec(
                             mjd_breaks
