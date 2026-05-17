@@ -24,6 +24,42 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.15: Density-pct date labels + text-x dt_labels page variant.
+# Date: 2026-05-16
+#                * v0.0.14 dropped the SetDataDateTime path entirely.
+#                  v0.0.15 generalises its "sparse vs full" boolean into
+#                  an integer percentage 0..100 (``datetime_label_density_pct``)
+#                  -- 0 = no labels, 100 = one label per finite point,
+#                  10 (default) approximates the old sparse behaviour.
+#                  The legacy ``datetime_full_labels`` boolean is still
+#                  accepted as a back-compat shim (True -> 100,
+#                  False -> 10).
+#                * NEW dt page variant: ``<base>_<hdu>_dt_labels`` and
+#                  the overlay counterpart ``Overlay_<unit>_dt_labels``.
+#                  These pages use a per-point TEXT dataset as xData and
+#                  set the x axis to ``mode='labels'`` so the axis itself
+#                  renders the date strings.  Sample spacing is uniform
+#                  (one tick per point), NOT proportional to elapsed
+#                  time -- gaps in time disappear, which is exactly what
+#                  the user wanted for visually compact dt views.
+#                * GUI: the v0.0.14 "Use full per-point date labels"
+#                  checkbox is replaced by a 0..100 percentage spinbox
+#                  plus two checkboxes ("Emit numeric-x dt page" and
+#                  "Emit text-x dt_labels page").  Each variant can be
+#                  toggled independently.  Same controls land in the
+#                  plugin dialog FieldInt + FieldBool fields.
+#                * GPU + parallelization re-audit: the new text-x page
+#                  reuses the same GPU-sorted permutation as the
+#                  numeric-x page (gpu_argsort already applied at the
+#                  single sort site per record).  No new sort hotspots
+#                  were introduced; mjd_to_datestr fast path (v0.0.14)
+#                  remains the dominant per-element cost on huge traces
+#                  and is still vectorised for the canonical format.
+#                  Worker-thread parallelization of file reads is
+#                  untouched.
+#                * Revision history blocks are kept in DESCENDING
+#                  semantic-version order across every shared file.
+#
 # %%%% 0.0.14: Datetime via xy.labels per-point text labels.
 # Date: 2026-05-16
 #                * The v0.0.11..0.0.13 dt-duplicate pages used a Veusz
@@ -302,7 +338,8 @@ from _autoplot_common import (   # noqa: E402
     apply_trace_style, TRACE_STYLE_VARY_THRESHOLD,
     # v0.0.14: per-point datetime labels (bypasses SetDataDateTime bug)
     build_sparse_datestr_dataset, build_full_datestr_dataset,
-    style_xy_datetime_labels,
+    build_density_datestr_dataset, build_textx_dataset,
+    style_xy_datetime_labels, configure_axis_labels_mode,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
@@ -573,7 +610,10 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   gap_k: float = 10.0,
                   gap_absolute: float = 0.0,
                   datetime_duplicate: bool = False,
-                  datetime_full_labels: bool = False) -> None:
+                  datetime_full_labels=None,
+                  datetime_label_density_pct: int = 10,
+                  datetime_emit_numeric_dt: bool = True,
+                  datetime_emit_text_dt: bool = True) -> None:
     """
     Push a single processed FITS file into the running embedded Veusz
     document.
@@ -590,7 +630,45 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         column is present, otherwise plain copies).
     3.  Build one Veusz page per HDU containing scatter plots for table
         HDUs (DELTAT vs DMJD, etc.) and image widgets for image HDUs.
+
+    v0.0.15 parameters
+    ------------------
+    datetime_label_density_pct : int
+        Percentage (0-100) of trace samples that get a date-string
+        label.  0 = no labels, 100 = a label at every point.  Replaces
+        the v0.0.14 boolean ``datetime_full_labels``.  See
+        :func:`_autoplot_common.build_density_datestr_dataset`.
+    datetime_emit_numeric_dt : bool
+        Emit the v0.0.14 dt page (numeric seconds x + xy.labels date
+        annotations).  Default True.
+    datetime_emit_text_dt : bool
+        Emit the v0.0.15 dt_labels page variant (xData bound to the
+        text dataset + axis mode='labels').  Uniform sample spacing,
+        date strings ON the axis.  Default True.
+    datetime_full_labels : bool or None
+        Back-compat alias for v0.0.14 callers.  None (default) means
+        use ``datetime_label_density_pct``.  True -> density_pct=100,
+        False -> density_pct=10 (the v0.0.14 sparse default).
     """
+    # ---- v0.0.15 back-compat shim for datetime_full_labels ---------------
+    # If the caller passed the old boolean (e.g. an older plugin / script),
+    # translate it into an equivalent density percentage.  Once translated,
+    # the rest of this function only consults
+    # ``datetime_label_density_pct``.
+    if datetime_full_labels is not None:
+        try:
+            datetime_label_density_pct = (
+                100 if bool(datetime_full_labels) else 10
+            )
+        except Exception:
+            pass
+    # Clip to [0, 100] defensively.
+    try:
+        datetime_label_density_pct = max(0, min(100,
+            int(round(float(datetime_label_density_pct)))))
+    except Exception:
+        datetime_label_density_pct = 10
+
     base = safe_dsname(data["base_name"])
     raw_names: List[str] = []
     sorted_names: List[str] = []
@@ -870,15 +948,18 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         # real host.
         #
         # ``datetime_x_name`` is retained as the single-untagged HDU
-        # signal that downstream pages need a dt clone -- but it now
-        # holds the FULL labels dataset name (full is the user-opt-in
-        # default; the rendering path picks sparse vs full from
-        # datetime_full_labels).  When tagged, the per-tag bucket
-        # carries ``__datelabels_sparse__`` and ``__datelabels_full__``.
+        # signal that downstream pages need a dt clone.  v0.0.15: when
+        # tagged, the per-tag bucket carries ``__datelabels_density__``
+        # (single text dataset whose density matches the user's pct
+        # slider) and ``__datelabels_textx__`` (the per-point text
+        # dataset that serves as xData on the new dt_labels page).
         datetime_x_name = None  # signal flag for downstream dt-page clone
         if datetime_duplicate and log_cb:
-            log_cb("  Datetime-duplicate requested (sort_key=%s, full=%s)"
-                   % (sort_key, bool(datetime_full_labels)))
+            log_cb("  Datetime-duplicate requested (sort_key=%s, "
+                   "density=%d%%, emit_numeric=%s, emit_text=%s)"
+                   % (sort_key, datetime_label_density_pct,
+                      bool(datetime_emit_numeric_dt),
+                      bool(datetime_emit_text_dt)))
         if datetime_duplicate and sort_key is None and log_cb:
             log_cb("  Datetime duplicate skipped: no sort_key for this file")
         if datetime_duplicate and sort_key is not None:
@@ -925,42 +1006,57 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                             tag_suffix = "_".join(
                                 safe_dsname(t or "NA") for t in tup
                             )
-                            sparse_name = (
-                                "%s__%s__%s__%s__datelabels_sparse" % (
+                            density_name = (
+                                "%s__%s__%s__%s__datelabels_density" % (
                                     base, safe_dsname(sk_hdu),
                                     safe_dsname(sk_col), tag_suffix,
                                 )
                             )
-                            full_name = (
-                                "%s__%s__%s__%s__datelabels_full" % (
+                            textx_name = (
+                                "%s__%s__%s__%s__datelabels_textx" % (
                                     base, safe_dsname(sk_hdu),
                                     safe_dsname(sk_col), tag_suffix,
                                 )
                             )
-                            ok_sparse = build_sparse_datestr_dataset(
-                                doc, sparse_name,
+                            ok_density = build_density_datestr_dataset(
+                                doc, density_name,
                                 np.asarray(sub, dtype=float),
+                                density_pct=datetime_label_density_pct,
                                 log_cb=log_cb,
                             )
-                            ok_full = build_full_datestr_dataset(
-                                doc, full_name,
-                                np.asarray(sub, dtype=float),
-                                log_cb=log_cb,
-                            )
-                            if ok_sparse or ok_full:
+                            # v0.0.15: text-x dataset (per-point, no ""
+                            # gaps) used as xData on the dt_labels page.
+                            ok_textx = None
+                            if datetime_emit_text_dt:
+                                ok_textx = build_textx_dataset(
+                                    doc, textx_name,
+                                    np.asarray(sub, dtype=float),
+                                    log_cb=log_cb,
+                                )
+                            if ok_density or ok_textx:
                                 bucket = per_tag_sorted_names \
                                     .setdefault(sk_hdu, {}) \
                                     .setdefault(tup, {})
-                                if ok_sparse:
+                                if ok_density:
+                                    bucket["__datelabels_density__"] = (
+                                        density_name
+                                    )
+                                    sorted_names.append(density_name)
+                                if ok_textx:
+                                    bucket["__datelabels_textx__"] = (
+                                        textx_name
+                                    )
+                                    sorted_names.append(textx_name)
+                                # v0.0.14 keys kept for back-compat with
+                                # any external code that read them.  We
+                                # alias both to the single density ds.
+                                if ok_density:
                                     bucket["__datelabels_sparse__"] = (
-                                        sparse_name
+                                        density_name
                                     )
-                                    sorted_names.append(sparse_name)
-                                if ok_full:
                                     bucket["__datelabels_full__"] = (
-                                        full_name
+                                        density_name
                                     )
-                                    sorted_names.append(full_name)
                                 n_built += 1
                         except Exception as exc:
                             if log_cb:
@@ -982,36 +1078,42 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                             arr_mjd = arr_mjd[sort_idx_by_hdu[sk_hdu]]
                         except Exception:
                             pass
-                    sparse_name = "%s__%s__%s__datelabels_sparse" % (
+                    density_name = "%s__%s__%s__datelabels_density" % (
                         base, safe_dsname(sk_hdu), safe_dsname(sk_col)
                     )
-                    full_name = "%s__%s__%s__datelabels_full" % (
+                    textx_name = "%s__%s__%s__datelabels_textx" % (
                         base, safe_dsname(sk_hdu), safe_dsname(sk_col)
                     )
-                    ok_sparse = build_sparse_datestr_dataset(
-                        doc, sparse_name, arr_mjd, log_cb=log_cb,
+                    ok_density = build_density_datestr_dataset(
+                        doc, density_name, arr_mjd,
+                        density_pct=datetime_label_density_pct,
+                        log_cb=log_cb,
                     )
-                    ok_full = build_full_datestr_dataset(
-                        doc, full_name, arr_mjd, log_cb=log_cb,
-                    )
-                    if ok_sparse:
-                        sorted_names.append(sparse_name)
-                    if ok_full:
-                        sorted_names.append(full_name)
-                    if ok_sparse or ok_full:
-                        # Stash both names on the data record so
-                        # _build_pages can pick which one to bind to
-                        # the xy widget's labels property based on the
-                        # caller's ``datetime_full_labels`` choice.
-                        data["_datelabels_sparse"] = (
-                            sparse_name if ok_sparse else None
+                    ok_textx = None
+                    if datetime_emit_text_dt:
+                        ok_textx = build_textx_dataset(
+                            doc, textx_name, arr_mjd, log_cb=log_cb,
                         )
-                        data["_datelabels_full"] = (
-                            full_name if ok_full else None
+                    if ok_density:
+                        sorted_names.append(density_name)
+                    if ok_textx:
+                        sorted_names.append(textx_name)
+                    if ok_density or ok_textx:
+                        # v0.0.15: stash both names on the data record
+                        # so _build_pages can clone the appropriate
+                        # dt page variants.  v0.0.14 keys aliased to
+                        # the density ds for back-compat.
+                        data["_datelabels_density"] = (
+                            density_name if ok_density else None
                         )
+                        data["_datelabels_textx"] = (
+                            textx_name if ok_textx else None
+                        )
+                        data["_datelabels_sparse"] = data["_datelabels_density"]
+                        data["_datelabels_full"] = data["_datelabels_density"]
                         # Trigger the dt-page clone in _build_pages.
                         datetime_x_name = (
-                            full_name if ok_full else sparse_name
+                            density_name if ok_density else textx_name
                         )
             elif log_cb:
                 log_cb("  Datetime duplicate skipped: %s epoch unknown"
@@ -1077,12 +1179,16 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             _build_pages(doc, base, dict(data, images={}), sorted_names,
                          gap_k=gap_k, gap_absolute=gap_absolute,
                          datetime_x_name=_dt_x,
-                         datetime_full_labels=datetime_full_labels)
+                         datetime_label_density_pct=datetime_label_density_pct,
+                         datetime_emit_numeric_dt=datetime_emit_numeric_dt,
+                         datetime_emit_text_dt=datetime_emit_text_dt)
         else:
             _build_pages(doc, base, data, sorted_names,
                          gap_k=gap_k, gap_absolute=gap_absolute,
                          datetime_x_name=_dt_x,
-                         datetime_full_labels=datetime_full_labels)
+                         datetime_label_density_pct=datetime_label_density_pct,
+                         datetime_emit_numeric_dt=datetime_emit_numeric_dt,
+                         datetime_emit_text_dt=datetime_emit_text_dt)
     elif log_cb:
         log_cb("  Per-file plot pages skipped (combined plots only).")
 
@@ -1099,8 +1205,27 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                  gap_k: float = 10.0,
                  gap_absolute: float = 0.0,
                  datetime_x_name=None,
-                 datetime_full_labels: bool = False) -> None:
+                 datetime_full_labels=None,
+                 datetime_label_density_pct: int = 10,
+                 datetime_emit_numeric_dt: bool = True,
+                 datetime_emit_text_dt: bool = True) -> None:
     """Create one Veusz page per HDU with the appropriate plot widgets.
+
+    v0.0.15 dt-page variants
+    ------------------------
+    Two independent dt-page variants are now emitted per HDU when a
+    sort_key with a known time epoch is available:
+
+      * ``<base>_<hdu>_dt`` (numeric): numeric seconds x-axis,
+        xy.labels carries a density-controlled date-string text
+        dataset.  Gated by ``datetime_emit_numeric_dt`` (default True).
+      * ``<base>_<hdu>_dt_labels`` (text-x): xData binds to the
+        per-point text dataset; axis ``mode='labels'``.  Uniform sample
+        spacing.  Gated by ``datetime_emit_text_dt`` (default True).
+
+    The legacy ``datetime_full_labels`` boolean is accepted as a
+    back-compat shim: ``True`` -> density_pct=100, ``False`` ->
+    density_pct=10.
 
     v0.0.12: when an HDU has row-tag columns (CHANNELA/CHANNELB etc.), each
     numeric measurement column gets ONE graph with N xy widgets -- one trace
@@ -1112,6 +1237,20 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
     When the x-axis column has large gaps (per ``detect_time_breaks``), the
     plain ``x`` axis is replaced with an ``axis-broken`` widget.
     """
+    # ---- v0.0.15 back-compat shim ---------------------------------------
+    if datetime_full_labels is not None:
+        try:
+            datetime_label_density_pct = (
+                100 if bool(datetime_full_labels) else 10
+            )
+        except Exception:
+            pass
+    try:
+        datetime_label_density_pct = max(0, min(100,
+            int(round(float(datetime_label_density_pct)))))
+    except Exception:
+        datetime_label_density_pct = 10
+
     per_tag = data.get("_per_tag_sorted_names") or {}
 
     # Tagged HDUs are handled separately from the legacy per-column path.
@@ -1235,22 +1374,20 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     vary_style=vary_style,
                 )
 
-        # ---- v0.0.14 datetime duplicate page (tagged) -------------------
-        # Emit only when at least one tag bucket has a date-label dataset
-        # (sparse OR full).  The dt page is a clone of the seconds page
-        # with the SAME numeric seconds x-axis binding -- this bypasses
-        # the SetDataDateTime bug on Veusz 3.4 -- but each xy widget
-        # additionally gets its ``labels`` property bound to a parallel
-        # text dataset of YYYY-MM-DD HH:MM:SS strings so date
-        # annotations float along the trace.  The bound dataset is the
-        # FULL per-point variant when datetime_full_labels is True,
-        # else the SPARSE ~10-anchor variant.
-        has_dt = any(
-            ("__datelabels_sparse__" in b)
-            or ("__datelabels_full__" in b)
-            for b in tag_map.values()
+        # ---- v0.0.14/0.0.15 datetime duplicate pages (tagged) ------------
+        # Emit up to TWO dt pages per HDU.  The numeric-x variant clones
+        # the seconds page and binds xy.labels to a density-controlled
+        # text dataset; the text-x variant binds xData to the per-point
+        # text dataset and sets axis mode='labels' for axis-driven
+        # tick labels.  Either or both can be disabled per call.
+        has_density = any(
+            "__datelabels_density__" in b for b in tag_map.values()
         )
-        if has_dt:
+        has_textx = any(
+            "__datelabels_textx__" in b for b in tag_map.values()
+        )
+        # ---- numeric-x dt page (v0.0.14 lineage) ------------------------
+        if has_density and datetime_emit_numeric_dt:
             page_dt = doc.Root.Add(
                 "page",
                 name=safe_dsname("%s_%s_dt" % (base, hname)),
@@ -1259,9 +1396,9 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 page_dt.notes.val = "\n".join(
                     data.get("header", [])
                     + ["",
-                       "Datetime-axis duplicate (v0.0.14 tagged, "
-                       "per-point labels=%s)."
-                       % ("full" if datetime_full_labels else "sparse")]
+                       "Datetime-axis duplicate (numeric x + xy.labels, "
+                       "density=%d%%)."
+                       % datetime_label_density_pct]
                 )
             except Exception:
                 pass
@@ -1275,10 +1412,6 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     graph.y.GridLines.hide.val = False
                 except Exception:
                     pass
-                # v0.0.14: keep the NUMERIC seconds x axis (no
-                # SetDataDateTime).  The numeric axis label still says
-                # the source column (e.g. DMJD); per-point labels on
-                # each trace carry the human-readable date strings.
                 if break_pairs:
                     make_broken_x_axis(
                         graph, break_pairs,
@@ -1295,25 +1428,13 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     key.Border.hide.val = False
                 except Exception:
                     pass
-                # v0.0.13: vary_style only when this graph has >16 traces.
                 vary_style_dt = (
                     len(tag_map) > TRACE_STYLE_VARY_THRESHOLD
                 )
                 for i, (tup, bucket) in enumerate(sorted(tag_map.items())):
                     y_ds = bucket.get(col)
                     x_ds_dt = bucket.get("__x__")
-                    label_key = ("__datelabels_full__"
-                                 if datetime_full_labels
-                                 else "__datelabels_sparse__")
-                    label_ds = bucket.get(label_key)
-                    # Graceful fallback: if the chosen variant is
-                    # missing for this tag, use whichever one IS
-                    # available so the trace still gets dated.
-                    if not label_ds:
-                        label_ds = (
-                            bucket.get("__datelabels_sparse__")
-                            or bucket.get("__datelabels_full__")
-                        )
+                    label_ds = bucket.get("__datelabels_density__")
                     if not y_ds or not x_ds_dt or not label_ds:
                         continue
                     tag_label = ".".join(t or "NA" for t in tup)
@@ -1334,11 +1455,93 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         xy.key.val = tag_label
                     except Exception:
                         pass
-                    # v0.0.13: identity matches seconds page so the same
-                    # (col, tup) trace keeps its (color, line-style).
                     apply_trace_style(
                         xy, identity_key=(col, tup),
                         vary_style=vary_style_dt,
+                    )
+        # ---- text-x dt_labels page (v0.0.15) ----------------------------
+        if has_textx and datetime_emit_text_dt:
+            page_dtl = doc.Root.Add(
+                "page",
+                name=safe_dsname("%s_%s_dt_labels" % (base, hname)),
+            )
+            try:
+                page_dtl.notes.val = "\n".join(
+                    data.get("header", [])
+                    + ["",
+                       "Datetime-axis duplicate (text x + axis mode"
+                       "='labels'; uniform sample spacing)."]
+                )
+            except Exception:
+                pass
+            grid_dtl = page_dtl.Add("grid", columns=2)
+            for col in meas_cols:
+                graph = grid_dtl.Add(
+                    "graph", name=safe_dsname("g_%s_dtl" % col)
+                )
+                try:
+                    graph.y.label.val = col
+                    graph.y.GridLines.hide.val = False
+                except Exception:
+                    pass
+                try:
+                    graph.x.label.val = x_label + " (text)"
+                except Exception:
+                    pass
+                # Determine total points from the longest tag bucket so
+                # the tick cap can scale to the actual trace length.
+                try:
+                    n_points = max(
+                        (int(np.asarray(b.get("__x__") or [], dtype=object).size)
+                         if b.get("__x__") else 0)
+                        for b in tag_map.values()
+                    )
+                except Exception:
+                    n_points = 0
+                # Switch the x axis to labels mode driven by the text
+                # dataset on the xy widgets we are about to add.
+                try:
+                    configure_axis_labels_mode(
+                        graph.x,
+                        density_pct=datetime_label_density_pct,
+                        total_points=n_points,
+                    )
+                except Exception:
+                    pass
+                try:
+                    key = graph.Add("key", name="key1_dtl")
+                    key.Border.hide.val = False
+                except Exception:
+                    pass
+                vary_style_dtl = (
+                    len(tag_map) > TRACE_STYLE_VARY_THRESHOLD
+                )
+                for i, (tup, bucket) in enumerate(sorted(tag_map.items())):
+                    y_ds = bucket.get(col)
+                    textx_ds = bucket.get("__datelabels_textx__")
+                    if not y_ds or not textx_ds:
+                        continue
+                    tag_label = ".".join(t or "NA" for t in tup)
+                    xy = graph.Add(
+                        "xy",
+                        name=safe_dsname(
+                            "xy_%s_%s_dtl" % (col, tag_label)
+                        ),
+                    )
+                    # xData = text dataset.  Veusz xy widget's
+                    # getAxisLabels returns (strings, arange(N)) so the
+                    # parent axis in labels mode plots samples at
+                    # integer positions and labels them with date
+                    # strings.
+                    xy.xData.val = textx_ds
+                    xy.yData.val = y_ds
+                    try:
+                        xy.key.val = tag_label
+                    except Exception:
+                        pass
+                    apply_trace_style(
+                        xy, identity_key=(col, tup),
+                        vary_style=vary_style_dtl,
                     )
 
     # ============================================================
@@ -1393,75 +1596,140 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 xy, identity_key=(c, (None,)), vary_style=False,
             )
         if datetime_x_name:
-            # v0.0.14: untagged datetime-duplicate page.  Numeric seconds
-            # x is REUSED (same dataset as the seconds page) -- the human-
-            # readable date strings are bound to xy.labels.val as per-
-            # point text labels.  ``datetime_x_name`` is a *label dataset*
-            # name (sparse or full) set during the emission block above.
-            label_sparse = data.get("_datelabels_sparse")
-            label_full = data.get("_datelabels_full")
-            label_ds = (label_full if datetime_full_labels else label_sparse)
-            if not label_ds:
-                # Fallback if the requested variant is missing.
-                label_ds = label_sparse or label_full
-            page_dt = doc.Root.Add(
-                "page",
-                name=safe_dsname("%s_%s_dt" % (base, hname))
-            )
-            try:
-                page_dt.notes.val = "\n".join(
-                    data.get("header", [])
-                    + ["",
-                       "Datetime-axis duplicate (v0.0.14 per-point "
-                       "xy.labels; %s variant)." % (
-                           "full" if datetime_full_labels else "sparse"
-                       )]
-                )
-            except Exception:
-                pass
-            grid_dt = page_dt.Add("grid", columns=2)
-            for c, ds in cols:
-                if ds == x_name:
-                    continue
-                graph = grid_dt.Add(
-                    "graph", name=safe_dsname("g_%s_dt" % c)
+            # v0.0.15: untagged datetime-duplicate pages.  Two variants
+            # may be emitted, each gated by an independent boolean:
+            #
+            #   * numeric-x dt page (v0.0.14 lineage) -- x axis stays
+            #     numeric seconds (same dataset as the seconds page);
+            #     per-point xy.labels carry density-thinned date
+            #     strings.  Gated by ``datetime_emit_numeric_dt``.
+            #   * text-x dt_labels page (v0.0.15 new) -- xData is the
+            #     per-point text dataset; axis mode='labels' renders
+            #     the strings on the axis itself.  Spacing is uniform
+            #     (not proportional to elapsed time).  Gated by
+            #     ``datetime_emit_text_dt``.
+            label_density = data.get("_datelabels_density")
+            label_textx = data.get("_datelabels_textx")
+            # Back-compat: if older callers populated only the legacy
+            # sparse/full keys, fall back to those for the numeric page.
+            if not label_density:
+                label_density = (data.get("_datelabels_sparse")
+                                 or data.get("_datelabels_full"))
+
+            # ---- numeric-x dt page (v0.0.14 lineage) ----------------
+            if datetime_emit_numeric_dt:
+                page_dt = doc.Root.Add(
+                    "page",
+                    name=safe_dsname("%s_%s_dt" % (base, hname))
                 )
                 try:
-                    graph.y.label.val = c
-                    graph.y.GridLines.hide.val = False
+                    page_dt.notes.val = "\n".join(
+                        data.get("header", [])
+                        + ["",
+                           "Datetime-axis duplicate (v0.0.15 numeric-x; "
+                           "per-point xy.labels at %d%% density)."
+                           % datetime_label_density_pct]
+                    )
                 except Exception:
                     pass
-                # v0.0.14: x axis stays NUMERIC seconds (no
-                # style_datetime_x_axis -- the SetDataDateTime bug on
-                # Veusz 3.4 is bypassed entirely).  Per-point xy.labels
-                # carry the YYYY-MM-DD HH:MM:SS strings.
-                if break_pairs:
-                    ax = make_broken_x_axis(
-                        graph, break_pairs,
-                        label=x_col[0], show_gridlines=True,
+                grid_dt = page_dt.Add("grid", columns=2)
+                for c, ds in cols:
+                    if ds == x_name:
+                        continue
+                    graph = grid_dt.Add(
+                        "graph", name=safe_dsname("g_%s_dt" % c)
                     )
-                else:
+                    try:
+                        graph.y.label.val = c
+                        graph.y.GridLines.hide.val = False
+                    except Exception:
+                        pass
+                    if break_pairs:
+                        make_broken_x_axis(
+                            graph, break_pairs,
+                            label=x_col[0], show_gridlines=True,
+                        )
+                    else:
+                        try:
+                            graph.x.label.val = x_col[0]
+                            graph.x.GridLines.hide.val = False
+                        except Exception:
+                            pass
+                    xy = graph.Add("xy", name=safe_dsname("xy_%s_dt" % c))
+                    xy.xData.val = x_name           # numeric seconds (same as seconds page)
+                    xy.yData.val = ds
+                    if label_density:
+                        try:
+                            xy.labels.val = label_density
+                        except Exception:
+                            # Older Veusz: labels property may not be a
+                            # DatasetOrStr -- silently fall back.
+                            pass
+                        style_xy_datetime_labels(xy)
+                    apply_trace_style(
+                        xy, identity_key=(c, (None,)), vary_style=False,
+                    )
+
+            # ---- text-x dt_labels page (v0.0.15 new) ----------------
+            if datetime_emit_text_dt and label_textx:
+                page_dtL = doc.Root.Add(
+                    "page",
+                    name=safe_dsname("%s_%s_dt_labels" % (base, hname))
+                )
+                try:
+                    page_dtL.notes.val = "\n".join(
+                        data.get("header", [])
+                        + ["",
+                           "Datetime-axis duplicate (v0.0.15 text-x; "
+                           "xData=text dataset, axis mode='labels'). "
+                           "Sample spacing is uniform, not proportional "
+                           "to elapsed time."]
+                    )
+                except Exception:
+                    pass
+                grid_dtL = page_dtL.Add("grid", columns=2)
+                # total_points used to scale MajorTicks.number on the
+                # labels-mode axis (see configure_axis_labels_mode).
+                total_points = 0
+                try:
+                    xv = data.get(x_col[1])
+                    if xv is not None:
+                        total_points = int(len(xv))
+                except Exception:
+                    total_points = 0
+                for c, ds in cols:
+                    if ds == x_name:
+                        continue
+                    graph = grid_dtL.Add(
+                        "graph", name=safe_dsname("g_%s_dtL" % c)
+                    )
+                    try:
+                        graph.y.label.val = c
+                        graph.y.GridLines.hide.val = False
+                    except Exception:
+                        pass
                     try:
                         graph.x.label.val = x_col[0]
                         graph.x.GridLines.hide.val = False
                     except Exception:
                         pass
-                xy = graph.Add("xy", name=safe_dsname("xy_%s_dt" % c))
-                xy.xData.val = x_name           # numeric seconds (same as seconds page)
-                xy.yData.val = ds
-                if label_ds:
+                    # Set axis to labels mode and scale tick count by
+                    # the same density_pct so the user gets a coherent
+                    # "sparse vs dense" experience across both pages.
                     try:
-                        xy.labels.val = label_ds
+                        configure_axis_labels_mode(
+                            graph.x,
+                            total_points=total_points,
+                            density_pct=datetime_label_density_pct,
+                        )
                     except Exception:
-                        # Older Veusz: labels property may not be a
-                        # DatasetOrStr -- silently fall back.
                         pass
-                    style_xy_datetime_labels(xy)
-                # v0.0.13: identity matches the seconds page so the same
-                # (col, (None,)) trace keeps its color/style.
-                apply_trace_style(
-                    xy, identity_key=(c, (None,)), vary_style=False,
-                )
+                    xy = graph.Add("xy", name=safe_dsname("xy_%s_dtL" % c))
+                    xy.xData.val = label_textx       # text dataset -> axis labels
+                    xy.yData.val = ds
+                    apply_trace_style(
+                        xy, identity_key=(c, (None,)), vary_style=False,
+                    )
 
     # Image pages -- explicit early-exit when no image HDUs exist in the
     # file.  This is the normal case for NRAO 1PPS-delta FITS (the only
@@ -1500,7 +1768,10 @@ _OVERLAY_COLORS = [
 def build_unit_overlay_pages(doc, file_records,
                               gap_k=10.0, gap_absolute=0.0, log_cb=None,
                               datetime_duplicate=False,
-                              datetime_full_labels=False):
+                              datetime_full_labels=None,
+                              datetime_label_density_pct: int = 10,
+                              datetime_emit_numeric_dt: bool = True,
+                              datetime_emit_text_dt: bool = True):
     """
     Build one overlay page per distinct unit string across the loaded
     batch.  Each overlay page contains a single graph that plots every
@@ -1536,7 +1807,31 @@ def build_unit_overlay_pages(doc, file_records,
         Forwarded to ``detect_time_breaks``.
     log_cb : callable or None
         Optional ``log_cb(msg)`` for status messages.
+    datetime_label_density_pct : int
+        v0.0.15. Density of date-string anchors for the numeric-x dt
+        overlay (0..100). Supersedes the v0.0.14 boolean
+        ``datetime_full_labels``.
+    datetime_emit_numeric_dt : bool
+        v0.0.15. Emit the v0.0.14-style numeric-x dt overlay page.
+    datetime_emit_text_dt : bool
+        v0.0.15. Emit the new v0.0.15 text-x dt_labels overlay page
+        (xData is a per-point text dataset, axis mode='labels').
+    datetime_full_labels : bool or None
+        Back-compat shim: True -> density_pct=100, False -> density_pct=10.
     """
+    # ---- v0.0.15 back-compat shim ---------------------------------
+    if datetime_full_labels is not None:
+        try:
+            datetime_label_density_pct = (
+                100 if bool(datetime_full_labels) else 10
+            )
+        except Exception:
+            pass
+    try:
+        datetime_label_density_pct = max(0, min(100,
+            int(round(float(datetime_label_density_pct)))))
+    except Exception:
+        datetime_label_density_pct = 10
     if not file_records:
         return
     # v0.0.12: Combined-in-time overlay semantics + channel-tag rows.
@@ -1792,25 +2087,36 @@ def build_unit_overlay_pages(doc, file_records,
                          for m in members]
                     )
                     mjds_s = mjds[order]
-                    sparse_name = (
-                        "OverlayCat__%s__%s__%s__%s__datelabels_sparse"
+                    # v0.0.15: build density-thinned label dataset for
+                    # the numeric-x dt overlay AND a per-point text
+                    # dataset for the text-x dt_labels overlay.  Both
+                    # are emitted unconditionally on each trace; the
+                    # per-page gates decide which pages are rendered.
+                    density_name = (
+                        "OverlayCat__%s__%s__%s__%s__datelabels_density"
                         % (u_safe, h_safe, c_safe, t_safe)
                     )
-                    full_name = (
-                        "OverlayCat__%s__%s__%s__%s__datelabels_full"
+                    textx_name = (
+                        "OverlayCat__%s__%s__%s__%s__datelabels_textx"
                         % (u_safe, h_safe, c_safe, t_safe)
                     )
-                    ok_sparse = build_sparse_datestr_dataset(
-                        doc, sparse_name, mjds_s, log_cb=log_cb
+                    ok_density = build_density_datestr_dataset(
+                        doc, density_name, mjds_s,
+                        density_pct=datetime_label_density_pct,
+                        log_cb=log_cb,
                     )
-                    ok_full = build_full_datestr_dataset(
-                        doc, full_name, mjds_s, log_cb=log_cb
-                    )
-                    if ok_sparse or ok_full:
+                    ok_textx = False
+                    if datetime_emit_text_dt:
+                        ok_textx = build_textx_dataset(
+                            doc, textx_name, mjds_s, log_cb=log_cb,
+                        )
+                    if ok_density or ok_textx:
                         dt_eligible.append((
                             hname, col, tup,
-                            ok_sparse, ok_full,
+                            (density_name if ok_density else None),
+                            (textx_name if ok_textx else None),
                             x_name, y_name, i,
+                            int(mjds_s.size),
                         ))
                 except Exception as _exc:
                     if log_cb:
@@ -1823,94 +2129,169 @@ def build_unit_overlay_pages(doc, file_records,
                    "per channel-tag)"
                    % (unit_label, len(entries)))
 
-        # ---- v0.0.14: datetime-duplicate overlay page ----------------
-        # Numeric seconds x is reused; per-point xy.labels carry the
-        # human-readable dates.  Both sparse and full label datasets
-        # were pushed during the per-trace build above; the GUI flag
-        # ``datetime_full_labels`` picks which one renders by default.
+        # ---- v0.0.15: datetime-duplicate overlay pages ----------------
+        # Two pages may be emitted, gated independently:
+        #   numeric-x dt overlay (v0.0.14 lineage) -- xData is the
+        #     numeric seconds dataset reused from the seconds overlay;
+        #     per-point xy.labels carry density-thinned date strings.
+        #   text-x dt_labels overlay (v0.0.15) -- xData is the per-point
+        #     text dataset; axis mode='labels' renders strings on the
+        #     axis itself (uniform sample spacing).
         if datetime_duplicate and dt_eligible:
-            page_dt = doc.Root.Add(
-                "page", name=safe_dsname("%s_dt" % page_name)
-            )
-            try:
-                page_dt.notes.val = (
-                    "Datetime-axis duplicate of '%s' "
-                    "(v0.0.14 per-point xy.labels, %s variant)."
-                    % (page_name,
-                       "full" if datetime_full_labels else "sparse")
+            # ---- numeric-x dt overlay page ---------------------------
+            if datetime_emit_numeric_dt:
+                page_dt = doc.Root.Add(
+                    "page", name=safe_dsname("%s_dt" % page_name)
                 )
-            except Exception:
-                pass
-            graph_dt = page_dt.Add("graph", name="g_overlay_dt")
-            try:
-                graph_dt.y.label.val = unit_label
-                graph_dt.y.GridLines.hide.val = False
-            except Exception:
-                pass
-            # v0.0.14: x stays NUMERIC seconds -- no style_datetime_x_axis
-            # call here (the SetDataDateTime bug is bypassed entirely).
-            if break_pairs:
-                make_broken_x_axis(
-                    graph_dt, break_pairs,
-                    label="time", show_gridlines=True,
-                )
-            else:
                 try:
-                    graph_dt.x.label.val = "time"
-                    graph_dt.x.GridLines.hide.val = False
+                    page_dt.notes.val = (
+                        "Datetime-axis duplicate of '%s' "
+                        "(v0.0.15 numeric-x; per-point xy.labels at "
+                        "%d%% density)."
+                        % (page_name, datetime_label_density_pct)
+                    )
                 except Exception:
                     pass
-            try:
-                key_dt = graph_dt.Add("key", name="key1_dt")
-                key_dt.Border.hide.val = False
-            except Exception:
-                pass
-            # v0.0.13: vary_style for the dt overlay graph mirrors the
-            # threshold check used for the seconds overlay.
-            vary_style_overlay_dt = (
-                len(dt_eligible) > TRACE_STYLE_VARY_THRESHOLD
-            )
-            for (hname, col, tup, sparse_name, full_name,
-                 xnum_name, y_name, idx) in dt_eligible:
-                t_safe = _tup_suffix(tup)
-                xy_name = safe_dsname(
-                    "xy_%s_%s_%s_dt" % (hname, col, t_safe)
-                )
-                xy = graph_dt.Add("xy", name=xy_name)
-                xy.xData.val = xnum_name        # numeric seconds (seconds-overlay dataset)
-                xy.yData.val = y_name
-                # Pick label dataset per GUI flag, with fallback.
-                label_ds = (full_name if datetime_full_labels
-                            else sparse_name)
-                if not label_ds:
-                    label_ds = sparse_name or full_name
-                if label_ds:
+                graph_dt = page_dt.Add("graph", name="g_overlay_dt")
+                try:
+                    graph_dt.y.label.val = unit_label
+                    graph_dt.y.GridLines.hide.val = False
+                except Exception:
+                    pass
+                if break_pairs:
+                    make_broken_x_axis(
+                        graph_dt, break_pairs,
+                        label="time", show_gridlines=True,
+                    )
+                else:
                     try:
-                        xy.labels.val = label_ds
+                        graph_dt.x.label.val = "time"
+                        graph_dt.x.GridLines.hide.val = False
                     except Exception:
-                        # Older Veusz: labels may be a different setting
-                        # type -- silently skip per-point labels.
                         pass
-                    style_xy_datetime_labels(xy)
                 try:
-                    tlab = _tup_label(tup)
-                    if tlab:
-                        xy.key.val = "%s.%s [%s]" % (hname, col, tlab)
-                    else:
-                        xy.key.val = "%s.%s" % (hname, col)
+                    key_dt = graph_dt.Add("key", name="key1_dt")
+                    key_dt.Border.hide.val = False
                 except Exception:
                     pass
-                # v0.0.13: identity matches the seconds overlay so the
-                # same (col, tup) entry keeps its color/style.
-                apply_trace_style(
-                    xy, identity_key=(col, tup),
-                    vary_style=vary_style_overlay_dt,
+                vary_style_overlay_dt = (
+                    len(dt_eligible) > TRACE_STYLE_VARY_THRESHOLD
                 )
-            if log_cb:
-                log_cb("  Datetime-overlay page '%s_dt': %d trace(s) "
-                       "(%s labels)"
-                       % (page_name, len(dt_eligible),
-                          "full" if datetime_full_labels else "sparse"))
+                for (hname, col, tup, density_name, textx_name,
+                     xnum_name, y_name, idx, _npts) in dt_eligible:
+                    t_safe = _tup_suffix(tup)
+                    xy_name = safe_dsname(
+                        "xy_%s_%s_%s_dt" % (hname, col, t_safe)
+                    )
+                    xy = graph_dt.Add("xy", name=xy_name)
+                    xy.xData.val = xnum_name        # numeric seconds (seconds-overlay dataset)
+                    xy.yData.val = y_name
+                    if density_name:
+                        try:
+                            xy.labels.val = density_name
+                        except Exception:
+                            pass
+                        style_xy_datetime_labels(xy)
+                    try:
+                        tlab = _tup_label(tup)
+                        if tlab:
+                            xy.key.val = "%s.%s [%s]" % (hname, col, tlab)
+                        else:
+                            xy.key.val = "%s.%s" % (hname, col)
+                    except Exception:
+                        pass
+                    apply_trace_style(
+                        xy, identity_key=(col, tup),
+                        vary_style=vary_style_overlay_dt,
+                    )
+                if log_cb:
+                    log_cb("  Datetime-overlay page '%s_dt': %d trace(s) "
+                           "(%d%% density labels)"
+                           % (page_name, len(dt_eligible),
+                              datetime_label_density_pct))
+
+            # ---- text-x dt_labels overlay page -----------------------
+            if datetime_emit_text_dt and any(
+                e[4] for e in dt_eligible
+            ):
+                page_dtL = doc.Root.Add(
+                    "page", name=safe_dsname("%s_dt_labels" % page_name)
+                )
+                try:
+                    page_dtL.notes.val = (
+                        "Datetime-axis duplicate of '%s' "
+                        "(v0.0.15 text-x; xData=text dataset, axis "
+                        "mode='labels'). Sample spacing is uniform, "
+                        "not proportional to elapsed time."
+                        % page_name
+                    )
+                except Exception:
+                    pass
+                graph_dtL = page_dtL.Add("graph", name="g_overlay_dtL")
+                try:
+                    graph_dtL.y.label.val = unit_label
+                    graph_dtL.y.GridLines.hide.val = False
+                except Exception:
+                    pass
+                try:
+                    graph_dtL.x.label.val = "time"
+                    graph_dtL.x.GridLines.hide.val = False
+                except Exception:
+                    pass
+                # Axis tick count scales with density_pct * N.  Use the
+                # largest eligible-trace size as N so all overlaid
+                # traces share a coherent label cadence.
+                total_points_dtL = 0
+                try:
+                    total_points_dtL = max(
+                        int(e[8]) for e in dt_eligible if e[4]
+                    )
+                except Exception:
+                    total_points_dtL = 0
+                try:
+                    configure_axis_labels_mode(
+                        graph_dtL.x,
+                        total_points=total_points_dtL,
+                        density_pct=datetime_label_density_pct,
+                    )
+                except Exception:
+                    pass
+                try:
+                    key_dtL = graph_dtL.Add("key", name="key1_dtL")
+                    key_dtL.Border.hide.val = False
+                except Exception:
+                    pass
+                vary_style_overlay_dtL = (
+                    len(dt_eligible) > TRACE_STYLE_VARY_THRESHOLD
+                )
+                for (hname, col, tup, density_name, textx_name,
+                     xnum_name, y_name, idx, _npts) in dt_eligible:
+                    if not textx_name:
+                        continue
+                    t_safe = _tup_suffix(tup)
+                    xy_name = safe_dsname(
+                        "xy_%s_%s_%s_dtL" % (hname, col, t_safe)
+                    )
+                    xy = graph_dtL.Add("xy", name=xy_name)
+                    xy.xData.val = textx_name       # text dataset -> axis labels
+                    xy.yData.val = y_name
+                    try:
+                        tlab = _tup_label(tup)
+                        if tlab:
+                            xy.key.val = "%s.%s [%s]" % (hname, col, tlab)
+                        else:
+                            xy.key.val = "%s.%s" % (hname, col)
+                    except Exception:
+                        pass
+                    apply_trace_style(
+                        xy, identity_key=(col, tup),
+                        vary_style=vary_style_overlay_dtL,
+                    )
+                if log_cb:
+                    log_cb("  Datetime-overlay page '%s_dt_labels': %d "
+                           "trace(s) (text-x, axis mode=labels)"
+                           % (page_name,
+                              sum(1 for e in dt_eligible if e[4])))
 
 
 # ============================================================================
@@ -2047,28 +2428,51 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.datetime_dup_cb.setChecked(False)
         form.addRow(self.datetime_dup_cb)
 
-        # --- v0.0.14: full vs sparse per-point datetime labels ------------
-        # The dt-duplicate pages now bind a text dataset to xy.labels
-        # (rendering one date string per data point) instead of using a
-        # Veusz datetime x axis (which is broken on Veusz 3.4 internals).
-        # Sparse (~10 anchors) is the safe default; full (one label per
-        # data point) gets crowded fast on long traces.
-        self.full_labels_cb = QCheckBox(
-            "Use full per-point date labels on datetime pages "
-            "(one label per data point -- can be visually crowded)"
+        # --- v0.0.15: date-label density + dt page variants ----------------
+        # The v0.0.14 "full vs sparse" boolean is generalised to an
+        # integer percentage 0..100 that controls how many evenly
+        # spaced anchor points get a YYYY-MM-DD HH:MM:SS label on the
+        # numeric-x dt page.  Two independent dt page variants are
+        # available; each can be turned on or off independently.
+        self.label_density_spin = QSpinBox()
+        self.label_density_spin.setRange(0, 100)
+        self.label_density_spin.setValue(10)
+        self.label_density_spin.setSuffix(" %")
+        self.label_density_spin.setToolTip(
+            "Percentage of finite data points that get a date-string "
+            "label.  0 = no labels, 100 = one label per point. "
+            "Anchors are evenly spaced.  Applies to the numeric-x dt "
+            "page (xy.labels) and scales the tick count on the text-x "
+            "dt_labels page (axis mode='labels')."
         )
-        self.full_labels_cb.setChecked(False)
-        self.full_labels_cb.setToolTip(
-            "When checked, every data point on a datetime-duplicate "
-            "page is annotated with its own YYYY-MM-DD HH:MM:SS "
-            "label.  When unchecked (default), only ~10 evenly spaced "
-            "anchor points are labeled, which is much more readable on "
-            "long traces with hundreds or thousands of samples.  Both "
-            "label datasets are always pushed to the document, so this "
-            "toggle only changes the default binding -- you can swap "
-            "variants per-trace in the Veusz GUI without rebuilding."
+        form.addRow(
+            QLabel("Date-label density on dt pages:"),
+            self.label_density_spin,
         )
-        form.addRow(self.full_labels_cb)
+        self.emit_numeric_dt_cb = QCheckBox(
+            "Emit numeric-x dt page (v0.0.14 lineage)"
+        )
+        self.emit_numeric_dt_cb.setChecked(True)
+        self.emit_numeric_dt_cb.setToolTip(
+            "When checked, builds the v0.0.14-style dt page: xData is "
+            "the numeric seconds dataset (same as the seconds page) and "
+            "per-point xy.labels carry density-thinned YYYY-MM-DD "
+            "HH:MM:SS strings.  Sample spacing is proportional to "
+            "elapsed time."
+        )
+        form.addRow(self.emit_numeric_dt_cb)
+        self.emit_text_dt_cb = QCheckBox(
+            "Emit text-x dt_labels page (v0.0.15 new)"
+        )
+        self.emit_text_dt_cb.setChecked(True)
+        self.emit_text_dt_cb.setToolTip(
+            "When checked, builds the v0.0.15 dt_labels page: xData is "
+            "a per-point text dataset and the x axis is set to "
+            "mode='labels'.  The axis itself renders the date strings. "
+            "Sample spacing is uniform (one tick per point), NOT "
+            "proportional to elapsed time -- gaps in time disappear."
+        )
+        form.addRow(self.emit_text_dt_cb)
 
         # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
         self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
@@ -2132,8 +2536,10 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         plot_individual = not bool(self.combined_only_cb.isChecked())
         # v0.0.11: datetime-duplicate toggle
         datetime_duplicate = bool(self.datetime_dup_cb.isChecked())
-        # v0.0.14: full vs sparse per-point date-label rendering.
-        datetime_full_labels = bool(self.full_labels_cb.isChecked())
+        # v0.0.15: density-pct (0..100) + two dt page gates.
+        datetime_label_density_pct = int(self.label_density_spin.value())
+        datetime_emit_numeric_dt = bool(self.emit_numeric_dt_cb.isChecked())
+        datetime_emit_text_dt = bool(self.emit_text_dt_cb.isChecked())
         # v0.0.10: drive the process-wide GPU flag from the checkbox
         enable_gpu(self.gpu_cb.isChecked() and self.gpu_cb.isEnabled())
         # Keep the GUI responsive across hundreds of files: pump the Qt
@@ -2174,7 +2580,9 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                               gap_k=gap_k,
                               gap_absolute=gap_absolute,
                               datetime_duplicate=datetime_duplicate,
-                              datetime_full_labels=datetime_full_labels)
+                              datetime_label_density_pct=datetime_label_density_pct,
+                              datetime_emit_numeric_dt=datetime_emit_numeric_dt,
+                              datetime_emit_text_dt=datetime_emit_text_dt)
             except Exception as exc:
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
             else:
@@ -2202,7 +2610,9 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                     gap_k=gap_k, gap_absolute=gap_absolute,
                     log_cb=self.log,
                     datetime_duplicate=datetime_duplicate,
-                    datetime_full_labels=datetime_full_labels,
+                    datetime_label_density_pct=datetime_label_density_pct,
+                    datetime_emit_numeric_dt=datetime_emit_numeric_dt,
+                    datetime_emit_text_dt=datetime_emit_text_dt,
                 )
             except Exception as exc:
                 self.log("  build_unit_overlay_pages failed: %s" % exc)

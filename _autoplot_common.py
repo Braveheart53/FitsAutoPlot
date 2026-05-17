@@ -30,6 +30,73 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.15: Continuous datetime-label density + text-x dt-page variant.
+# Date: 2026-05-16
+#              Two GUI/plugin changes layered on top of v0.0.14:
+#                * The boolean ``datetime_full_labels`` checkbox is
+#                  REPLACED by an integer percentage
+#                  ``datetime_label_density_pct`` in [0, 100] (default
+#                  10).  Anchor count per trace is
+#                  ``round(pct/100 * len(trace))`` so 0 -> no labels,
+#                  100 -> a label on every point, and values in between
+#                  give a smooth sweep.  Internally we generalised the
+#                  sparse helper: ``build_density_datestr_dataset()``
+#                  takes a density pct and computes anchors with the
+#                  existing evenly-spaced-on-finite-indices algorithm.
+#                  ``build_sparse_datestr_dataset`` and
+#                  ``build_full_datestr_dataset`` remain as v0.0.14
+#                  shims for older callers (they now both delegate to
+#                  the density helper internally).
+#                * NEW dt-page variant emitted alongside the existing
+#                  numeric-seconds dt page: a "dt_labels" page where the
+#                  xy widget's ``xData`` binds to the same text dataset
+#                  used for labels and the x axis is set to
+#                  ``mode='labels'``.  Veusz's xy widget exposes
+#                  ``getAxisLabels()`` which, when xData is a text
+#                  dataset, returns ``(strings, arange(N))`` -- the
+#                  axis then plots samples at integer positions 0..N-1
+#                  with each tick labeled by the corresponding date
+#                  string.  Uniform sample spacing (NOT proportional to
+#                  elapsed time) but the date string is now ON the axis
+#                  rather than as an annotation next to the point.  The
+#                  user can compare both representations side-by-side.
+#                  Helpers:
+#                    - build_textx_dataset(doc, name, mjd_array,
+#                      fmt=DEFAULT_DATETIME_LABEL_FMT, log_cb=None)
+#                      pushes a same-length per-point text dataset
+#                      (no "" gaps because it has to serve as the x
+#                      data).  Non-finite MJDs map to "NaN" so length
+#                      is preserved -- Veusz draws no point at that
+#                      index because the y dataset is NaN there.
+#                    - configure_axis_labels_mode(axis_widget,
+#                      angle=45, size='6pt', max_ticks=20) sets
+#                      axis.mode='labels', applies rotation, and caps
+#                      MajorTicks.number so dense traces do not spam
+#                      every integer position with a tick.  The
+#                      max_ticks cap is derived from
+#                      ``datetime_label_density_pct`` * N so the same
+#                      density slider controls BOTH dt variants.
+#                * Two GUI checkboxes added in both standalone GUIs and
+#                  both plugins:
+#                    - "Emit dt page (numeric x + sparse labels)"
+#                      (default ON, controls the v0.0.14 dt page).
+#                    - "Emit dt_labels page (text x, mode=labels)"
+#                      (default ON, controls the new variant).
+#                * datetime_label_density_pct, datetime_emit_numeric_dt,
+#                  datetime_emit_text_dt flow through every call site
+#                  (push_to_veusz / push_franks_to_veusz / build_unit_
+#                  overlay_pages / build_unit_overlay_pages_franks) and
+#                  both plugin dialogs.
+#                * GPU + parallelization re-audited with the new code
+#                  paths active.  ``gpu_argsort`` still wraps every
+#                  sort site (per-file, per-tag, overlay) including
+#                  the new dt_labels page (which reuses the same sort
+#                  permutation as the numeric dt page since the y data
+#                  is identical).  ``run_in_threadpool`` is unchanged;
+#                  the new dt_labels page emission is a thin Veusz
+#                  Add()/SetData call per trace and adds no measurable
+#                  hot path, so no extra parallelization is warranted.
+
 # %%%% 0.0.14: Datetime display via xy.labels (text dataset) instead of
 # Date: 2026-05-16
 #              SetDataDateTime.  Real-host testing on Veusz 3.4 showed
@@ -299,6 +366,17 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
             label property on the xy widget) so dt pages render readable
             ``YYYY-MM-DD HH:MM:SS`` annotations without going through
             the buggy ``SetDataDateTime`` path on Veusz 3.4.
+        build_density_datestr_dataset: v0.0.15 generalised date-string
+            text dataset whose label density is controlled by an
+            integer percentage in [0, 100].  Anchors are
+            ``round(pct/100 * N)`` evenly spaced indices into the
+            finite subset of the trace.  ``build_sparse_*`` and
+            ``build_full_*`` are now thin wrappers around it.
+        build_textx_dataset / configure_axis_labels_mode: v0.0.15
+            helpers for the new dt_labels page variant.  The text
+            dataset becomes the xy widget's xData and the dt axis is
+            switched to ``mode='labels'`` so Veusz pulls tick labels
+            via the xy widget's ``getAxisLabels`` method.
 # %%%%% Variable Descriptions
         MemoryMonitorConfig.rss_high_water_mb: RSS threshold for spilling.
         MemoryMonitorConfig.array_min_bytes: arrays smaller than this stay
@@ -2029,6 +2107,14 @@ def build_sparse_datestr_dataset(doc, name, mjd_array,
                                  log_cb=None):
     """Push a same-length sparse date-string text dataset to Veusz.
 
+    .. note::
+        v0.0.15 compatibility shim.  New callers should use
+        :func:`build_density_datestr_dataset` which takes an integer
+        density percentage (0..100) instead of a fixed anchor count.
+        This shim converts ``n_anchors`` -> equivalent density pct and
+        delegates so both code paths share the same anchor-picking
+        algorithm.
+
     The returned dataset has the same length as ``mjd_array``; every
     element is ``""`` except at ``n_anchors`` evenly spaced finite
     indices, where the element is a ``YYYY-MM-DD HH:MM:SS`` formatted
@@ -2069,6 +2155,9 @@ def build_sparse_datestr_dataset(doc, name, mjd_array,
     * Both Veusz 3.4 and 4.1 accept a plain ``list[str]`` here, so we
       never have to touch ``SetDataDateTime``.
     """
+    # Translate fixed anchor count to a density pct using the trace's
+    # finite-sample count.  We need to peek at the array length up
+    # front, then delegate.
     try:
         arr = np.asarray(mjd_array, dtype=float)
     except Exception as exc:
@@ -2076,67 +2165,36 @@ def build_sparse_datestr_dataset(doc, name, mjd_array,
             log_cb("    sparse-datestr build failed for %s: %s"
                    % (name, exc))
         return None
-    n = int(arr.size)
-    if n == 0:
-        if log_cb:
-            log_cb("    sparse-datestr skipped for %s: empty input" % name)
-        return None
-    finite_mask = np.isfinite(arr)
-    finite_idx = np.flatnonzero(finite_mask)
-    if finite_idx.size == 0:
-        if log_cb:
-            log_cb("    sparse-datestr skipped for %s: no finite MJDs"
-                   % name)
-        return None
-    # Pick up to n_anchors evenly spaced indices from the FINITE subset
-    # so anchors always land on real data points.
+    n_finite = int(np.count_nonzero(np.isfinite(arr))) if arr.size else 0
+    if n_finite <= 0:
+        # Delegate so the helper logs the empty-input case consistently.
+        return build_density_datestr_dataset(
+            doc, name, mjd_array,
+            density_pct=0, fmt=fmt, log_cb=log_cb,
+        )
     k = max(1, int(n_anchors))
-    k = min(k, int(finite_idx.size))
-    # ``np.linspace`` with endpoints included so the first and last
-    # anchors fall at the trace endpoints when possible.
-    if k == 1:
-        anchor_positions = np.array([finite_idx[finite_idx.size // 2]],
-                                    dtype=np.int64)
+    if k >= n_finite:
+        pct = 100
     else:
-        sel = np.linspace(0, finite_idx.size - 1, k).round().astype(np.int64)
-        # unique in case rounding produced duplicates at small sizes
-        sel = np.unique(sel)
-        anchor_positions = finite_idx[sel]
-    # Convert only the anchor MJDs to strings; everywhere else stays "".
-    try:
-        anchor_strs = mjd_to_datestr(arr[anchor_positions], fmt=fmt)
-    except Exception as exc:
-        if log_cb:
-            log_cb("    sparse-datestr conversion failed for %s: %s"
-                   % (name, exc))
-        return None
-    labels = [""] * n
-    for pos, s in zip(anchor_positions.tolist(),
-                      np.asarray(anchor_strs).tolist()):
-        # NaN-sentinel handling: mjd_to_datestr returns "NaN" for non-
-        # finite MJDs (defensive fallback), which would render as the
-        # literal string "NaN" on the plot.  Map it back to "" so the
-        # missing sample is silently skipped.
-        if s is None or s == "NaN":
-            labels[pos] = ""
-        else:
-            labels[pos] = str(s)
-    try:
-        doc.SetDataText(name, labels)
-    except Exception as exc:
-        if log_cb:
-            log_cb("    SetDataText failed for %s: %s" % (name, exc))
-        return None
-    if log_cb:
-        log_cb("    +sparse-datestr labels %s (%d anchors / %d points)"
-               % (name, int(anchor_positions.size), n))
-    return name
+        pct = int(round((k / float(n_finite)) * 100.0))
+        if pct < 1:
+            pct = 1
+    return build_density_datestr_dataset(
+        doc, name, mjd_array,
+        density_pct=pct, fmt=fmt, log_cb=log_cb,
+    )
 
 
 def build_full_datestr_dataset(doc, name, mjd_array,
                                fmt=DEFAULT_DATETIME_LABEL_FMT,
                                log_cb=None):
     """Push a same-length per-point date-string text dataset to Veusz.
+
+    .. note::
+        v0.0.15 compatibility shim.  Equivalent to
+        :func:`build_density_datestr_dataset` with ``density_pct=100``;
+        delegates to that helper so both code paths share the same
+        anchor-picking algorithm.
 
     Each element of the returned dataset is the
     ``YYYY-MM-DD HH:MM:SS`` formatted string for the corresponding MJD
@@ -2170,43 +2228,12 @@ def build_full_datestr_dataset(doc, name, mjd_array,
     str or None
         ``name`` on success, ``None`` on any failure.
     """
-    try:
-        arr = np.asarray(mjd_array, dtype=float)
-    except Exception as exc:
-        if log_cb:
-            log_cb("    full-datestr build failed for %s: %s"
-                   % (name, exc))
-        return None
-    n = int(arr.size)
-    if n == 0:
-        if log_cb:
-            log_cb("    full-datestr skipped for %s: empty input" % name)
-        return None
-    try:
-        strs = mjd_to_datestr(arr, fmt=fmt)
-    except Exception as exc:
-        if log_cb:
-            log_cb("    full-datestr conversion failed for %s: %s"
-                   % (name, exc))
-        return None
-    # mjd_to_datestr returns the sentinel "NaN" for non-finite MJDs; we
-    # convert those to "" so the label simply doesn't render on the
-    # plot (no literal NaN glyph cluttering the trace).
-    labels = []
-    for s in np.asarray(strs).tolist():
-        if s is None or s == "NaN":
-            labels.append("")
-        else:
-            labels.append(str(s))
-    try:
-        doc.SetDataText(name, labels)
-    except Exception as exc:
-        if log_cb:
-            log_cb("    SetDataText failed for %s: %s" % (name, exc))
-        return None
-    if log_cb:
-        log_cb("    +full-datestr labels %s (%d labels)" % (name, n))
-    return name
+    # v0.0.15 shim: a label at every point = density_pct=100.  Delegate
+    # so all date-string emission shares one anchor-picking algorithm.
+    return build_density_datestr_dataset(
+        doc, name, mjd_array,
+        density_pct=100, fmt=fmt, log_cb=log_cb,
+    )
 
 
 def style_xy_datetime_labels(xy,
@@ -2249,3 +2276,314 @@ def style_xy_datetime_labels(xy,
             pass
     return xy
 
+
+# ============================================================================
+# %%% v0.0.15 DENSITY-PCT DATE-STRING DATASET + TEXT-X DT VARIANT
+# ----------------------------------------------------------------------------
+# Two new helpers layered on top of the v0.0.14 sparse/full builders:
+#
+#   * ``build_density_datestr_dataset`` -- generalises the v0.0.14 sparse
+#     builder.  Instead of a fixed n_anchors count, it accepts an integer
+#     ``density_pct`` in [0, 100].  Anchor count = ``round(pct/100 * N)``
+#     where N is the number of FINITE samples in the trace.  pct=0 -> no
+#     anchors (empty-string labels everywhere -> nothing renders),
+#     pct=100 -> a label at every finite index.  Output dataset always has
+#     the same length as the input MJD array so it stays aligned with the
+#     trace's x/y datasets row-for-row.
+#
+#   * ``build_textx_dataset`` -- pushes a same-length per-point text
+#     dataset whose values are the formatted date strings (no "" gaps,
+#     because this dataset is going to serve as the xy widget's xData).
+#     Non-finite MJDs are emitted as ``"NaN"`` so length is preserved;
+#     Veusz then plots no marker at that index because the y dataset is
+#     NaN there.
+#
+#   * ``configure_axis_labels_mode`` -- sets the dt-page x axis to
+#     ``mode='labels'``, applies rotation/size, and caps
+#     ``MajorTicks.number`` to a sane subset of N so dense traces do not
+#     spam a tick at every integer position.  Cap is derived from the
+#     same density pct so a single GUI knob controls both dt variants.
+# ============================================================================
+
+
+def build_density_datestr_dataset(doc, name, mjd_array,
+                                  density_pct=10,
+                                  fmt=DEFAULT_DATETIME_LABEL_FMT,
+                                  log_cb=None):
+    """Push a same-length date-string text dataset with continuous density.
+
+    The returned dataset has the same length as ``mjd_array``; values
+    are the empty string ``""`` everywhere except at
+    ``round(density_pct/100 * Nfinite)`` evenly spaced FINITE indices,
+    where the value is a ``YYYY-MM-DD HH:MM:SS`` formatted string
+    converted from the corresponding MJD via :func:`mjd_to_datestr`.
+
+    Parameters
+    ----------
+    doc : veusz.embed.Embedded
+        Active embedded Veusz document.
+    name : str
+        Veusz dataset name to create.
+    mjd_array : array-like of float
+        Modified Julian Date values, same length as the trace's y data.
+    density_pct : int, optional
+        Integer percentage in [0, 100].  Default 10.
+        Anchor count = ``round(density_pct/100 * Nfinite)``.
+        Values are clipped: <0 -> 0 (no labels), >100 -> 100 (every
+        finite point).
+    fmt : str, optional
+        ``strftime`` format string.  Default ``"%Y-%m-%d %H:%M:%S"``.
+    log_cb : callable, optional
+        ``log_cb(str)`` for human-readable progress messages.
+
+    Returns
+    -------
+    str or None
+        ``name`` on success, ``None`` on any failure (empty input,
+        SetDataText raised, etc.).
+    """
+    try:
+        arr = np.asarray(mjd_array, dtype=float)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    density-datestr build failed for %s: %s"
+                   % (name, exc))
+        return None
+    n = int(arr.size)
+    if n == 0:
+        if log_cb:
+            log_cb("    density-datestr skipped for %s: empty input" % name)
+        return None
+    # Clip the density percentage to [0, 100].
+    try:
+        pct = int(round(float(density_pct)))
+    except Exception:
+        pct = 10
+    if pct < 0:
+        pct = 0
+    if pct > 100:
+        pct = 100
+    # Empty-density case: push an all-"" text dataset (so xy.labels.val
+    # can still bind to a real text dataset, just with nothing visible).
+    if pct == 0:
+        try:
+            doc.SetDataText(name, [""] * n)
+        except Exception as exc:
+            if log_cb:
+                log_cb("    SetDataText failed for %s: %s" % (name, exc))
+            return None
+        if log_cb:
+            log_cb("    +density-datestr labels %s (0%% -> no anchors, "
+                   "%d points)" % (name, n))
+        return name
+    finite_mask = np.isfinite(arr)
+    finite_idx = np.flatnonzero(finite_mask)
+    if finite_idx.size == 0:
+        if log_cb:
+            log_cb("    density-datestr skipped for %s: no finite MJDs"
+                   % name)
+        return None
+    # Anchor count: round(pct/100 * Nfinite), clamped to [1, Nfinite].
+    k = int(round((pct / 100.0) * float(finite_idx.size)))
+    if k < 1:
+        k = 1
+    if k > int(finite_idx.size):
+        k = int(finite_idx.size)
+    if k == 1:
+        anchor_positions = np.array([finite_idx[finite_idx.size // 2]],
+                                    dtype=np.int64)
+    elif k == int(finite_idx.size):
+        # Every finite sample is an anchor: avoid the linspace round-trip.
+        anchor_positions = finite_idx
+    else:
+        sel = np.linspace(0, finite_idx.size - 1, k).round().astype(np.int64)
+        sel = np.unique(sel)
+        anchor_positions = finite_idx[sel]
+    try:
+        anchor_strs = mjd_to_datestr(arr[anchor_positions], fmt=fmt)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    density-datestr conversion failed for %s: %s"
+                   % (name, exc))
+        return None
+    labels = [""] * n
+    for pos, s in zip(anchor_positions.tolist(),
+                      np.asarray(anchor_strs).tolist()):
+        if s is None or s == "NaN":
+            labels[pos] = ""
+        else:
+            labels[pos] = str(s)
+    try:
+        doc.SetDataText(name, labels)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    SetDataText failed for %s: %s" % (name, exc))
+        return None
+    if log_cb:
+        log_cb("    +density-datestr labels %s (%d%% -> %d anchors / "
+               "%d points)" % (name, pct, int(anchor_positions.size), n))
+    return name
+
+
+def build_textx_dataset(doc, name, mjd_array,
+                        fmt=DEFAULT_DATETIME_LABEL_FMT,
+                        log_cb=None):
+    """Push a same-length per-point date-string text dataset for use as xData.
+
+    Unlike :func:`build_density_datestr_dataset`, every index gets a
+    string (no ``""`` gaps), because this dataset will serve as the x
+    data of an xy widget.  Non-finite MJDs are stored as the sentinel
+    ``"NaN"`` so the dataset length stays consistent with the y
+    dataset; Veusz draws no marker at that index because the y dataset
+    is NaN there.
+
+    When the xy widget's ``xData`` setting points at this dataset and
+    the parent x axis is set to ``mode='labels'``, Veusz queries
+    ``xy.getAxisLabels('x')`` which returns
+    ``(strings, np.arange(N))``.  The axis then plots samples at
+    integer positions 0..N-1 with each tick labeled by the
+    corresponding date string.  Sample spacing is UNIFORM (not
+    proportional to elapsed time), so this is the right helper for the
+    new dt_labels page variant only.
+
+    Parameters
+    ----------
+    doc : veusz.embed.Embedded
+        Active embedded Veusz document.
+    name : str
+        Veusz dataset name to create.
+    mjd_array : array-like of float
+        Modified Julian Date values, same length as the trace's y data.
+    fmt : str, optional
+        ``strftime`` format string.  Default ``"%Y-%m-%d %H:%M:%S"``.
+    log_cb : callable, optional
+        ``log_cb(str)`` for progress messages.
+
+    Returns
+    -------
+    str or None
+        ``name`` on success, ``None`` on any failure.
+    """
+    try:
+        arr = np.asarray(mjd_array, dtype=float)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    textx-datestr build failed for %s: %s"
+                   % (name, exc))
+        return None
+    n = int(arr.size)
+    if n == 0:
+        if log_cb:
+            log_cb("    textx-datestr skipped for %s: empty input" % name)
+        return None
+    try:
+        strs = mjd_to_datestr(arr, fmt=fmt)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    textx-datestr conversion failed for %s: %s"
+                   % (name, exc))
+        return None
+    # Keep "NaN" sentinel here (not "") because this serves as xData --
+    # an empty string at index i would make Veusz draw a blank tick at
+    # integer position i but the y point at the same index would still
+    # render, producing a confusing unlabeled marker.  "NaN" is more
+    # informative and matches the y-side NaN convention.
+    labels = [str(s) if s is not None else "NaN"
+              for s in np.asarray(strs).tolist()]
+    try:
+        doc.SetDataText(name, labels)
+    except Exception as exc:
+        if log_cb:
+            log_cb("    SetDataText failed for %s: %s" % (name, exc))
+        return None
+    if log_cb:
+        log_cb("    +textx-datestr labels %s (%d labels)" % (name, n))
+    return name
+
+
+def configure_axis_labels_mode(axis_widget,
+                               angle=DEFAULT_DATETIME_LABEL_ANGLE,
+                               size=DEFAULT_DATETIME_LABEL_SIZE,
+                               max_ticks=None,
+                               total_points=None,
+                               density_pct=None):
+    """Switch a Veusz axis to ``mode='labels'`` with sensible defaults.
+
+    Bind the parent xy widget's ``xData`` to a text dataset
+    (e.g. one produced by :func:`build_textx_dataset`) BEFORE calling
+    this -- Veusz pulls tick label strings from the plotter's text
+    xData via ``xy.getAxisLabels``.
+
+    Parameters
+    ----------
+    axis_widget : Veusz axis widget
+        The dt-page x axis.
+    angle : float, optional
+        Tick label rotation in degrees (default 45).
+    size : str, optional
+        Tick label font size (default ``'6pt'``).
+    max_ticks : int or None, optional
+        Hard cap on ``MajorTicks.number``.  If None, derive from
+        ``density_pct`` and ``total_points``:
+        ``cap = max(2, round(density_pct/100 * total_points))``,
+        clamped to [2, 20] for readability.
+    total_points : int or None, optional
+        Length of the trace; used with ``density_pct`` to derive a tick
+        cap when ``max_ticks`` is None.
+    density_pct : int or None, optional
+        Same density slider that drives label density on the numeric dt
+        page; reused here so a single knob controls both variants.
+
+    Returns
+    -------
+    The axis widget (for chaining).  All attribute writes are guarded.
+    """
+    if axis_widget is None:
+        return axis_widget
+    try:
+        axis_widget.mode.val = "labels"
+    except Exception:
+        pass
+    # Tick label appearance.
+    try:
+        axis_widget.TickLabels.rotate.val = float(angle)
+    except Exception:
+        try:
+            axis_widget.TickLabels.rotate.val = int(round(float(angle)))
+        except Exception:
+            pass
+    try:
+        axis_widget.TickLabels.size.val = str(size)
+    except Exception:
+        pass
+    # Derive a sensible MajorTicks.number cap.
+    cap = None
+    if max_ticks is not None:
+        try:
+            cap = int(max_ticks)
+        except Exception:
+            cap = None
+    elif density_pct is not None and total_points is not None:
+        try:
+            pct = int(round(float(density_pct)))
+            n = int(total_points)
+            cap = int(round((pct / 100.0) * n))
+        except Exception:
+            cap = None
+    if cap is not None:
+        if cap < 2:
+            cap = 2
+        if cap > 50:
+            # Hard upper bound so an over-dense slider doesn't paint a
+            # tick at every integer index on a 10k-point trace.
+            cap = 50
+        try:
+            axis_widget.MajorTicks.number.val = int(cap)
+        except Exception:
+            pass
+        try:
+            # Minor ticks are mostly noise in labels mode.
+            axis_widget.MinorTicks.number.val = 0
+        except Exception:
+            pass
+    return axis_widget
