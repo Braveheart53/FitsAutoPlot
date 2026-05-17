@@ -29,6 +29,24 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.17: Minimized .vszh5 save (GUI checkboxes).
+# Date: 2026-05-16
+#              Two new checkboxes on the Franks GUI:
+#                * "Minimized Veusz File" -- saved .vszh5 contains ONLY
+#                  the datasets directly referenced by widgets in the
+#                  document.  Backed by ``save_vszh5_minimized`` in
+#                  _autoplot_common (walks Root.WalkWidgets(), evicts
+#                  unreferenced datasets, saves, restores in-memory).
+#                * "Generate Full Veusz file" -- sub-checkbox, only
+#                  enabled when the parent is checked.  When BOTH are
+#                  checked, save writes the minimized file AND a
+#                  parallel ``<name>_full.vszh5`` (legacy behaviour).
+#              The FITS-side v0.0.17 sentinel channel-tag filter does
+#              NOT apply to Franks because the Franks overlay is one
+#              trace per page (no per-row channel tagging).
+#              Revision history kept in DESCENDING semantic-version
+#              order.
+#
 # %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (true date ticks).
 # Date: 2026-05-16
 #              * Mirror of FITS_AutoPlot v0.0.16 for Franks records.
@@ -330,6 +348,9 @@ from _autoplot_common import (   # noqa: E402
     # v0.0.16: dt_labels via mode='datetime' + broken-axis parity
     build_dtnum_dataset, configure_axis_datetime_mode,
     mjd_break_pairs_to_dtsec,
+    # v0.0.17: minimized .vszh5 save (Franks overlay is single-trace per
+    # page so the sentinel channel-tag filter from FITS does not apply).
+    save_vszh5_minimized,
 )
 
 # v0.0.11: Franks files always use MJD as their sort key, so the upper-cased
@@ -1172,6 +1193,9 @@ def build_unit_overlay_pages_franks(doc, file_records,
         # v0.0.15/0.0.16: datetime companion datasets built from the
         # concatenated, time-sorted MJD array.  Only proceeds when
         # EVERY contributing file has an MJD column.
+        # v0.0.17: NO channel-tag sentinel filter here (Franks overlay is
+        # one trace per page; the FITS sentinel-tuple case does not
+        # apply).
         dt_density_name = None
         dt_textx_name = None
         dt_dtnum_name = None        # v0.0.16: numeric dtsec dataset
@@ -1510,6 +1534,38 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         )
         form.addRow(self.emit_text_dt_cb)
 
+        # --- Minimized Veusz save (v0.0.17) -------------------------------
+        # When "Minimized Veusz File" is checked, the saved .vszh5 contains
+        # ONLY the datasets that the plot widget tree actually references.
+        # The nested "Generate Full Veusz file" sub-checkbox is enabled
+        # only when the parent is on; when also checked, a second file
+        # with the legacy full dataset list is written alongside (suffix
+        # "_full").
+        self.min_vesz_cb = QCheckBox("Minimized Veusz File")
+        self.min_vesz_cb.setChecked(False)
+        self.min_vesz_cb.setToolTip(
+            "When checked, the saved .vszh5 contains only the datasets "
+            "directly referenced by widgets in the document.  Unreferenced "
+            "datasets (intermediate label / density / dtnum byproducts that "
+            "no widget consumes) are evicted from the file.  The in-memory "
+            "document is unchanged -- datasets are restored after save."
+        )
+        form.addRow(self.min_vesz_cb)
+        self.full_vesz_cb = QCheckBox("Generate Full Veusz file")
+        self.full_vesz_cb.setChecked(False)
+        self.full_vesz_cb.setEnabled(False)
+        self.full_vesz_cb.setToolTip(
+            "Only available when 'Minimized Veusz File' is checked.  When "
+            "BOTH are checked, the save action writes the minimized file "
+            "AND a parallel '_full.vszh5' that includes every dataset "
+            "(legacy v0.0.16 save behaviour)."
+        )
+        form.addRow(self.full_vesz_cb)
+        self.min_vesz_cb.toggled.connect(self.full_vesz_cb.setEnabled)
+        self.min_vesz_cb.toggled.connect(
+            lambda on: self.full_vesz_cb.setChecked(False) if not on else None
+        )
+
         # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
         self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
         self.gpu_cb.setChecked(False)
@@ -1651,11 +1707,31 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         )
         if not fn:
             return
+        # v0.0.17: branch on Minimized Veusz File checkbox.
+        want_min = bool(self.min_vesz_cb.isChecked())
+        want_full = bool(self.full_vesz_cb.isChecked()) and want_min
         try:
-            written = save_vszh5(self.veusz_doc, fn)
-            self.log("Saved %s" % written)
-            self.mark_project_saved(written)
-            QMessageBox.information(self, "Saved", "Wrote %s" % written)
+            written_paths = []
+            if want_min:
+                primary = save_vszh5_minimized(
+                    self.veusz_doc, fn, log_cb=self.log,
+                )
+                self.log("Saved minimized %s" % primary)
+                written_paths.append(primary)
+                if want_full:
+                    base, _ext = os.path.splitext(primary)
+                    full_path = base + "_full.vszh5"
+                    written_full = save_vszh5(self.veusz_doc, full_path)
+                    self.log("Saved full %s" % written_full)
+                    written_paths.append(written_full)
+            else:
+                written = save_vszh5(self.veusz_doc, fn)
+                self.log("Saved %s" % written)
+                written_paths.append(written)
+            self.mark_project_saved(written_paths[0])
+            QMessageBox.information(
+                self, "Saved", "Wrote:\n%s" % "\n".join(written_paths),
+            )
         except Exception as exc:
             self.log("Save failed: %s" % exc)
             QMessageBox.critical(self, "Save failed", str(exc))

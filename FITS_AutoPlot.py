@@ -24,6 +24,41 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.17: Minimized .vszh5 save + sentinel-tag dt overlay filter.
+# Date: 2026-05-16
+#              New GUI checkboxes + correctness fix on the dt overlay
+#              pages:
+#                * Two new checkboxes on the FITS GUI:
+#                    - "Minimized Veusz File" -- saved .vszh5 contains
+#                      ONLY the datasets directly referenced by widgets.
+#                      Implementation lives in ``_autoplot_common.
+#                      save_vszh5_minimized``: walks Root.WalkWidgets(),
+#                      collects xData/yData/labels/scalePoints/...
+#                      references, evicts unreferenced datasets via
+#                      RemoveData, calls the standard save_vszh5, then
+#                      restores the evicted datasets in memory so the
+#                      ``doc`` is unchanged post-save.
+#                    - "Generate Full Veusz file" -- sub-checkbox, only
+#                      enabled when the parent is checked.  When BOTH
+#                      are checked, save writes the minimized file AND
+#                      a parallel ``<name>_full.vszh5`` carrying every
+#                      dataset (legacy v0.0.16 behaviour).
+#                * FIX: the FITS dt overlay pages now skip placeholder
+#                  channel-tag tuples like ``("dataset", "dataset")``.
+#                  These catch-all groupings (the FITS tag-column parser
+#                  emits them when every row of a tag column is the same
+#                  literal placeholder string) carried degenerate MJD
+#                  coverage that manufactured spurious broken-axis
+#                  breaks in the combined-MJD break detection used by
+#                  the dt overlay pages.  The new predicate
+#                  ``is_sentinel_tag_tuple(tup)`` (in _autoplot_common)
+#                  gates dt emission; real channel-pair tuples like
+#                  ("A", "B") pass through unaffected.  Seconds-overlay
+#                  traces for sentinel tuples are still drawn -- they're
+#                  harmless on a unitless seconds axis.
+#                * Revision history kept in DESCENDING semantic-version
+#                  order.
+#
 # %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (true date ticks).
 # Date: 2026-05-16
 #                * The v0.0.15 dt_labels page used a per-point text
@@ -391,6 +426,8 @@ from _autoplot_common import (   # noqa: E402
     # v0.0.16: dt_labels via mode='datetime' + broken-axis parity
     build_dtnum_dataset, configure_axis_datetime_mode,
     mjd_break_pairs_to_dtsec,
+    # v0.0.17: minimized .vszh5 save + sentinel channel-tag dt overlay filter
+    save_vszh5_minimized, is_sentinel_tag_tuple,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
@@ -2214,9 +2251,17 @@ def build_unit_overlay_pages(doc, file_records,
             # REUSED from the seconds-page dataset (``x_name``) so the
             # dt-overlay page uses the same x dataset as the seconds
             # overlay; only the labels are added.
+            # v0.0.17: skip dt-overlay emission for sentinel channel-tag
+            # tuples (e.g. tup == ("dataset", "dataset")) -- placeholder
+            # catch-all groupings whose per-file MJD coverage is
+            # degenerate and would manufacture spurious broken-axis
+            # breaks in the combined-MJD break detection below.  Real
+            # channel-pair tuples like ("A", "B") pass through.  The
+            # seconds-overlay trace above is still drawn for sentinel
+            # tuples -- harmless on a unitless seconds axis.
             if datetime_duplicate and all(
                 m.get("mjd") is not None for m in members
-            ):
+            ) and not is_sentinel_tag_tuple(tup):
                 try:
                     mjds = np.concatenate(
                         [np.asarray(m["mjd"], dtype=float)
@@ -2650,6 +2695,39 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         )
         form.addRow(self.emit_text_dt_cb)
 
+        # --- Minimized Veusz save (v0.0.17) -------------------------------
+        # When "Minimized Veusz File" is checked, the saved .vszh5 contains
+        # ONLY the datasets that the plot widget tree actually references
+        # (xData / yData / labels / scalePoints / ...).  The nested
+        # "Generate Full Veusz file" sub-checkbox is enabled only when the
+        # parent is on; when also checked, a second file with the legacy
+        # full dataset list is written alongside (suffix "_full").
+        self.min_vesz_cb = QCheckBox("Minimized Veusz File")
+        self.min_vesz_cb.setChecked(False)
+        self.min_vesz_cb.setToolTip(
+            "When checked, the saved .vszh5 contains only the datasets "
+            "directly referenced by widgets in the document.  Unreferenced "
+            "datasets (intermediate label / density / dtnum byproducts that "
+            "no widget consumes) are evicted from the file.  The in-memory "
+            "document is unchanged -- datasets are restored after save."
+        )
+        form.addRow(self.min_vesz_cb)
+        self.full_vesz_cb = QCheckBox("Generate Full Veusz file")
+        self.full_vesz_cb.setChecked(False)
+        self.full_vesz_cb.setEnabled(False)
+        self.full_vesz_cb.setToolTip(
+            "Only available when 'Minimized Veusz File' is checked.  When "
+            "BOTH are checked, the save action writes the minimized file "
+            "AND a parallel '_full.vszh5' that includes every dataset "
+            "(legacy v0.0.16 save behaviour)."
+        )
+        form.addRow(self.full_vesz_cb)
+        # Gate the sub-checkbox on the parent's state.
+        self.min_vesz_cb.toggled.connect(self.full_vesz_cb.setEnabled)
+        self.min_vesz_cb.toggled.connect(
+            lambda on: self.full_vesz_cb.setChecked(False) if not on else None
+        )
+
         # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
         self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
         self.gpu_cb.setChecked(False)
@@ -2811,11 +2889,32 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         )
         if not fn:
             return
+        # v0.0.17: branch on Minimized Veusz File checkbox.
+        want_min = bool(self.min_vesz_cb.isChecked())
+        want_full = bool(self.full_vesz_cb.isChecked()) and want_min
         try:
-            written = save_vszh5(self.veusz_doc, fn)
-            self.log("Saved %s" % written)
-            self.mark_project_saved(written)
-            QMessageBox.information(self, "Saved", "Wrote %s" % written)
+            written_paths = []
+            if want_min:
+                primary = save_vszh5_minimized(
+                    self.veusz_doc, fn, log_cb=self.log,
+                )
+                self.log("Saved minimized %s" % primary)
+                written_paths.append(primary)
+                if want_full:
+                    base, _ext = os.path.splitext(primary)
+                    full_path = base + "_full.vszh5"
+                    written_full = save_vszh5(self.veusz_doc, full_path)
+                    self.log("Saved full %s" % written_full)
+                    written_paths.append(written_full)
+            else:
+                written = save_vszh5(self.veusz_doc, fn)
+                self.log("Saved %s" % written)
+                written_paths.append(written)
+            # Mark the primary (first-written) project for the Open-in-Veusz button.
+            self.mark_project_saved(written_paths[0])
+            QMessageBox.information(
+                self, "Saved", "Wrote:\n%s" % "\n".join(written_paths),
+            )
         except Exception as exc:
             self.log("Save failed: %s" % exc)
             QMessageBox.critical(self, "Save failed", str(exc))

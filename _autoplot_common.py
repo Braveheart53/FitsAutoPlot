@@ -30,6 +30,58 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.17: Minimized .vszh5 save + sentinel-tag dt overlay filter.
+# Date: 2026-05-16
+#              Two user-facing additions and one correctness fix:
+#
+#                * NEW: ``save_vszh5_minimized(doc, filename, log_cb)``.
+#                  Walks every widget in the document via
+#                  ``Root.WalkWidgets()`` and collects every dataset name
+#                  referenced as ``xData`` / ``yData`` / ``labels`` /
+#                  ``scalePoints`` / ``yDataLow`` / ``yDataHigh`` /
+#                  ``xDataLow`` / ``xDataHigh``.  Datasets not in that
+#                  whitelist are removed via ``doc.RemoveData(name)``
+#                  prior to saving and re-injected from a value cache
+#                  immediately after the save returns -- so the in-memory
+#                  ``doc`` is unchanged from the caller's perspective.
+#                  The resulting .vszh5 contains ONLY the datasets that
+#                  the plot definitions actually consume, which is what
+#                  the new "Minimized Veusz File" GUI checkbox enables.
+#                * NEW: ``GUI_MINIMIZED_VESZ`` field group plumbing.
+#                  Both GUIs gained a "Minimized Veusz File" checkbox
+#                  and a nested, dependent "Generate Full Veusz file"
+#                  sub-checkbox (only enabled when the parent is on).
+#                  When both are checked, the save path writes BOTH the
+#                  minimized file (``<name>.vszh5``) AND the legacy full
+#                  file (``<name>_full.vszh5``).  When only the parent is
+#                  checked, only the minimized file is written.  When
+#                  neither is checked, the legacy full file is written
+#                  as before.
+#                * FIX: sentinel channel-tag tuples (e.g. ``("dataset",
+#                  "dataset")``) are now EXCLUDED from the FITS
+#                  datetime-overlay pages.  These are placeholder
+#                  catch-all groupings emitted when the per-row tag
+#                  columns carry a literal placeholder string (the FITS
+#                  reader still groups them, but the resulting trace
+#                  does not correspond to a real channel pair).  Their
+#                  per-file MJD coverage is degenerate, which when fed
+#                  into the combined-MJD break detection used by the dt
+#                  overlay pages manufactured spurious broken-axis
+#                  breaks.  New module-level constant
+#                  ``SENTINEL_TAG_TOKENS`` lists the placeholder tokens
+#                  (case-insensitive, whitespace-trimmed);
+#                  ``is_sentinel_tag_tuple(tup)`` is the predicate the
+#                  FITS overlay uses to gate dt emission.  Real channel
+#                  tuples like ``("A", "B")`` or ``("chA", "chB")`` pass
+#                  through.  The seconds-overlay trace is still drawn
+#                  for sentinel tuples -- harmless on a unitless
+#                  seconds axis.  Franks_AutoPlot is unaffected by this
+#                  fix (its overlay is one trace per page).  The older
+#                  v0.0.17-draft column-name predicate ``is_delta_column``
+#                  is kept as a no-op stub for back-compat.
+#                * Revision history kept in DESCENDING semantic-version
+#                  order.
+#
 # %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (proper date ticks).
 # Date: 2026-05-16
 #              v0.0.15 made the dt_labels page bind xData to a per-point
@@ -765,6 +817,269 @@ def save_vszh5(doc, filename: str) -> str:
     except TypeError:
         doc.Save(filename)               # Veusz >= 4.1 (extension based)
     return filename
+
+
+# %%% Minimized .vszh5 save (only plot-referenced datasets)
+# ---------------------------------------------------------------------------
+# Settings on Veusz widgets that hold a dataset NAME (string) the widget
+# reads from at render time.  These are the 'dataset references' we want to
+# preserve when writing a minimized .vszh5.  All of these are present on
+# both Veusz 3.4 and 4.1; widgets that don't have a given setting simply
+# yield an empty string when Get() is called on the path.
+_DATASET_REF_SETTINGS = (
+    "xData", "yData",
+    "labels", "scalePoints",
+    "yDataLow", "yDataHigh",
+    "xDataLow", "xDataHigh",
+    "data",         # image/colorbar widget
+    "posn",         # function-style widgets occasionally
+    "key",          # rarely a dataset ref, but harmless to inspect
+)
+
+
+def _collect_referenced_dataset_names(doc, log_cb=None):
+    # type: (object, Optional[Callable[[str], None]]) -> set
+    """Walk every widget in ``doc`` and collect the set of dataset names
+    referenced by widget settings that consume datasets (xData/yData/labels
+    /scalePoints/...).
+
+    Returns a ``set`` of dataset name strings.  An empty string return from
+    a setting Get() is ignored (that means the widget has no dataset bound
+    to that setting).  All exceptions are swallowed and reported via
+    ``log_cb`` so a malformed widget in a corner of the document cannot
+    abort the save.
+
+    Compatible with Veusz 3.4 and 4.1: ``Root.WalkWidgets()`` is in both,
+    and so is the procedural ``Get('/path/setting')``.
+    """
+    used = set()
+    try:
+        walker = doc.Root.WalkWidgets()
+    except Exception as exc:
+        if log_cb:
+            log_cb("  Minimized-save: WalkWidgets unavailable: %s" % exc)
+        return used
+    for w in walker:
+        try:
+            wpath = w.path
+        except Exception:
+            continue
+        for setname in _DATASET_REF_SETTINGS:
+            try:
+                val = doc.Get("%s/%s" % (wpath, setname))
+            except Exception:
+                continue
+            if val is None:
+                continue
+            # Veusz dataset bindings are strings (single dataset name).
+            # Some widgets may carry a list-of-strings for multi-bindings;
+            # accept both shapes.
+            if isinstance(val, str):
+                if val:
+                    used.add(val)
+            else:
+                try:
+                    for item in val:
+                        if isinstance(item, str) and item:
+                            used.add(item)
+                except TypeError:
+                    # Not iterable -- not a dataset reference, ignore.
+                    pass
+    return used
+
+
+def save_vszh5_minimized(doc, filename, log_cb=None):
+    # type: (object, str, Optional[Callable[[str], None]]) -> str
+    """
+    Save ``doc`` as a .vszh5 project containing ONLY the datasets that are
+    referenced by at least one widget setting (xData/yData/labels/etc.).
+
+    Implementation strategy:
+
+        1. Walk the widget tree, build a whitelist of referenced dataset
+           names via :func:`_collect_referenced_dataset_names`.
+        2. Snapshot every non-whitelisted dataset's current values via
+           ``doc.GetData(name)``, then remove it via ``doc.RemoveData(name)``.
+        3. Call the standard :func:`save_vszh5` to write the minimized
+           project.
+        4. Re-inject every snapshotted dataset via ``doc.SetData(name, ...)``
+           so the in-memory ``doc`` is identical to its pre-save state.
+
+    Returns the path of the written file (with .vszh5 extension enforced).
+
+    Compatible with Veusz 3.4 and 4.1: ``GetData``, ``SetData``, and
+    ``RemoveData`` have been stable on the Embedded interface since
+    Veusz 1.x.
+    """
+    used = _collect_referenced_dataset_names(doc, log_cb=log_cb)
+    if log_cb:
+        log_cb("  Minimized-save: %d dataset(s) referenced by widgets."
+               % len(used))
+    # Build full dataset list.
+    try:
+        all_names = list(doc.GetDatasets())
+    except Exception as exc:
+        if log_cb:
+            log_cb("  Minimized-save: GetDatasets failed (%s); "
+                   "falling back to full save." % exc)
+        return save_vszh5(doc, filename)
+    # Names to evict: anything not in the whitelist.
+    evict = [n for n in all_names if n not in used]
+    snapshot = {}  # name -> tuple returned by GetData (or None on failure)
+    for n in evict:
+        try:
+            snapshot[n] = doc.GetData(n)
+        except Exception as exc:
+            snapshot[n] = None
+            if log_cb:
+                log_cb("    Minimized-save: GetData(%s) failed: %s"
+                       % (n, exc))
+        try:
+            doc.RemoveData(n)
+        except Exception as exc:
+            if log_cb:
+                log_cb("    Minimized-save: RemoveData(%s) failed: %s"
+                       % (n, exc))
+    if log_cb:
+        log_cb("  Minimized-save: evicted %d unused dataset(s)."
+               % len(evict))
+    # Write the minimized file.
+    try:
+        written = save_vszh5(doc, filename)
+    finally:
+        # ALWAYS restore the evicted datasets, even if save raised.
+        restored = 0
+        for n in evict:
+            snap = snapshot.get(n)
+            if snap is None:
+                continue
+            # GetData returns a tuple of arrays whose shape depends on the
+            # dataset type.  We dispatch on the tuple arity:
+            #   1-D numeric    : (data,) or (data, serr, nerr, perr)
+            #   2-D image      : (data,)
+            #   text           : (list_of_strings,)
+            try:
+                if isinstance(snap, tuple):
+                    if len(snap) == 1:
+                        arr = snap[0]
+                        # Text datasets are lists of str; numeric are ndarray.
+                        if isinstance(arr, np.ndarray) and arr.ndim == 2:
+                            doc.SetData2D(n, arr)
+                        elif (isinstance(arr, list) and arr
+                              and isinstance(arr[0], str)):
+                            doc.SetDataText(n, arr)
+                        else:
+                            doc.SetData(n, arr)
+                    else:
+                        # (data, serr, nerr, perr) -- pass straight to SetData
+                        doc.SetData(n, *snap)
+                else:
+                    # Old API: GetData may return raw ndarray
+                    doc.SetData(n, snap)
+                restored += 1
+            except Exception as exc:
+                if log_cb:
+                    log_cb("    Minimized-save: restore SetData(%s) "
+                           "failed: %s" % (n, exc))
+        if log_cb:
+            log_cb("  Minimized-save: restored %d dataset(s) in memory."
+                   % restored)
+    return written
+
+
+# %%% Sentinel channel-tag tuple filter for dt-overlay (v0.0.17)
+# ---------------------------------------------------------------------------
+# Some FITS tables tag every row with a placeholder channel-tag string
+# (e.g. ``"dataset"``) instead of a real channel-pair label like
+# ``("A", "B")`` or ``("channel_A", "channel_B")``.  When the AutoPlot
+# grouper sees such a placeholder column, the resulting tag-tuple key
+# collapses to a repeated sentinel like ``("dataset", "dataset")`` and
+# the trace becomes a catch-all rather than a real per-channel sub-set.
+#
+# These catch-all traces typically carry degenerate MJD coverage (one or
+# two valid samples per file) for time-difference columns, which when
+# concatenated into the combined-MJD break detection used by the dt
+# overlay pages manufactures large false-positive gaps in the broken
+# axis.  v0.0.17 detects them via :func:`is_sentinel_tag_tuple` and
+# excludes them from dt-overlay datetime emission.  Real channel-pair
+# tuples (``("A", "B")``, ``("chA", "chB")``, ...) pass through.
+#
+# The user can extend the sentinel set in place; the predicate is
+# case-insensitive and trims whitespace before matching.
+SENTINEL_TAG_TOKENS = (
+    "dataset",
+    "none",
+    "na",
+    "n/a",
+    "null",
+    "",
+)
+
+
+def _norm_tag_token(t):
+    # type: (object) -> str
+    """Lower-cased, stripped string form of a tag-tuple element."""
+    if t is None:
+        return ""
+    try:
+        return str(t).strip().lower()
+    except Exception:
+        return ""
+
+
+def is_sentinel_tag_tuple(tup):
+    # type: (Optional[Tuple]) -> bool
+    """Return True iff ``tup`` is a placeholder/catch-all channel-tag
+    tuple that should be EXCLUDED from dt-overlay datetime emission.
+
+    Two patterns are flagged as sentinel:
+        1. Every element collapses (lower+strip) to the same token AND
+           that token is in :data:`SENTINEL_TAG_TOKENS`.  Catches
+           ``("dataset", "dataset")``, ``("none", "None")``, ``("NA", "NA")``.
+        2. ``tup`` is empty / equals ``(None,)`` AND the empty-token form
+           appears in :data:`SENTINEL_TAG_TOKENS`.  This is the
+           no-tagging-at-all case the grouper already treats as a single
+           catch-all bucket.  Excluding it from dt overlay emission is
+           usually wrong for files that lack tag columns entirely, so by
+           default this case is NOT treated as sentinel -- only the
+           explicit repeated-sentinel-token form is filtered.
+
+    Examples that return True:  ``("dataset", "dataset")``,
+    ``("NONE", "none")``, ``("", "")`` (only if "" is in the sentinel set).
+    Examples that return False: ``(None,)``, ``("A", "B")``,
+    ``("chA", "chB")``, ``("dataset", "channel_A")`` (mixed).
+    """
+    if not tup:
+        return False
+    # The no-tagging sentinel (None,) is the grouper's universal bucket;
+    # treat it as non-sentinel so files without tag columns still emit
+    # their dt overlay trace.
+    if tup == (None,):
+        return False
+    tokens = [_norm_tag_token(t) for t in tup]
+    if not tokens:
+        return False
+    first = tokens[0]
+    if any(t != first for t in tokens):
+        return False
+    # All tokens are equal; flag only if that token is sentinel.
+    sentinels_lc = tuple(s.lower() for s in SENTINEL_TAG_TOKENS)
+    return first in sentinels_lc
+
+
+# Deprecated column-name predicate -- retained as a no-op for any external
+# script that may have imported it.  v0.0.17 superseded this with the
+# tuple-based filter above (see is_sentinel_tag_tuple) because the real
+# culprit was the channel-tag tuple, not the column name itself.
+DELTA_COLUMN_NAME_PATTERNS = ()
+
+
+def is_delta_column(col_name):
+    # type: (str) -> bool
+    """Deprecated stub kept for v0.0.17 back-compat.  Always returns
+    ``False`` now; the real dt-overlay filter is
+    :func:`is_sentinel_tag_tuple`."""
+    return False
 
 
 # %%% Launch full Veusz GUI in current Python env
