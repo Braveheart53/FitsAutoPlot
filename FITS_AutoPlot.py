@@ -24,6 +24,25 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.19: Wire string gap parser + hide-keys checkbox through GUI.
+# Date: 2026-05-16
+#              GUI additions:
+#                * New ``self.gap_abs_str`` QLineEdit (placeholder
+#                  "e.g. 5m3d2h (overrides spinbox)") sits below the
+#                  existing hours spinbox.  When non-empty its parsed
+#                  value (via ``parse_gap_string`` from
+#                  ``_autoplot_common``) overrides the spinbox-derived
+#                  ``gap_absolute`` -- backward compatible.
+#                * New ``self.hide_keys_cb`` QCheckBox ("Hide legend
+#                  keys on all pages").  The flag is plumbed via a new
+#                  ``hide_keys`` kwarg through ``push_to_veusz`` ->
+#                  ``_build_pages`` and ``build_unit_overlay_pages``;
+#                  every key widget's ``Border.hide.val`` is now driven
+#                  by ``hide_keys`` instead of being unconditionally
+#                  False.
+#              Default behaviour unchanged when both controls are left
+#              at their defaults (blank string + unchecked).
+#
 # %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
 # Date: 2026-05-16
 #              The GUI "Manual gap (hours)" spinbox is converted to
@@ -463,6 +482,8 @@ from _autoplot_common import (   # noqa: E402
     mjd_break_pairs_to_dtsec,
     # v0.0.17: minimized .vszh5 save + sentinel channel-tag dt overlay filter
     save_vszh5_minimized, is_sentinel_tag_tuple,
+    # v0.0.19: string gap parser ('5m3d2h' style)
+    parse_gap_string,
     MJD_VEUSZ_EPOCH_MJD,
     DEFAULT_DATETIME_TICK_FORMAT, DEFAULT_DATETIME_TICK_ROTATE_DEG,
     DEFAULT_DATETIME_MAJOR_TICKS_TARGET,
@@ -736,10 +757,15 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   datetime_full_labels=None,
                   datetime_label_density_pct: int = 10,
                   datetime_emit_numeric_dt: bool = True,
-                  datetime_emit_text_dt: bool = True) -> None:
+                  datetime_emit_text_dt: bool = True,
+                  hide_keys: bool = False) -> None:
     """
     Push a single processed FITS file into the running embedded Veusz
     document.
+
+    v0.0.19: ``hide_keys`` -- when True every key (legend) widget added
+    by ``_build_pages`` and downstream helpers is created with its
+    Border hidden so the legend does not draw.
 
     Strategy
     --------
@@ -1373,14 +1399,16 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                          datetime_x_name=_dt_x,
                          datetime_label_density_pct=datetime_label_density_pct,
                          datetime_emit_numeric_dt=datetime_emit_numeric_dt,
-                         datetime_emit_text_dt=datetime_emit_text_dt)
+                         datetime_emit_text_dt=datetime_emit_text_dt,
+                         hide_keys=hide_keys)
         else:
             _build_pages(doc, base, data, sorted_names,
                          gap_k=gap_k, gap_absolute=gap_absolute,
                          datetime_x_name=_dt_x,
                          datetime_label_density_pct=datetime_label_density_pct,
                          datetime_emit_numeric_dt=datetime_emit_numeric_dt,
-                         datetime_emit_text_dt=datetime_emit_text_dt)
+                         datetime_emit_text_dt=datetime_emit_text_dt,
+                         hide_keys=hide_keys)
     elif log_cb:
         log_cb("  Per-file plot pages skipped (combined plots only).")
 
@@ -1400,8 +1428,12 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                  datetime_full_labels=None,
                  datetime_label_density_pct: int = 10,
                  datetime_emit_numeric_dt: bool = True,
-                 datetime_emit_text_dt: bool = True) -> None:
+                 datetime_emit_text_dt: bool = True,
+                 hide_keys: bool = False) -> None:
     """Create one Veusz page per HDU with the appropriate plot widgets.
+
+    v0.0.19: ``hide_keys`` -- when True the legend border on every key
+    widget is set to hidden, suppressing the legend frame.
 
     v0.0.15 dt-page variants
     ------------------------
@@ -1547,7 +1579,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     pass
             try:
                 key = graph.Add("key", name="key1")
-                key.Border.hide.val = False
+                key.Border.hide.val = bool(hide_keys)
             except Exception:
                 pass
             # v0.0.13: vary_style only when this graph has >16 traces.
@@ -1627,7 +1659,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         pass
                 try:
                     key = graph.Add("key", name="key1_dt")
-                    key.Border.hide.val = False
+                    key.Border.hide.val = bool(hide_keys)
                 except Exception:
                     pass
                 vary_style_dt = (
@@ -1722,7 +1754,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     pass
                 try:
                     key = graph.Add("key", name="key1_dtl")
-                    key.Border.hide.val = False
+                    key.Border.hide.val = bool(hide_keys)
                 except Exception:
                     pass
                 vary_style_dtl = (
@@ -1992,7 +2024,8 @@ def build_unit_overlay_pages(doc, file_records,
                               datetime_full_labels=None,
                               datetime_label_density_pct: int = 10,
                               datetime_emit_numeric_dt: bool = True,
-                              datetime_emit_text_dt: bool = True):
+                              datetime_emit_text_dt: bool = True,
+                              hide_keys: bool = False):
     """
     Build one overlay page per distinct unit string across the loaded
     batch.  Each overlay page contains a single graph that plots every
@@ -2232,7 +2265,7 @@ def build_unit_overlay_pages(doc, file_records,
                 pass
         try:
             key = graph.Add("key", name="key1")
-            key.Border.hide.val = False
+            key.Border.hide.val = bool(hide_keys)
         except Exception:
             pass
 
@@ -2429,7 +2462,7 @@ def build_unit_overlay_pages(doc, file_records,
                         pass
                 try:
                     key_dt = graph_dt.Add("key", name="key1_dt")
-                    key_dt.Border.hide.val = False
+                    key_dt.Border.hide.val = bool(hide_keys)
                 except Exception:
                     pass
                 vary_style_overlay_dt = (
@@ -2539,7 +2572,7 @@ def build_unit_overlay_pages(doc, file_records,
                     pass
                 try:
                     key_dtL = graph_dtL.Add("key", name="key1_dtL")
-                    key_dtL.Border.hide.val = False
+                    key_dtL.Border.hide.val = bool(hide_keys)
                 except Exception:
                     pass
                 vary_style_overlay_dtL = (
@@ -2702,6 +2735,30 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         form.addRow(QLabel("Manual gap (hours; 0=auto):"),
                     self.gap_abs_spin)
 
+        # v0.0.19: free-form gap-string input.  Accepts "5m3d2h"-style
+        # text (m=months, d=days, h=hours; case-insensitive; whitespace
+        # tolerated).  When non-empty, OVERRIDES the spinbox above.
+        self.gap_abs_str = QLineEdit()
+        self.gap_abs_str.setPlaceholderText("e.g. 5m3d2h  (overrides spinbox)")
+        self.gap_abs_str.setToolTip(
+            "Optional gap string.  Units: m = months (~30.44 days), "
+            "d = days, h = hours.  Examples: '3d', '120h', '5m 3d 2h'.  "
+            "Leave blank to use the numeric spinbox above.  Bare number "
+            "is interpreted as hours."
+        )
+        form.addRow(QLabel("Manual gap (string; overrides):"),
+                    self.gap_abs_str)
+
+        # v0.0.19: hide legend keys on every page when ticked.
+        self.hide_keys_cb = QCheckBox("Hide legend keys on all pages")
+        self.hide_keys_cb.setChecked(False)
+        self.hide_keys_cb.setToolTip(
+            "When checked, every key (legend) widget added to a graph "
+            "is created with Border/hide set, suppressing the legend "
+            "frame.  Useful for cleaner screenshots / publication plots."
+        )
+        form.addRow(self.hide_keys_cb)
+
         self.combined_only_cb = QCheckBox(
             "Combined (overlay) plots only -- skip per-file pages"
         )
@@ -2859,6 +2916,18 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         # detect_time_breaks (which compares against the x-array units).
         gap_absolute_hours = float(self.gap_abs_spin.value())
         gap_absolute = gap_absolute_hours / 24.0
+        # v0.0.19: if the user typed a free-form gap string, that takes
+        # precedence (already in MJD-days).
+        gap_string_text = ""
+        try:
+            gap_string_text = self.gap_abs_str.text().strip()
+        except Exception:
+            gap_string_text = ""
+        if gap_string_text:
+            gap_absolute = parse_gap_string(gap_string_text,
+                                            log_cb=self.log)
+        # v0.0.19: hide-legend-keys checkbox
+        hide_keys = bool(self.hide_keys_cb.isChecked())
         plot_individual = not bool(self.combined_only_cb.isChecked())
         # v0.0.11: datetime-duplicate toggle
         datetime_duplicate = bool(self.datetime_dup_cb.isChecked())
@@ -2908,7 +2977,8 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                               datetime_duplicate=datetime_duplicate,
                               datetime_label_density_pct=datetime_label_density_pct,
                               datetime_emit_numeric_dt=datetime_emit_numeric_dt,
-                              datetime_emit_text_dt=datetime_emit_text_dt)
+                              datetime_emit_text_dt=datetime_emit_text_dt,
+                              hide_keys=hide_keys)
             except Exception as exc:
                 self.log("  push_to_veusz failed for %s: %s" % (path, exc))
             else:
@@ -2939,6 +3009,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                     datetime_label_density_pct=datetime_label_density_pct,
                     datetime_emit_numeric_dt=datetime_emit_numeric_dt,
                     datetime_emit_text_dt=datetime_emit_text_dt,
+                    hide_keys=hide_keys,
                 )
             except Exception as exc:
                 self.log("  build_unit_overlay_pages failed: %s" % exc)

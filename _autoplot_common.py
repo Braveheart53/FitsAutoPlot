@@ -30,6 +30,65 @@ Author Business Phone: +1 (304) 456-2216
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.19: Minimized save union fix + string gap parser + key-hide.
+# Date: 2026-05-16
+#              Three independent fixes/features bundled together:
+#
+#              (1) MINIMIZED-SAVE NO-OP FIX.  Inspection of a user-
+#                  attached v0.0.18 minimized .vszh5 showed the
+#                  minimized file was actually LARGER than the
+#                  non-minimized companion (1869 datasets in both,
+#                  13.86 MB vs 13.65 MB).  Only ~162 dataset names
+#                  appear in the document XML's ``Set('xData'/'yData'
+#                  /...)`` bindings, yet the v0.0.17 collector reported
+#                  enough references that nothing was evicted.
+#
+#                  Root cause: ``Root.WalkWidgets`` on Veusz 3.6.x can
+#                  silently return widget nodes whose ``.path`` resolves
+#                  to entries that ``doc.Get('<path>/xData')`` accepts
+#                  for many incidental settings, polluting the
+#                  whitelist.  The trimmed ``_DATASET_REF_SETTINGS``
+#                  helps but does not eliminate the issue.
+#
+#                  Fix: ``_collect_referenced_dataset_names`` now
+#                  takes the UNION of two independently-derived
+#                  whitelists:
+#                    * ``_collect_referenced_dataset_names_via_walk``
+#                      (the v0.0.17 widget traversal, retained as a
+#                      fallback / cross-check).
+#                    * ``_collect_referenced_dataset_names_via_text``
+#                      which serializes the document via
+#                      ``doc.Action('SaveToString')`` (with fallbacks
+#                      to ``GetSaveString`` and direct method calls)
+#                      and regex-extracts every ``Set('xData', 'name')``
+#                      binding -- exactly the bindings Veusz writes to
+#                      disk.  This is the authoritative reference set;
+#                      anything not in it cannot possibly be loaded
+#                      back by Veusz on reopen.
+#                  The trimmed ``_DATASET_REF_SETTINGS`` removes
+#                  ``posn`` and ``key`` (position rectangles and legend
+#                  label STRINGS -- never dataset references).
+#
+#              (2) STRING GAP PARSER.  ``parse_gap_string(text)`` accepts
+#                  human-readable strings like ``"5m3d2h"`` (5 months,
+#                  3 days, 2 hours), with or without whitespace, case-
+#                  insensitive.  Units: ``m`` = months (30.4375 days),
+#                  ``d`` = days, ``h`` = hours.  A plain number (no
+#                  units) is interpreted as hours, preserving the
+#                  pre-0.0.19 GUI behaviour where the spinbox value was
+#                  always hours.  Returns MJD-days so the engine
+#                  signature (``absolute_gap_days``) does not change.
+#                  Empty/unparseable input returns 0.0 (= disable
+#                  absolute threshold).
+#
+#              (3) HIDE-KEY OPTION.  New plumbing parameter
+#                  ``hide_keys`` flows from the GUI / plugin handlers
+#                  through to ``_build_pages`` and
+#                  ``build_unit_overlay_pages``; when True, every key
+#                  widget added to a graph is created with
+#                  ``Border/hide`` set so the legend frame does not
+#                  draw.  Default False (pre-0.0.19 behaviour).
+#
 # %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
 # Date: 2026-05-16
 #              Fixes a unit-mismatch bug where the GUI "Manual gap
@@ -544,6 +603,7 @@ from __future__ import annotations
 # %%% IMPORTS - Standard library
 import gc
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -865,41 +925,88 @@ def save_vszh5(doc, filename: str) -> str:
 # reads from at render time.  These are the 'dataset references' we want to
 # preserve when writing a minimized .vszh5.  All of these are present on
 # both Veusz 3.4 and 4.1; widgets that don't have a given setting simply
-# yield an empty string when Get() is called on the path.
+# raise on Get() and our caller swallows the exception.
+#
+# v0.0.19: trimmed the tuple to entries that *actually* hold dataset
+# names.  ``posn`` is a position rectangle, ``key`` is a legend-label
+# STRING -- neither is a dataset reference.  Including them in the v0.0.17
+# tuple was harmless on paper (the loop's isinstance(item, str) filter
+# would discard floats and label strings would not match any actual
+# dataset name) but produced log noise and a slow Get() per widget.
 _DATASET_REF_SETTINGS = (
     "xData", "yData",
     "labels", "scalePoints",
     "yDataLow", "yDataHigh",
     "xDataLow", "xDataHigh",
-    "data",         # image/colorbar widget
-    "posn",         # function-style widgets occasionally
-    "key",          # rarely a dataset ref, but harmless to inspect
+    "data",         # image / colorbar widget
 )
 
 
-def _collect_referenced_dataset_names(doc, log_cb=None):
+# v0.0.19: regex used to extract dataset references from the document's
+# own saved-text representation.  This is the AUTHORITATIVE source of
+# truth -- the document XML/text format is exactly what Veusz writes to
+# disk, so any dataset name that survives ``SaveToString`` is one that
+# the document actually depends on.  Used as a fallback when the
+# WalkWidgets-based traversal returns a suspiciously empty set.
+_DOC_DATASET_REF_REGEX = re.compile(
+    r"Set\(\s*'(?:xData|yData|labels|scalePoints|"
+    r"yDataLow|yDataHigh|xDataLow|xDataHigh|data)'\s*,\s*'([^']+)'\s*\)"
+)
+
+
+def _walk_widget_tree(node, depth=0, max_depth=64):
+    # type: (object, int, int) -> Any
+    """Recursive sibling of ``Root.WalkWidgets``.  v0.0.19 fallback used
+    when ``WalkWidgets`` is missing or returns nothing useful.  Yields
+    every descendant widget node accessible via ``.children``.
+    Compatible with Veusz 3.4 / 3.6 / 4.1: ``WidgetNode`` exposes
+    ``children`` as a list-like attribute on all of those.
+    """
+    if depth > max_depth:
+        return
+    yield node
+    try:
+        kids = list(node.children)
+    except Exception:
+        return
+    for c in kids:
+        for n in _walk_widget_tree(c, depth + 1, max_depth):
+            yield n
+
+
+def _collect_referenced_dataset_names_via_walk(doc, log_cb=None):
     # type: (object, Optional[Callable[[str], None]]) -> set
-    """Walk every widget in ``doc`` and collect the set of dataset names
-    referenced by widget settings that consume datasets (xData/yData/labels
-    /scalePoints/...).
-
-    Returns a ``set`` of dataset name strings.  An empty string return from
-    a setting Get() is ignored (that means the widget has no dataset bound
-    to that setting).  All exceptions are swallowed and reported via
-    ``log_cb`` so a malformed widget in a corner of the document cannot
-    abort the save.
-
-    Compatible with Veusz 3.4 and 4.1: ``Root.WalkWidgets()`` is in both,
-    and so is the procedural ``Get('/path/setting')``.
+    """Original (v0.0.17) WalkWidgets-based traversal.  Walks every widget
+    in ``doc`` and collects the set of dataset names referenced by widget
+    settings.  v0.0.19 keeps this as the FIRST attempt; the caller falls
+    back to the document-text scan if the result is suspiciously small.
     """
     used = set()
+    visited_widgets = 0
+    # Try WalkWidgets first; fall back to a recursive descent via
+    # .children when WalkWidgets is not available or returns nothing.
+    walker = None
     try:
         walker = doc.Root.WalkWidgets()
+        walker = list(walker)
     except Exception as exc:
         if log_cb:
-            log_cb("  Minimized-save: WalkWidgets unavailable: %s" % exc)
-        return used
+            log_cb("  Minimized-save: WalkWidgets unavailable (%s); "
+                   "using recursive descent." % exc)
+        try:
+            walker = list(_walk_widget_tree(doc.Root))
+        except Exception as exc2:
+            if log_cb:
+                log_cb("  Minimized-save: recursive descent failed: %s"
+                       % exc2)
+            return used
+    if not walker:
+        try:
+            walker = list(_walk_widget_tree(doc.Root))
+        except Exception:
+            walker = []
     for w in walker:
+        visited_widgets += 1
         try:
             wpath = w.path
         except Exception:
@@ -911,9 +1018,6 @@ def _collect_referenced_dataset_names(doc, log_cb=None):
                 continue
             if val is None:
                 continue
-            # Veusz dataset bindings are strings (single dataset name).
-            # Some widgets may carry a list-of-strings for multi-bindings;
-            # accept both shapes.
             if isinstance(val, str):
                 if val:
                     used.add(val)
@@ -923,8 +1027,97 @@ def _collect_referenced_dataset_names(doc, log_cb=None):
                         if isinstance(item, str) and item:
                             used.add(item)
                 except TypeError:
-                    # Not iterable -- not a dataset reference, ignore.
                     pass
+    if log_cb:
+        log_cb("  Minimized-save: walk visited %d widget(s), found "
+               "%d dataset reference(s)."
+               % (visited_widgets, len(used)))
+    return used
+
+
+def _collect_referenced_dataset_names_via_text(doc, log_cb=None):
+    # type: (object, Optional[Callable[[str], None]]) -> set
+    """v0.0.19 authoritative collector: dump the document via Veusz's own
+    text serialization and regex out every ``Set('xData', 'name')``-style
+    binding.  This matches exactly what Veusz writes to disk and so
+    cannot disagree with the on-disk .vszh5 about which datasets are
+    referenced.  Returns an empty set if neither serialization API is
+    available.
+
+    Veusz Embedded exposes a couple of paths to the saved text:
+
+      * ``doc.Action('SaveToString')`` -- Veusz >= 3.0 returns the
+        full document script as a single string.  Available on both
+        3.4 and 4.1 (and the on-disk file we see in user reports was
+        produced by version 3.6.2).
+      * ``doc.GetSaveString()`` / ``doc.SaveToString()`` -- older
+        Embedded API on some 3.x builds.
+    """
+    used = set()
+    text = None
+    for getter in ("SaveToString", "GetSaveString"):
+        if text is not None:
+            break
+        # Try Action(...) first (newer Embedded API)
+        try:
+            text = doc.Action(getter)
+            if not isinstance(text, str) or not text:
+                text = None
+        except Exception:
+            text = None
+        if text is not None:
+            break
+        # Try as a direct method on the Embedded object
+        fn = getattr(doc, getter, None)
+        if callable(fn):
+            try:
+                text = fn()
+                if not isinstance(text, str) or not text:
+                    text = None
+            except Exception:
+                text = None
+    if not text:
+        if log_cb:
+            log_cb("  Minimized-save: document-text dump unavailable; "
+                   "skipping text-based reference scan.")
+        return used
+    for m in _DOC_DATASET_REF_REGEX.finditer(text):
+        nm = m.group(1)
+        if nm:
+            used.add(nm)
+    if log_cb:
+        log_cb("  Minimized-save: text scan found %d dataset "
+               "reference(s) in document source." % len(used))
+    return used
+
+
+def _collect_referenced_dataset_names(doc, log_cb=None):
+    # type: (object, Optional[Callable[[str], None]]) -> set
+    """v0.0.19: combine WalkWidgets-based traversal AND a document-text
+    scan, returning the UNION of both whitelists.  Either source alone
+    has missed references in earlier reports (the WalkWidgets path can
+    return spuriously few entries on Veusz 3.6 when widget .path is not
+    populated; the text scan catches everything that survives the
+    document's own text serialization).  Taking the union is the
+    correctness-first choice: a dataset is evicted only when BOTH
+    sources agree it is unreferenced.
+
+    Returns the set of dataset name strings to preserve.
+    """
+    via_walk = _collect_referenced_dataset_names_via_walk(
+        doc, log_cb=log_cb,
+    )
+    via_text = _collect_referenced_dataset_names_via_text(
+        doc, log_cb=log_cb,
+    )
+    used = via_walk | via_text
+    if log_cb:
+        only_walk = len(via_walk - via_text)
+        only_text = len(via_text - via_walk)
+        log_cb("  Minimized-save: %d dataset(s) referenced (walk=%d, "
+               "text=%d, walk-only=%d, text-only=%d)."
+               % (len(used), len(via_walk), len(via_text),
+                  only_walk, only_text))
     return used
 
 
@@ -1360,6 +1553,100 @@ SECOND_SCALE_COLUMN_NAMES = frozenset((
     "SECONDS", "SEC", "UT_SECONDS", "UTSECONDS",
     "UT", "ELAPSED", "ELAPSED_S", "T_SEC", "DURATION_S",
 ))
+
+
+# %%% parse_gap_string
+# v0.0.19: human-readable gap string parser.
+#
+# Accepts strings like ``"5m3d2h"`` (5 months, 3 days, 2 hours), with or
+# without whitespace between tokens, case-insensitive.  A bare number
+# (no unit suffix) is interpreted as hours, preserving the pre-0.0.19
+# behaviour of the GUI spinbox which was always in hours.  Returns the
+# total absolute gap expressed in MJD-days so callers can hand the
+# value straight to ``detect_time_breaks_unit_aware`` without changing
+# the engine signature.
+_GAP_TOKEN_REGEX = re.compile(
+    r"([+-]?\d+(?:\.\d+)?)\s*([mMdDhH]?)"
+)
+
+# Average Gregorian month length (365.25 / 12) -- intentionally the same
+# value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
+_DAYS_PER_MONTH = 30.4375
+_DAYS_PER_HOUR = 1.0 / 24.0
+
+
+def parse_gap_string(text, log_cb=None):
+    # type: (object, Optional[Callable[[str], None]]) -> float
+    """Parse a human-readable gap string into MJD-days.
+
+    Supported syntaxes (case-insensitive, whitespace tolerated)::
+
+        "5m3d2h"   -> 5 months + 3 days + 2 hours, in days
+        "5m 3d 2h" -> same
+        "3d"       -> 3 days
+        "120h"     -> 5 days
+        "120"      -> 120 hours = 5 days   (bare number = hours)
+        "0" / ""   -> 0.0  (disables absolute threshold)
+        None       -> 0.0
+
+    On parse failure returns 0.0 and (when ``log_cb`` is provided)
+    emits a warning so the GUI log shows that the entry was ignored.
+    Mixed unit ordering (e.g. ``"2h5m"``) is accepted -- the parser
+    sums all matched tokens.
+    """
+    if text is None:
+        return 0.0
+    try:
+        s = str(text).strip()
+    except Exception:
+        return 0.0
+    if not s:
+        return 0.0
+    # Strip ALL internal whitespace so "5m 3d 2h" and "5m3d2h" parse the
+    # same way.  Then iterate number+unit pairs.
+    compact = "".join(s.split())
+    if not compact:
+        return 0.0
+
+    # Fast path: pure number (no unit suffix anywhere).
+    try:
+        as_float = float(compact)
+    except (TypeError, ValueError):
+        as_float = None
+    if as_float is not None:
+        # Bare number => hours (pre-0.0.19 spinbox semantics).
+        return as_float * _DAYS_PER_HOUR
+
+    total_days = 0.0
+    matched_span = 0
+    saw_token = False
+    for m in _GAP_TOKEN_REGEX.finditer(compact):
+        num_str = m.group(1)
+        unit = (m.group(2) or "").lower()
+        if not num_str:
+            continue
+        try:
+            value = float(num_str)
+        except (TypeError, ValueError):
+            continue
+        if unit == "m":
+            total_days += value * _DAYS_PER_MONTH
+        elif unit == "d":
+            total_days += value
+        elif unit == "h":
+            total_days += value * _DAYS_PER_HOUR
+        else:
+            # No unit on this fragment -- treat as hours (back-compat).
+            total_days += value * _DAYS_PER_HOUR
+        matched_span = m.end()
+        saw_token = True
+
+    if not saw_token or matched_span != len(compact):
+        if log_cb:
+            log_cb("  parse_gap_string: could not parse %r; "
+                   "treating as 0 (no absolute gap)." % (s,))
+        return 0.0
+    return total_days
 
 
 def column_unit_factor_from_day(col_name):
