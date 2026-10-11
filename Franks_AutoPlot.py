@@ -16,19 +16,22 @@ flavours are recognised automatically:
     * ``time_gbt.dat``   - long-term GBT timing log, columns:
           MJD  EECO-REF  NIST-REF  NS  DATE  [COMMENTS]
 
-Both flavours are read as numpy column arrays, pushed into a Veusz embedded
-document as one dataset per column tagged with the file's base name (plus
+Both flavours are read as numpy column arrays, stored in a native project
+model as one dataset per column tagged with the file's base name (plus
 ``raw`` and ``sorted`` tags), and plotted column-vs-MJD on dedicated pages.
 
 # %%% Author Information
 @author: William W. Wallace
-Author Email: wwallace@nrao.edu
-Author Secondary Email: naval.antennas@gmail.com
-Author Business Phone: +1 (304) 456-2216
 
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.1.0: Native h5py project generation, no Veusz runtime dependency.
+# Date: 2026-10-11
+#              Uses _autoplot_native.NativeDocument and shared atomic saving.
+#              Retains data, tag, gap, overlay, NaN and datetime semantics.
+#              External Veusz viewing is optional and only after saving.
+#
 # %%%% 0.0.19: Wire string gap parser + hide-keys checkbox through GUI.
 # Date: 2026-05-16
 #              Same GUI additions as FITS_AutoPlot 0.0.19:
@@ -338,9 +341,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 # ============================================================================
-# %%% IMPORTS - Veusz embedded
+# %%% IMPORTS - Native project model
 # ============================================================================
-import veusz.embed as vz_embed
+from _autoplot_native import NativeDocument
 
 # ============================================================================
 # %%% IMPORTS - shared GUI helpers
@@ -567,7 +570,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                          datetime_emit_numeric_dt: bool = True,
                          datetime_emit_text_dt: bool = True,
                          hide_keys: bool = False) -> None:
-    """Push parsed Franks columns into the running embedded Veusz document.
+    """Add parsed Franks columns to a native in-memory project model.
 
     v0.0.19: ``hide_keys`` -- when True every key (legend) widget added
     to the per-file page is created with its Border hidden.
@@ -1177,7 +1180,8 @@ def build_unit_overlay_pages_franks(doc, file_records,
                 pass
         try:
             key = graph.Add("key", name="key1")
-            key.Border.hide.val = bool(hide_keys)
+            key.hide.val = bool(hide_keys)
+            key.Border.hide.val = False
         except Exception:
             pass
 
@@ -1319,7 +1323,8 @@ def build_unit_overlay_pages_franks(doc, file_records,
                     pass
             try:
                 key_dt = graph_dt.Add("key", name="key1_dt")
-                key_dt.Border.hide.val = bool(hide_keys)
+                key_dt.hide.val = bool(hide_keys)
+                key_dt.Border.hide.val = False
             except Exception:
                 pass
             xy_dt = graph_dt.Add(
@@ -1399,7 +1404,8 @@ def build_unit_overlay_pages_franks(doc, file_records,
                 pass
             try:
                 key_dtL = graph_dtL.Add("key", name="key1_dtL")
-                key_dtL.Border.hide.val = bool(hide_keys)
+                key_dtL.hide.val = bool(hide_keys)
+                key_dtL.Border.hide.val = False
             except Exception:
                 pass
             xy_dtL = graph_dtL.Add(
@@ -1455,7 +1461,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
     """Top-level window for the Franks AutoPlot script."""
 
     def __init__(self) -> None:
-        super().__init__("FranksProcessed AutoPlot - Veusz Embedded GUI",
+        super().__init__("Franks AutoPlot - Native HDF5 Export",
                          default_mode="dark")
         self._file_filter = (
             "Franks files (*.t00new *.dat *.bak* *.OrigBack* *.back);;All files (*)"
@@ -1487,8 +1493,9 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.rss_spin.setValue(DEFAULT_RSS_HIGH_WATER_MB)
         form.addRow(QLabel("RSS spill threshold (MiB):"), self.rss_spin)
 
-        self.show_embed_cb = QCheckBox("Show embedded Veusz preview while building")
-        self.show_embed_cb.setChecked(True)
+        self.show_embed_cb = QCheckBox("Native build: use Open in Veusz after saving")
+        self.show_embed_cb.setChecked(False)
+        self.show_embed_cb.setEnabled(False)
         form.addRow(self.show_embed_cb)
 
         self.datestr_cb = QCheckBox(
@@ -1644,10 +1651,8 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
             return
         self.cache.cfg.rss_high_water_mb = int(self.rss_spin.value())
 
-        if self.veusz_doc is None and self.show_embed_cb.isChecked():
-            self.veusz_doc = open_embedded("Franks_AutoPlot")
-        elif self.veusz_doc is None:
-            self.veusz_doc = vz_embed.Embedded("Franks_AutoPlot", hidden=True)
+        if self.veusz_doc is None:
+            self.veusz_doc = NativeDocument("Franks_AutoPlot")
 
         self.process_button.setEnabled(False)
         self.save_button.setEnabled(False)

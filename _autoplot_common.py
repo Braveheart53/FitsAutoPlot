@@ -14,8 +14,8 @@ Shared helpers for FITS_AutoPlot and Franks_AutoPlot:
       most efficient zero-copy RAM->disk path) when an RSS threshold is
       crossed.
     * Thread pool helper with a script-level MAX_THREADS knob.
-    * Veusz embedded helper that is compatible with both Veusz 3.4 and 4.1,
-      including the saving of .vszh5 (HDF5) project files in both versions.
+    * Native .vszh5 HDF5 export targeting Veusz 3.4 and 4.1, with an
+      optional external viewer launch after saving.
 
 The module is written for Python 3.8 and avoids any syntax that was
 introduced in 3.9+ (no walrus inside f-strings, no PEP 604 unions, no dict
@@ -23,13 +23,16 @@ union operators, no parenthesised context managers).
 
 # %%% Author Information
 @author: William W. Wallace
-Author Email: wwallace@nrao.edu
-Author Secondary Email: naval.antennas@gmail.com
-Author Business Phone: +1 (304) 456-2216
 
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.1.0: Shared native HDF5 save and plugin export workflow.
+# Date: 2026-10-11
+#              No Veusz imports or embedded process for document generation.
+#              Minimized saves select model references without removing data.
+#              Shared native writer is in _autoplot_native.py.
+#
 # %%%% 0.0.19: Minimized save union fix + string gap parser + key-hide.
 # Date: 2026-05-16
 #              Three independent fixes/features bundled together:
@@ -620,6 +623,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # %%% IMPORTS - Scientific
 import numpy as np
+from _autoplot_native import NativeDocument
 
 # ---------------------------------------------------------------------------
 # %%% Qt imports via qtpy (with frozen-bundle fallback to PySide6, matching the
@@ -855,9 +859,9 @@ def run_in_threadpool(work_items: List[Tuple[str, Callable[..., Any], Tuple[Any,
 
     Threads are preferred over processes for FITS I/O because:
       * astropy + numpy release the GIL on the I/O and array creation paths,
-      * the Veusz embedded document must be touched from a single thread, so
-        the parent process keeps that handle and only the heavy data
-        decoding runs concurrently.
+      * Qt updates and native model assembly are kept on the calling thread;
+        file decoding runs concurrently. The native writer no longer has
+        an embedded Veusz thread-affinity constraint.
     """
     max_workers = max(1, int(max_workers))
     results: Dict[str, Any] = {}
@@ -884,39 +888,45 @@ def run_in_threadpool(work_items: List[Tuple[str, Callable[..., Any], Tuple[Any,
 # %% VEUSZ EMBED COMPAT
 # ---------------------------------------------------------------------------
 def open_embedded(name: str = "AutoPlot"):
-    """
-    Return a ``veusz.embed.Embedded`` instance (the on-screen embedded
-    document) that works on Veusz 3.4 and 4.1.
+    """Legacy function name; return a native model, never launch Veusz."""
+    return NativeDocument(name)
 
-    Veusz 3.4 's Embedded.__init__ accepts ``(name, ...)``; 4.1 keeps the
-    same positional API.  We additionally enable the toolbar.
-    """
-    import veusz.embed as vz_embed  # local import so the module loads w/o veusz
-    doc = vz_embed.Embedded(name)
-    try:
-        doc.EnableToolbar(enable=True)
-    except TypeError:
-        doc.EnableToolbar()
-    return doc
+
+def begin_native_plugin_export(fields):
+    """Pick an output file before parsing; never modify the host document."""
+    filename = str(fields.get("output_file") or "").strip()
+    if not filename:
+        filename, _ = QFileDialog.getSaveFileName(
+            None, "Export native Veusz project", "",
+            "Veusz HDF5 Projects (*.vszh5)")
+    if not filename:
+        return None, None
+    return NativeDocument("AutoPlot plugin export"), filename
+
+
+def finish_native_plugin_export(doc, filename, fields, log_cb=None):
+    """Same HDF5 writer for both plugin entry points and standalone GUIs."""
+    minimized = bool(fields.get("minimized", True))
+    written = doc.save(filename, minimized=minimized)
+    paths = [written]
+    if minimized and fields.get("also_full", False):
+        paths.append(doc.save(os.path.splitext(written)[0] + "_full.vszh5"))
+    if log_cb:
+        for path in paths:
+            log_cb("Native project saved: %s" % path)
+    QMessageBox.information(None, "Native Veusz export",
+                            "Wrote:\n%s\n\nThe open Veusz document was not changed."
+                            % "\n".join(paths))
+    return paths
 
 
 def save_vszh5(doc, filename: str) -> str:
-    """
-    Save a Veusz embedded document as an HDF5 (.vszh5) project file in a
-    way that is compatible with both Veusz 3.4 and 4.1.
-
-    Veusz 3.4 introduced ``Save`` with an explicit ``mode='hdf5'`` keyword
-    and started keying off the filename extension; 4.1 dropped the mode
-    keyword and now keys solely off the extension.  We try both, in order,
-    so the same code path works on either release.
-    """
+    """Atomically write the native model with h5py; no Veusz runtime needed."""
     if not filename.lower().endswith(".vszh5"):
         filename = os.path.splitext(filename)[0] + ".vszh5"
-    try:
-        doc.Save(filename, mode="hdf5")  # Veusz >= 3.4
-    except TypeError:
-        doc.Save(filename)               # Veusz >= 4.1 (extension based)
-    return filename
+    if not isinstance(doc, NativeDocument):
+        raise TypeError("Native .vszh5 output requires a NativeDocument")
+    return doc.save(filename)
 
 
 # %%% Minimized .vszh5 save (only plot-referenced datasets)
@@ -1123,101 +1133,21 @@ def _collect_referenced_dataset_names(doc, log_cb=None):
 
 def save_vszh5_minimized(doc, filename, log_cb=None):
     # type: (object, str, Optional[Callable[[str], None]]) -> str
+    """Save exactly the referenced native datasets without deleting anything.
+
+    All supported references are direct dataset names. Missing references fail
+    before writing; unsupported expressions must be materialized by the caller.
+    Tags are filtered to the same retained set. Text and 2-D data stay typed.
     """
-    Save ``doc`` as a .vszh5 project containing ONLY the datasets that are
-    referenced by at least one widget setting (xData/yData/labels/etc.).
-
-    Implementation strategy:
-
-        1. Walk the widget tree, build a whitelist of referenced dataset
-           names via :func:`_collect_referenced_dataset_names`.
-        2. Snapshot every non-whitelisted dataset's current values via
-           ``doc.GetData(name)``, then remove it via ``doc.RemoveData(name)``.
-        3. Call the standard :func:`save_vszh5` to write the minimized
-           project.
-        4. Re-inject every snapshotted dataset via ``doc.SetData(name, ...)``
-           so the in-memory ``doc`` is identical to its pre-save state.
-
-    Returns the path of the written file (with .vszh5 extension enforced).
-
-    Compatible with Veusz 3.4 and 4.1: ``GetData``, ``SetData``, and
-    ``RemoveData`` have been stable on the Embedded interface since
-    Veusz 1.x.
-    """
-    used = _collect_referenced_dataset_names(doc, log_cb=log_cb)
+    if not isinstance(doc, NativeDocument):
+        raise TypeError("Native minimized save requires a NativeDocument")
+    used = doc.referenced_datasets()
     if log_cb:
-        log_cb("  Minimized-save: %d dataset(s) referenced by widgets."
-               % len(used))
-    # Build full dataset list.
-    try:
-        all_names = list(doc.GetDatasets())
-    except Exception as exc:
-        if log_cb:
-            log_cb("  Minimized-save: GetDatasets failed (%s); "
-                   "falling back to full save." % exc)
-        return save_vszh5(doc, filename)
-    # Names to evict: anything not in the whitelist.
-    evict = [n for n in all_names if n not in used]
-    snapshot = {}  # name -> tuple returned by GetData (or None on failure)
-    for n in evict:
-        try:
-            snapshot[n] = doc.GetData(n)
-        except Exception as exc:
-            snapshot[n] = None
-            if log_cb:
-                log_cb("    Minimized-save: GetData(%s) failed: %s"
-                       % (n, exc))
-        try:
-            doc.RemoveData(n)
-        except Exception as exc:
-            if log_cb:
-                log_cb("    Minimized-save: RemoveData(%s) failed: %s"
-                       % (n, exc))
-    if log_cb:
-        log_cb("  Minimized-save: evicted %d unused dataset(s)."
-               % len(evict))
-    # Write the minimized file.
-    try:
-        written = save_vszh5(doc, filename)
-    finally:
-        # ALWAYS restore the evicted datasets, even if save raised.
-        restored = 0
-        for n in evict:
-            snap = snapshot.get(n)
-            if snap is None:
-                continue
-            # GetData returns a tuple of arrays whose shape depends on the
-            # dataset type.  We dispatch on the tuple arity:
-            #   1-D numeric    : (data,) or (data, serr, nerr, perr)
-            #   2-D image      : (data,)
-            #   text           : (list_of_strings,)
-            try:
-                if isinstance(snap, tuple):
-                    if len(snap) == 1:
-                        arr = snap[0]
-                        # Text datasets are lists of str; numeric are ndarray.
-                        if isinstance(arr, np.ndarray) and arr.ndim == 2:
-                            doc.SetData2D(n, arr)
-                        elif (isinstance(arr, list) and arr
-                              and isinstance(arr[0], str)):
-                            doc.SetDataText(n, arr)
-                        else:
-                            doc.SetData(n, arr)
-                    else:
-                        # (data, serr, nerr, perr) -- pass straight to SetData
-                        doc.SetData(n, *snap)
-                else:
-                    # Old API: GetData may return raw ndarray
-                    doc.SetData(n, snap)
-                restored += 1
-            except Exception as exc:
-                if log_cb:
-                    log_cb("    Minimized-save: restore SetData(%s) "
-                           "failed: %s" % (n, exc))
-        if log_cb:
-            log_cb("  Minimized-save: restored %d dataset(s) in memory."
-                   % restored)
-    return written
+        log_cb("Native minimized save: keeping %d/%d datasets; "
+               "the in-memory model is not modified."
+               % (len(used), len(doc.datasets)))
+    return doc.save(filename, minimized=True)
+
 
 
 # %%% Sentinel channel-tag tuple filter for dt-overlay (v0.0.17)
@@ -1319,13 +1249,11 @@ def is_delta_column(col_name):
 # ---------------------------------------------------------------------------
 def open_in_veusz_app(filename, python_exe=None):
     """
-    Launch the *full* Veusz GUI in the current Python environment and load
+    Launch an optional external Veusz GUI and load
     ``filename`` (typically a .vszh5 project just written by save_vszh5).
 
-    The standalone Veusz application is invoked as a Python module so it
-    uses the exact interpreter that is running this AutoPlot session --
-    that guarantees the GUI sees the same numpy / astropy / qtpy stack and
-    the same site-packages-installed Veusz that produced the file.
+    Prefer VEUSZ_EXECUTABLE, then an executable on PATH. Legacy environment
+    entry points are fallbacks. The viewer is never used to generate files.
 
     Parameters
     ----------
@@ -1377,6 +1305,12 @@ def open_in_veusz_app(filename, python_exe=None):
         base_kwargs["start_new_session"] = True
 
     strategies = []
+    configured = os.environ.get("VEUSZ_EXECUTABLE")
+    if configured:
+        strategies.append(("configured-viewer", [configured, filename]))
+    executable = shutil.which("veusz")
+    if executable:
+        strategies.append(("path-viewer", [executable, filename]))
     # 1. ``veusz`` console script next to the active interpreter (most
     #    reliable on Anaconda envs because it is generated by pip and
     #    points back at this exact python).
@@ -2375,8 +2309,8 @@ class AutoPlotMainWindow(QMainWindow):
             QMessageBox.critical(
                 self, "Open in Veusz failed",
                 "Could not launch Veusz with the current Python interpreter:\n\n%s\n\n"
-                "Make sure the ``veusz`` package is installed in this environment "
-                "(``python -m pip install veusz``)." % exc
+                "Install a separate Veusz viewer and put it on PATH, or set "
+                "VEUSZ_EXECUTABLE. Veusz is not required to create files." % exc
             )
         except Exception as exc:
             self.log("Open in Veusz failed: %s" % exc)

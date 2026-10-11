@@ -13,17 +13,23 @@ samplers and any other FITS BinTable / image HDUs) that produces a Veusz
     * column-oriented sorted datasets (one Veusz dataset per FITS column),
     * tagged datasets (filename tag + raw/sorted tag),
     * appropriate plots per HDU (scatter for tables, image for image HDUs),
-    * a live embedded Veusz preview while the file is built.
+    * native HDF5 export without a Veusz installation or embedded process.
 
 # %%% Author Information
 @author: William W. Wallace
-Author Email: wwallace@nrao.edu
-Author Secondary Email: naval.antennas@gmail.com
-Author Business Phone: +1 (304) 456-2216
 
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.1.0: Native h5py project generation, no Veusz runtime dependency.
+# Date: 2026-10-11
+#              Uses _autoplot_native.NativeDocument, adapted from the ISP
+#              GUI VszDoc/VeuszWriter/export_veusz methodology.
+#              Astropy supplies raw and sorted data; no ImportFileFITS RPC.
+#              Numeric _dt and datetime _dt_labels semantics are retained.
+#              Full/minimized saves are atomic and non-destructive.
+#              Preview is now explicit, external, and post-save only.
+#
 # %%%% 0.0.19: Wire string gap parser + hide-keys checkbox through GUI.
 # Date: 2026-05-16
 #              GUI additions:
@@ -440,10 +446,9 @@ from astropy.io import fits
 from astropy.table import QTable
 
 # ============================================================================
-# %%% IMPORTS - Veusz embedded (deferred to runtime in workers, OK at module
-#           level here because the standalone GUI is also a Veusz client)
+# %%% IMPORTS - Native project model (no Veusz runtime)
 # ============================================================================
-import veusz.embed as vz_embed
+from _autoplot_native import NativeDocument
 
 # ============================================================================
 # %%% IMPORTS - shared GUI / threading / cache helpers
@@ -510,7 +515,7 @@ register_nrao_fits_units()
 # cpu_count*2; the default now matches that cap.
 MAX_THREADS = max(1, (os.cpu_count() or 4) * 2)   # used by ThreadPoolExecutor
 DEFAULT_RSS_HIGH_WATER_MB = 1024              # spill threshold per process
-DEFAULT_BACKEND = "both"                      # 'veusz' | 'astropy' | 'both'
+DEFAULT_BACKEND = "astropy"  # native output; legacy backend names are aliases
 SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
 ALLOWED_EXT = (".fits", ".fit", ".fits.gz", ".fit.gz")
 # v0.0.12: Column names that should be treated as ROW-TAGS rather than
@@ -531,30 +536,16 @@ class FITSProcessor:
     Read a single FITS file (compressed or not) and return a normalised dict
     of column-shaped numpy arrays plus minimal metadata.
 
-    Two backends are supported:
-
-        * ``astropy``  -- uses ``astropy.io.fits``; works for any HDU.
-        * ``veusz``    -- uses ``veusz.embed.Embedded.ImportFileFITS`` which
-                          imports each column as its own dataset.  We mirror
-                          the resulting column data back into the same dict
-                          structure so the caller can attach raw/sorted
-                          datasets uniformly.
-
-    The two backends are not redundant: ``veusz`` keeps the link to the
-    original FITS file (if requested) so the project file follows updates
-    to the source; ``astropy`` is the fallback path for image HDUs and for
-    NRAO files where Veusz's importer skips header-only HDUs.
-
-    Per the spec, when Veusz's internal import does not yield the desired
-    column representation we additionally produce the column arrays
-    ourselves via astropy and tag them as 'sorted'.
+    Astropy is the only reader. The historical backend values ``veusz``
+    and ``both`` remain accepted as aliases; neither invokes Veusz.
+    Output datasets are self-contained snapshots, not live source links.
     """
 
     def __init__(self, backend: str, cache: MemoryAwareCache,
                  linked: bool = False, skip_images: bool = False) -> None:
         if backend not in ("veusz", "astropy", "both"):
             raise ValueError("backend must be 'veusz', 'astropy' or 'both'")
-        self.backend = backend
+        self.backend = "astropy"
         self.cache = cache
         self.linked = linked
         # When True, skip the image-HDU read/store path entirely.  Useful
@@ -760,23 +751,17 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   datetime_emit_text_dt: bool = True,
                   hide_keys: bool = False) -> None:
     """
-    Push a single processed FITS file into the running embedded Veusz
-    document.
+    Add a processed FITS file to a NativeDocument without executing Veusz.
 
     v0.0.19: ``hide_keys`` -- when True every key (legend) widget added
     by ``_build_pages`` and downstream helpers is created with its
-    Border hidden so the legend does not draw.
+    hide setting enabled so the entire legend does not draw.
 
     Strategy
     --------
-    1.  If backend in ('veusz', 'both'): call ``ImportFileFITS`` so the
-        raw FITS columns/images appear as Veusz datasets, tagged with the
-        base filename + 'raw'.  This keeps the Veusz-internal link to the
-        FITS file when ``linked=True``.
-    2.  If backend in ('astropy', 'both') or the FITS file was gzipped:
-        push python-level numpy column arrays as their own Veusz datasets,
-        tagged with the base filename + 'sorted' (sorted by DMJD when the
-        column is present, otherwise plain copies).
+    1.  Store raw Astropy column arrays, tagged with base filename + 'raw'.
+    2.  Store sorted arrays, tagged with base filename + 'sorted' (sorted
+        by DMJD when present, otherwise plain copies).
     3.  Build one Veusz page per HDU containing scatter plots for table
         HDUs (DELTAT vs DMJD, etc.) and image widgets for image HDUs.
 
@@ -788,12 +773,11 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         the v0.0.14 boolean ``datetime_full_labels``.  See
         :func:`_autoplot_common.build_density_datestr_dataset`.
     datetime_emit_numeric_dt : bool
-        Emit the v0.0.14 dt page (numeric seconds x + xy.labels date
+        Emit the legacy dt page (original numeric x + xy.labels date
         annotations).  Default True.
     datetime_emit_text_dt : bool
-        Emit the v0.0.15 dt_labels page variant (xData bound to the
-        text dataset + axis mode='labels').  Uniform sample spacing,
-        date strings ON the axis.  Default True.
+        Emit the dt_labels page with Veusz-epoch seconds and datetime mode.
+        Date strings appear on the axis. Default True.
     datetime_full_labels : bool or None
         Back-compat alias for v0.0.14 callers.  None (default) means
         use ``datetime_label_density_pct``.  True -> density_pct=100,
@@ -849,46 +833,28 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             except Exception:
                 pass
 
-    # ---- 1) Veusz native import (raw datasets) ---------------------------
-    if backend in ("veusz", "both") and not data["tmp_uncompressed"]:
-        try:
-            existing = set(doc.GetDatasets())
-            doc.ImportFileFITS(
-                filename=data["fits_for_vz"],
-                items=["/"],          # import every HDU/column
-                namemap={},
-                linked=False,         # we already point at a real file
-            )
-            added = [n for n in doc.GetDatasets() if n not in existing]
-            # extend the column-bar total to include the raw datasets we are
-            # about to rename / tag, so the bar grows rather than overflowing
-            _col_total_ref = _col_total + len(added)
-            if column_cb is not None:
-                try:
-                    column_cb(_col_done, _col_total_ref)
-                except Exception:
-                    pass
-            for n in added:
-                # rename with base prefix so multi-file runs don't collide
-                new_name = "%s__%s__raw" % (base, safe_dsname(n))
-                try:
-                    doc.RenameDataset(n, new_name)
-                except Exception:
-                    new_name = n
-                raw_names.append(new_name)
-                _col_done += 1
-                if column_cb is not None:
-                    try:
-                        column_cb(_col_done, _col_total_ref)
-                    except Exception:
-                        pass
-            doc.TagDatasets(base, raw_names)
-            doc.TagDatasets("raw", raw_names)
-            if log_cb:
-                log_cb("  Veusz native import: %d raw datasets" % len(raw_names))
-        except Exception as exc:
-            if log_cb:
-                log_cb("  Veusz native import failed: %s" % exc)
+    # ---- 1) Native raw arrays from the already-parsed Astropy result -------
+    # Older caller values remain accepted; none invokes Veusz's FITS importer.
+    if backend not in ("astropy", "both", "veusz"):
+        raise ValueError("Unknown FITS backend: %s" % backend)
+    backend = "astropy"
+    _col_total += len(data.get("columns") or {})
+    for (hname, col), values in (data.get("columns") or {}).items():
+        raw_name = "%s__%s__%s__raw" % (
+            base, safe_dsname(hname), safe_dsname(col))
+        array = np.asarray(values)
+        if array.dtype.kind in ("S", "U", "O"):
+            doc.SetDataText(raw_name, array.reshape(-1))
+        elif array.ndim == 2:
+            doc.SetData2D(raw_name, array)
+        else:
+            doc.SetData(raw_name, array.reshape(-1))
+        raw_names.append(raw_name)
+        _tick()
+    doc.TagDatasets(base, raw_names)
+    doc.TagDatasets("raw", raw_names)
+    if log_cb:
+        log_cb("  Native model: %d raw datasets (Astropy only)" % len(raw_names))
 
     # ---- 2) Astropy/column-oriented sorted datasets ----------------------
     # v0.0.12: when an HDU carries row-tag columns (e.g. CHANNELA, CHANNELB),
@@ -1553,7 +1519,9 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
         seen = set()
         for tup, bucket in tag_map.items():
             for col in bucket.keys():
-                if col in ("__x__", "__dt__"):
+                # Internal bucket entries include datetime arrays as well as
+                # dataset names; none is a measurement column.
+                if col.startswith("__"):
                     continue
                 if col not in seen:
                     seen.add(col)
@@ -1579,7 +1547,8 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     pass
             try:
                 key = graph.Add("key", name="key1")
-                key.Border.hide.val = bool(hide_keys)
+                key.hide.val = bool(hide_keys)
+                key.Border.hide.val = False
             except Exception:
                 pass
             # v0.0.13: vary_style only when this graph has >16 traces.
@@ -1659,7 +1628,8 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         pass
                 try:
                     key = graph.Add("key", name="key1_dt")
-                    key.Border.hide.val = bool(hide_keys)
+                    key.hide.val = bool(hide_keys)
+                    key.Border.hide.val = False
                 except Exception:
                     pass
                 vary_style_dt = (
@@ -1754,7 +1724,8 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     pass
                 try:
                     key = graph.Add("key", name="key1_dtl")
-                    key.Border.hide.val = bool(hide_keys)
+                    key.hide.val = bool(hide_keys)
+                    key.Border.hide.val = False
                 except Exception:
                     pass
                 vary_style_dtl = (
@@ -2265,7 +2236,8 @@ def build_unit_overlay_pages(doc, file_records,
                 pass
         try:
             key = graph.Add("key", name="key1")
-            key.Border.hide.val = bool(hide_keys)
+            key.hide.val = bool(hide_keys)
+            key.Border.hide.val = False
         except Exception:
             pass
 
@@ -2462,7 +2434,8 @@ def build_unit_overlay_pages(doc, file_records,
                         pass
                 try:
                     key_dt = graph_dt.Add("key", name="key1_dt")
-                    key_dt.Border.hide.val = bool(hide_keys)
+                    key_dt.hide.val = bool(hide_keys)
+                    key_dt.Border.hide.val = False
                 except Exception:
                     pass
                 vary_style_overlay_dt = (
@@ -2572,7 +2545,8 @@ def build_unit_overlay_pages(doc, file_records,
                     pass
                 try:
                     key_dtL = graph_dtL.Add("key", name="key1_dtL")
-                    key_dtL.Border.hide.val = bool(hide_keys)
+                    key_dtL.hide.val = bool(hide_keys)
+                    key_dtL.Border.hide.val = False
                 except Exception:
                     pass
                 vary_style_overlay_dtL = (
@@ -2660,7 +2634,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
     """Top-level window for the FITS AutoPlot script."""
 
     def __init__(self) -> None:
-        super().__init__("FITS AutoPlot - Veusz Embedded GUI", default_mode="dark")
+        super().__init__("FITS AutoPlot - Native HDF5 Export", default_mode="dark")
         self._file_filter = (
             "FITS files (*.fits *.fit *.fits.gz *.fit.gz);;All files (*)"
         )
@@ -2680,9 +2654,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
     # ----- options form ----------------------------------------------------
     def _populate_options(self, form: QFormLayout) -> None:
         self.backend_combo = QComboBox()
-        self.backend_combo.addItems(["both (Veusz + astropy)",
-                                     "veusz (native FITS import)",
-                                     "astropy"])
+        self.backend_combo.addItems(["astropy (native HDF5 output)"])
         form.addRow(QLabel("Import backend:"), self.backend_combo)
 
         self.thread_spin = QSpinBox()
@@ -2696,8 +2668,9 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.rss_spin.setValue(DEFAULT_RSS_HIGH_WATER_MB)
         form.addRow(QLabel("RSS spill threshold (MiB):"), self.rss_spin)
 
-        self.show_embed_cb = QCheckBox("Show embedded Veusz preview while building")
-        self.show_embed_cb.setChecked(True)
+        self.show_embed_cb = QCheckBox("Native build: use Open in Veusz after saving")
+        self.show_embed_cb.setChecked(False)
+        self.show_embed_cb.setEnabled(False)
         form.addRow(self.show_embed_cb)
 
         self.datestr_cb = QCheckBox(
@@ -2868,15 +2841,11 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         if not self.selected_files:
             QMessageBox.information(self, "No files", "Select one or more FITS files first.")
             return
-        backend_idx = self.backend_combo.currentIndex()
-        backend = ["both", "veusz", "astropy"][backend_idx]
+        backend = "astropy"
         self.cache.cfg.rss_high_water_mb = int(self.rss_spin.value())
 
-        if self.veusz_doc is None and self.show_embed_cb.isChecked():
-            self.veusz_doc = open_embedded("FITS_AutoPlot")
-        elif self.veusz_doc is None:
-            # invisible doc: still required to build the project
-            self.veusz_doc = vz_embed.Embedded("FITS_AutoPlot", hidden=True)
+        if self.veusz_doc is None:
+            self.veusz_doc = NativeDocument("FITS_AutoPlot")
 
         self.process_button.setEnabled(False)
         self.save_button.setEnabled(False)
@@ -2906,8 +2875,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.hide_progress_bars()
 
     def _on_worker_done(self, results: Dict[str, Any]) -> None:
-        backend_idx = self.backend_combo.currentIndex()
-        backend = ["both", "veusz", "astropy"][backend_idx]
+        backend = "astropy"
         emit_datestr = bool(self.datestr_cb.isChecked())
         skip_images = bool(self.skip_images_cb.isChecked())
         # v0.0.9 broken-axis / overlay knobs

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# %%%% 0.1.0: Native HDF5 dependencies; Veusz is an optional external viewer.
+# Date: 2026-10-11
 # ============================================================================
 # setup_py3p8_nrao.sh -- One-shot installer for the FITS/Franks AutoPlot
 #                        Python 3.8 environment on an NRAO RHEL 8 host.
@@ -12,14 +14,15 @@
 #       re-runs only update the channels and the env).
 #   4.  Create or update a conda env named `Py3p8` pinning Python 3.8 from
 #       conda-forge with every runtime package these AutoPlot modules need:
-#         numpy, astropy, psutil, qtpy, PySide6, veusz (>=3.4, ships 3.6+)
+#         numpy, astropy, h5py, psutil, qtpy, PySide6
+#         Veusz is not needed for generation; install separately for viewing.
 #         optional: cupy (only when an NVIDIA GPU is detected via nvidia-smi).
 #   5.  Write two startup helpers into $HOME/bin:
 #         - Py3p8-activate   : sources the env for interactive shells.
 #         - Py3p8-autoplot   : launches either FITS_AutoPlot or
 #                              Franks_AutoPlot from the cloned repo.
 #       Plus a freedesktop .desktop launcher for the NRAO GNOME session.
-#   6.  Print a short verification banner showing python / numpy / veusz
+#   6.  Print a short verification banner showing Python / NumPy / h5py
 #       versions so the user can confirm the install in one glance.
 #
 # Usage:
@@ -29,9 +32,9 @@
 #     ./setup_py3p8_nrao.sh --prefix DIR
 #                                       # use a non-default install prefix
 #     ./setup_py3p8_nrao.sh --repo DIR  # use a non-default repo location
-#                                       # (default: $HOME/GitHub/FitsAutoPlot)
+#                                       # (default: this script's directory)
 #
-# Author : W Wallace (NRAO)            Last updated: 2026-05-16
+# Last updated: 2026-10-11
 # Target : RHEL 8.x  /  Python 3.8     Env name   : Py3p8
 # ============================================================================
 set -Eeuo pipefail
@@ -40,7 +43,7 @@ set -Eeuo pipefail
 GPU_PROBE=auto
 DO_UPDATE_ONLY=0
 PREFIX="${HOME}/miniforge3"
-REPO_DIR="${HOME}/GitHub/FitsAutoPlot"
+REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_NAME="Py3p8"
 PY_VERSION="3.8"
 
@@ -187,9 +190,7 @@ fi
 #   - psutil             memory-aware cache / monitor
 #   - qtpy               Qt abstraction layer used by the modules
 #   - pyside6            concrete Qt6 backend behind qtpy
-#   - veusz              the plotting application + Python API
-#                        (conda-forge ships >= 3.6; works for 3.4 AND 4.1
-#                         compatibility paths in the modules)
+#   - h5py               native .vszh5 file writer (no Veusz Python API)
 #   - pip, setuptools    runtime safety net for anything missing
 CORE_PKGS=(
     "python=${PY_VERSION}"
@@ -198,7 +199,7 @@ CORE_PKGS=(
     "psutil"
     "qtpy"
     "pyside6"
-    "veusz"
+    "h5py"
     "pip"
     "setuptools"
     "wheel"
@@ -225,7 +226,7 @@ ok "Env '${ENV_NAME}' ready."
 info "Verifying installed package versions ..."
 "${PREFIX}/bin/conda" run -n "${ENV_NAME}" python - <<'PY'
 import sys, importlib
-mods = ["numpy", "astropy", "psutil", "qtpy", "PySide6", "veusz"]
+mods = ["numpy", "astropy", "h5py", "psutil", "qtpy", "PySide6"]
 print("python :", sys.version.split()[0])
 for m in mods:
     try:
