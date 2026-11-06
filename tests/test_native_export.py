@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 """AutoPlot native writer regression tests.
+# %%%% 0.2.0: pyqtgraph Plots tab (pages, traces, MJD axes, images, paging);
+#             files written through vszh5_writer 0.0.24 (no *.part left).
+# Date: 2026-11-05
 # %%%% 0.1.0: Native file, engine, GUI and plugin workflow coverage.
 # Date: 2026-10-11
 Run: QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
@@ -121,6 +124,7 @@ class NativeTests(unittest.TestCase):
                 doc.save(path)
         self.assertEqual(path.read_bytes(), b"prior file")
         self.assertEqual(list(self.folder.glob(".autoplot-*")), [])
+        self.assertEqual(list(self.folder.glob("*.part")), [])   # vszh5_writer temp files
 
     def test_script_literals_cannot_inject_commands(self):
         doc = self.basic_document()
@@ -253,6 +257,47 @@ class NativeTests(unittest.TestCase):
                 with h5py.File(output) as h:
                     self.assertGreater(len(h["Veusz/Data"]), 0)
                     self.assertIn("datetime", h["Veusz/Document/document"][0].decode())
+
+    def test_pyqtgraph_plots_tab(self):
+        import _autoplot_pyqtgraph as pgview
+        self.assertIsNone(pgview.self_test())
+        cache = MemoryAwareCache(MemoryMonitorConfig())
+        path = self.write_fits(True)
+        data = fitstool.FITSProcessor("astropy", cache).read(str(path))
+        doc = NativeDocument()
+        fitstool.push_to_veusz(doc, str(path), data, "astropy",
+                               datetime_duplicate=True, gap_absolute=1.0)
+        pages = pgview.document_pages(doc)
+        self.assertTrue(pages)
+        kinds = {g["x_kind"] for p in pages for g in p["graphs"] if g["traces"]}
+        self.assertIn("mjd", kinds)
+        self.assertTrue(any(g["images"] for p in pages for g in p["graphs"]))
+        # gaps: the 7-day jump in the fixture breaks the line
+        x, y = pgview.break_gaps(np.array([0.0, 1, 2, 30, 31]), np.ones(5))
+        self.assertEqual(int(np.isnan(x).sum()), 1)
+        panel = pgview.ProjectPlotPanel()
+        self.assertEqual(panel.set_document(doc), len(pages))
+        first = len(panel.plots)
+        self.assertGreater(first, 0)
+        for index in range(len(pages)):
+            panel.page_box.setCurrentIndex(index)
+            APP.processEvents()
+        plot = next(p for p in panel.plots if isinstance(p, pgview.TracePlot)) \
+            if any(isinstance(p, pgview.TracePlot) for p in panel.plots) else None
+        if plot is not None:
+            label = next(iter(plot.data))
+            xs = plot.data[label][0]
+            values = plot.set_cursor(float(np.nanmin(xs)))
+            self.assertIn(label, values)
+        panel.apply_theme(True)
+        panel.clear()
+        self.assertEqual(panel.plots, [])
+        for cls in (fitstool.FITSAutoPlotWindow, frankstool.FranksAutoPlotWindow):
+            window = cls()
+            self.assertIsNotNone(window.plot_panel)
+            self.assertEqual(window.main_tabs.count(), 2)
+            window.close()
+        cache.cleanup()
 
     def test_python38_grammar_and_history_order(self):
         for path in Path(__file__).resolve().parents[1].glob("*.py"):

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# %%%% 0.2.0: pyqtgraph for the interactive Plots tab (0.13.3 is the last
+#             release for Python 3.8; newer Pythons get the current one).
+# Date: 2026-11-05
 # %%%% 0.1.0: Native HDF5 dependencies; Veusz is an optional external viewer.
 # Date: 2026-10-11
 # ============================================================================
@@ -191,6 +194,7 @@ fi
 #   - qtpy               Qt abstraction layer used by the modules
 #   - pyside6            concrete Qt6 backend behind qtpy
 #   - h5py               native .vszh5 file writer (no Veusz Python API)
+#   - pyqtgraph          interactive Plots tab (0.13.3 on Python 3.8)
 #   - pip, setuptools    runtime safety net for anything missing
 CORE_PKGS=(
     "python=${PY_VERSION}"
@@ -200,6 +204,7 @@ CORE_PKGS=(
     "qtpy"
     "pyside6"
     "h5py"
+    "pyqtgraph"
     "pip"
     "setuptools"
     "wheel"
@@ -226,7 +231,7 @@ ok "Env '${ENV_NAME}' ready."
 info "Verifying installed package versions ..."
 "${PREFIX}/bin/conda" run -n "${ENV_NAME}" python - <<'PY'
 import sys, importlib
-mods = ["numpy", "astropy", "h5py", "psutil", "qtpy", "PySide6"]
+mods = ["numpy", "astropy", "h5py", "psutil", "qtpy", "PySide6", "pyqtgraph"]
 print("python :", sys.version.split()[0])
 for m in mods:
     try:

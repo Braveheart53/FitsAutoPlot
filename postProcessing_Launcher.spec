@@ -1,13 +1,28 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
+# PyInstaller spec for postProcessing_Launcher.py 0.2.0
+#
+# The launcher starts each plotting tool as a separate Python process, so the
+# tool scripts are bundled as plain data files (collect_data_files() on a
+# single-module script returns nothing, which is why 0.1.4 bundled none).
+# The launcher looks for a tool next to the .exe first, then in the bundle.
+# A frozen launcher needs a Python interpreter for the tools: set
+# GBO_POSTPROC_PYTHON to that python.exe, or have python on PATH.
 
 datas = [('assets', 'assets')]
-datas += collect_data_files('RAndS_FSW_ASCII_Plotter')
-datas += collect_data_files('Hanging_Threads')
-datas += collect_data_files('FITS_AutoPlot')
-datas += collect_data_files('fastest_ascii_import')
-datas += collect_data_files('CSV_TSV_AutoPlot')
-datas += collect_data_files('ATR_AutoPlot')
+datas += [(script, '.') for script in (
+    'ATR_AutoPlot.py',
+    'FITS_AutoPlot.py',
+    'FITS_AutoPlot_plugin.py',
+    'Franks_AutoPlot.py',
+    'Franks_AutoPlot_plugin.py',
+    'CSV_TSV_AutoPlot.py',
+    'RAndS_FSW_ASCII_Plotter.py',
+    'Touchstone_AutoPlot.py',
+    '_autoplot_common.py',
+    '_autoplot_native.py',
+    'fastest_ascii_import.py',
+    'Hanging_Threads.py',
+)]
 
 
 a = Analysis(
@@ -15,11 +30,11 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=['veusz', 'scikit-rf', 'veusz.plugins'],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['PyQt5'],
+    excludes=['PyQt5', 'PyQt6', 'PySide2'],
     noarchive=False,
     optimize=0,
 )

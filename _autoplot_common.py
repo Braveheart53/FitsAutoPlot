@@ -27,6 +27,19 @@ union operators, no parenthesised context managers).
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.0: pyqtgraph "Plots" tab, Help > About (NRAO).
+# Date: 2026-11-05
+#              AutoPlotMainWindow now has two tabs: "Processing" (file list,
+#              options, log - unchanged) and "Plots", an interactive
+#              pyqtgraph view of the in-memory project built by
+#              _autoplot_pyqtgraph.ProjectPlotPanel (modelled on the AB
+#              Power Meter Monitor 1.7.0 live plots).  show_plots(doc) fills
+#              it after processing; the View theme also re-colours it.
+#              Without pyqtgraph the tab says how to install it; saving and
+#              Open in Veusz are unchanged.  Help > About shows the tool's
+#              name and version, author, NRAO / GBO, e-mail, licence and the
+#              library versions (Show Details).
+#
 # %%%% 0.1.0: Shared native HDF5 save and plugin export workflow.
 # Date: 2026-10-11
 #              No Veusz imports or embedded process for document generation.
@@ -656,6 +669,14 @@ else:
         QProgressBar, QFormLayout, QMenuBar, QMenu, QStatusBar,
         QTabWidget, QRadioButton, QButtonGroup,
     )
+
+# pyqtgraph "Plots" tab (optional: the GUIs still work and save without it)
+try:
+    import _autoplot_pyqtgraph as autoplot_pg
+    PYQTGRAPH_ERROR = None
+except Exception as _exc:  # pragma: no cover - pyqtgraph missing or broken
+    autoplot_pg = None
+    PYQTGRAPH_ERROR = "%s: %s" % (type(_exc).__name__, _exc)
 
 # psutil is preferred for memory monitoring, but we degrade gracefully
 try:
@@ -2076,7 +2097,15 @@ class AutoPlotMainWindow(QMainWindow):
     def _build_central_widget(self) -> None:
         central = QWidget(self)
         self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        outer = QVBoxLayout(central)
+        # v0.2.0: "Processing" tab (everything below up to the log) and a
+        # "Plots" tab with the pyqtgraph view; progress bars and the
+        # Process / Save / Close buttons stay under the tabs.
+        self.main_tabs = QTabWidget()
+        outer.addWidget(self.main_tabs, 1)
+        processing_tab = QWidget()
+        self.main_tabs.addTab(processing_tab, "Processing")
+        root = QVBoxLayout(processing_tab)
 
         # File selection
         fgroup = QGroupBox("Input File Selection")
@@ -2116,6 +2145,22 @@ class AutoPlotMainWindow(QMainWindow):
                 except Exception:
                     pass
             self._pending_log = []
+
+        # v0.2.0: interactive pyqtgraph plots of the processed project
+        self.plot_panel = None
+        if autoplot_pg is not None:
+            autoplot_pg.configure(antialias=True, wheel_needs_ctrl=True)
+            self.plot_panel = autoplot_pg.ProjectPlotPanel(
+                dark=(self._theme_mode == "dark"))
+            self.main_tabs.addTab(self.plot_panel, "Plots")
+        else:
+            note = QLabel(
+                "Interactive plots need pyqtgraph:\n\n    mamba install pyqtgraph"
+                "\n\n(%s)\n\nProcessing and saving the Veusz project work "
+                "without it." % PYQTGRAPH_ERROR)
+            note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.main_tabs.addTab(note, "Plots")
+        root = outer
 
         # Progress bars (read + parse/push + per-column)
         # %% Progress bars
@@ -2176,6 +2221,8 @@ class AutoPlotMainWindow(QMainWindow):
         apply_theme(QApplication.instance(), mode)
         self.act_dark.setChecked(mode == "dark")
         self.act_light.setChecked(mode == "light")
+        if getattr(self, "plot_panel", None) is not None:
+            self.plot_panel.apply_theme(mode == "dark")
         self.log("Theme set to %s mode" % mode)
 
     # ----- file list --------------------------------------------------------
@@ -2323,14 +2370,78 @@ class AutoPlotMainWindow(QMainWindow):
     def _save_project(self) -> None:
         raise NotImplementedError
 
+    def show_plots(self, doc) -> int:
+        """Show ``doc`` (the in-memory project) in the Plots tab.
+
+        Called by the subclasses when a batch has finished.  Returns the
+        number of plottable pages (0 when pyqtgraph is unavailable).
+        """
+        if getattr(self, "plot_panel", None) is None:
+            return 0
+        try:
+            pages = self.plot_panel.set_document(doc)
+        except Exception as exc:  # the project is still saved normally
+            self.log("Plots tab: could not draw the project (%s)" % exc)
+            return 0
+        self.log("Plots tab: %d page(s) ready." % pages)
+        if pages:
+            self.main_tabs.setCurrentWidget(self.plot_panel)
+        return pages
+
     def _show_about(self) -> None:
-        QMessageBox.information(
-            self, "About",
-            "AutoPlot suite\n"
-            "Veusz embedded GUI (qtpy abstraction)\n"
-            "Author: William W. Wallace\n"
-            "Compatible with Veusz 3.4 and 4.1."
-        )
+        """Help > About: tool, version, author, NRAO / GBO, licence, runtime."""
+        import html as _html
+        import platform as _platform
+        esc = _html.escape
+        name = getattr(self, "app_name", None) or self.windowTitle()
+        version = getattr(self, "app_version", "")
+        mail = "wwallace@nrao.edu"
+        text = (
+            "<h3>%s</h3><p>Version <b>%s</b> (Semantic Versioning 2.0.0)</p>"
+            "<p>Batch processing of GBO timing data into native Veusz "
+            ".vszh5 projects, with interactive pyqtgraph plots.</p>"
+            "<table cellspacing='4'>"
+            "<tr><td><b>Author</b></td><td>William W. Wallace</td></tr>"
+            "<tr><td><b>Company</b></td><td>NRAO / Green Bank Observatory "
+            "(GBO)</td></tr>"
+            "<tr><td><b>Email</b></td><td><a href='mailto:%s'>%s</a></td></tr>"
+            "<tr><td><b>Licence</b></td><td>GNU General Public License v3.0 or "
+            "later (GPL-3.0-or-later)</td></tr>"
+            "<tr><td><b>Copyright</b></td><td>Copyright (C) 2025-2026 William "
+            "W. Wallace</td></tr></table>"
+            "<p><small>The National Radio Astronomy Observatory and the Green "
+            "Bank Observatory are facilities of the U.S. National Science "
+            "Foundation operated under cooperative agreement by Associated "
+            "Universities, Inc.</small></p>" % (esc(name), esc(version), mail, mail))
+        try:
+            import pyqtgraph as _pg
+            pg_version = _pg.__version__
+        except Exception:
+            pg_version = "not installed (%s)" % PYQTGRAPH_ERROR
+        details = "\n".join([
+            "%s %s" % (name, version),
+            "Python     : %s (%s)" % (_platform.python_version(), sys.executable),
+            "numpy      : %s" % np.__version__,
+            "pyqtgraph  : %s" % pg_version,
+            "Plots tab  : %s" % (getattr(autoplot_pg, "VERSION", "-")
+                                 if autoplot_pg is not None else "off"),
+            "Writer     : _autoplot_native %s (Veusz 3.4 / 4.1 format)"
+            % getattr(sys.modules.get("_autoplot_native"), "VERSION", "?"),
+            "Platform   : %s" % _platform.platform(),
+        ])
+        box = QMessageBox(self)
+        box.setWindowTitle("About %s" % name)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(text)
+        box.setInformativeText(
+            "This program is free software: you can redistribute it and/or "
+            "modify it under the terms of the GNU General Public License as "
+            "published by the Free Software Foundation, either version 3 of "
+            "the License, or (at your option) any later version. It comes "
+            "with ABSOLUTELY NO WARRANTY.")
+        box.setDetailedText(details)
+        box.exec()
 
 
 # ---------------------------------------------------------------------------

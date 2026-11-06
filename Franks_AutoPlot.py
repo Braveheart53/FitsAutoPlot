@@ -26,6 +26,16 @@ model as one dataset per column tagged with the file's base name (plus
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.0: Interactive pyqtgraph Plots tab (AB monitor style), About.
+# Date: 2026-11-05
+#              After a batch the new "Plots" tab shows every page of the
+#              in-memory project with pyqtgraph (_autoplot_pyqtgraph 0.1.0,
+#              modelled on AB Power Meter Monitor 1.7.0): linked x axes,
+#              shared crosshair, legend column with values at the cursor,
+#              Ctrl+wheel zoom, CSV/PNG/SVG export, MJD as UTC dates, gap
+#              breaks, one page in memory at a time.  Saving the .vszh5
+#              project and Open in Veusz are unchanged.
+#
 # %%%% 0.1.0: Native h5py project generation, no Veusz runtime dependency.
 # Date: 2026-10-11
 #              Uses _autoplot_native.NativeDocument and shared atomic saving.
@@ -344,6 +354,10 @@ import numpy as np
 # %%% IMPORTS - Native project model
 # ============================================================================
 from _autoplot_native import NativeDocument
+
+APP_NAME = 'Franks AutoPlot'
+APP_VERSION = "0.2.0"
+__version__ = APP_VERSION
 
 # ============================================================================
 # %%% IMPORTS - shared GUI helpers
@@ -1461,8 +1475,9 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
     """Top-level window for the Franks AutoPlot script."""
 
     def __init__(self) -> None:
-        super().__init__("Franks AutoPlot - Native HDF5 Export",
+        super().__init__("%s %s - Native HDF5 Export" % (APP_NAME, APP_VERSION),
                          default_mode="dark")
+        self.app_name, self.app_version = APP_NAME, APP_VERSION
         self._file_filter = (
             "Franks files (*.t00new *.dat *.bak* *.OrigBack* *.back);;All files (*)"
         )
@@ -1774,6 +1789,8 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.hide_progress_bars()
         self.process_button.setEnabled(True)
         self.save_button.setEnabled(True)
+        # v0.2.0: interactive pyqtgraph view of the in-memory project
+        self.show_plots(self.veusz_doc)
 
     # ----- save ------------------------------------------------------------
     def _save_project(self) -> None:

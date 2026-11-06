@@ -1,1 +1,4 @@
-pyinstaller --onefile --windowed --hidden-import=veusz --hidden-impor=scikit-rf --hidden-import=veusz.plugins --collect-data RAndS_FSW_ASCII_Plotter --collect-data Hanging_Threads --collect-data FITS_AutoPlot --collect-data fastest_ascii_import --collect-data CSV_TSV_AutoPlot --collect-data ATR_AutoPlot --add-data "assets:assets" --icon=assets/GBT_1.ico --exclude=PyQt5 postProcessing_Launcher.py
+pyinstaller postProcessing_Launcher.spec
+
+REM 0.2.0: the spec bundles every tool script as data (see the comments in the spec).
+REM A frozen launcher needs Python for the tools: set GBO_POSTPROC_PYTHON to the python.exe of the plotting environment.
