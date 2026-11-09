@@ -1,0 +1,9 @@
+# HP 53151A
+# Serial Number: US39260491
+# 26.5 GHz Counter
+# Date of measurement: 2025-06-17
+
+# Power Levels dBm
+0dB_Atten = 6.23
+6dB_Atten = 0.09
+12dB_Atten = -5.94

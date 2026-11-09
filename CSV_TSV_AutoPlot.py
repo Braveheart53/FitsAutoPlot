@@ -46,10 +46,52 @@ Compatible with: Python 3.8+ (pandas >= 1.3, qtpy with PySide6 or PyQt5)
     https://veusz.github.io/
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 6.1.2: Header template, docstrings and tooltips.
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+#              * Tooltips (pop-up help) on every button, box and field that
+#                had none (20 widgets, including the delimiter presets).
+# %%%%% Function Descriptions
+        CSVProcessingConfig (class): How the files are read.
+        PlotConfig (class): Plot formatting.
+        LoadedFile (class): One delimited file in memory.
+        delimiter_from_text: GUI text -> delimiter ('\\t' typed as two characters means a tab).
+        detect_delimiter: Most frequent of , TAB ; | in the first non-comment lines.
+        read_file_metadata: The lines before the header line.
+        load_csv_file: (LoadedFile or None, status message) of one file.
+        load_files: Load files in parallel threads; (files in input order, messages).
+        get_common_columns: Columns in ALL files (intersection).
+        get_all_columns: Columns of ANY file (union).
+        _naive_zone: Zone of time stamps written without one, when they are local time.
+        column_values: ('numeric' | 'date' | 'text', values) of one column, rows kept.
+        VeuszPlotter (class): Builds the project: one overlay page and one page per file.
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "CSV/TSV AutoPlot"
+        APP_VERSION = "6.1.2"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        VEUSZ_EPOCH: Veusz datetime zero (UTC)
+        MIN_PARSED_FRACTION: a column is numeric / date when >= 80 % of its cells parse
+        COLOURS: 4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+# %%%%% More Info
+    Run:  python CSV_TSV_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python CSV_TSV_AutoPlot.py a.csv --x Time --y V --output out.vszh5
+    Date-time columns are stored as Veusz date-times (UTC) and drawn in local
+    ISO 8601 (VSZH5_DISPLAY_TZ overrides the computer's zone).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 6.1.1: Date-times stored as Veusz date-times, shown in local ISO 8601.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              * A date/time X column is stored as a Veusz DATE dataset in
 #                UTC ("<file>_<column>") plus "<file>_<column>_local" on the
 #                clock of the computer doing the processing (DST-aware;
@@ -63,7 +105,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                of every page; the overlay page lists every file.
 #              * Writer 0.0.25 / _autoplot_native 0.3.0.
 # %%%% 6.1.0: Native writer, pyqtgraph Plots tab, suite theme, data fixes.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              * .vszh5 written by vszh5_writer 0.0.24 through
 #                _autoplot_native.NativeDocument (no veusz.embed window per
 #                "Generate"; Veusz is optional, for viewing / PDF export).
@@ -89,6 +131,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              * The optional log file is written next to the saved project
 #                (it used to land in the current working directory).
 # %%%% 6.0.0: V6 (2026-02-03) - separate pages per file, X-column
+Date: 2026-02-03
 #              intersection / Y-column union, red/green Generate button,
 #              logging, Save to Veusz.
 =============================================================================
@@ -113,7 +156,7 @@ import pandas as pd  # noqa: E402
 from vszh5_writer import header_notes  # noqa: E402
 
 APP_NAME = "CSV/TSV AutoPlot"
-APP_VERSION = "6.1.1"
+APP_VERSION = "6.1.2"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Delimited text files (CSV, TSV, custom) to native Veusz .vszh5 "
                    "projects, with interactive pyqtgraph plots.")
@@ -162,6 +205,7 @@ class LoadedFile:
 
     @property
     def name(self) -> str:
+        """File name (no folder)."""
         return os.path.basename(self.path)
 
 
@@ -322,17 +366,23 @@ class VeuszPlotter:
                         "triangle": "triangle", "diamond": "diamond", "none": "none"}
 
     def __init__(self, plot_title: str = "CSV Data Plot") -> None:
+        """Empty CSV/TSV project titled ``plot_title``; ``messages`` collects the
+        time-stamped log lines of the build.
+        """
         from _autoplot_native import NativeDocument
         self.plot_title = plot_title
         self.doc = NativeDocument("CSV/TSV AutoPlot")
         self.messages: List[str] = []
 
     def log_message(self, message: str) -> None:
+        """Add ``message`` with an HH:MM:SS time stamp to ``messages``."""
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.messages.append("[%s] %s" % (stamp, message))
 
     @staticmethod
     def _unique(stem: str, used: Set[str]) -> str:
+        """``stem``, or ``stem_2``, ``stem_3``, ... - the first name not in ``used``.
+        """
         candidate, index = stem, 2
         while candidate in used:
             candidate = "%s_%d" % (stem, index)
@@ -430,6 +480,9 @@ class VeuszPlotter:
     @staticmethod
     def _style(xy: Any, colour: str, line_style: str, marker: str, config: PlotConfig,
                key: str) -> None:
+        """Style one trace: line colour/style/width, marker and size from
+        ``config`` and the legend ``key``.
+        """
         xy.PlotLine.color.val = colour
         xy.PlotLine.style.val = line_style
         xy.PlotLine.width.val = "%gpt" % config.line_width
@@ -440,6 +493,9 @@ class VeuszPlotter:
 
     @staticmethod
     def _configure_graph(graph: Any, title: str, config: PlotConfig, date_x: bool) -> None:
+        """Title, axis labels, log axes and, for ``date_x``, a local ISO 8601
+        date-time x axis.
+        """
         graph.Add("label", name="plotTitle")
         graph.plotTitle.Text.size.val = "12pt"
         graph.plotTitle.label.val = title
@@ -480,6 +536,11 @@ class VeuszPlotter:
 
 # %% GUI (imported lazily so --output works without Qt)
 def _build_gui_classes():
+    """Import Qt and define the GUI classes on first use.
+
+    Keeps the batch mode (``--output``) free of Qt; returns (QApplication,
+    CSVAutoPlotMainWindow).
+    """
     from qtpy.QtCore import Qt
     from qtpy.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
                                 QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
@@ -492,6 +553,9 @@ def _build_gui_classes():
         """Processing and Plots tabs; File / View / Help menus."""
 
         def __init__(self) -> None:
+            """Main window: Processing and Plots tabs, menus with the light/dark
+            theme, and the suite theme applied.
+            """
             super().__init__()
             self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
             self.resize(1400, 950)
@@ -517,6 +581,9 @@ def _build_gui_classes():
 
         # ----- layout -------------------------------------------------------------
         def setup_ui(self) -> None:
+            """Lay out the Processing tab (files, delimiter, header line, columns,
+            preview, plot options, log, buttons) and the Plots tab.
+            """
             central = QWidget()
             self.setCentralWidget(central)
             outer = QVBoxLayout(central)
@@ -530,13 +597,19 @@ def _build_gui_classes():
             file_layout = QHBoxLayout(file_group)
             left = QVBoxLayout()
             row = QHBoxLayout()
-            for text, slot in (("Browse Files", self.browse_files), ("Clear Files", self.clear_files)):
+            for text, slot, tip in (
+                    ("Browse Files", self.browse_files,
+                     "Add delimited text files (.csv, .tsv, .txt, .dat) and load them."),
+                    ("Clear Files", self.clear_files,
+                     "Remove every file from the list (the files are not touched).")):
                 button = QPushButton(text)
+                button.setToolTip(tip)
                 button.clicked.connect(slot)
                 row.addWidget(button)
             row.addStretch()
             left.addLayout(row)
             self.file_list_widget = QListWidget()
+            self.file_list_widget.setToolTip("Loaded files; select one to preview its first rows.")
             self.file_list_widget.itemSelectionChanged.connect(self.on_file_selection_changed)
             left.addWidget(QLabel("Loaded Files:"))
             left.addWidget(self.file_list_widget)
@@ -544,6 +617,9 @@ def _build_gui_classes():
             delimiter_group = QGroupBox("Delimiter Configuration")
             form = QFormLayout(delimiter_group)
             detect = QPushButton("Auto-Detect Delimiter")
+            detect.setToolTip(
+                "Guess the delimiter from the selected (or first) file and "
+                "reload.")
             detect.clicked.connect(self.auto_detect_delimiter)
             form.addRow("Auto-Detection:", detect)
             self.delimiter_input = QLineEdit(",")
@@ -558,6 +634,8 @@ def _build_gui_classes():
             self.header_spin.valueChanged.connect(lambda _v: self.reload_files())
             form.addRow("Header Line Number:", self.header_spin)
             self.logging_box = QCheckBox("Write a log file next to the saved project")
+            self.logging_box.setToolTip(("Also write this session's log as a text file next to the "
+                'saved project.'))
             self.logging_box.setChecked(True)
             form.addRow("", self.logging_box)
             right.addWidget(delimiter_group)
@@ -566,6 +644,8 @@ def _build_gui_classes():
             for name, delimiter in (("Comma", ","), ("Tab", "\\t"), ("Semicolon", ";"),
                                     ("Pipe", "|"), ("Spaces", "\\s+")):
                 button = QPushButton(name)
+                button.setToolTip("Use %s as the delimiter (%r) and reload the files."
+                                  % (name.lower(), delimiter))
                 button.clicked.connect(lambda _c=False, d=delimiter: self.set_delimiter(d))
                 preset_row.addWidget(button)
             right.addWidget(presets)
@@ -577,6 +657,9 @@ def _build_gui_classes():
             preview_group = QGroupBox("Data Preview (first 10 rows)")
             preview_layout = QVBoxLayout(preview_group)
             self.data_preview_table = QTableWidget()
+            self.data_preview_table.setToolTip(
+                "First 10 rows of the selected file, as read with the current "
+                "settings.")
             self.data_preview_table.setMaximumHeight(200)
             preview_layout.addWidget(self.data_preview_table)
             main_layout.addWidget(preview_group)
@@ -585,6 +668,9 @@ def _build_gui_classes():
             column_layout = QVBoxLayout(column_group)
             selection = QFormLayout()
             self.x_column_combo = QComboBox()
+            self.x_column_combo.setToolTip(
+                "Column used as x for every file; it must exist in all loaded "
+                "files.")
             self.x_column_combo.currentTextChanged.connect(lambda _t: self.validate_x_axis_selection())
             selection.addRow("X-Axis Column (common to all files):", self.x_column_combo)
             self.x_axis_warning_label = QLabel("")
@@ -594,6 +680,7 @@ def _build_gui_classes():
             column_layout.addLayout(selection)
             column_layout.addWidget(QLabel("Y-Axis Columns (select one or more, from any file):"))
             self.y_columns_list = QListWidget()
+            self.y_columns_list.setToolTip("Columns to plot against x (select one or more).")
             self.y_columns_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
             self.y_columns_list.setMaximumHeight(120)
             column_layout.addWidget(self.y_columns_list)
@@ -602,17 +689,25 @@ def _build_gui_classes():
             plot_group = QGroupBox("Plot Configuration")
             plot_form = QFormLayout(plot_group)
             self.title_input = QLineEdit(self.plot_config.title)
+            self.title_input.setToolTip("Title written on every page.")
             plot_form.addRow("Plot Title:", self.title_input)
             self.x_label_input = QLineEdit(self.plot_config.x_label)
+            self.x_label_input.setToolTip(("Label of the x axis (a date-time x axis gets 'Local time' "
+                'when left at the default).'))
             plot_form.addRow("X-Axis Label:", self.x_label_input)
             self.y_label_input = QLineEdit(self.plot_config.y_label)
+            self.y_label_input.setToolTip("Label of the y axis.")
             plot_form.addRow("Y-Axis Label:", self.y_label_input)
             toggles = QHBoxLayout()
             self.show_legend_checkbox = QCheckBox("Show Legend")
+            self.show_legend_checkbox.setToolTip("Show a legend (key) on each graph.")
             self.show_legend_checkbox.setChecked(True)
             self.log_x_box = QCheckBox("Log X")
+            self.log_x_box.setToolTip("Logarithmic x axis (not used for date-time x).")
             self.log_y_box = QCheckBox("Log Y")
+            self.log_y_box.setToolTip("Logarithmic y axis.")
             self.grid_box = QCheckBox("Grid lines")
+            self.grid_box.setToolTip("Draw grid lines on both axes.")
             self.grid_box.setChecked(True)
             self.naive_combo = QComboBox()
             self.naive_combo.addItems(["Times without a zone are UTC",
@@ -628,6 +723,7 @@ def _build_gui_classes():
             main_layout.addWidget(plot_group)
 
             self.status_text = QTextEdit()
+            self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
             self.status_text.setReadOnly(True)
             self.status_text.setMaximumHeight(130)
             main_layout.addWidget(self.status_text)
@@ -637,14 +733,22 @@ def _build_gui_classes():
 
             buttons = QHBoxLayout()
             self.generate_btn = QPushButton("Generate Plots")
+            self.generate_btn.setToolTip(
+                "Build the pages from the loaded files and chosen columns "
+                "(shown on the Plots tab).")
             self.generate_btn.clicked.connect(self.generate_plots)
             self.save_btn = QPushButton("Save Veusz Project (.vszh5)")
+            self.save_btn.setToolTip(
+                "Write the project as a native Veusz HDF5 file (.vszh5); Veusz "
+                "is not needed.")
             self.save_btn.clicked.connect(self.save_to_veusz)
             self.save_btn.setEnabled(False)
             self.veusz_btn = QPushButton("Open in Veusz...")
+            self.veusz_btn.setToolTip("Open the last saved project in Veusz (needs Veusz installed).")
             self.veusz_btn.clicked.connect(self.open_in_veusz)
             self.veusz_btn.setEnabled(False)
             close = QPushButton("Close")
+            close.setToolTip("Close this window (unsaved projects are lost).")
             close.clicked.connect(self.close)
             for button in (self.generate_btn, self.save_btn, self.veusz_btn, close):
                 buttons.addWidget(button)
@@ -653,10 +757,14 @@ def _build_gui_classes():
 
         # ----- helpers ------------------------------------------------------------
         def log_message(self, message: str) -> None:
+            """Append ``message`` with an HH:MM:SS time stamp to the log."""
             stamp = datetime.datetime.now().strftime("%H:%M:%S")
             self.status_text.append("[%s] %s" % (stamp, message))
 
         def _set_theme(self, mode: str) -> None:
+            """Apply and save the suite theme, recolour the Plots tab and re-apply
+            the Generate button colour (the theme resets style sheets).
+            """
             self.theme = suite.apply_theme(mode)
             if self.plot_panel is not None:
                 self.plot_panel.apply_theme(self.theme == "dark")
@@ -664,18 +772,22 @@ def _build_gui_classes():
             self.log_message("Theme set to %s mode" % self.theme)
 
         def _config(self) -> CSVProcessingConfig:
+            """Current CSV reading settings (delimiter, 0-based header line).
+            """
             self.csv_config.delimiter = delimiter_from_text(self.delimiter_input.text())
             self.csv_config.header_line = self.header_spin.value() - 1
             return self.csv_config
 
         # ----- files --------------------------------------------------------------
         def browse_files(self) -> None:
+            """Ask for delimited files and load them."""
             files, _ = QFileDialog.getOpenFileNames(
                 self, "Select CSV/TSV Files", "",
                 "Delimited Files (*.csv *.tsv *.txt *.dat);;All Files (*)")
             self.add_files(files)
 
         def add_files(self, files: Sequence[str]) -> None:
+            """Load the new ``files`` (duplicates ignored)."""
             new = [f for f in files if f not in self.selected_files]
             if not new:
                 return
@@ -683,6 +795,9 @@ def _build_gui_classes():
             self._load(new)
 
         def _load(self, paths: Sequence[str]) -> None:
+            """Read ``paths`` with the current settings, log the messages and refresh
+            the file list and column selectors.
+            """
             files, messages = load_files(paths, self._config())
             for message in messages:
                 self.log_message(message)
@@ -692,11 +807,14 @@ def _build_gui_classes():
             self.update_column_selectors()
 
         def reload_files(self) -> None:
+            """Read every selected file again (after a delimiter/header change).
+            """
             self.loaded.clear()
             if self.selected_files:
                 self._load(self.selected_files)
 
         def update_file_list(self) -> None:
+            """Show the files that loaded; each item keeps its full path."""
             self.file_list_widget.clear()
             for path in self.selected_files:
                 if path in self.loaded:
@@ -706,6 +824,7 @@ def _build_gui_classes():
                         Qt.ItemDataRole.UserRole, path)
 
         def clear_files(self) -> None:
+            """Forget all files and clear the selectors and preview."""
             self.selected_files.clear()
             self.loaded.clear()
             self.update_file_list()
@@ -713,14 +832,19 @@ def _build_gui_classes():
             self.log_message("File list cleared")
 
         def on_file_selection_changed(self) -> None:
+            """Preview the file selected in the list."""
             item = self.file_list_widget.currentItem()
             if item is not None:
                 self.display_data_preview(item.data(Qt.ItemDataRole.UserRole))
 
         def _files(self) -> List[LoadedFile]:
+            """Loaded files in selection order."""
             return [self.loaded[p] for p in self.selected_files if p in self.loaded]
 
         def update_column_selectors(self) -> None:
+            """Refill the X combo box and the Y list with the columns of the loaded
+            files, keeping the current choices where they still exist.
+            """
             current_x = self.x_column_combo.currentText()
             selected_y = {i.text() for i in self.y_columns_list.selectedItems()}
             self.x_column_combo.blockSignals(True)
@@ -744,6 +868,11 @@ def _build_gui_classes():
             self.validate_x_axis_selection()
 
         def validate_x_axis_selection(self) -> bool:
+            """True when the chosen X column exists in every loaded file.
+
+            Enables the Generate button (green) only then; when files lack the
+            column the button turns red and a warning names the column.
+            """
             x_column = self.x_column_combo.currentText()
             files = self._files()
             missing = [f.name for f in files if x_column not in f.frame.columns]
@@ -758,6 +887,8 @@ def _build_gui_classes():
             return ok
 
         def display_data_preview(self, path: str) -> None:
+            """Show the first 10 rows of the file at ``path`` in the preview table.
+            """
             loaded = self.loaded.get(path)
             if loaded is None:
                 return
@@ -771,6 +902,8 @@ def _build_gui_classes():
             self.data_preview_table.resizeColumnsToContents()
 
         def auto_detect_delimiter(self) -> None:
+            """Guess the delimiter of the selected (or first) file and reload.
+            """
             item = self.file_list_widget.currentItem()
             path = item.data(Qt.ItemDataRole.UserRole) if item else (
                 self.selected_files[0] if self.selected_files else "")
@@ -782,12 +915,16 @@ def _build_gui_classes():
             self.log_message("Auto-detected delimiter: %r" % detected)
 
         def set_delimiter(self, text: str) -> None:
+            """Use delimiter ``text`` (',' ';' '|', '\\t' or 'tab' for a tab, or
+            '\\s+' for runs of spaces) and reload the files.
+            """
             self.delimiter_input.setText(text)
             self.reload_files()
             self.log_message("Delimiter set to: %r" % delimiter_from_text(text))
 
         # ----- plots and project -------------------------------------------------
         def _plot_config(self) -> PlotConfig:
+            """PlotConfig from the plot option widgets."""
             config = self.plot_config
             config.title = self.title_input.text()
             config.x_label = self.x_label_input.text()
@@ -800,6 +937,9 @@ def _build_gui_classes():
             return config
 
         def generate_plots(self) -> None:
+            """Build the project from the loaded files and chosen columns and show it
+            on the Plots tab.
+            """
             if not self.validate_x_axis_selection():
                 QMessageBox.warning(self, APP_NAME, "Load files and choose an X column that "
                                     "exists in every file.")
@@ -831,6 +971,7 @@ def _build_gui_classes():
                     self.log_message("Plots tab could not draw the project: %s" % exc)
 
         def save_to_veusz(self) -> None:
+            """Ask for a file name and save the .vszh5 project."""
             if self.plotter is None:
                 QMessageBox.warning(self, APP_NAME, "Generate plots first.")
                 return
@@ -851,18 +992,22 @@ def _build_gui_classes():
                 self.open_in_veusz()
 
         def open_in_veusz(self) -> None:
+            """Open the last saved project in Veusz."""
             if not self.last_saved:
                 QMessageBox.information(self, APP_NAME, "Save a project first.")
                 return
             suite.open_in_veusz(self, self.last_saved)
 
         def export_pages(self) -> None:
+            """Export the pages of the last saved project with Veusz (PDF/PNG).
+            """
             if not self.last_saved:
                 QMessageBox.information(self, APP_NAME, "Save a project first.")
                 return
             suite.export_with_veusz(self, self.last_saved, self.log_message)
 
         def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+            """Clear the plots, then close."""
             if self.plot_panel is not None:
                 self.plot_panel.clear()
             super().closeEvent(event)
@@ -872,6 +1017,11 @@ def _build_gui_classes():
 
 # %% Main Execution
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Command line entry point; returns the exit code.
+
+    With ``--output`` the files are plotted in batch (no GUI; ``--x`` and
+    ``--y`` choose the columns) into that project; otherwise the GUI opens.
+    """
     parser = argparse.ArgumentParser(description=APP_DESCRIPTION)
     parser.add_argument("files", nargs="*")
     parser.add_argument("--output", help="write this .vszh5 without opening the GUI")

@@ -38,6 +38,86 @@ Optional: cupy (GPU time-domain transform), pypdf or PyPDF2 (bookmarked PDF),
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.7.1: Header template, docstrings and tooltips.
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+#              * Tooltips (pop-up help) on every button, box and field that
+#                had none (35 widgets on the Main, Time Domain and Smith tabs).
+# %%%%% Function Descriptions
+        make_process_pool: Process pool with the 'spawn' start method on every platform.
+        is_windows: True on Windows.
+        get_extended_path: Convert a path to Windows extended-length form (\\\\?\\) if needed.
+        normalize_path: Resolved path; extended-length form on Windows.
+        validate_path_length: Check a path against the classic Windows MAX_PATH limit.
+        truncate_filename: Shorten a file name to ``max_length`` keeping the extension.
+        ProcessingConfig (class): File processing options.
+        TimeDomainConfig (class): Time-domain transform and gate settings.
+        SmithChartConfig (class): Smith chart options.
+        get_sparam_color: Consistent colour for an S-parameter across every plot.
+        sanitize_name: Veusz-safe dataset / widget / tag stem (letters, digits, '_').
+        s_param_names: [(i, j, 'S<i+1><j+1>'), ...] in row-major order.
+        to_db: 20*log10|x| with a floor so silence never becomes -inf; inf/NaN -> NaN.
+        td_axis_floor: Lower y limit (dB) for time-domain plots: peak minus TD_DISPLAY_RANGE_DB, rounded down to 10 dB.
+        read_touchstone_header: Comment ('!') and option ('#') lines, plus any keyword lines, up to the first numeric data line.
+        ensure_uniform_network: Return a network on an exactly uniform frequency grid.
+        resolve_window: scipy.signal.get_window specification for a GUI window choice.
+        time_domain_vectorized: Windowed band-pass time-domain response of every S-parameter at once.
+        one_port: S_ij of ``network`` as a one-port (scikit-rf gates one-ports only).
+        call_time_gate: ``skrf.time.time_gate`` with only the arguments this scikit-rf supports.
+        compute_time_domain: Time-domain response and time gating of every (or selected) S-parameter.
+        _td_worker: Process-pool entry point: (key, network, config, gpu) -> (key, result).
+        run_time_domain_batch: Time domain + gating for many files.
+        TimeDomainProcessor (class): Thin object wrapper over ``compute_time_domain`` (kept for 0.4.0 users).
+        make_smith_figure: Smith chart of a one-port with scikit-rf.
+        export_smith_worker: Process-pool entry point that writes one Smith chart file.
+        SmithChartPlottermpld3 (class): Smith chart export helpers (name kept from 0.4.0).
+        TouchstonePlotter (class): Builds the Veusz project for the processed Touchstone files.
+        _matplotlib_canvas: Fallback matplotlib Qt canvas (imported only when needed).
+        TouchstonePlotCanvas (class): Time-domain and Smith chart previews.
+        process_single_touchstone_file: Read one Touchstone file (process-pool entry point).
+        unique_keys: Map each path to a unique display key (file name, then ' (2)', ...).
+        TouchstoneProcessingThread (class): Reads the selected files (process pool for several files).
+        FunctionWorker (class): Run ``func(progress_callback)`` off the GUI thread.
+        _module_version: Installed version of a module, or 'not installed'.
+        build_about_content: Rich text and runtime details for Help > About.
+        TouchstoneMainWindow (class): Main window: processing, time domain and Smith chart tabs.
+        main: Start the GUI.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "Touchstone AutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        DB_FLOOR: |x| floor before 20*log10 (-240 dB)
+        TD_DISPLAY_RANGE_DB: time-domain y axis spans peak - 120 dB .. Auto
+        UNIFORM_RTOL: steps within this are taken as exactly uniform
+        NONUNIFORM_NOTE_RTOL: above this the re-gridding is reported
+        CPU_COUNT: logical CPUs of this computer
+        MAX_PATH_WINDOWS: classic Windows MAX_PATH (260 characters)
+        PATH_WARNING_THRESHOLD: warn when a path is longer than this
+        EXTENDED_PATH_PREFIX: Windows extended-length path prefix
+        GATING_MODES: gating combo box text -> gating mode
+        WINDOW_TYPES: transform / gate window choices
+        _NUMERIC_START: line starting with a number (Touchstone data line)
+        _TIME_GATE_PARAMS: parameters accepted by skrf.time.time_gate (they differ between scikit-rf versions)
+        QT_BINDING = "PySide6"
+        PYQTGRAPH_ERROR = ""
+        MPLD3_AVAILABLE = True
+        PDF_LIBRARY = "pypdf"
+        GPU_AVAILABLE = "cupy"
+        VEUSZ_BACKEND = "native"
+# %%%%% More Info
+    Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
+    scikit-rf reads the .sNp files; time domain and gating, Smith charts
+    (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
+    'spawn' start method on every platform; CuPy optional.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.7.0: Smith charts in the Veusz project (writer 0.0.26)
 Date: 2026-11-09
     Added:
@@ -261,7 +341,7 @@ except ImportError:  # pragma: no cover - script copied without the module
 
 # %% Application identity
 APP_NAME = "Touchstone AutoPlot"
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO / Green Bank Observatory (GBO)"
@@ -1217,6 +1297,11 @@ class TouchstonePlotCanvas(QWidget):
     """
 
     def __init__(self, parent=None, width=8, height=6, dpi=100, dark=False):
+        """Preview area of the Time Domain / Smith tabs: a column of pyqtgraph
+        plots (the old matplotlib canvas arguments ``width``, ``height`` and
+        ``dpi`` are accepted and ignored).  ``gate_dragged(centre, span)`` is
+        called when the user drags the gate region.
+        """
         super().__init__(parent)
         self.dark = bool(dark)
         self.gate_dragged: Optional[Callable[[float, float], None]] = None
@@ -1231,6 +1316,7 @@ class TouchstonePlotCanvas(QWidget):
 
     # ----- helpers -----------------------------------------------------------
     def _clear(self) -> None:
+        """Dispose of and remove every preview plot."""
         for plot in self._plots:
             try:
                 plot.dispose()
@@ -1241,12 +1327,14 @@ class TouchstonePlotCanvas(QWidget):
         self._plots = []
 
     def _add(self, plot) -> None:
+        """Add ``plot`` to the column and give it its own cursor read-out."""
         self._layout.addWidget(plot, 1)
         self._plots.append(plot)
         plot.hovered.connect(lambda x, y, p=plot: p.set_cursor(x, y))
         plot.unhovered.connect(lambda p=plot: p.set_cursor(None))
 
     def apply_theme(self, dark: bool) -> None:
+        """Apply the dark or light theme to every preview plot."""
         self.dark = bool(dark)
         for plot in self._plots:
             plot.apply_theme(self.dark)
@@ -1298,6 +1386,9 @@ class TouchstonePlotCanvas(QWidget):
             self._add(bottom)
 
     def _region_moved(self, start: float, stop: float) -> None:
+        """Gate region dragged: report its centre and span (ns) to
+        ``gate_dragged``.
+        """
         if self.gate_dragged is not None and stop > start:
             self.gate_dragged(0.5 * (start + stop), stop - start)
 
@@ -1593,17 +1684,23 @@ class TouchstoneMainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         main_layout.addWidget(self.progress_bar)
         self.status_text = QTextEdit()
+        self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
         self.status_text.setReadOnly(True)
         self.status_text.setMaximumHeight(130)
         main_layout.addWidget(self.status_text)
 
         row = QHBoxLayout()
         self.process_button = QPushButton("Process Touchstone Files")
+        self.process_button.setToolTip("Read the listed Touchstone files (magnitude, phase, previews).")
         self.process_button.clicked.connect(self._process_files)
         self.save_button = QPushButton("Save Veusz Project (.vszh5)")
+        self.save_button.setToolTip(
+            "Write the project as a native Veusz HDF5 file (.vszh5); Veusz "
+            "is not needed.")
         self.save_button.clicked.connect(self._save_project)
         self.save_button.setEnabled(False)
         self.close_button = QPushButton("Close")
+        self.close_button.setToolTip("Close this window (unsaved projects are lost).")
         self.close_button.clicked.connect(self.close)
         for button in (self.process_button, self.save_button, self.close_button):
             row.addWidget(button)
@@ -1618,12 +1715,15 @@ class TouchstoneMainWindow(QMainWindow):
         file_group = QGroupBox("Touchstone File Selection")
         file_layout = QVBoxLayout(file_group)
         self.file_list_widget = QListWidget()
+        self.file_list_widget.setToolTip("Touchstone files (.s1p ... .sNp) to process.")
         self.file_list_widget.setMinimumHeight(150)
         file_layout.addWidget(self.file_list_widget)
         row = QHBoxLayout()
         self.browse_button = QPushButton("Browse Touchstone Files")
+        self.browse_button.setToolTip("Add Touchstone files (.s1p, .s2p, ... .sNp) to the list.")
         self.browse_button.clicked.connect(self._browse_files)
         self.clear_button = QPushButton("Clear Files")
+        self.clear_button.setToolTip("Remove every file from the list (the files are not touched).")
         self.clear_button.clicked.connect(self._clear_files)
         row.addWidget(self.browse_button)
         row.addWidget(self.clear_button)
@@ -1634,10 +1734,14 @@ class TouchstoneMainWindow(QMainWindow):
         options_group = QGroupBox("Processing Options")
         options = QFormLayout(options_group)
         self.enable_mp_checkbox = QCheckBox("Enable multiprocessing")
+        self.enable_mp_checkbox.setToolTip(
+            "Process the files in separate processes (spawn) - faster for "
+            "many files.")
         self.enable_mp_checkbox.setChecked(self.config.enable_multiprocessing)
         self.enable_mp_checkbox.toggled.connect(self._update_mp_config)
         options.addRow(self.enable_mp_checkbox)
         self.cpu_spinbox = QSpinBox()
+        self.cpu_spinbox.setToolTip("Number of worker processes.")
         self.cpu_spinbox.setRange(1, CPU_COUNT)
         self.cpu_spinbox.setValue(self.config.num_processes)
         self.cpu_spinbox.valueChanged.connect(self._update_cpu_config)
@@ -1655,10 +1759,17 @@ class TouchstoneMainWindow(QMainWindow):
         plot_group = QGroupBox("Plot Configuration")
         plot = QFormLayout(plot_group)
         self.plot_title_edit = QLineEdit("Touchstone S-Parameter Analysis")
+        self.plot_title_edit.setToolTip("Title written into the page notes of the project.")
         plot.addRow("Plot title (page notes):", self.plot_title_edit)
         self.dataset_name_edit = QLineEdit("Touchstone_Dataset")
+        self.dataset_name_edit.setToolTip(
+            "Tag attached to every dataset of this run in the Veusz "
+            "project.")
         plot.addRow("Dataset tag:", self.dataset_name_edit)
         self.unwrap_phase_checkbox = QCheckBox("Unwrap phase (numpy.unwrap)")
+        self.unwrap_phase_checkbox.setToolTip(
+            "Unwrap the phase (numpy.unwrap) instead of showing it in "
+            "-180..180 degrees; applies at the next Process.")
         self.unwrap_phase_checkbox.setChecked(self.config.unwrap_phase)
         self.unwrap_phase_checkbox.toggled.connect(self._update_unwrap_phase)
         plot.addRow(self.unwrap_phase_checkbox)
@@ -1677,9 +1788,11 @@ class TouchstoneMainWindow(QMainWindow):
         sel_group = QGroupBox("Preview")
         sel = QFormLayout(sel_group)
         self.td_file_combo = QComboBox()
+        self.td_file_combo.setToolTip("File shown in the time-domain preview.")
         self.td_file_combo.currentTextChanged.connect(self._on_td_file_changed)
         sel.addRow("File:", self.td_file_combo)
         self.td_param_combo = QComboBox()
+        self.td_param_combo.setToolTip("S-parameter shown in the time-domain preview.")
         self.td_param_combo.currentTextChanged.connect(self._update_td_preview)
         sel.addRow("Parameter:", self.td_param_combo)
         cl.addWidget(sel_group)
@@ -1687,11 +1800,17 @@ class TouchstoneMainWindow(QMainWindow):
         win_group = QGroupBox("Transform Window (frequency domain)")
         win = QFormLayout(win_group)
         self.window_type_combo = QComboBox()
+        self.window_type_combo.setToolTip(
+            "Window applied before the time-domain transform; beta is used "
+            "by kaiser only.")
         self.window_type_combo.addItems(WINDOW_TYPES)
         self.window_type_combo.setCurrentText(self.td_config.window_type)
         self.window_type_combo.currentTextChanged.connect(self._update_window_config)
         win.addRow("Window:", self.window_type_combo)
         self.window_param_spin = QDoubleSpinBox()
+        self.window_param_spin.setToolTip(
+            "Kaiser window beta for the transform (larger: lower side "
+            "lobes, wider main lobe).")
         self.window_param_spin.setRange(0.0, 20.0)
         self.window_param_spin.setValue(self.td_config.window_param)
         self.window_param_spin.valueChanged.connect(self._update_window_param)
@@ -1701,15 +1820,22 @@ class TouchstoneMainWindow(QMainWindow):
         gate_group = QGroupBox("Time Gate")
         gate = QFormLayout(gate_group)
         self.gating_type_combo = QComboBox()
+        self.gating_type_combo.setToolTip(
+            "Auto: the gate is centred on the largest peak (span set here, "
+            "or found too); Manual: centre and span set here.")
         self.gating_type_combo.addItems(list(GATING_MODES))
         self.gating_type_combo.currentTextChanged.connect(self._update_gating_type)
         gate.addRow("Gating mode:", self.gating_type_combo)
         self.mode_combo = QComboBox()
+        self.mode_combo.setToolTip("bandpass keeps what is inside the gate; bandstop removes it.")
         self.mode_combo.addItems(["bandpass", "bandstop"])
         self.mode_combo.setCurrentText(self.td_config.mode)
         self.mode_combo.currentTextChanged.connect(self._update_mode)
         gate.addRow("Gate type:", self.mode_combo)
         self.gate_center_spin = QDoubleSpinBox()
+        self.gate_center_spin.setToolTip(
+            "Gate centre in ns (manual gating; drag the region in the "
+            "preview to set it).")
         self.gate_center_spin.setRange(-10000.0, 10000.0)
         self.gate_center_spin.setDecimals(4)
         self.gate_center_spin.setSuffix(" ns")
@@ -1717,6 +1843,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.gate_center_spin.valueChanged.connect(self._update_gate_center)
         gate.addRow("Gate centre (manual):", self.gate_center_spin)
         self.gate_span_spin = QDoubleSpinBox()
+        self.gate_span_spin.setToolTip("Gate width in ns.")
         self.gate_span_spin.setRange(0.001, 10000.0)
         self.gate_span_spin.setDecimals(4)
         self.gate_span_spin.setSuffix(" ns")
@@ -1724,11 +1851,15 @@ class TouchstoneMainWindow(QMainWindow):
         self.gate_span_spin.valueChanged.connect(self._update_gate_span)
         gate.addRow("Gate span:", self.gate_span_spin)
         self.gate_window_combo = QComboBox()
+        self.gate_window_combo.setToolTip(
+            "Window that shapes the gate edges; beta is used by kaiser "
+            "only.")
         self.gate_window_combo.addItems(WINDOW_TYPES)
         self.gate_window_combo.setCurrentText(self.td_config.gate_window_type)
         self.gate_window_combo.currentTextChanged.connect(self._update_gate_window)
         gate.addRow("Gate shape:", self.gate_window_combo)
         self.gate_window_param_spin = QDoubleSpinBox()
+        self.gate_window_param_spin.setToolTip("Kaiser beta of the gate window.")
         self.gate_window_param_spin.setRange(0.0, 20.0)
         self.gate_window_param_spin.setValue(self.td_config.gate_window_param)
         self.gate_window_param_spin.valueChanged.connect(self._update_gate_window_param)
@@ -1751,17 +1882,26 @@ class TouchstoneMainWindow(QMainWindow):
         out_group = QGroupBox("Veusz Output")
         out = QVBoxLayout(out_group)
         self.plot_time_domain_checkbox = QCheckBox("Time domain (ungated and gated, dB)")
+        self.plot_time_domain_checkbox.setToolTip(
+            "Add time-domain pages (ungated and gated response, dB) to the "
+            "project.")
         self.plot_time_domain_checkbox.setChecked(self.td_config.plot_time_domain)
         self.plot_time_domain_checkbox.toggled.connect(self._update_plot_time_domain)
         out.addWidget(self.plot_time_domain_checkbox)
         self.plot_frequency_domain_checkbox = QCheckBox(
             "Frequency domain (measured and gated, dB)")
+        self.plot_frequency_domain_checkbox.setToolTip(
+            "Add frequency-domain pages (measured and gated, dB) to the "
+            "project.")
         self.plot_frequency_domain_checkbox.setChecked(self.td_config.plot_frequency_domain)
         self.plot_frequency_domain_checkbox.toggled.connect(self._update_plot_frequency_domain)
         out.addWidget(self.plot_frequency_domain_checkbox)
         cl.addWidget(out_group)
 
         self.td_timegated_button = QPushButton("Generate Time-Gated Plots in Veusz")
+        self.td_timegated_button.setToolTip(
+            "Build the time-gated pages for every file and parameter with "
+            "these settings.")
         self.td_timegated_button.clicked.connect(self._process_time_gated_plots)
         self.td_timegated_button.setEnabled(False)
         cl.addWidget(self.td_timegated_button)
@@ -1787,9 +1927,11 @@ class TouchstoneMainWindow(QMainWindow):
         sel_group = QGroupBox("Preview")
         sel = QFormLayout(sel_group)
         self.smith_file_combo = QComboBox()
+        self.smith_file_combo.setToolTip("File shown in the Smith chart preview.")
         self.smith_file_combo.currentTextChanged.connect(self._on_smith_file_changed)
         sel.addRow("File:", self.smith_file_combo)
         self.smith_param_combo = QComboBox()
+        self.smith_param_combo.setToolTip("S-parameter shown in the Smith chart preview.")
         self.smith_param_combo.currentTextChanged.connect(self._update_smith_preview)
         sel.addRow("Parameter:", self.smith_param_combo)
         cl.addWidget(sel_group)
@@ -1797,20 +1939,24 @@ class TouchstoneMainWindow(QMainWindow):
         smith_group = QGroupBox("Smith Chart Settings")
         sm = QFormLayout(smith_group)
         self.chart_type_combo = QComboBox()
+        self.chart_type_combo.setToolTip("Impedance (z) or admittance (y) Smith chart.")
         self.chart_type_combo.addItems(["z (Impedance)", "y (Admittance)"])
         self.chart_type_combo.currentTextChanged.connect(self._update_chart_type)
         sm.addRow("Chart type:", self.chart_type_combo)
         self.ref_impedance_spin = QDoubleSpinBox()
+        self.ref_impedance_spin.setToolTip("Reference impedance Z0 of the chart (ohms).")
         self.ref_impedance_spin.setRange(1.0, 1000.0)
         self.ref_impedance_spin.setValue(self.smith_config.reference_impedance)
         self.ref_impedance_spin.setSuffix(" Ω")
         self.ref_impedance_spin.valueChanged.connect(self._update_ref_impedance)
         sm.addRow("Reference impedance:", self.ref_impedance_spin)
         self.draw_labels_checkbox = QCheckBox("Draw labels")
+        self.draw_labels_checkbox.setToolTip("Write the resistance and reactance values on the grid.")
         self.draw_labels_checkbox.setChecked(self.smith_config.draw_labels)
         self.draw_labels_checkbox.toggled.connect(self._update_draw_labels)
         sm.addRow(self.draw_labels_checkbox)
         self.draw_vswr_checkbox = QCheckBox("Draw VSWR circles")
+        self.draw_vswr_checkbox.setToolTip("Draw constant-VSWR circles.")
         self.draw_vswr_checkbox.setChecked(self.smith_config.draw_vswr)
         self.draw_vswr_checkbox.toggled.connect(self._update_draw_vswr)
         sm.addRow(self.draw_vswr_checkbox)
@@ -1825,19 +1971,27 @@ class TouchstoneMainWindow(QMainWindow):
         export_group = QGroupBox("Export")
         ex = QFormLayout(export_group)
         self.export_format_combo = QComboBox()
+        self.export_format_combo.setToolTip("File format of the exported Smith charts.")
         self.export_format_combo.addItems(["PNG", "SVG", "PDF", "HTML (Interactive)"])
         ex.addRow("Format:", self.export_format_combo)
         self.pdf_bookmarks_checkbox = QCheckBox("Combined PDF with bookmarks")
+        self.pdf_bookmarks_checkbox.setToolTip(
+            "Merge PDF charts into one PDF with a bookmark per chart (needs"
+            " pypdf).")
         self.pdf_bookmarks_checkbox.setChecked(True)
         self.pdf_bookmarks_checkbox.setEnabled(PdfWriter is not None)
         ex.addRow(self.pdf_bookmarks_checkbox)
         cl.addWidget(export_group)
 
         self.smith_process_button = QPushButton("Prepare Smith Charts (all files)")
+        self.smith_process_button.setToolTip(
+            "Collect the one-port data of every parameter of every file for"
+            " export.")
         self.smith_process_button.clicked.connect(self._process_smith_charts_mpld3)
         self.smith_process_button.setEnabled(False)
         cl.addWidget(self.smith_process_button)
         self.smith_export_button = QPushButton("Export Smith Charts")
+        self.smith_export_button.setToolTip("Write every prepared Smith chart in the chosen format.")
         self.smith_export_button.clicked.connect(self._export_smith_charts)
         self.smith_export_button.setEnabled(False)
         cl.addWidget(self.smith_export_button)
@@ -1852,49 +2006,66 @@ class TouchstoneMainWindow(QMainWindow):
 
     # ----- option callbacks (toggled(bool): fixes the 0.4.0 state bug) -------------
     def _update_mp_config(self, checked: bool):
+        """Turn multiprocessing on or off for processing."""
         self.config.enable_multiprocessing = bool(checked)
         self._log_message("Multiprocessing: %s" % ("on" if checked else "off"))
 
     def _update_cpu_config(self, value: int):
+        """Number of worker processes (and threads) to use."""
         self.config.num_processes = self.config.max_workers = int(value)
         self._log_message("CPU cores set to %d" % value)
 
     def _update_gpu_config(self, checked: bool):
+        """Turn the GPU (CuPy) time-domain transform on or off."""
         self.config.enable_gpu_processing = bool(checked)
         self._log_message("GPU transform: %s" % ("on" if checked else "off"))
 
     def _update_unwrap_phase(self, checked: bool):
+        """Turn phase unwrapping (numpy.unwrap) on or off; applies at the next
+        Process.
+        """
         self.config.unwrap_phase = bool(checked)
         self._log_message("Phase unwrapping (numpy.unwrap): %s - applies at the "
                           "next Process" % ("ON" if checked else "OFF"))
 
     def _update_window_config(self, window_type: str):
+        """Time-domain transform window (kaiser, hamming, hann, blackman,
+        boxcar); the beta box is enabled only for kaiser.
+        """
         self.td_config.window_type = window_type
         self.window_param_spin.setEnabled(window_type == "kaiser")
         self._update_td_preview()
 
     def _update_window_param(self, value: float):
+        """Kaiser beta of the transform window."""
         self.td_config.window_param = float(value)
         self._update_td_preview()
 
     def _update_gate_window(self, window_type: str):
+        """Gate window type; the beta box is enabled only for kaiser."""
         self.td_config.gate_window_type = window_type
         self.gate_window_param_spin.setEnabled(window_type == "kaiser")
         self._update_td_preview()
 
     def _update_gate_window_param(self, value: float):
+        """Kaiser beta of the gate window."""
         self.td_config.gate_window_param = float(value)
         self._update_td_preview()
 
     def _update_gate_fft_window(self, checked: bool):
+        """Whether the gated response is transformed with the FFT window."""
         self.td_config.gate_use_fft_window = bool(checked)
         self._update_td_preview()
 
     def _update_mode(self, mode: str):
+        """Gate type: 'bandpass' keeps the gated region, 'bandstop' removes it."""
         self.td_config.mode = mode
         self._update_td_preview()
 
     def _update_gating_type(self, text: str):
+        """Gating mode from the combo box text (GATING_MODES: auto peak with set
+        span, auto peak and span, manual); enables the matching gate controls.
+        """
         self.td_config.gating_type = GATING_MODES.get(text, "auto_peak")
         self._update_gate_controls()
         self._log_message("Gating mode: %s" % text)
@@ -1906,18 +2077,22 @@ class TouchstoneMainWindow(QMainWindow):
         self.gate_span_spin.setEnabled(True)
 
     def _update_gate_center(self, value: float):
+        """Manual gate centre (ns)."""
         self.td_config.gate_center = float(value)
         self._update_td_preview()
 
     def _update_gate_span(self, value: float):
+        """Gate span (ns)."""
         self.td_config.gate_span = float(value)
         self._update_td_preview()
 
     def _update_plot_time_domain(self, checked: bool):
+        """Include the time-domain plots in time-gated output."""
         self.td_config.plot_time_domain = bool(checked)
         self._update_timegated_button_state()
 
     def _update_plot_frequency_domain(self, checked: bool):
+        """Include the gated frequency-domain plots in time-gated output."""
         self.td_config.plot_frequency_domain = bool(checked)
         self._update_timegated_button_state()
 
@@ -1928,18 +2103,22 @@ class TouchstoneMainWindow(QMainWindow):
                                             and self._worker is None)
 
     def _update_chart_type(self, text: str):
+        """Smith chart type: impedance (z) or admittance (y)."""
         self.smith_config.chart_type = "z" if "Impedance" in text else "y"
         self._update_smith_preview()
 
     def _update_ref_impedance(self, value: float):
+        """Reference impedance z0 of the Smith chart (ohms)."""
         self.smith_config.reference_impedance = float(value)
         self._update_smith_preview()
 
     def _update_draw_labels(self, checked: bool):
+        """Draw the Smith grid values."""
         self.smith_config.draw_labels = bool(checked)
         self._update_smith_preview()
 
     def _update_draw_vswr(self, checked: bool):
+        """Draw VSWR circles on the Smith chart."""
         self.smith_config.draw_vswr = bool(checked)
         self._update_smith_preview()
 
@@ -1972,6 +2151,7 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message("File list cleared (memory released)")
 
     def _update_file_list(self):
+        """Show the full paths of the selected files."""
         self.file_list_widget.clear()
         for path in self.selected_files:
             self.file_list_widget.addItem(path)
@@ -1989,6 +2169,10 @@ class TouchstoneMainWindow(QMainWindow):
 
     @staticmethod
     def _fill_param_combo(combo: QComboBox, network: Optional[Network]):
+        """Fill ``combo`` with the S-parameter names of ``network`` (S11, S21,
+        ...), keeping the current choice when it still exists; signals are
+        blocked meanwhile.
+        """
         current = combo.currentText()
         combo.blockSignals(True)
         combo.clear()
@@ -2000,11 +2184,14 @@ class TouchstoneMainWindow(QMainWindow):
         combo.blockSignals(False)
 
     def _on_td_file_changed(self, key: str):
+        """Time Domain tab file changed: refill its parameter list and preview.
+        """
         data = self.processed_data.get(key)
         self._fill_param_combo(self.td_param_combo, data['network'] if data else None)
         self._update_td_preview()
 
     def _on_smith_file_changed(self, key: str):
+        """Smith tab file changed: refill its parameter list and preview."""
         data = self.processed_data.get(key)
         self._fill_param_combo(self.smith_param_combo, data['network'] if data else None)
         self._update_smith_preview()
@@ -2134,6 +2321,7 @@ class TouchstoneMainWindow(QMainWindow):
                                 "%d file(s) failed. See the log for details." % len(bad))
 
     def _on_processing_error(self, message: str):
+        """Processing failed: unlock the GUI, log and show the message."""
         self._worker = None
         self._set_busy(False)
         self._log_message("Processing error: %s" % message)
@@ -2151,6 +2339,9 @@ class TouchstoneMainWindow(QMainWindow):
         use_proc = self.config.enable_multiprocessing
 
         def job(progress):
+            """Worker body: run the time-domain batch with the settings captured
+            when the button was pressed.
+            """
             return run_time_domain_batch(items, cfg, use_gpu, workers, use_proc, progress)
 
         worker = FunctionWorker(job)
@@ -2191,6 +2382,8 @@ class TouchstoneMainWindow(QMainWindow):
         self._show_plots()
 
     def _on_worker_error(self, message: str):
+        """A background job failed: unlock the GUI, log and show the message.
+        """
         self._worker = None
         self._set_busy(False)
         self._log_message("Error: %s" % message)
@@ -2273,6 +2466,11 @@ class TouchstoneMainWindow(QMainWindow):
         workers = self.config.max_workers if self.config.enable_multiprocessing else 1
 
         def job(progress):
+            """Worker body: export each Smith chart (in a process pool when there are
+            several and workers > 1), then merge them into one bookmarked PDF when
+            asked; returns {"done": {path: (ok, message)}, "merged": pdf or "",
+            "out_dir": folder}.
+            """
             done: Dict[str, Tuple[bool, str]] = {}
             total = max(len(jobs), 1)
             if workers > 1 and len(jobs) > 1:
@@ -2306,6 +2504,9 @@ class TouchstoneMainWindow(QMainWindow):
         worker.start()
 
     def _on_smith_export_finished(self, report: Dict[str, Any]):
+        """Log each failed or noted chart and report how many were exported and
+        where.
+        """
         self._worker = None
         self._set_busy(False)
         done = report["done"]
@@ -2372,12 +2573,14 @@ class TouchstoneMainWindow(QMainWindow):
             self._log_message("Plots tab could not draw the project: %s" % exc)
 
     def _open_last_in_veusz(self):
+        """Open the last saved project in Veusz."""
         if not getattr(self, "last_saved", None):
             QMessageBox.information(self, APP_NAME, "Save a project first.")
             return
         self._open_in_veusz(self.last_saved)
 
     def _export_pages(self):
+        """Export the pages of the last saved project with Veusz (PDF/PNG)."""
         if not getattr(self, "last_saved", None):
             QMessageBox.information(self, APP_NAME, "Save a project first.")
             return

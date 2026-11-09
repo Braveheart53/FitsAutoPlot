@@ -4,6 +4,7 @@
 _autoplot_common.py
 -----------------------------------------------------------------------------
 # %% Header Info
+--------
 
 Shared helpers for FITS_AutoPlot and Franks_AutoPlot:
 
@@ -23,12 +24,144 @@ union operators, no parenthesised context managers).
 
 # %%% Author Information
 @author: William W. Wallace
+Author Email: wwallace@nrao.edu
+Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.0: Gap controls shared by FITS and Franks AutoPlot.
+Date: 2026-11-09
+#              * AutoPlotMainWindow.add_gap_controls(form): "Small gap K"
+#                (line break where dt > K x median dt), "Small gap fixed"
+#                (hours box or text), "Large gap n" (x-axis break where
+#                dt > n x the small gap; default 100, 0 = none), "Large gap
+#                fixed" (text, overrides n); time_layout() returns the
+#                _autoplot_native.TimeLayout; gap_manual_days(),
+#                gap_axis_days().
+#              * parse_gap_string: also "s" (seconds) and "min" (minutes);
+#                GAP_STRING_HELP.
+#              * FIX (Python 3.12 crash) MemoryMonitor: a bound-method
+#                callback is held weakly; the thread waits on its stop event
+#                (stop() wakes and joins it); the event is no longer called
+#                "_stop", which shadowed threading.Thread._stop() and broke
+#                join().  Callers passed lambdas holding the window/dialog,
+#                so the monitor thread could drop the last reference and
+#                destroy Qt widgets outside the GUI thread - PySide6 6.12
+#                then crashed at random (segmentation fault in a later Qt
+#                timer or gc.collect(), 3 runs in 4 of the unit tests).
+#              * AutoPlotMainWindow.log() is thread-safe: off the main
+#                thread the text is queued to it (_log_from_thread signal,
+#                QUEUED_CONNECTION).  The RSS callback used to append to the
+#                log widget from the monitor thread.
+#              * Docstrings for every function, class and method; header
+#                template (author contact, Function/Variable Descriptions).
+#              * Tooltips (pop-up help) on every button, box and field that
+#                had none (file list, Browse, Clear, log, Process, Save, Close).
+# %%%%% Function Descriptions
+        make_dark_palette: Return a Fusion-style dark palette.
+        make_light_palette: Return a default light palette (style standard).
+        apply_theme: Apply the suite's 'dark' or 'light' palette to the running QApplication (standalone windows only - plugins style their own dialog instead).
+        suite_theme: Theme stored for the whole suite (launcher and tools).
+        store_suite_theme: Save ``mode`` ('dark' or 'light') as the suite-wide theme.
+        MemoryMonitorConfig (class): Configuration knobs for the memory monitor.
+        MemoryAwareCache (class): Memory-aware data cache that spills large numpy arrays to disk via ``numpy.memmap``.
+        MemoryMonitor (class): Background thread that publishes a callback whenever process RSS crosses the high-water mark.
+        run_in_threadpool: Submit ``work_items`` -- ``(key, fn, args)`` triplets -- to a ``ThreadPoolExecutor`` and collect results keyed by ``key``.
+        open_embedded: Legacy function name; return a native model, never launch Veusz.
+        begin_native_plugin_export: Pick an output file before parsing; never modify the host document.
+        finish_native_plugin_export: Same HDF5 writer for both plugin entry points and standalone GUIs.
+        save_vszh5: Atomically write the native model with h5py; no Veusz runtime needed.
+        _walk_widget_tree: Recursive sibling of ``Root.WalkWidgets``.
+        _collect_referenced_dataset_names_via_walk: Original (v0.0.17) WalkWidgets-based traversal.
+        _collect_referenced_dataset_names_via_text: v0.0.19 authoritative collector: dump the document via Veusz's own text serialization and regex out every ``Set('xData', 'name')``-style binding.
+        _collect_referenced_dataset_names: v0.0.19: combine WalkWidgets-based traversal AND a document-text scan, returning the UNION of both whitelists.
+        save_vszh5_minimized: Save exactly the referenced native datasets without deleting anything.
+        _norm_tag_token: Lower-cased, stripped string form of a tag-tuple element.
+        is_sentinel_tag_tuple: Return True iff ``tup`` is a placeholder/catch-all channel-tag tuple that should be EXCLUDED from dt-overlay datetime emission.
+        is_delta_column: Deprecated stub kept for v0.0.17 back-compat.
+        open_in_veusz_app: Launch an optional external Veusz GUI and load ``filename`` (typically a .vszh5 project just written by save_vszh5).
+        detect_time_breaks: Detect large gaps in a 1-D monotonic-ish array of time samples and return a list of (start, end) pairs suitable for Veusz's ``axis-broken`` widget.
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        column_unit_factor_from_day: Return the multiplier that converts a day-scale threshold into the units of the column named ``col_name``.
+        detect_time_breaks_unit_aware: Unit-aware wrapper around ``detect_time_breaks``.
+        break_pairs_to_breakpoints: Flatten a list of (start, end) tuples to Veusz's flat-list format [s1, e1, s2, e2, ...] as expected by the ``breakPoints`` setting of the ``axis-br...
+        make_broken_x_axis: Add an ``axis-broken`` widget named ``x`` to ``graph`` with the given list of (start, end) break pairs, after removing the default ``x`` axis that...
+        mjd_to_veusz_seconds: Convert an array of Modified Julian Dates (UTC) to the float-seconds units Veusz uses internally for date-time datasets.
+        _coerce_axis_setting_to_str: Some Veusz axis settings (rotate, in particular) are documented as accepting either an int or its string form.
+        style_datetime_x_axis: Apply the standard datetime tick-label format and angled rotation to an axis widget.
+        is_gpu_available: True iff CuPy imported successfully AND at least one CUDA device is visible to it.
+        gpu_backend_name: Short string describing the GPU backend status for the GUI/log.
+        enable_gpu: Toggle the process-wide GPU acceleration flag.
+        gpu_enabled: Return the current global GPU-enabled state.
+        set_gpu_argsort_threshold: Set the minimum array size (samples) at which the optional CuPy path is used.
+        get_gpu_argsort_threshold: Minimum array size (samples) for the optional CuPy argsort path.
+        gpu_argsort: Return ``np.argsort(arr)`` (ascending, int64) with optional CuPy acceleration.
+        AutoPlotMainWindow (class): Base main window mirroring the layout used by Touchstone_AutoPlot.py:
+        open_maybe_gzipped: Return a binary file handle for ``path``; transparently gunzip *.gz.
+        mjd_to_datestr: Convert an array of Modified Julian Dates (UTC, double precision) into an array of formatted timestamp strings.
+        register_nrao_fits_units: Register the non-standard NRAO FITS unit aliases with astropy.units so that ``QTable.read`` / ``Table.read`` no longer emit a UnitsWarning.
+        suppress_fits_unit_warnings: Context manager that filters the harmless FITS unit-related warnings emitted by ``astropy.io.fits`` and ``astropy.table`` when reading NRAO 1PPS-de...
+        set_datetime_dataset: Push a Veusz datetime dataset, coercing values to plain floats.
+        safe_dsname: Sanitize an arbitrary string for use as a Veusz dataset name.
+        _stable_index: Deterministic non-negative index in ``[0, modulus)``.
+        trace_style_for: Return ``(color_hex, line_style_str)`` for an identity key.
+        apply_trace_style: Apply identity-stable color + line style + markers to a Veusz xy.
+        build_sparse_datestr_dataset: Push a same-length sparse date-string text dataset to Veusz.
+        build_full_datestr_dataset: Push a same-length per-point date-string text dataset to Veusz.
+        style_xy_datetime_labels: Apply rotated, compact text formatting to an xy widget's labels.
+        build_density_datestr_dataset: Push a same-length date-string text dataset with continuous density.
+        build_textx_dataset: Push a same-length per-point date-string text dataset for use as xData.
+        configure_axis_labels_mode: Switch a Veusz axis to ``mode='labels'`` with sensible defaults.
+        build_dtnum_dataset: Push a numeric Veusz-datetime-seconds dataset for use as xData.
+        configure_axis_datetime_mode: Switch a Veusz x axis to ``mode='datetime'`` and style its ticks.
+        mjd_break_pairs_to_dtsec: Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _DATASET_REF_SETTINGS: v0.0.19: trimmed the tuple to entries that *actually* hold dataset names.  ``posn`` is a position rectangle, ``key`` is a legend-label STRING -- ne...
+        _DOC_DATASET_REF_REGEX: v0.0.19: regex used to extract dataset references from the document's own saved-text representation.  This is the AUTHORITATIVE source of truth --...
+        SENTINEL_TAG_TOKENS: The user can extend the sentinel set in place; the predicate is case-insensitive and trims whitespace before matching.
+        DELTA_COLUMN_NAME_PATTERNS: Deprecated column-name predicate -- retained as a no-op for any external script that may have imported it.  v0.0.17 superseded this with the tuple-...
+        DAY_SCALE_COLUMN_NAMES: Unknown column names default to 1.0 (i.e. assume MJD-day units), which is the safe choice when the column appears to be a generic time axis: a too-...
+        SECOND_SCALE_COLUMN_NAMES: column names whose values are seconds (time axes)
+        _GAP_TOKEN_REGEX: Accepts strings like ``"5m3d2h"`` (5 months, 3 days, 2 hours), with or without whitespace between tokens, case-insensitive.  A bare number (no unit...
+        GAP_STRING_HELP: (0.4.0) Tool tip of the gap text boxes.
+        _DAYS_PER_MONTH: Average Gregorian month length (365.25 / 12) -- intentionally the same value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 0.4.0
+        _DAYS_PER_SECOND: 0.4.0
+        MJD_VEUSZ_EPOCH_MJD: MJD that corresponds to Veusz's internal date-time zero (2009-01-01 UTC).
+        DEFAULT_DATETIME_TICK_FORMAT: 0.3.0: ISO 8601
+        LOCAL_TIME_AXIS_LABEL: 0.3.0: label of a local date-time axis (the offset is appended on save).
+        DEFAULT_DATETIME_TICK_ROTATE_DEG: Default tick label rotation -- 45 degrees keeps a 19-character label readable at typical cadences.  Veusz accepts integer or stringified integer de...
+        DEFAULT_DATETIME_MAJOR_TICKS_TARGET: Target number of major ticks along the x axis.  Veusz auto-picks the spacing to satisfy roughly this many major ticks; we keep it modest so the rot...
+        _GPU_ENABLED: Process-wide enable flag (driven by the GUI checkbox).  Off by default.
+        _GPU_ARGSORT_THRESHOLD: Minimum array size at which we attempt the GPU sort.  Tuneable.
+        QUEUED_CONNECTION: queued signal connection, valid for PySide6, PyQt5 and PyQt6
+        MJD_EPOCH_JD_OFFSET: Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC. JD = MJD + 2400000.5  -- we implement the conversion directly without astropy.time...
+        _NRAO_UNITS_REGISTERED: NRAO 1PPS-delta FITS files use non-standard FITS unit strings: * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit) * DELTAT  carr...
+        TRACE_COLOR_PALETTE: trace colours, cycled
+        TRACE_LINE_STYLES: line styles cycled after the colours
+        TRACE_STYLE_VARY_THRESHOLD: 16
+        DEFAULT_DATETIME_LABEL_ANCHORS: legacy date-label pages: labels per trace
+        DEFAULT_DATETIME_LABEL_ANGLE: legacy date-label pages: label angle (degrees)
+        DEFAULT_DATETIME_LABEL_SIZE: legacy date-label pages: label font size
+        DEFAULT_DATETIME_LABEL_FMT: legacy date-label pages: strftime format
+        PYQTGRAPH_ERROR = None
+        _PSUTIL_AVAILABLE = True
+        _HAS_CUPY = True
+# %%%%% More Info
+    Shared by FITS and Franks AutoPlot and their plugins.  numpy.memmap is
+    the RAM -> disk transport of MemoryAwareCache (no pickling, the kernel page
+    cache does the writing).  The memory monitor runs in its own thread: its
+    callback must not touch Qt widgets (log() is safe).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.0: Suite theme; Veusz date-times in local ISO 8601.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              Date-time axes (dt_labels pages and their overlays):
 #                * build_dtnum_dataset() stores the time stamps as a Veusz
 #                  DATE dataset (seconds since 2009-01-01 UTC; it was a plain
@@ -58,7 +191,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              own dialog (_suite_gui.dialog_stylesheet).
 #
 # %%%% 0.2.0: pyqtgraph "Plots" tab, Help > About (NRAO).
-# Date: 2026-11-05
+Date: 2026-11-05
 #              AutoPlotMainWindow now has two tabs: "Processing" (file list,
 #              options, log - unchanged) and "Plots", an interactive
 #              pyqtgraph view of the in-memory project built by
@@ -71,13 +204,13 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              library versions (Show Details).
 #
 # %%%% 0.1.0: Shared native HDF5 save and plugin export workflow.
-# Date: 2026-10-11
+Date: 2026-10-11
 #              No Veusz imports or embedded process for document generation.
 #              Minimized saves select model references without removing data.
 #              Shared native writer is in _autoplot_native.py.
 #
 # %%%% 0.0.19: Minimized save union fix + string gap parser + key-hide.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              Three independent fixes/features bundled together:
 #
 #              (1) MINIMIZED-SAVE NO-OP FIX.  Inspection of a user-
@@ -136,7 +269,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  draw.  Default False (pre-0.0.19 behaviour).
 #
 # %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
-# Date: 2026-05-16
+Date: 2026-05-16
 #              Fixes a unit-mismatch bug where the GUI "Manual gap
 #              (hours)" spinbox was converted to MJD-days but compared
 #              directly against ``np.diff(x)`` even when ``x`` was not
@@ -176,7 +309,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  order.
 #
 # %%%% 0.0.17: Minimized .vszh5 save + sentinel-tag dt overlay filter.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              Two user-facing additions and one correctness fix:
 #
 #                * NEW: ``save_vszh5_minimized(doc, filename, log_cb)``.
@@ -228,7 +361,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  order.
 #
 # %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (proper date ticks).
-# Date: 2026-05-16
+Date: 2026-05-16
 #              v0.0.15 made the dt_labels page bind xData to a per-point
 #              TEXT dataset and set axis mode='labels' so Veusz pulled
 #              tick strings from the plotter.  That works but yields
@@ -284,7 +417,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  order across every shared file.
 #
 # %%%% 0.0.15: Continuous datetime-label density + text-x dt-page variant.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              Two GUI/plugin changes layered on top of v0.0.14:
 #                * The boolean ``datetime_full_labels`` checkbox is
 #                  REPLACED by an integer percentage
@@ -351,7 +484,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  hot path, so no extra parallelization is warranted.
 
 # %%%% 0.0.14: Datetime display via xy.labels (text dataset) instead of
-# Date: 2026-05-16
+Date: 2026-05-16
 #              SetDataDateTime.  Real-host testing on Veusz 3.4 showed
 #              every SetDataDateTime call raises ``unsupported operand
 #              type(s) for -: 'float' and 'datetime.datetime'`` from
@@ -410,7 +543,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              stays appropriate for the IO-bound FITS read path.
 
 # %%%% 0.0.13: Identity-stable trace styling + datetime-duplicate hardening.
-# Date: 2026-05-16
+Date: 2026-05-16
 #                * apply_trace_style(xy, identity_key, vary_style=False)
 #                  assigns each trace a deterministic colour (md5 over the
 #                  identity key, mapped into TRACE_COLOR_PALETTE) and a
@@ -435,7 +568,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  contains NumPy float64 / NaN.
 
 # %%%% 0.0.12: Combined-in-time overlay semantics.  The unit-overlay
-# Date: 2026-05-16
+Date: 2026-05-16
 #               builders now stitch every file's samples for a given
 #               (unit, column) into a single time-sorted xy trace -- one
 #               line per column instead of N lines per file.  The
@@ -465,7 +598,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #               console flash.
 
 # %%%% 0.0.11: Added datetime-duplicate plot support.  Plots whose x axis
-# Date: 2026-05-16
+Date: 2026-05-16
 #              is a Modified Julian Date column (or any column known to be
 #              MJD-valued via the ``SORTED_KEY_HINT`` convention) can now
 #              optionally be duplicated with a parallel x axis that uses a
@@ -490,7 +623,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  MajorTicks.number settings are stable since Veusz 1.x).
 
 # %%%% 0.0.10: Optional GPU acceleration via CuPy.  Added
-# Date: 2026-05-16
+Date: 2026-05-16
 #              ``is_gpu_available()``, ``enable_gpu(flag)`` (process-wide
 #              toggle), ``set_gpu_argsort_threshold(n)``, and
 #              ``gpu_argsort(arr, force=None)`` which returns the same
@@ -512,7 +645,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              configuration burden when CuPy is absent.
 
 # %%%% 0.0.9: Added broken-axis helpers used by FITS_AutoPlot and
-# Date: 2026-05-16
+Date: 2026-05-16
 #             Franks_AutoPlot to generate plots that handle large time
 #             gaps without dead-space:
 #               * detect_time_breaks(x, k_factor=10, absolute_gap=0)
@@ -531,10 +664,9 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                 plain axis).  Veusz 3.4 and 4.1 compatible (the
 #                 widget and the breakPoints setting are stable since
 #                 Veusz 1.17, 2014).
-# %%%%% Function Descriptions
 
 # %%%% 0.0.8: Added ``open_in_veusz_app(filename)`` helper that launches the
-# Date: 2026-05-16
+Date: 2026-05-16
 #             full standalone Veusz GUI in the current Python environment
 #             via ``subprocess.Popen([sys.executable, '-m', 'veusz', fn])``
 #             so the freshly-saved .vszh5 project can be inspected without
@@ -554,21 +686,21 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             all document operations must come from one thread.
 
 # %%%% 0.0.6: AutoPlotMainWindow now provides three labelled progress bars
-# Date: 2026-05-16
+Date: 2026-05-16
 #             (read / parse / per-column) plus helper methods
 #             ``show_progress_bars()``, ``hide_progress_bars()``,
 #             ``begin_column_progress()`` and ``tick_column_progress()``.
 #             Subclasses use these to drive a multi-stage progress UI.
 
 # %%%% 0.0.5: Added Spyder-style cell markers (``# %% TITLE`` for top-level
-# Date: 2026-05-16
+Date: 2026-05-16
 #             sections, ``# %%% TITLE`` for nested sections) on the
 #             existing dashed banner blocks so the file is navigable in
 #             Spyder's Outline / cell navigator.  Pure cosmetic change --
 #             no runtime behaviour modified.
 
 # %%%% 0.0.4: Added register_nrao_fits_units() and suppress_fits_unit_warnings()
-# Date: 2026-05-16
+Date: 2026-05-16
 #             helpers.  NRAO 1PPS-delta FITS files carry non-standard unit
 #             strings (``'none'`` on CHANNELA/CHANNELB, ``'NanoSeconds'`` on
 #             DELTAT) that astropy.io.fits / QTable.read flag with a noisy
@@ -580,7 +712,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             batch run no longer floods the log.
 
 # %%%% 0.0.3: NaN-preserving dataset emission policy. Numeric datasets keep
-# Date: 2026-05-16
+Date: 2026-05-16
 #             NaN floats (Veusz natively supports NaN in numeric datasets;
 #             plots simply skip NaN samples). Text datasets cannot carry a
 #             true NaN, so non-finite MJD inputs to mjd_to_datestr() now
@@ -589,64 +721,20 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             being silently dropped or confused with a missing token.
 
 # %%%% 0.0.2: Added mjd_to_datestr() helper for MJD -> YYYY-MM-DD_HH:MM:SS
-# Date: 2026-05-16
+Date: 2026-05-16
 #             string conversion used by all four AutoPlot modules.
 
 # %%%% 0.0.1: Initial implementation of shared infrastructure
-# Date: 2026-05-16
+Date: 2026-05-16
 
-        make_dark_palette/make_light_palette/apply_theme: textual menu theme
-            switching for dark vs light mode (View menu).
-        MemoryAwareCache: thread-safe data cache that spills large numpy
-            arrays to disk via numpy.memmap (fastest zero-copy RAM->disk).
-        MemoryMonitor: background thread that polls process RSS and fires a
-            callback on high-water transitions.
-        run_in_threadpool: ThreadPoolExecutor helper used by every AutoPlot
-            module; respects the per-script MAX_THREADS knob.
-        open_embedded/save_vszh5: Veusz embedded helpers that work on both
-            Veusz 3.4 and Veusz 4.1 (.vszh5 HDF5 output).
-        AutoPlotMainWindow: qtpy-based QMainWindow base class providing the
-            Touchstone_AutoPlot.py-style file list / options / log / button
-            row layout, plus the View menu dark/light toggle.
-        open_maybe_gzipped/safe_dsname: small I/O helpers used by callers.
-        open_in_veusz_app: launch the full Veusz GUI in the current Python
-            env and load the given .vszh5 file.
-        detect_time_breaks/break_pairs_to_breakpoints/make_broken_x_axis:
-            time-gap detection and Veusz axis-broken widget helpers.
-        build_sparse_datestr_dataset/build_full_datestr_dataset/
-        style_xy_datetime_labels: v0.0.14 sparse and full date-string
-            text datasets bound to ``xy.labels.val`` (the per-point
-            label property on the xy widget) so dt pages render readable
-            ``YYYY-MM-DD HH:MM:SS`` annotations without going through
-            the buggy ``SetDataDateTime`` path on Veusz 3.4.
-        build_density_datestr_dataset: v0.0.15 generalised date-string
-            text dataset whose label density is controlled by an
-            integer percentage in [0, 100].  Anchors are
-            ``round(pct/100 * N)`` evenly spaced indices into the
-            finite subset of the trace.  ``build_sparse_*`` and
-            ``build_full_*`` are now thin wrappers around it.
-        build_textx_dataset / configure_axis_labels_mode: v0.0.15
-            helpers for the new dt_labels page variant.  The text
-            dataset becomes the xy widget's xData and the dt axis is
-            switched to ``mode='labels'`` so Veusz pulls tick labels
-            via the xy widget's ``getAxisLabels`` method.
-# %%%%% Variable Descriptions
-        MemoryMonitorConfig.rss_high_water_mb: RSS threshold for spilling.
-        MemoryMonitorConfig.array_min_bytes: arrays smaller than this stay
-            in RAM regardless of RSS pressure.
-        MemoryMonitorConfig.cache_dir: directory used for memmap backing
-            files (created in $TMP by default).
-# %%%%% More Info
-        numpy.memmap was chosen as the RAM->disk transport because it is
-        the most efficient option available to pure Python/numpy: the file
-        backs an mmap'd region and writes go through the kernel page cache
-        without any user-space buffering or pickling overhead.
-=============================================================================
 """
 # %% Imports
 from __future__ import annotations
 
+__version__ = "0.4.0"          # Semantic Versioning: see the Revisions entries above
+
 # %%% IMPORTS - Standard library
+
 import gc
 import os
 import re
@@ -655,6 +743,7 @@ import tempfile
 import threading
 import time
 import uuid
+import weakref
 import gzip
 import shutil
 import subprocess
@@ -768,6 +857,12 @@ def suite_theme(default: str = "dark") -> str:
 
 
 def store_suite_theme(mode: str) -> None:
+    """Save ``mode`` ('dark' or 'light') as the suite-wide theme.
+
+    Delegates to _suite_gui.save_theme so the launcher and every program open
+    with the same theme next time; silently does nothing when _suite_gui is
+    not importable (a plugin inside Veusz, say).
+    """
     try:
         import _suite_gui
         _suite_gui.save_theme(mode)
@@ -805,6 +900,12 @@ class MemoryAwareCache:
     """
 
     def __init__(self, config: Optional[MemoryMonitorConfig] = None) -> None:
+        """Create an empty cache with ``config`` (defaults if None).
+
+        Spilled arrays go to ``config.cache_dir`` or a new temporary folder
+        ``autoplot_cache_*``; a lock makes the cache safe to use from the reader
+        threads.
+        """
         self.cfg = config or MemoryMonitorConfig()
         self._cache: Dict[str, Any] = {}
         self._spilled: Dict[str, str] = {}
@@ -814,6 +915,7 @@ class MemoryAwareCache:
 
     # ----- introspection ----------------------------------------------------
     def rss_mb(self) -> float:
+        """Resident set size of this process in MiB (0.0 without psutil)."""
         if _PSUTIL_AVAILABLE:
             try:
                 return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
@@ -822,6 +924,8 @@ class MemoryAwareCache:
         return 0.0
 
     def over_high_water(self) -> bool:
+        """True when the process RSS is at or above the configured high-water mark.
+        """
         return self.rss_mb() >= self.cfg.rss_high_water_mb
 
     # ----- public api -------------------------------------------------------
@@ -840,18 +944,27 @@ class MemoryAwareCache:
             return value
 
     def get(self, key: str, default: Any = None) -> Any:
+        """Cached value for ``key`` (an array or a read-only memmap), else ``default``.
+        """
         with self._lock:
             return self._cache.get(key, default)
 
     def items(self):
+        """Snapshot list of (key, value) pairs, taken under the lock."""
         with self._lock:
             return list(self._cache.items())
 
     def keys(self):
+        """Snapshot list of the cached keys, taken under the lock."""
         with self._lock:
             return list(self._cache.keys())
 
     def clear(self) -> None:
+        """Drop every cached entry and delete the spill files from disk.
+
+        Call it after a batch (or let the GUI's "Flush RAM" do it) to release both
+        RAM and temporary disk space.
+        """
         with self._lock:
             self._cache.clear()
             for path in list(self._spilled.values()):
@@ -872,6 +985,12 @@ class MemoryAwareCache:
 
     # ----- internals --------------------------------------------------------
     def _spill_to_disk(self, key: str, arr: np.ndarray) -> np.ndarray:
+        """Write ``arr`` to a .npy file and cache a read-only memmap of it.
+
+        np.save / np.load(mmap_mode='r') keeps the dtype and shape; the file name
+        is the key with unsafe characters replaced plus a random suffix, so two
+        keys never collide.
+        """
         # numpy.memmap performs an in-kernel copy via mmap which is the
         # fastest user-mode-visible RAM->disk path on Linux/Windows/macOS.
         safe_key = "".join(c if (c.isalnum() or c in "._-") else "_" for c in key)
@@ -891,31 +1010,75 @@ class MemoryMonitor(threading.Thread):
     Background thread that publishes a callback whenever process RSS crosses
     the high-water mark.  The callback is called with the current RSS in
     MiB.
+
+    0.4.0 - thread safety:
+      * The callback runs in THIS thread: it must not touch Qt widgets.
+        AutoPlotMainWindow.log() and the plugin dialogs' append_log() are
+        safe to call from it (they hand the text to the GUI thread).
+      * A bound method is held through a weak reference, so the monitor
+        never keeps a window or dialog alive.  Before, a lambda capturing
+        the window/dialog meant the monitor thread could drop the last
+        reference and destroy Qt widgets outside the GUI thread, which
+        crashed PySide6 6.12 under Python 3.12 later, at random.
+      * stop() wakes the thread at once and waits for it to finish (it
+        used to sleep out its poll interval and outlive its owner).
     """
 
     def __init__(self, cache: MemoryAwareCache,
                  callback: Optional[Callable[[float], None]] = None) -> None:
+        """Daemon thread that polls ``cache``'s RSS; ``callback(rss_mb)`` is called
+        each time the RSS rises past the high-water mark.
+
+        A bound method is stored as a weakref.WeakMethod (dropped when its
+        object goes); any other callable is stored as given.
+        """
         super().__init__(daemon=True)
         self.cache = cache
-        self.callback = callback
-        self._stop = threading.Event()
+        if callback is not None and getattr(callback, "__self__", None) is not None \
+                and getattr(callback, "__func__", None) is not None:
+            self._callback_ref = weakref.WeakMethod(callback)
+        else:
+            self._callback_ref = (lambda cb=callback: cb)
+        # Not "_stop": threading.Thread has its own _stop() method, which
+        # join() calls (Python <= 3.12); shadowing it broke join().
+        self._stop_event = threading.Event()
 
-    def stop(self) -> None:
-        self._stop.set()
+    @property
+    def callback(self) -> Optional[Callable[[float], None]]:
+        """The callback, or None (none given, or its object has been deleted)."""
+        return self._callback_ref()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        """Wake the thread, ask it to finish and wait up to ``timeout`` seconds.
+
+        Safe to call more than once, before start() and from the monitor
+        thread itself (then it does not wait).
+        """
+        self._stop_event.set()
+        if self.is_alive() and threading.current_thread() is not self:
+            self.join(timeout)
 
     def run(self) -> None:
+        """Poll the RSS every ``poll_interval_sec`` until stop() is called.
+
+        The callback fires once per crossing (edge triggered), not on every poll
+        while the RSS stays high; callback errors are ignored so the monitor keeps
+        running.  The wait is on the stop event, so stop() ends it at once.
+        """
         prev_over = False
-        while not self._stop.is_set():
-            if self.callback is not None:
+        while not self._stop_event.is_set():
+            callback = self.callback
+            if callback is not None:
                 try:
                     rss = self.cache.rss_mb()
                     over = self.cache.over_high_water()
                     if over and not prev_over:
-                        self.callback(rss)
+                        callback(rss)
                     prev_over = over
                 except Exception:
                     pass
-            time.sleep(self.cache.cfg.poll_interval_sec)
+            callback = None                      # hold no reference while waiting
+            self._stop_event.wait(self.cache.cfg.poll_interval_sec)
 
 
 # ---------------------------------------------------------------------------
@@ -1572,13 +1735,19 @@ SECOND_SCALE_COLUMN_NAMES = frozenset((
 # value straight to ``detect_time_breaks_unit_aware`` without changing
 # the engine signature.
 _GAP_TOKEN_REGEX = re.compile(
-    r"([+-]?\d+(?:\.\d+)?)\s*([mMdDhH]?)"
+    r"([+-]?\d+(?:\.\d+)?)\s*(min|[mMdDhHsS]?)", re.IGNORECASE
 )
+#: (0.4.0) Tool tip of the gap text boxes.
+GAP_STRING_HELP = ("Units: s = seconds, min = minutes, h = hours, d = days, "
+                   "m = months (30.4375 days).  Examples: '90s', '15min', '12h', "
+                   "'3d', '1m 3d 2h'.  A bare number is hours.")
 
 # Average Gregorian month length (365.25 / 12) -- intentionally the same
 # value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
 _DAYS_PER_MONTH = 30.4375
 _DAYS_PER_HOUR = 1.0 / 24.0
+_DAYS_PER_MINUTE = _DAYS_PER_HOUR / 60.0     # 0.4.0
+_DAYS_PER_SECOND = _DAYS_PER_MINUTE / 60.0   # 0.4.0
 
 
 def parse_gap_string(text, log_cb=None):
@@ -1635,7 +1804,11 @@ def parse_gap_string(text, log_cb=None):
             value = float(num_str)
         except (TypeError, ValueError):
             continue
-        if unit == "m":
+        if unit == "min":                            # 0.4.0
+            total_days += value * _DAYS_PER_MINUTE
+        elif unit == "s":                            # 0.4.0
+            total_days += value * _DAYS_PER_SECOND
+        elif unit == "m":
             total_days += value * _DAYS_PER_MONTH
         elif unit == "d":
             total_days += value
@@ -2026,6 +2199,7 @@ def set_gpu_argsort_threshold(n: int) -> None:
 
 
 def get_gpu_argsort_threshold() -> int:
+    """Minimum array size (samples) for the optional CuPy argsort path."""
     return int(_GPU_ARGSORT_THRESHOLD)
 
 
@@ -2093,6 +2267,11 @@ def gpu_argsort(arr, force=None):
 # ============================================================================
 # %% COMMON GUI BUILDING BLOCKS
 # ---------------------------------------------------------------------------
+# 0.4.0: queued signal connection, spelled so that PySide6, PyQt5 and PyQt6
+# (through qtpy) all accept it.
+QUEUED_CONNECTION = getattr(Qt, "QueuedConnection", None) or Qt.ConnectionType.QueuedConnection
+
+
 class AutoPlotMainWindow(QMainWindow):
     """
     Base main window mirroring the layout used by Touchstone_AutoPlot.py:
@@ -2104,7 +2283,17 @@ class AutoPlotMainWindow(QMainWindow):
     Subclasses provide ``_process_files`` and ``_save_project``.
     """
 
+    # 0.4.0: log() called outside the GUI thread (the memory monitor) is
+    # delivered here and appended by the GUI thread (queued connection).
+    _log_from_thread = Signal(str)
+
     def __init__(self, title: str, default_mode: str = "dark") -> None:
+        """Build the shared main window: menus, status bar, tabs and log.
+
+        ``title`` is the window title; ``default_mode`` the theme used when the
+        suite has no saved theme yet.  Subclasses add their options form through
+        _populate_options() and the processing through _process_files().
+        """
         super().__init__()
         self.setWindowTitle(title)
         self.resize(1100, 800)
@@ -2113,6 +2302,7 @@ class AutoPlotMainWindow(QMainWindow):
         # Path of the most recently saved .vszh5 project (None until
         # mark_project_saved() is called by a subclass _save_project()).
         self._last_saved_path: Optional[str] = None
+        self._log_from_thread.connect(self.log, QUEUED_CONNECTION)
         self._build_menu()
         self._build_central_widget()
         self._build_statusbar()
@@ -2120,6 +2310,9 @@ class AutoPlotMainWindow(QMainWindow):
 
     # ----- chrome -----------------------------------------------------------
     def _build_menu(self) -> None:
+        """Create the File (open, clear, save, exit), View (dark / light mode) and
+        Help (About) menus.
+        """
         bar = self.menuBar()
         file_menu = bar.addMenu("&File")
         act_open = QAction("&Open Files...", self)
@@ -2153,12 +2346,16 @@ class AutoPlotMainWindow(QMainWindow):
         help_menu.addAction(act_about)
 
     def _build_statusbar(self) -> None:
+        """Status bar with the permanent RSS (memory) read-out."""
         sb = QStatusBar(self)
         self.setStatusBar(sb)
         self.mem_label = QLabel("RSS: -- MiB")
         sb.addPermanentWidget(self.mem_label)
 
     def _build_central_widget(self) -> None:
+        """Lay out the Processing tab (file list, options, progress bars) and the
+        Plots tab (pyqtgraph view), with the log below both tabs.
+        """
         central = QWidget(self)
         self.setCentralWidget(central)
         outer = QVBoxLayout(central)
@@ -2175,13 +2372,16 @@ class AutoPlotMainWindow(QMainWindow):
         fgroup = QGroupBox("Input File Selection")
         flay = QVBoxLayout(fgroup)
         self.file_list_widget = QListWidget()
+        self.file_list_widget.setToolTip("Files to process; add them with Browse, remove all with Clear.")
         self.file_list_widget.setMinimumHeight(180)
         flay.addWidget(self.file_list_widget)
         row = QHBoxLayout()
         self.browse_button = QPushButton("Browse Files...")
+        self.browse_button.setToolTip("Add files to the list (several can be selected at once).")
         self.browse_button.clicked.connect(self._browse_files)
         row.addWidget(self.browse_button)
         self.clear_button = QPushButton("Clear")
+        self.clear_button.setToolTip("Remove every file from the list (the files are not touched).")
         self.clear_button.clicked.connect(self._clear_files)
         row.addWidget(self.clear_button)
         flay.addLayout(row)
@@ -2195,6 +2395,7 @@ class AutoPlotMainWindow(QMainWindow):
 
         # Log area
         self.status_text = QTextEdit()
+        self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
         self.status_text.setReadOnly(True)
         self.status_text.setMinimumHeight(150)
         root.addWidget(self.status_text)
@@ -2255,9 +2456,15 @@ class AutoPlotMainWindow(QMainWindow):
 
         bbox = QHBoxLayout()
         self.process_button = QPushButton("Process Files")
+        self.process_button.setToolTip(
+            "Read the listed files and build the pages (shown on the Plots "
+            "tab).")
         self.process_button.clicked.connect(self._process_files)
         bbox.addWidget(self.process_button)
         self.save_button = QPushButton("Save Veusz Project (.vszh5)")
+        self.save_button.setToolTip(
+            "Write the project as a native Veusz HDF5 file (.vszh5); Veusz "
+            "is not needed.")
         self.save_button.clicked.connect(self._save_project)
         self.save_button.setEnabled(False)
         bbox.addWidget(self.save_button)
@@ -2271,16 +2478,21 @@ class AutoPlotMainWindow(QMainWindow):
         self.open_veusz_button.setEnabled(False)
         bbox.addWidget(self.open_veusz_button)
         self.close_button = QPushButton("Close")
+        self.close_button.setToolTip("Close this window (unsaved projects are lost).")
         self.close_button.clicked.connect(self.close)
         bbox.addWidget(self.close_button)
         root.addLayout(bbox)
 
     # subclasses override
     def _populate_options(self, form: QFormLayout) -> None:
+        """Hook: subclasses add their processing options to ``form``."""
         pass
 
     # ----- theme handling ---------------------------------------------------
     def _set_theme(self, mode: str) -> None:
+        """Switch to the 'dark' or 'light' theme, save it for the whole suite and
+        update the View menu check marks and the Plots tab colours.
+        """
         self._theme_mode = mode
         apply_theme(QApplication.instance(), mode)
         store_suite_theme(mode)
@@ -2292,6 +2504,9 @@ class AutoPlotMainWindow(QMainWindow):
 
     # ----- file list --------------------------------------------------------
     def _browse_files(self) -> None:
+        """Ask for input files (filter ``self._file_filter``) and add the new ones
+        to the list.
+        """
         # subclasses set self._file_filter
         flt = getattr(self, "_file_filter", "All Files (*.*)")
         files, _ = QFileDialog.getOpenFileNames(
@@ -2306,17 +2521,29 @@ class AutoPlotMainWindow(QMainWindow):
                      (len(files), len(self.selected_files)))
 
     def _clear_files(self) -> None:
+        """Empty the input file list."""
         self.selected_files.clear()
         self._refresh_file_list()
         self.log("File list cleared.")
 
     def _refresh_file_list(self) -> None:
+        """Show the base names of the selected files in the list widget."""
         self.file_list_widget.clear()
         for p in self.selected_files:
             self.file_list_widget.addItem(os.path.basename(p))
 
     # ----- log / status -----------------------------------------------------
     def log(self, msg: str) -> None:
+        """Append ``msg`` with an HH:MM:SS time stamp to the log pane.
+
+        Messages logged before the log widget exists (from _populate_options, for
+        example) are buffered and written first once it does; widget errors are
+        ignored so logging can never stop a batch.  Safe to call from any
+        thread (0.4.0): outside the main (GUI) thread the text is queued to it.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            self._log_from_thread.emit(msg)
+            return
         # v0.0.12: subclass _populate_options() runs before the log widget
         # exists, so any early log() calls (e.g. "GPU backend: ...") would
         # AttributeError on self.status_text.  Buffer messages emitted
@@ -2350,6 +2577,7 @@ class AutoPlotMainWindow(QMainWindow):
             pass
 
     def update_mem_label(self, rss_mb: float) -> None:
+        """Show ``rss_mb`` in the status bar memory read-out."""
         self.mem_label.setText("RSS: %.1f MiB" % rss_mb)
 
     # ----- progress helpers ------------------------------------------------
@@ -2368,6 +2596,7 @@ class AutoPlotMainWindow(QMainWindow):
         self.column_progress_bar.setValue(0)
 
     def hide_progress_bars(self) -> None:
+        """Hide all three progress bars and their labels (batch finished)."""
         for w in (self.progress_label, self.progress_bar,
                   self.parse_progress_label, self.parse_progress_bar,
                   self.column_progress_label, self.column_progress_bar):
@@ -2380,6 +2609,7 @@ class AutoPlotMainWindow(QMainWindow):
         self.column_progress_bar.setValue(0)
 
     def tick_column_progress(self, done: int) -> None:
+        """Set the per-file column progress bar to ``done``."""
         self.column_progress_bar.setValue(done)
 
     # ----- saved-project tracking / Open-in-Veusz --------------------------
@@ -2428,11 +2658,88 @@ class AutoPlotMainWindow(QMainWindow):
             self.log("Open in Veusz failed: %s" % exc)
             QMessageBox.critical(self, "Open in Veusz failed", str(exc))
 
+    # ----- time gaps (0.4.0) -------------------------------------------------
+    def add_gap_controls(self, form) -> None:
+        """
+        Gap controls shared by FITS and Franks AutoPlot (0.4.0).
+
+        Small gap - the trace line breaks, the x axis stays continuous:
+            dt > K x median(dt) of that trace, or a fixed time.
+        Large gap - the x axis itself breaks (Veusz broken axis) where no
+        trace has data for dt > n x (small-gap threshold), or a fixed time;
+        n = 0 and no fixed time: no axis breaks.
+        """
+        heading = QLabel("<b>Gaps</b> - small: the line breaks; large: the x axis breaks")
+        form.addRow(heading)
+        self.gap_k_spin = QDoubleSpinBox()
+        self.gap_k_spin.setRange(1.0, 1000.0)
+        self.gap_k_spin.setSingleStep(1.0)
+        self.gap_k_spin.setDecimals(2)
+        self.gap_k_spin.setValue(10.0)
+        self.gap_k_spin.setToolTip(
+            "Small gap: the trace line stops and restarts where its sample "
+            "step dt > K x median(dt) of that trace; the x axis is not cut.")
+        form.addRow(QLabel("Small gap K (line break: dt > K × median dt):"), self.gap_k_spin)
+        self.gap_abs_spin = QDoubleSpinBox()
+        self.gap_abs_spin.setRange(0.0, 1e12)
+        self.gap_abs_spin.setDecimals(6)
+        self.gap_abs_spin.setSingleStep(1.0)
+        self.gap_abs_spin.setValue(0.0)
+        self.gap_abs_spin.setSpecialValueText("0 = use K × median dt")
+        self.gap_abs_spin.setToolTip("A fixed small-gap time in hours instead of K x median(dt).")
+        form.addRow(QLabel("Small gap fixed (hours):"), self.gap_abs_spin)
+        self.gap_abs_str = QLineEdit()
+        self.gap_abs_str.setPlaceholderText("e.g. 90s, 15min, 2h  (overrides the hours box)")
+        self.gap_abs_str.setToolTip(GAP_STRING_HELP)
+        form.addRow(QLabel("Small gap fixed (text):"), self.gap_abs_str)
+        self.gap_axis_spin = QDoubleSpinBox()
+        self.gap_axis_spin.setRange(0.0, 1.0e6)
+        self.gap_axis_spin.setSingleStep(10.0)
+        self.gap_axis_spin.setDecimals(1)
+        self.gap_axis_spin.setValue(100.0)
+        self.gap_axis_spin.setSpecialValueText("0 = no axis breaks")
+        self.gap_axis_spin.setToolTip(
+            "Large gap: the x axis itself is cut (a Veusz broken axis) where "
+            "no trace on the graph has data for dt > n x the small-gap "
+            "threshold (the largest of its traces).  0 = never.")
+        form.addRow(QLabel("Large gap n (axis break: dt > n × small gap):"), self.gap_axis_spin)
+        self.gap_axis_str = QLineEdit()
+        self.gap_axis_str.setPlaceholderText("e.g. 12h, 3d, 1m  (overrides n)")
+        self.gap_axis_str.setToolTip(GAP_STRING_HELP + "  Never shorter than the small gap.")
+        form.addRow(QLabel("Large gap fixed (text):"), self.gap_axis_str)
+
+    def gap_manual_days(self) -> float:
+        """The fixed small gap in days (0 = K x median dt) for the page builders."""
+        text = ""
+        if getattr(self, "gap_abs_str", None) is not None:
+            text = self.gap_abs_str.text().strip()
+        if text:
+            return parse_gap_string(text, log_cb=self.log)
+        hours = float(self.gap_abs_spin.value()) if getattr(self, "gap_abs_spin", None) else 0.0
+        return hours * _DAYS_PER_HOUR
+
+    def gap_axis_days(self) -> float:
+        """The fixed large gap in days (0 = n x small gap)."""
+        text = ""
+        if getattr(self, "gap_axis_str", None) is not None:
+            text = self.gap_axis_str.text().strip()
+        return parse_gap_string(text, log_cb=self.log) if text else 0.0
+
+    def time_layout(self):
+        """The TimeLayout (_autoplot_native) chosen in the gap controls."""
+        from _autoplot_native import TimeLayout
+        k = float(self.gap_k_spin.value()) if getattr(self, "gap_k_spin", None) else 10.0
+        n = float(self.gap_axis_spin.value()) if getattr(self, "gap_axis_spin", None) else 0.0
+        return TimeLayout(k=k, n=n, manual_s=self.gap_manual_days() * 86400.0,
+                          axis_manual_s=self.gap_axis_days() * 86400.0)
+
     # ----- abstract hooks ---------------------------------------------------
     def _process_files(self) -> None:
+        """Hook: subclasses run the batch here (File list -> project)."""
         raise NotImplementedError
 
     def _save_project(self) -> None:
+        """Hook: subclasses write the .vszh5 project here."""
         raise NotImplementedError
 
     def show_plots(self, doc) -> int:
@@ -2646,6 +2953,7 @@ def mjd_to_datestr(mjd_arr: "np.ndarray",
         # ---- vectorised fast path -------------------------------------
         # np.char.zfill expects a string array, so cast once and pad.
         def _z(arr, w):
+            """Integers of ``arr`` as text, zero-padded to ``w`` digits."""
             return np.char.zfill(
                 np.asarray(arr, dtype=np.int64).astype("U%d" % (w + 1)),
                 w,

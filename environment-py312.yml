@@ -1,0 +1,26 @@
+# =============================================================================
+# environment-py312.yml - mamba environment for the FitsAutoPlot suite, Python 3.12
+# -----------------------------------------------------------------------------
+# %%%% 0.1.0: First version (2026-11-09 suite).
+# Date: 2026-11-09
+#             mamba creates the interpreter; the packages are the tested
+#             wheels of requirements-py312.txt (installed by pip inside the
+#             environment), so the environment matches the tested one exactly.
+# Use (Miniforge / mamba):
+#     mamba env create -f environment-py312.yml
+#     mamba activate fitsautoplot-py312
+#     python postProcessing_Launcher.py
+# Update after a new suite release:
+#     mamba env update -f environment-py312.yml --prune
+# Optional extras (not needed to make projects):
+#     mamba install -c conda-forge veusz          # open/render .vszh5 files
+#     python -m pip install cupy-cuda12x          # GPU (NVIDIA CUDA 12)
+# =============================================================================
+name: fitsautoplot-py312
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -r requirements-py312.txt

@@ -58,10 +58,54 @@ frequency; this program assumes lower -> upper (see DATA_GAPS).
     (Revision of IEEE Std 149-1979), 2022. doi: 10.1109/IEEESTD.2022.9714428
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.2: Header template, docstrings and tooltips.
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+#              * Tooltips (pop-up help) on every button, box and field that
+#                had none (file buttons, options, log, Process, Save, Open in
+#                Veusz, Close).
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.2.2"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        PARALLEL_MIN_FILES: fewer files: a process pool costs more than it saves
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.1: Measurement time as a Veusz date-time; headers on every page.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              * The header "Time and Date" (e.g. "Tue, Jul 02, 2024 12:19
 #                PM") is stored as a Veusz DATE dataset "<file>_datetime"
 #                (the range computer's wall clock as written; the file does
@@ -74,7 +118,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                Page and graph names are those of the 2025 script.
 #              * Writer 0.0.25 / _autoplot_native 0.3.0.
 # %%%% 0.2.0: Native writer, pyqtgraph Plots tab, suite theme, parser fixes.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              * .vszh5 written by vszh5_writer 0.0.24 through
 #                _autoplot_native.NativeDocument (no veusz.embed, no Veusz
 #                window, no extra legacy .vsz copy in "Beware_oldVersion").
@@ -106,6 +150,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                {file}_freq for single-frequency files (as before);
 #                multi-frequency files add the frequency to the name.
 # %%%% 0.1.0: Un-numbered 2025-06-28 version (veusz.embed, Qt GUI).
+Date: 2025-06-28
 =============================================================================
 """
 # %% Import Modules
@@ -127,7 +172,7 @@ import numpy as np  # noqa: E402
 from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
 
 APP_NAME = "ATR AutoPlot"
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
                    ".vszh5 projects, with interactive pyqtgraph plots.")
@@ -162,6 +207,7 @@ class ATRPattern:
 
     @property
     def name(self) -> str:
+        """File name of the pattern (no folder)."""
         return os.path.basename(self.path)
 
     @property
@@ -188,6 +234,11 @@ _NUMBER_LINE = re.compile(r"^\s*[-+]?(\d+\.?\d*|\.\d+|inf|nan)([eE][-+]?\d+)?[\s
 
 
 def _header_number(header: Dict[str, str], key: str, path: str) -> float:
+    """First number in header field ``key`` of an ATR file.
+
+    Raises ATRFormatError (naming ``path``) when the field is missing or holds
+    no number.
+    """
     try:
         return float(re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", header[key])[0])
     except (KeyError, IndexError, ValueError):
@@ -300,6 +351,7 @@ def parse_atr_text(text: str, path: str = "<text>") -> ATRPattern:
 
 
 def _is_float(token: str) -> bool:
+    """True when ``token`` parses as a float."""
     try:
         float(token)
         return True
@@ -373,6 +425,11 @@ class ATRPlotter:
     PHASE_LABEL = "Phase (degrees)"
 
     def __init__(self, options: Optional[PlotOptions] = None) -> None:
+        """Empty ATR project with ``options`` (title, magnitude range, azimuth fit).
+
+        Pages are added by add_pattern() / the overlay builders; the document is a
+        NativeDocument, written by vszh5_writer.
+        """
         from _autoplot_native import NativeDocument
         self.options = options or PlotOptions()
         self.doc = NativeDocument("ATR AutoPlot")
@@ -384,6 +441,9 @@ class ATRPlotter:
 
     # ----- names ----------------------------------------------------------------
     def _unique_stem(self, pattern: ATRPattern) -> str:
+        """Page-name stem for ``pattern``: its file name without extension, with
+        ``_2``, ``_3``, ... for repeated names.
+        """
         stem = os.path.splitext(pattern.name)[0]
         count = self._stems.get(stem, 0) + 1
         self._stems[stem] = count
@@ -391,6 +451,8 @@ class ATRPlotter:
 
     @staticmethod
     def _freq_tag(mhz: float) -> str:
+        """Dataset-name tag for a frequency in MHz, e.g. 1420.4 -> '1420p4MHz'.
+        """
         return ("%g" % mhz).replace(".", "p") + "MHz"
 
     # ----- public ---------------------------------------------------------------
@@ -480,6 +542,9 @@ class ATRPlotter:
 
     # ----- pages ----------------------------------------------------------------
     def _x_range(self, patterns: Sequence[ATRPattern]) -> Tuple[float, float]:
+        """Azimuth axis range: the fixed AZIMUTH_RANGE, or the data's min/max over
+        ``patterns`` when "fit azimuth" is set.
+        """
         if not self.options.fit_azimuth:
             return AZIMUTH_RANGE
         lows = [float(np.nanmin(p.azimuth_deg)) for p in patterns]
@@ -488,6 +553,9 @@ class ATRPlotter:
         return (low, high) if high > low else (low - 1.0, high + 1.0)
 
     def _create_overlay_pages(self) -> Tuple[Any, Any]:
+        """Create the two overlay pages (all files, magnitude and phase) and
+        return their graphs.
+        """
         graphs = []
         for kind, label, y_range in (("mag", self.MAG_LABEL, self.options.mag_range),
                                      ("phase", self.PHASE_LABEL, PHASE_RANGE)):
@@ -501,6 +569,7 @@ class ATRPlotter:
 
     def _configure_graph(self, graph: Any, title: str, y_label: str,
                          y_range: Tuple[float, float], x_range: Tuple[float, float]) -> None:
+        """Title, margins, axis labels and fixed ranges of one x-y graph."""
         graph.Add("label", name="plotTitle")
         graph.topMargin.val = "1cm"
         graph.plotTitle.Text.size.val = "10pt"
@@ -519,6 +588,9 @@ class ATRPlotter:
     @staticmethod
     def _configure_xy(xy: Any, x_data: str, y_data: str, colour: str, key: str,
                       fill: bool) -> None:
+        """Style one trace: small translucent circle markers, line ``colour``,
+        legend ``key`` and, with ``fill``, a translucent fill down to the axis.
+        """
         xy.xData.val = x_data
         xy.yData.val = y_data
         xy.key.val = key
@@ -537,10 +609,14 @@ class ATRPlotter:
 
     @staticmethod
     def _configure_overlay_xy(xy: Any, x_data: str, y_data: str, key: str) -> None:
+        """Overlay trace style: automatic colour, no fill."""
         ATRPlotter._configure_xy(xy, x_data, y_data, "auto", key, fill=False)
 
     @staticmethod
     def _configure_polar_graph(graph: Any, min_radius: float, max_radius: float) -> None:
+        """Polar graph as an antenna pattern: degrees, clockwise, 0 at the top,
+        radius from ``min_radius`` to ``max_radius`` dB.
+        """
         graph.topMargin.val = "1cm"
         graph.units.val = "degrees"
         graph.direction.val = "clockwise"
@@ -551,6 +627,10 @@ class ATRPlotter:
     @staticmethod
     def _configure_polar_plot(point: Any, data1: str, data2: str, colour: str,
                               fill: bool) -> None:
+        """Style one polar trace (``data1`` radius, ``data2`` angle) in ``colour``,
+        optionally filled; the widget name carries the trace name (nonorthpoint
+        has no key setting).
+        """
         point.data1.val = data1          # nonorthpoint has no 'key' setting in Veusz;
         point.data2.val = data2          # the widget name carries the trace name
         point.PlotLine.color.val = colour
@@ -564,6 +644,7 @@ class ATRPlotter:
 
     @staticmethod
     def _add_page_title(page: Any, title: str) -> None:
+        """Centred 10 pt title label at the top of ``page``."""
         page.Add("label", name="plotTitle")
         page.plotTitle.Text.size.val = "10pt"
         page.plotTitle.label.val = title
@@ -584,6 +665,11 @@ def build_project(patterns: Sequence[ATRPattern],
 
 # %% GUI (imported lazily so the parser and --output work without Qt)
 def _build_gui_classes():
+    """Import Qt and define the GUI classes on first use.
+
+    Keeps the batch mode (``--output``) free of Qt; returns (QApplication,
+    ATRMainWindow).
+    """
     from qtpy.QtCore import QThread, Signal
     from qtpy.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFileDialog,
                                 QFormLayout, QGroupBox, QHBoxLayout, QLineEdit,
@@ -598,10 +684,15 @@ def _build_gui_classes():
         processing_finished = Signal(object, object)
 
         def __init__(self, paths: Sequence[str], workers: int) -> None:
+            """Thread that reads ``paths`` with ``workers`` processes."""
             super().__init__()
             self.paths, self.workers = list(paths), int(workers)
 
         def run(self) -> None:
+            """Read the files (progress in percent), then emit
+            ``processing_finished(patterns, errors)``; an unexpected exception is
+            reported as an error, never raised in the thread.
+            """
             try:
                 patterns, errors = read_files(
                     self.paths, self.workers,
@@ -614,6 +705,9 @@ def _build_gui_classes():
         """Processing and Plots tabs; File / View / Help menus."""
 
         def __init__(self) -> None:
+            """Main window: Processing and Plots tabs, menus with the light/dark
+            theme, and the suite theme applied.
+            """
             super().__init__()
             self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
             self.resize(1150, 820)
@@ -638,6 +732,9 @@ def _build_gui_classes():
 
         # ----- layout -------------------------------------------------------------
         def _build_ui(self) -> None:
+            """Lay out the Processing tab (file list, plot options, workers, progress,
+            log, buttons) and the Plots tab (pyqtgraph panel).
+            """
             central = QWidget()
             self.setCentralWidget(central)
             outer = QVBoxLayout(central)
@@ -650,12 +747,17 @@ def _build_gui_classes():
             files = QGroupBox("ATR File Selection")
             file_layout = QVBoxLayout(files)
             self.file_list = QListWidget()
+            self.file_list.setToolTip("Files to process; add them with Browse, remove all with Clear.")
             self.file_list.setMinimumHeight(150)
             file_layout.addWidget(self.file_list)
             row = QHBoxLayout()
-            for text, slot in (("Browse ATR Files...", self._browse_files),
-                               ("Clear Files", self._clear_files)):
+            for text, slot, tip in (
+                    ("Browse ATR Files...", self._browse_files,
+                     "Add GBO outdoor range pattern files (.atr) to the list."),
+                    ("Clear Files", self._clear_files,
+                     "Remove every file from the list (the files are not touched).")):
                 button = QPushButton(text)
+                button.setToolTip(tip)
                 button.clicked.connect(slot)
                 row.addWidget(button)
             file_layout.addLayout(row)
@@ -665,19 +767,28 @@ def _build_gui_classes():
             form = QFormLayout(options)
             self.mp_box = QCheckBox("Read files in parallel processes (%d or more files)"
                                     % PARALLEL_MIN_FILES)
+            self.mp_box.setToolTip(
+                "Read the files in separate processes when there are enough of "
+                "them (faster for big batches).")
             self.mp_box.setChecked(True)
             self.mp_box.toggled.connect(lambda on: self._log(
                 "Parallel reading %s" % ("on" if on else "off")))
             form.addRow(self.mp_box)
             self.cpu_spin = QSpinBox()
+            self.cpu_spin.setToolTip("Number of processes used for parallel reading.")
             self.cpu_spin.setRange(1, max(1, multiprocessing.cpu_count()))
             self.cpu_spin.setValue(max(1, multiprocessing.cpu_count()))
             form.addRow("CPU processes:", self.cpu_spin)
             self.title_edit = QLineEdit(PlotOptions.title)
+            self.title_edit.setToolTip("Title written on every page.")
             form.addRow("Plot title:", self.title_edit)
             mag_row = QHBoxLayout()
             self.mag_min = QDoubleSpinBox()
+            self.mag_min.setToolTip("Lower end of the magnitude axis (dB).")
             self.mag_max = QDoubleSpinBox()
+            self.mag_max.setToolTip(
+                "Upper end of the magnitude axis (dB); must be above the lower "
+                "end.")
             for spin, value in ((self.mag_min, DEFAULT_MAG_RANGE[0]),
                                 (self.mag_max, DEFAULT_MAG_RANGE[1])):
                 spin.setRange(-300.0, 300.0)
@@ -688,10 +799,14 @@ def _build_gui_classes():
             mag_row.addStretch(1)
             form.addRow("Magnitude axis / polar radius:", mag_row)
             self.fit_box = QCheckBox("Fit the azimuth axis to the data (otherwise -180 to 180 deg)")
+            self.fit_box.setToolTip(
+                "Fit the azimuth axis to the measured range instead of -180 to "
+                "180 degrees.")
             form.addRow(self.fit_box)
             layout.addWidget(options)
 
             self.status_text = QTextEdit()
+            self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
             self.status_text.setReadOnly(True)
             self.status_text.setMinimumHeight(140)
             layout.addWidget(self.status_text, 1)
@@ -704,14 +819,22 @@ def _build_gui_classes():
             outer.addWidget(self.progress)
             buttons = QHBoxLayout()
             self.process_button = QPushButton("Process and Plot ATR Files")
+            self.process_button.setToolTip(
+                "Read the listed .atr files and build the pages (shown on the "
+                "Plots tab).")
             self.process_button.clicked.connect(self._process)
             self.save_button = QPushButton("Save Veusz Project (.vszh5)")
+            self.save_button.setToolTip(
+                "Write the project as a native Veusz HDF5 file (.vszh5); Veusz "
+                "is not needed.")
             self.save_button.clicked.connect(self._save_project)
             self.save_button.setEnabled(False)
             self.veusz_button = QPushButton("Open in Veusz...")
+            self.veusz_button.setToolTip("Open the last saved project in Veusz (needs Veusz installed).")
             self.veusz_button.clicked.connect(self._open_in_veusz)
             self.veusz_button.setEnabled(False)
             close_button = QPushButton("Close")
+            close_button.setToolTip("Close this window (unsaved projects are lost).")
             close_button.clicked.connect(self.close)
             for button in (self.process_button, self.save_button, self.veusz_button,
                            close_button):
@@ -720,21 +843,26 @@ def _build_gui_classes():
 
         # ----- helpers ------------------------------------------------------------
         def _log(self, message: str) -> None:
+            """Append ``message`` with an HH:MM:SS time stamp to the log."""
             stamp = datetime.datetime.now().strftime("%H:%M:%S")
             self.status_text.append("[%s] %s" % (stamp, message))
 
         def _set_theme(self, mode: str) -> None:
+            """Apply and save the suite theme and recolour the Plots tab."""
             self.theme = suite.apply_theme(mode)
             if self.plot_panel is not None:
                 self.plot_panel.apply_theme(self.theme == "dark")
             self._log("Theme set to %s mode" % self.theme)
 
         def _browse_files(self) -> None:
+            """Ask for .atr files and add them to the list."""
             files, _ = QFileDialog.getOpenFileNames(
                 self, "Select ATR Files", "", "GBO ATR Files (*.atr *.ATR);;All Files (*)")
             self.add_files(files)
 
         def add_files(self, files: Sequence[str]) -> None:
+            """Add the new ``files`` (duplicates ignored) and refresh the list.
+            """
             new = [f for f in files if f not in self.selected_files]
             self.selected_files.extend(new)
             self.file_list.clear()
@@ -743,11 +871,15 @@ def _build_gui_classes():
                 self._log("Added %d file(s); %d in the list" % (len(new), len(self.selected_files)))
 
         def _clear_files(self) -> None:
+            """Empty the file list."""
             self.selected_files.clear()
             self.file_list.clear()
             self._log("File list cleared")
 
         def options(self) -> PlotOptions:
+            """PlotOptions from the GUI (an inverted magnitude range is widened to
+            1 dB above the minimum).
+            """
             low, high = self.mag_min.value(), self.mag_max.value()
             if high <= low:
                 high = low + 1.0
@@ -756,6 +888,7 @@ def _build_gui_classes():
 
         # ----- processing ---------------------------------------------------------
         def _process(self) -> None:
+            """Start reading the selected files in an ATRProcessingThread."""
             if not self.selected_files:
                 QMessageBox.warning(self, APP_NAME, "Please select ATR files first.")
                 return
@@ -772,6 +905,9 @@ def _build_gui_classes():
             self._log("Reading %d file(s)..." % len(self.selected_files))
 
         def _finished(self, patterns: List[ATRPattern], errors: List[str]) -> None:
+            """Log errors and warnings, build the project from the patterns read and
+            show it on the Plots tab.
+            """
             self.progress.setVisible(False)
             self.process_button.setEnabled(True)
             for error in errors:
@@ -804,6 +940,9 @@ def _build_gui_classes():
                                     % len(errors))
 
         def _save_project(self) -> None:
+            """Ask for a file name, save the .vszh5 project and offer to open it in
+            Veusz.
+            """
             if self.plotter is None:
                 QMessageBox.information(self, APP_NAME, "Process files first.")
                 return
@@ -824,6 +963,7 @@ def _build_gui_classes():
                 self._open_in_veusz()
 
         def _open_in_veusz(self) -> None:
+            """Open the last saved project in Veusz (suite.open_in_veusz)."""
             if not self.last_saved:
                 QMessageBox.information(self, APP_NAME, "Save a project first.")
                 return
@@ -831,6 +971,8 @@ def _build_gui_classes():
                 self._log("Opening in Veusz: %s" % self.last_saved)
 
         def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+            """Wait up to 5 s for a running read, clear the plots, then close.
+            """
             if self.thread is not None and self.thread.isRunning():
                 self.thread.wait(5000)
             if self.plot_panel is not None:
@@ -857,6 +999,11 @@ def batch(paths: Sequence[str], output: str, options: PlotOptions, workers: int)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Command line entry point; returns the exit code.
+
+    With ``--output`` the files are processed in batch (no GUI) into that
+    project; otherwise the GUI opens with the files already in its list.
+    """
     parser = argparse.ArgumentParser(description=APP_DESCRIPTION)
     parser.add_argument("files", nargs="*", help=".atr files (GUI: added to the list)")
     parser.add_argument("--output", help="write this .vszh5 without opening the GUI")

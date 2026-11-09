@@ -37,8 +37,31 @@ Licence: MIT (original code (C) 2014 Nicco Kunzmann, see below)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.4: Header template and docstrings (no functional change).
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+# %%%%% Function Descriptions
+        frame2string: One stack line, as the traceback module writes it.
+        thread2list: Whole stack of a frame, outermost first.
+        print_frame_list: Write one report to ``stream`` (stderr).
+        HangMonitor (class): Background thread that reports threads frozen for seconds_frozen.
+        start_monitoring: Start and return a HangMonitor (call .stop() when done).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        SECONDS_FROZEN: seconds without movement before a report
+        TESTS_PER_SECOND: checks per second
+        _EVENT_LOOP_NAMES: top-frame function names of an idle Qt event loop
+# %%%%% More Info
+    Debug aid; nothing in the suite starts it by default.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.3: Stoppable monitor, no auto-start, one report per hang.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              * Importing the module no longer starts a monitor (the R&S
 #                plotter then started a second one).
 #              * start_monitoring() returns a HangMonitor with stop(); the
@@ -52,7 +75,9 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                down, configurable.
 #              * History is newest-first, as in the rest of the repository.
 # %%%% 0.0.2: Template revision (no description).
+Date: not recorded (in the repository by 2025-09-03)
 # %%%% 0.0.1: Copy of the MIT-licensed gist with the author's header.
+Date: not recorded (in the repository by 2025-09-03)
 =============================================================================
 """
 
@@ -87,7 +112,7 @@ import sys
 import threading
 import time
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 
 SECONDS_FROZEN = 20       # seconds without movement before a report
 TESTS_PER_SECOND = 10     # checks per second
@@ -127,6 +152,13 @@ class HangMonitor:
 
     def __init__(self, seconds_frozen=SECONDS_FROZEN, tests_per_second=TESTS_PER_SECOND,
                  ignore_idle_main=True, stream=None):
+        """Watch every thread; report one whose stack has not changed for
+        ``seconds_frozen`` seconds.
+
+        ``tests_per_second`` sets how often stacks are sampled, ``ignore_idle_main``
+        skips a main thread waiting in the Qt event loop, ``stream`` is where
+        reports go (stderr by default).
+        """
         self.seconds_frozen = float(seconds_frozen)
         self.interval = 1.0 / max(0.1, float(tests_per_second))
         self.ignore_idle_main = ignore_idle_main
@@ -136,6 +168,7 @@ class HangMonitor:
         self._thread = threading.Thread(target=self._run, name="HangMonitor", daemon=True)
 
     def start(self):
+        """Start the daemon monitoring thread; returns self."""
         self._thread.start()
         return self
 
@@ -147,14 +180,21 @@ class HangMonitor:
 
     @property
     def running(self):
+        """True while the monitoring thread is alive."""
         return self._thread.is_alive()
 
     def _idle_event_loop(self, thread_id, frame):
+        """True when ``frame`` is the main thread idling in a Qt event loop
+        (exec / exec_) and idle main threads are ignored.
+        """
         if not self.ignore_idle_main or thread_id != threading.main_thread().ident:
             return False
         return frame is not None and frame.f_code.co_name in _EVENT_LOOP_NAMES
 
     def _run(self):
+        """Sample every thread's stack each interval; report a stack unchanged for
+        ``seconds_frozen`` once per hang, then wait for it to move again.
+        """
         own = threading.get_ident()
         seen = {}                                    # thread id -> (stack, since, reported)
         while not self._stop.wait(self.interval):

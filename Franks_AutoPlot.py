@@ -4,6 +4,7 @@
 Franks_AutoPlot.py
 -----------------------------------------------------------------------------
 # %% Header Info
+--------
 
 GUI-driven batch processor for the "FranksProcessed" ASCII time-series data
 files distributed alongside the NRAO 1PPS sync FITS bundle.  Two file
@@ -22,12 +23,64 @@ model as one dataset per column tagged with the file's base name (plus
 
 # %%% Author Information
 @author: William W. Wallace
+Author Email: wwallace@nrao.edu
+Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.0: Small/large gap controls; local ISO 8601 on every page.
+Date: 2026-11-09
+#              * Gaps (GUI, shared with FITS AutoPlot 0.4.0): small gap - the
+#                line breaks where dt > K x median dt (or a fixed time);
+#                large gap - the x axis breaks where dt > n x the small gap
+#                (default n = 100) or a fixed time.
+#              * Every page draws its MJD axis as a Veusz date-time axis in
+#                local ISO 8601; the duplicate _dt/_dt_labels pages are now
+#                "Legacy" (off by default).
+#              * Pages in file-name order, not thread completion order.
+#              * The memory monitor calls a bound method (_rss_crossed, held
+#                weakly) instead of a lambda that kept the window alive from
+#                the monitor thread (_autoplot_common 0.4.0).
+#              * Docstrings for every function and method; author contact
+#                lines in the header.
+#              * Tooltips (pop-up help) on every button, box and field that
+#                had none (threads, RSS threshold, date strings, overlay-only).
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model.
+        build_unit_overlay_pages_franks: Build one overlay page per **shared column name** across the loaded batch.
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.0"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        _OVERLAY_COLORS: overlay trace colours
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept and tagged.  Time axes
+    and gaps as in FITS AutoPlot.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.0: Date-times as Veusz date-time datasets, local ISO 8601 axes.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              * The time stamps of every dt_labels page (per file, per HDU /
 #                tag and the unit overlays) are stored as Veusz DATE
 #                datasets in UTC (were plain numeric seconds) plus a
@@ -51,13 +104,13 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                NameError swallowed by its try block, so overlay date pages
 #                never got a broken axis).
 # %%%% 0.2.1: Writer 0.0.24 and the suite-wide theme.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              No code change in this file: the .vszh5 is now written by
 #              vszh5_writer 0.0.24 (through _autoplot_native 0.2.0, atomic
 #              save) and the window opens in the light / dark theme shared
 #              with the launcher (_autoplot_common 0.3.0).
 # %%%% 0.2.0: Interactive pyqtgraph Plots tab (AB monitor style), About.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              After a batch the new "Plots" tab shows every page of the
 #              in-memory project with pyqtgraph (_autoplot_pyqtgraph 0.1.0,
 #              modelled on AB Power Meter Monitor 1.7.0): linked x axes,
@@ -67,13 +120,13 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              project and Open in Veusz are unchanged.
 #
 # %%%% 0.1.0: Native h5py project generation, no Veusz runtime dependency.
-# Date: 2026-10-11
+Date: 2026-10-11
 #              Uses _autoplot_native.NativeDocument and shared atomic saving.
 #              Retains data, tag, gap, overlay, NaN and datetime semantics.
 #              External Veusz viewing is optional and only after saving.
 #
 # %%%% 0.0.19: Wire string gap parser + hide-keys checkbox through GUI.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              Same GUI additions as FITS_AutoPlot 0.0.19:
 #                * ``self.gap_abs_str`` QLineEdit overrides the hours
 #                  spinbox when non-empty (parsed via
@@ -87,7 +140,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              at their defaults (blank string + unchecked).
 #
 # %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
-# Date: 2026-05-16
+Date: 2026-05-16
 #              Mirrors the FITS_AutoPlot v0.0.18 fix.  All break-
 #              detection call sites in Franks_AutoPlot now route
 #              through ``detect_time_breaks_unit_aware(x, col_name,
@@ -102,7 +155,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              kept in DESCENDING semantic-version order.
 #
 # %%%% 0.0.17: Minimized .vszh5 save (GUI checkboxes).
-# Date: 2026-05-16
+Date: 2026-05-16
 #              Two new checkboxes on the Franks GUI:
 #                * "Minimized Veusz File" -- saved .vszh5 contains ONLY
 #                  the datasets directly referenced by widgets in the
@@ -120,7 +173,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              order.
 #
 # %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (true date ticks).
-# Date: 2026-05-16
+Date: 2026-05-16
 #              * Mirror of FITS_AutoPlot v0.0.16 for Franks records.
 #                The v0.0.15 dt_labels page used a text-x dataset bound
 #                to xData with axis ``mode='labels'``.  Functional, but
@@ -154,7 +207,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                mirrored in the plugin dialog.
 #
 # %%%% 0.0.15: Density-pct date labels + text-x dt_labels page variant.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              * v0.0.14's "sparse vs full" boolean is generalised to an
 #                integer percentage 0..100 (``datetime_label_density_pct``).
 #                0 = no labels, 100 = one per finite point, 10 (default)
@@ -183,7 +236,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                version order across every shared file.
 #
 # %%%% 0.0.14: Datetime via xy.labels per-point text labels.
-# Date: 2026-05-16
+Date: 2026-05-16
 #                * The v0.0.11..0.0.13 dt-duplicate pages used a Veusz
 #                  date-time x axis driven by SetDataDateTime.  On Veusz
 #                  3.4 (current NRAO production) that path fires hundreds
@@ -207,7 +260,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  is no longer called on the dt-page x axis.
 
 # %%%% 0.0.13: Identity-stable trace styling + datetime-duplicate hardening.
-# Date: 2026-05-16
+Date: 2026-05-16
 #                * Every xy widget (per-file, datetime-duplicate, and
 #                  cross-file column-overlay) is now styled by
 #                  apply_trace_style() with identity key
@@ -226,7 +279,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  the overlay dt site.
 
 # %%%% 0.0.12: Combined-in-time overlay semantics.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              build_unit_overlay_pages_franks now collapses each shared
 #              column onto a single time-sorted xy trace stitched across
 #              every file (legend names the column, e.g. 'DELTAT').  The
@@ -234,7 +287,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              with the Veusz-seconds version of the same x.
 
 # %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
-# Date: 2026-05-16
+Date: 2026-05-16
 #              checkbox 'Duplicate plots with datetime X axis' makes
 #              push_franks_to_veusz emit a companion Veusz date-time
 #              dataset built from the file's MJD column (MJD->Veusz
@@ -249,7 +302,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              and ``style_datetime_x_axis`` live in _autoplot_common.
 
 # %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              When the 'Use GPU acceleration (CuPy)' checkbox is
 #              checked and CuPy is importable on the host, the large
 #              MJD-sort permutation is dispatched to ``gpu_argsort``
@@ -260,7 +313,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              CuPy is absent.
 
 # %%%% 0.0.9: Per-plot broken-x-axis on time gaps + column-name overlay
-# Date: 2026-05-16
+Date: 2026-05-16
 #             pages.  push_franks_to_veusz() now takes new keyword args
 #             ``plot_individual`` (default True), ``gap_k`` (default 10.0),
 #             and ``gap_absolute`` (default 0.0); when ``plot_individual``
@@ -293,13 +346,12 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                 ``self.mark_project_saved(written)`` to enable it so the
 #                 user can launch the full Veusz GUI in the current Python
 #                 env on the freshly saved project.
-# %%%%% Function Descriptions
 
 # %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
-# Date: 2026-05-16
+Date: 2026-05-16
 
 # %%%% 0.0.7: Added two new progress bars in the GUI -- a 'Parsing/pushing'
-# Date: 2026-05-16
+Date: 2026-05-16
 #             file-level bar that ticks once per file as push_franks_to_veusz()
 #             finishes that file, and a 'Current file - columns' bar that
 #             ticks per source column.  push_franks_to_veusz() gained a
@@ -307,13 +359,13 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             here (Franks files have no image HDUs).
 
 # %%%% 0.0.6: Added Spyder IDE cell markers (# %% / # %%%) at all major
-# Date: 2026-05-16
+Date: 2026-05-16
 #             section banners and import subsections so the file can be
 #             navigated and run cell-by-cell in Spyder's Outline view.
 #             Cosmetic only -- no behavior change.
 
 # %%%% 0.0.5: _on_done() now calls QApplication.processEvents() between
-# Date: 2026-05-16
+Date: 2026-05-16
 #             every per-file push so the GUI stays responsive (log pane
 #             scrolls live, buttons remain clickable) during a long
 #             batch insert -- previously the window could appear stuck
@@ -321,7 +373,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             (No 0.0.4: aligned with FITS_AutoPlot.py version stream.)
 
 # %%%% 0.0.3: NaN-preserving emission policy.  When a Franks token is
-# Date: 2026-05-16
+Date: 2026-05-16
 #             missing or non-numeric the parser now records ``NaN`` in the
 #             numeric column (length-preserving) AND keeps the text token
 #             ("" for fully missing) in the text companion -- rows are
@@ -331,37 +383,15 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             retain the same length and stay index-aligned.
 
 # %%%% 0.0.2: Added "Generate MJD->date strings" checkbox.  Whenever the
-# Date: 2026-05-16
+Date: 2026-05-16
 #             parsed file contains an MJD column, ticking the option emits
 #             two additional Veusz text datasets (raw + sorted) of
 #             YYYY-MM-DD_HH:MM:SS strings tagged with the file's base name
 #             plus ``datestr``.
 
 # %%%% 0.0.1: Initial implementation, FranksProcessed file support
-# Date: 2026-05-16
+Date: 2026-05-16
 
-        main: build QApplication and open the AutoPlot main window.
-        FranksAutoPlotWindow: qtpy main window with the Touchstone-style
-            file list / options / log / progress layout and the View menu
-            dark/light theme toggle.
-        FranksBatchWorker: QThread that parses selected files in parallel.
-        parse_franks_file: format-autodetecting reader.  Returns a dict of
-            column-shaped numpy arrays plus the sort key.
-        push_franks_to_veusz: push column arrays into the embedded Veusz
-            document, tagged with filename + raw/sorted, and create one
-            scatter plot per numeric column versus MJD.
-# %%%%% Variable Descriptions
-        MAX_THREADS: top-of-file thread-pool size knob.
-        DEFAULT_RSS_HIGH_WATER_MB: RSS threshold for memmap spill.
-        T00_COLUMNS / TIMEDAT_COLUMNS: hardcoded column lists for the two
-            file flavours (used when the on-file header is malformed).
-# %%%%% More Info
-        Because Veusz cannot natively import these custom ASCII formats
-        (mixed date + numeric columns), we always import the raw text via
-        Python (numpy.loadtxt) and produce derived "sorted" datasets in
-        Veusz; both the raw and sorted variants are kept so the user can
-        compare them, and both are tagged accordingly.
-=============================================================================
 """
 # %% Imports
 from __future__ import annotations
@@ -386,7 +416,7 @@ import numpy as np
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'Franks AutoPlot'
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -461,6 +491,12 @@ TIMEDAT_COLUMNS = ["MJD", "EECO_REF", "NIST_REF", "NS", "DATE"]
 # %% FILE PARSER
 # ============================================================================
 def _detect_flavour(path: str) -> str:
+    """Return 't00new' or 'time_gbt' for a Franks data file.
+
+    The file name decides first (``*.t00new`` or containing "time_gbt");
+    otherwise a first line containing "GB Timing Data" means t00new, and
+    anything else is read as time_gbt.
+    """
     name = os.path.basename(path).lower()
     if name.endswith(".t00new") or ".t00new." in name:
         return "t00new"
@@ -475,6 +511,11 @@ def _detect_flavour(path: str) -> str:
 
 
 def _safe_columns(raw_names: List[str]) -> List[str]:
+    """Turn header names into Veusz-safe dataset names.
+
+    Characters other than letters, digits and '_' become '_'; an empty name
+    becomes ``col<n>`` and a name starting with a digit gets a ``c_`` prefix.
+    """
     out = []
     for n in raw_names:
         n2 = re.sub(r"[^A-Za-z0-9_]", "_", n.strip())
@@ -576,6 +617,7 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
         if col_strs.size == 0:
             return np.empty(0, dtype=float)
         def _f(x):
+            """float(x), or NaN when x is not a number."""
             try:
                 return float(x)
             except (ValueError, TypeError):
@@ -674,6 +716,9 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
     _col_done = 0
 
     def _tick(n: int = 1) -> None:
+        """Count ``n`` finished dataset operations and report them to
+        ``column_cb(done, total)``; callback errors are ignored.
+        """
         nonlocal _col_done
         _col_done += n
         if column_cb is not None:
@@ -1485,12 +1530,19 @@ class FranksBatchWorker(QThread):
 
     def __init__(self, files: List[str], max_threads: int,
                  cache: MemoryAwareCache, parent=None) -> None:
+        """Worker thread for one batch: ``files`` parsed on ``max_threads`` threads
+        into ``cache``.
+        """
         super().__init__(parent)
         self.files = files
         self.max_threads = max_threads
         self.cache = cache
 
     def run(self) -> None:
+        """Parse every file in a thread pool; emit ``progress(done, total, path)``
+        per file, then ``finished_ok(results)`` ({path: parse result or
+        exception}) or ``failed(message with traceback)``.
+        """
         try:
             work = [(p, parse_franks_file, (p, self.cache)) for p in self.files]
             results = run_in_threadpool(
@@ -1509,6 +1561,9 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
     """Top-level window for the Franks AutoPlot script."""
 
     def __init__(self) -> None:
+        """Main window: shared AutoPlot layout plus the Franks options, a memory
+        monitor and an empty project (created on the first batch).
+        """
         super().__init__("%s %s - Native HDF5 Export" % (APP_NAME, APP_VERSION),
                          default_mode="dark")
         self.app_name, self.app_version = APP_NAME, APP_VERSION
@@ -1518,31 +1573,45 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.cache = MemoryAwareCache(MemoryMonitorConfig(
             rss_high_water_mb=DEFAULT_RSS_HIGH_WATER_MB
         ))
-        self.monitor = MemoryMonitor(
-            self.cache,
-            callback=lambda rss: self.log(
-                "RSS crossed high-water mark (%.1f MiB) -- spilling to disk." % rss
-            )
-        )
+        # 0.4.0: a bound method (held weakly by the monitor thread); log() is
+        # thread-safe.  The old lambda kept the window alive from that thread.
+        self.monitor = MemoryMonitor(self.cache, callback=self._rss_crossed)
         self.monitor.start()
         self.veusz_doc = None
         self.worker = None
         self.log("MAX_THREADS = %d" % MAX_THREADS)
 
     # ----- options form ----------------------------------------------------
+    def _rss_crossed(self, rss: float) -> None:
+        """Memory monitor callback (monitor thread): log the RSS crossing."""
+        self.log("RSS crossed high-water mark (%.1f MiB) -- spilling to disk." % rss)
+
     def _populate_options(self, form: QFormLayout) -> None:
+        """Build the Franks processing options: worker threads, RSS spill
+        threshold, Open-in-Veusz, MJD date strings, the small/large gap controls
+        (add_gap_controls), hidden legend keys, combined (overlay) plots only, the
+        legacy duplicate date-time pages, minimized/full project output and GPU
+        (CuPy) sorting.
+        """
         self.thread_spin = QSpinBox()
+        self.thread_spin.setToolTip("Number of files read at the same time (threads).")
         self.thread_spin.setRange(1, max(1, (os.cpu_count() or 4) * 2))
         self.thread_spin.setValue(MAX_THREADS)
         form.addRow(QLabel("Worker threads:"), self.thread_spin)
 
         self.rss_spin = QSpinBox()
+        self.rss_spin.setToolTip(
+            "Resident memory (MiB) above which large arrays are moved from "
+            "RAM to temporary files on disk (numpy.memmap) - lower it on a "
+            "small computer.")
         self.rss_spin.setRange(128, 65536)
         self.rss_spin.setSingleStep(128)
         self.rss_spin.setValue(DEFAULT_RSS_HIGH_WATER_MB)
         form.addRow(QLabel("RSS spill threshold (MiB):"), self.rss_spin)
 
         self.show_embed_cb = QCheckBox("Native build: use Open in Veusz after saving")
+        self.show_embed_cb.setToolTip(("Not available in the native build: use 'Open in Veusz' after"
+            ' saving (Veusz is only needed to view the project).'))
         self.show_embed_cb.setChecked(False)
         self.show_embed_cb.setEnabled(False)
         form.addRow(self.show_embed_cb)
@@ -1550,37 +1619,16 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.datestr_cb = QCheckBox(
             "Generate MJD -> date strings (YYYY-MM-DD_HH:MM:SS) datasets"
         )
+        self.datestr_cb.setToolTip(("Also store each MJD column as text 'YYYY-MM-DD_HH:MM:SS' "
+            '(UTC) - only needed by old Veusz documents; the time axes '
+            'are date-times without it.'))
         self.datestr_cb.setChecked(False)
         form.addRow(self.datestr_cb)
 
-        # --- Broken-axis / overlay controls (v0.0.9) ----------------------
-        self.gap_k_spin = QDoubleSpinBox()
-        self.gap_k_spin.setRange(1.0, 1000.0)
-        self.gap_k_spin.setSingleStep(1.0)
-        self.gap_k_spin.setDecimals(2)
-        self.gap_k_spin.setValue(10.0)
-        form.addRow(QLabel("Gap K (× median Δt):"), self.gap_k_spin)
-
-        self.gap_abs_spin = QDoubleSpinBox()
-        self.gap_abs_spin.setRange(0.0, 1e12)
-        self.gap_abs_spin.setDecimals(6)
-        self.gap_abs_spin.setSingleStep(1.0)
-        self.gap_abs_spin.setValue(0.0)
-        # v0.0.16: spinbox is in HOURS; converted to MJD-days when read.
-        form.addRow(QLabel("Manual gap (hours; 0=auto):"),
-                    self.gap_abs_spin)
-
-        # v0.0.19: free-form gap-string input (overrides spinbox).
-        self.gap_abs_str = QLineEdit()
-        self.gap_abs_str.setPlaceholderText("e.g. 5m3d2h  (overrides spinbox)")
-        self.gap_abs_str.setToolTip(
-            "Optional gap string.  Units: m = months (~30.44 days), "
-            "d = days, h = hours.  Examples: '3d', '120h', '5m 3d 2h'.  "
-            "Leave blank to use the numeric spinbox above.  Bare number "
-            "is interpreted as hours."
-        )
-        form.addRow(QLabel("Manual gap (string; overrides):"),
-                    self.gap_abs_str)
+        # --- Gap controls (0.4.0, shared with FITS AutoPlot) ---------------
+        # Line break where dt > K x median(dt); axis break only where
+        # dt > n x K x median(dt) (n = 0: one continuous time axis).
+        self.add_gap_controls(form)
 
         # v0.0.19: hide legend keys on every page.
         self.hide_keys_cb = QCheckBox("Hide legend keys on all pages")
@@ -1595,14 +1643,22 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.combined_only_cb = QCheckBox(
             "Combined (overlay) plots only -- skip per-file pages"
         )
+        self.combined_only_cb.setToolTip(
+            "Build only the overlay pages (all files on one graph per unit)"
+            " and no page per file - much faster to open for hundreds of "
+            "files.")
         self.combined_only_cb.setChecked(False)
         form.addRow(self.combined_only_cb)
 
         # --- Datetime-duplicate plots (v0.0.11) ---------------------------
         self.datetime_dup_cb = QCheckBox(
-            "Duplicate plots with datetime X axis (YYYY-MM-DD HH:MM:SS)"
+            "Legacy: also build duplicate _dt / _dt_labels pages"
         )
         self.datetime_dup_cb.setChecked(False)
+        self.datetime_dup_cb.setToolTip(
+            "0.4.0: every page already plots its MJD axis as a Veusz "
+            "date-time axis in local ISO 8601; the duplicate pages are only "
+            "needed for old workflows.")
         form.addRow(self.datetime_dup_cb)
 
         # --- v0.0.15: date-label density + dt page variants ---------------
@@ -1693,6 +1749,9 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
+        """Start a batch: create the project if needed and run FranksBatchWorker
+        on the selected files (buttons disabled, progress bars shown).
+        """
         if not self.selected_files:
             QMessageBox.information(self, "No files",
                                     "Select one or more Franks data files first.")
@@ -1718,32 +1777,37 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.worker.start()
 
     def _on_progress(self, done: int, total: int, key: str) -> None:
+        """Advance the parsing progress bar, log the file and refresh the RSS.
+        """
         self.progress_bar.setValue(done)
         self.log("  parsed [%d/%d] %s" % (done, total, os.path.basename(key)))
         self.update_mem_label(self.cache.rss_mb())
 
     def _on_failed(self, msg: str) -> None:
+        """Report a failed batch, re-enable Process and hide the progress bars.
+        """
         self.log("Batch failed: %s" % msg)
         QMessageBox.critical(self, "Batch failed", msg)
         self.process_button.setEnabled(True)
         self.hide_progress_bars()
 
     def _on_done(self, results: Dict[str, Any]) -> None:
+        """Turn the batch results into project pages.
+
+        Files are taken in file-name order; each is pushed with
+        push_franks_to_veusz (per-file pages), then the overlay pages are built.
+        The gap settings of the GUI become the project's TimeLayout; errors are
+        logged.
+        """
         emit_datestr = bool(self.datestr_cb.isChecked())
         # v0.0.9 broken-axis / overlay knobs
         gap_k = float(self.gap_k_spin.value())
-        # v0.0.16: spinbox is in HOURS -- convert to MJD-days.
-        gap_absolute_hours = float(self.gap_abs_spin.value())
-        gap_absolute = gap_absolute_hours / 24.0
-        # v0.0.19: free-form string overrides the spinbox.
-        gap_string_text = ""
-        try:
-            gap_string_text = self.gap_abs_str.text().strip()
-        except Exception:
-            gap_string_text = ""
-        if gap_string_text:
-            gap_absolute = parse_gap_string(gap_string_text,
-                                            log_cb=self.log)
+        # 0.4.0: manual gap in days for the page builders; every time axis
+        # is laid out by the document's TimeLayout (line breaks at
+        # dt > K x median(dt), axis breaks at n x that, local ISO 8601).
+        gap_absolute = self.gap_manual_days()
+        self.veusz_doc.time_layout = self.time_layout()
+        self.log(self.veusz_doc.time_layout.describe())
         # v0.0.19: hide-legend-keys checkbox
         hide_keys = bool(self.hide_keys_cb.isChecked())
         plot_individual = not bool(self.combined_only_cb.isChecked())
@@ -1761,13 +1825,18 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         app = QApplication.instance()
         total = len(results)
         def _col_cb(done: int, total_ops: int) -> None:
+            """Per-file column progress: resize the bar to ``total_ops`` when it
+            changes, set it to ``done`` and keep the GUI responsive.
+            """
             if self.column_progress_bar.maximum() != max(1, total_ops):
                 self.column_progress_bar.setRange(0, max(1, total_ops))
             self.column_progress_bar.setValue(done)
             if app is not None:
                 app.processEvents()
         file_records = []  # accumulator for the overlay post-pass
-        for idx, (path, data) in enumerate(results.items(), start=1):
+        # 0.4.0: pages in file-name order, not thread completion order.
+        ordered = sorted(results.items(), key=lambda item: (os.path.basename(str(item[0])), str(item[0])))
+        for idx, (path, data) in enumerate(ordered, start=1):
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
                 self.parse_progress_bar.setValue(idx)
@@ -1827,6 +1896,12 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 
     # ----- save ------------------------------------------------------------
     def _save_project(self) -> None:
+        """Ask for a file name and save the project with the current gap settings.
+
+        With "Minimized Veusz File" the minimized project is written (and, if
+        also ticked, the full one as ``<name>_full.vszh5``); otherwise the full
+        project.  The first file written is offered to "Open in Veusz".
+        """
         if self.veusz_doc is None:
             QMessageBox.information(self, "Nothing to save",
                                     "Process some files first.")
@@ -1836,6 +1911,8 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         )
         if not fn:
             return
+        # 0.4.0: lay out the time axes with the gap settings shown now.
+        self.veusz_doc.time_layout = self.time_layout()
         # v0.0.17: branch on Minimized Veusz File checkbox.
         want_min = bool(self.min_vesz_cb.isChecked())
         want_full = bool(self.full_vesz_cb.isChecked()) and want_min
@@ -1866,6 +1943,9 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
             QMessageBox.critical(self, "Save failed", str(exc))
 
     def closeEvent(self, event) -> None:
+        """Stop the memory monitor, close the project and delete the cache's
+        spill files before the window closes.
+        """
         try:
             self.monitor.stop()
         except Exception:
@@ -1886,6 +1966,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 # %% ENTRY POINT
 # ============================================================================
 def main() -> int:
+    """Run the Franks AutoPlot window; returns the Qt exit code."""
     app = QApplication.instance() or QApplication(sys.argv)
     win = FranksAutoPlotWindow()
     win.show()

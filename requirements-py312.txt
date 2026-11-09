@@ -1,0 +1,33 @@
+# =============================================================================
+# requirements-py312.txt - FitsAutoPlot suite, Python 3.12
+# -----------------------------------------------------------------------------
+# %%%% 0.1.0: Tested set of the 2026-11-09 suite (Python 3.12.3, PySide6).
+# Date: 2026-11-09
+#             Every program, the unit tests and the real GBT FITS files were
+#             run with exactly these versions (see REQUIREMENTS.md).
+# Use:  mamba env create -f environment-py312.yml     (recommended)
+#   or  python3.12 -m pip install -r requirements-py312.txt
+# Optional (not installed here): veusz (viewer), cupy-cuda12x (GPU),
+#   pywin32 (ORBIT/FR COM probe, Windows only).
+# =============================================================================
+# --- core: native .vszh5 writing, FITS, memory -------------------------------
+numpy==2.5.4
+h5py==3.16.0
+astropy==8.0.2
+pyerfa==2.0.1.5
+psutil==7.2.2
+# --- GUI: qtpy on PySide6, pyqtgraph Plots tab --------------------------------
+qtpy==2.4.3
+PySide6==6.12.0
+pyqtgraph==0.14.0
+# --- per-program --------------------------------------------------------------
+scipy==1.18.1           # Touchstone (scikit-rf), CSV statistics
+pandas==3.1.1           # CSV/TSV AutoPlot
+scikit-rf==2.2.0        # Touchstone AutoPlot
+matplotlib==3.11.2      # Touchstone PDF/PNG Smith-chart export, icons
+mpld3==0.5.12           # Touchstone HTML Smith charts
+pypdf==7.0.0            # PDF bookmarks (vszh5_writer, Touchstone)
+pillow==13.0.0          # images (matplotlib, tools/make_suite_icons.py)
+# --- time zones: zoneinfo is built in; Windows needs the tzdata package -------
+tzdata==2026.6
+python-dateutil==4.0.0

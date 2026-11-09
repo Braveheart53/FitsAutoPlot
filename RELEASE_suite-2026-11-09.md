@@ -15,25 +15,31 @@ dt_labels page rendered by Veusz 4.2.1 with the local ISO 8601 axis.*
 
 ## 1. Versions
 
-| File | Before | Now | What changed (details in each file's `# %%%%` history) |
+Versions in the single full-suite archive `FitsAutoPlot_suite_0.4.0_2026-11-09.7z` (the FITS
+addendum, § 10, added the last column's later entries).
+
+| File | Before (11-05) | Now | What changed (details in each file's `# %%%%` history) |
 |---|---|---|---|
-| `vszh5_writer.py` | — (0.0.24 on 11-05) | **0.0.26** | Widget names from the data, `header_notes`/`set_notes`, `local_time_from_veusz`, `display_zone` / `VSZH5_DISPLAY_TZ`, `style_datetime_axis`; 0.0.26 Smith charts |
-| `_autoplot_native.py` | 0.1.0 | **0.4.0** | Writes through vszh5_writer; `SetDataLocalTime`, `mark_local_time_axis`, unnamed widgets named after their data when saved; 0.4.0 `add_smith_page` |
-| `_autoplot_common.py` | 0.1.0 | **0.3.0** | Suite theme; dt_labels axes as Veusz date-times in local ISO 8601; broken-axis gaps on the same clock |
-| `_autoplot_pyqtgraph.py` | 0.1.0 | **0.3.0** | Polar, Smith, log axes, gate region; local ISO 8601 cursor read-out; 0.3.0 project Smith pages drawn as Smith charts |
-| `_suite_gui.py` | — | **0.1.0** (new) | Shared theme, menus, About, Open in Veusz, Export PDF/PNG |
-| `FITS_AutoPlot.py` / `Franks_AutoPlot.py` | 0.2.0 | **0.3.0** | Date-time datasets, no per-point date text, legacy `_dt` page off by default; Franks NameError fixed |
-| `FITS_AutoPlot_plugin.py` / `Franks_AutoPlot_plugin.py` | 0.1.0 | **0.2.0** | Theme styles only the plugin dialog; dt defaults as above |
-| `ATR_AutoPlot.py` | 0.1.0 | **0.2.1** | Native writer, polar Plots tab, parser fixes, measurement time as a date-time, header notes |
-| `CSV_TSV_AutoPlot.py` | 6.0.0 | **6.1.1** | Native writer, row alignment fix, date-time X columns in local ISO 8601, header notes |
-| `RAndS_FSW_ASCII_Plotter.py` | 1.0.3 | **1.1.1** | Zero-span time axis, binary sections, power averages in mW, original page names, sweep times as date-times, notes |
-| `Touchstone_AutoPlot.py` | 0.5.0 | **0.7.0** | pyqtgraph previews and Plots tab; 0.4.x graph names, traces named after their data, header notes; 0.7.0 Smith chart pages in the project |
-| `Hanging_Threads.py` | 0.0.2 | **0.0.3** | Stoppable, no auto-start, one report per hang |
-| `fastest_ascii_import.py` | 0.0.2 | **0.0.3** | Any byte decodes; strict data-line detection (CRLF kept) |
-| `veusz_console_scripts_20250623.py` | 0.0.2 | **0.0.3** | `select_file` works (missing tkinter names) |
-| `postProcessing_Launcher.py` | 0.2.0 | 0.2.0 | Not changed (no new tools to add) |
-| `tests/test_writer_names_time.py` | — | **0.0.1** (new) | Names, notes, local date-time axes |
-| `tests/test_smith_chart.py` | — | **0.0.1** (new) | Smith grid geometry, conversions, page scripts, widget tree, Plots-tab recognition |
+| `vszh5_writer.py` | 0.0.24 | **0.0.27** | Widget names from the data, `header_notes`/`set_notes`, local ISO 8601 date-time axes (`VSZH5_DISPLAY_TZ`); 0.0.26 Smith charts; 0.0.27 gap rule (`median_step`, `gap_threshold`, `insert_gaps`, `axis_break_pairs`), exact DST change instant, `iana_zone` for Python 3.8, header template |
+| `_autoplot_native.py` | 0.1.0 | **0.5.0** | Writes through vszh5_writer; Smith pages; 0.5.0 `TimeLayout`: every time axis laid out on save (local ISO 8601, small gaps break the line, large gaps break the axis) |
+| `_autoplot_common.py` | 0.1.0 | **0.4.0** | Suite theme; date-time axes; 0.4.0 gap controls (K, n, fixed times), thread-safe log and memory monitor (Python 3.12 crash fix) |
+| `_autoplot_pyqtgraph.py` | 0.1.0 | **0.3.1** | Polar, Smith, gate region; 0.3.1 the project's gap rule, plots deleted in the GUI thread |
+| `_suite_gui.py` | — | **0.1.1** | Shared theme, menus, About, Open in Veusz, Export PDF/PNG |
+| `FITS_AutoPlot.py` / `Franks_AutoPlot.py` | 0.2.0 | **0.4.0** | Date-time datasets; 0.4.0 padding rows left out, full FITS headers, pages in time order, small/large gap GUI |
+| `FITS_AutoPlot_plugin.py` / `Franks_AutoPlot_plugin.py` | 0.1.0 | **0.3.0** | Dialog-only theme; 0.3.0 the same gap fields, thread-safe log |
+| `ATR_AutoPlot.py` | 0.1.0 | **0.2.2** | Native writer, polar Plots tab, measurement time as a date-time; 0.2.2 header and docstrings |
+| `CSV_TSV_AutoPlot.py` | 6.0.0 | **6.1.2** | Native writer, row alignment, local ISO 8601 date-times; 6.1.2 header and docstrings |
+| `RAndS_FSW_ASCII_Plotter.py` | 1.0.3 | **1.1.2** | Zero-span time axis, binary sections, averages in mW, sweep times as date-times; 1.1.2 header and docstrings |
+| `Touchstone_AutoPlot.py` | 0.5.0 | **0.7.1** | pyqtgraph previews, Smith chart pages; 0.7.1 header and docstrings |
+| `postProcessing_Launcher.py` | 0.2.0 | **0.2.1** | Real icons on every button (no placeholders) |
+| `Hanging_Threads.py` / `fastest_ascii_import.py` / `veusz_console_scripts_20250623.py` | 0.0.2 | **0.0.4** | Fixes of 11-05; 0.0.4 header and docstrings |
+| `ORBIT_FR/orbitfr_com_probe.py` | 0.0.1 | **0.0.2** | Header template |
+| `tools/make_suite_icons.py` | — | **0.0.1** (new) | Draws the launcher icons into `assets/` |
+| `tests/test_native_export.py` | 0.2.0 | **0.3.1** | Gap rule; widgets deleted in the GUI thread |
+| `tests/test_time_gaps.py` | — | **0.0.1** (new) | Gap helpers, TimeLayout, padding rows, real-file layouts |
+| `tests/test_gui_close.py` | — | **0.0.1** (new) | Close-window stress: monitor thread firing, Plots tab, plugin dialogs, every window, GC in a second thread |
+| `tests/test_writer_names_time.py` / `tests/test_smith_chart.py` | — | **0.0.2** | Header and docstrings |
+| `requirements-py38.txt` / `requirements-py312.txt` | 0.2.0 / — | **0.3.0 / 0.1.0** | Exact tested sets; `environment-py38.yml` / `environment-py312.yml` (mamba) new; REQUIREMENTS.md new |
 
 ## 2. Date-times (2026-11-09 request)
 
@@ -53,8 +59,8 @@ since 0.0.24, never prints a wrong offset.
 
 **Changing the zone.** Set `VSZH5_DISPLAY_TZ` to `America/New_York`, `-05:00` or `UTC`
 to process for another zone. This is useful on a build server or a container that
-runs in UTC. A fixed offset also works on Python 3.8; an IANA name needs Python 3.9 or
-later (`zoneinfo`).
+runs in UTC. A fixed offset works everywhere. Since writer 0.0.27, an IANA name also
+works on Python 3.8, through backports.zoneinfo or python-dateutil (§ 10.4).
 
 **No per-point labels.** The per-point text datasets are no longer written
 (`EMIT_TEXT_X_DATASETS = False`). The older labelled `_dt` page is off by default
@@ -233,12 +239,13 @@ Smith export.
 | R&S all example files, mode 0 (588 pages, 594 datasets), `tests/validate_in_veusz.py` | Loads in 13.8 s; all 588 pages rendered to SVG (PASS) |
 | Writer 0.0.25 and 0.0.26 as a drop-in: AB Power Meter Monitor 1.7.0 runner (all 11 suites: appender, offline renders in Veusz, memory release, file locks, exporter, Grafana, IP separation, live plots, memory, GUI soak, 10-min headless soak) and MHM2010 workbench suite (112 tests) | Pass; the only failure is the workbench test that pins the writer version string |
 | Python 3.8 grammar (`ast.parse(feature_version=(3, 8))`) of the 20 changed or new `.py` files | Pass |
+| **Addendum (§ 10):** Python 3.8.20 and 3.12.3 environments, unit tests (37), every GUI headless, the four GBT FITS sets | Pass on both; identical projects (see REQUIREMENTS.md § 3) |
 
 ## 8. Data gaps and limits
 
-* There is no Python 3.8 interpreter, Windows machine or real GBO FITS file here. The
-  Windows paths, the Veusz installer path and the FITS pages were checked only with
-  synthetic data.
+* There is no Windows machine here: the Windows paths and the Veusz installer path are
+  checked by reading only. (Python 3.8 and 3.12 and real GBT FITS files were tested in the
+  addendum, § 10.)
 * The ATR and R&S time stamps carry no zone. They are stored as the instrument wrote
   them; please confirm whether the range PC and the analyzers run on local time or UTC.
 * For ATR multi-frequency files, the order of the frequency lines is assumed to be
@@ -261,3 +268,180 @@ Smith export.
 | [9] | pyqtgraph developers, "DateAxisItem." [Online]. Available: https://pyqtgraph.readthedocs.io/en/latest/api_reference/graphicsItems/dateaxisitem.html |
 | [10] | h5py developers, "h5py 3.16.0." [Online]. Available: https://pypi.org/project/h5py/ |
 | [11] | P. H. Smith, "Transmission line calculator," *Electronics*, vol. 12, no. 1, pp. 29–31, Jan. 1939. [Online]. Available: https://rfcafe.com/references/electronics-mag/transmission-line-calculator-phillip-h-smith-electronics-magazine-january-1939.htm |
+
+## 10. FITS addendum (2026-11-09, afternoon)
+
+Requests: analyse the attached GBT FITS files (`tack_data.zip`, `UWBR.7z`, `30d.7z`) and update
+the suite. Gap rule: use a multiple of the median time step, not a ratio. A small gap breaks the
+trace; a large gap, set by the user, breaks the x axis; both are set in the GUI. Use local ISO 8601
+on every time axis. Use the author's header template, Spyder cells, detailed comments and
+revision numbers in every file. The suite must work on Python 3.8 and 3.12, and the documents must
+give both environments. Post one archive with every file and no placeholders.
+
+### 10.1 Gap rule (writer 0.0.27, `_autoplot_native` 0.5.0)
+
+For trace $j$ with time stamps $t_{j,1} < t_{j,2} < \dots$ (seconds), the steps are
+$\Delta t_{j,i} = t_{j,i+1} - t_{j,i}$. Only finite, positive steps count; DMJD $\le 0$ padding
+rows are already removed.
+
+**Small gap: the line breaks.** The threshold is a multiple of the median step, or a fixed time
+$T_s$ from the GUI:
+
+$$
+\tau_j =
+\begin{cases}
+T_s, & T_s > 0,\\[2pt]
+K \cdot \operatorname{median}_i\!\left(\Delta t_{j,i}\right), & \text{otherwise},
+\end{cases}
+\qquad K = 10 \text{ by default.}
+$$
+
+When $\Delta t_{j,i} > \tau_j$, a NaN row goes between samples $i$ and $i+1$ of the plotted copies
+(`<x>_local`, `<y>_gaps`). Veusz and pyqtgraph then draw no line across the hole. The stored data
+are not changed.
+
+**Large gap: the x axis breaks.** The axis threshold is set from the largest small-gap threshold
+of the traces on that axis:
+
+$$
+\tau_{\text{axis}} =
+\begin{cases}
+\max\!\left(T_a,\ \max_j \tau_j\right), & T_a > 0,\\[2pt]
+\max(n, 1)\cdot \max_j \tau_j, & n > 0,\\[2pt]
+\infty \ (\text{one continuous axis}), & n = 0,
+\end{cases}
+\qquad n = 100 \text{ by default.}
+$$
+
+A hole $(a, b)$ in the union of all the traces' time stamps, with $b - a > \tau_{\text{axis}}$,
+becomes a break $[\,a + m(b-a),\; b - m(b-a)\,]$ of a Veusz `axis-broken` widget, with
+$m = 0.02$. The margin is a fraction of the gap. The old absolute margin was
+$10^{-9}\,|t| \approx 5.3$ s at MJD 61000, and it erased holes of up to 10.6 s. The axis is
+never broken where any trace has data, and $\tau_{\text{axis}} \ge \max_j \tau_j$ always holds, so
+an axis break is always also a line break.
+
+**Time scale.** MJD becomes Veusz date seconds as $t_{\text{V}} = (\text{MJD} - 54832)\times 86400$
+(Veusz counts from 2009-01-01T00:00:00 UTC = MJD 54832). Ticks show the computer's local clock,
+DST included: `2026-11-05T06:58:23-05:00`.
+
+**Worked example (UWBR Temps).** Logging switches between 1 s and about 60 s. The median step is
+1 s, so $\tau = 10 \times 1$ s $= 10$ s. Every 60 s step is a small gap, and the lines break
+there. $\tau_{\text{axis}} = 100 \times 10$ s $= 1000$ s. The largest hole in the set is 100 s
+(2026-11-05T21:43:33Z → 21:45:13Z), so the axis stays whole. The 0.3.0 rule broke the axis
+at every one of those steps: 630 breaks on the overlay.
+
+GUI: *Small gap K* (1–1000) or *Small gap fixed* (hours, or text such as `90s`, `15min`, `2h`;
+it overrides K). *Large gap n* (0 = never break the axis) or *Large gap fixed* (e.g. `3d`; it
+overrides n). The rule in use is written in every graph's notes.
+
+### 10.2 The files
+
+| Set | Files | Table HDU | Rows | Padding rows (DMJD ≤ 0) | First → last sample (UTC) | Median step | 99th pct step | Largest hole | Files with constant values |
+|---|---|---|---|---|---|---|---|---|---|
+| tack (azServo1Hz) | 10 | azServo1Hz | 36 000 | 0 | 2026-04-20T01:39:03Z → 11:39:02Z | 1 s | 1 s | 1 s | 0 |
+| UWBR Temps | 15 | Temperature | 14 605 | 0 | 2026-11-05T11:58:23Z → 11-06T02:26:46Z | 1 s | 60.5 s | 100 s | 4 |
+| UWBR Vacuum | 15 | Vacuum | 17 849 | 0 | 2026-11-05T11:43:16Z → 11-06T02:27:41Z | 1 s | 10.4 s | 70 s | 11 |
+| 30d (OnePpsDeltas) | 319 | OnePpsDeltas | 1 130 171 | 2 233 (7 per file) | 2026-01-03T16:51:06Z → 07-13T14:40:30Z | 6 s | 36 s | 71.5 d | 0 |
+
+Steps are those of the merged time stamps of each set. The 30d set has 40 CHANNELA–CHANNELB pairs,
+which are taken in turn.
+
+| Set | Pages | Datasets | `.vszh5` size | Line-break copies (`_gaps`) | Broken x axes (max breaks per axis) | Read + pages / save (3.12) |
+|---|---|---|---|---|---|---|
+| tack | 11 | 776 | 27.7 MB | 0 | 0 | 2.4 s / 0.7 s |
+| UWBR Temps | 16 | 384 | 4.6 MB | 27 | 0 (was 630 breaks) | 1.0 s / 0.2 s |
+| UWBR Vacuum | 16 | 95 | 1.2 MB | 2 | 0 | 0.3 s / 0.1 s |
+| 30d | 320 | 40 195 | 246.5 MB | 200 | 2 (3) | 17.9 s / 34.2 s |
+
+![FITS AutoPlot 0.4.0, Processing tab (dark)](docs/fits040_processing_dark.png)
+![UWBR Temps, Plots tab: lines break at the 60 s steps](docs/fits040_temps_plots_dark.png)
+![30d OnePpsDeltas, Plots tab](docs/fits040_pps_plots_dark.png)
+
+### 10.3 Found in the data (please check)
+
+* **Padding rows.** Every OnePpsDeltas file ends in 7 rows with DMJD = 0 and empty
+  CHANNELA/B. They were plotted as a 41st trace at MJD 0, which put an axis break from 1858 to
+  2026 on every overlay. They are now left out and counted in the log.
+* **Outlier.** CNS_GPS1 – GBTRtn DELTAT = −243 880 893 ns (−0.244 s) at 2026-04-19T22:28:36Z
+  (file `2026_04_19_19_20_43.fits`). This one sample sets the y range of that trace.
+* **71.5-day hole** in the 30d set, from 2026-02-02T18:51:12Z to 2026-04-15T07:18:42Z. No file
+  covers it, and it becomes one of the x-axis breaks.
+* **Constant values.** 4 of 15 Temperature files (2026-11-05 23:02 → 11-06 02:02 UTC) and 11 of
+  15 Vacuum files have the same value in every row of every column. This may be a stalled
+  sensor or logger.
+* **Repeated time stamps.** 1 step in Temps and 15 steps in Vacuum are shorter than 0.05 s. These
+  rows are kept.
+
+### 10.4 Python 3.8 and 3.12
+
+The package versions, mamba environments, differences between 3.8 and 3.12, and the test table
+are in **REQUIREMENTS.md**. The two Pythons produced the same projects: the same dataset names,
+equal arrays (NaN = NaN) and the same Veusz script, for all four sets (tack 776, Temps 384,
+Vacuum 95 and 30d 40 195 datasets).
+
+Fixed because of these tests:
+
+* **Python 3.8:** `VSZH5_DISPLAY_TZ=America/New_York` raised `ModuleNotFoundError: zoneinfo`.
+  It is fixed by `vszh5_writer.iana_zone()`, which falls back to backports.zoneinfo and then
+  dateutil.
+* **Python 3.12 / PySide6 6.12:** a segmentation fault at random, in 3 of 4 test runs; the
+  committed suite of the same morning also had it. The memory-monitor thread held lambdas that
+  referred to the window or plugin dialog. It could release the last reference, which destroyed Qt
+  widgets outside the GUI thread. It also wrote to the log widget from its own thread. The fix
+  is in `_autoplot_common` 0.4.0 and the plugins 0.3.0:
+  * the callback is a bound method, held through `weakref.WeakMethod`;
+  * `log()` and `append_log()` queue the text to the GUI thread;
+  * `stop()` wakes the thread and joins it;
+  * the stop event is no longer called `_stop`, a name that shadowed `threading.Thread._stop()`
+    and broke `join()`.
+
+  The Plots tab also deletes the plots of a page that is left in the GUI thread at once. Earlier,
+  the garbage collector reached them from whichever thread it happened to run in.
+* **Regression test:** `tests/test_gui_close.py` (4 tests). The FITS and Franks windows are
+  opened with the RSS threshold at 0 MiB, so the monitor fires from its own thread. The Plots tab
+  is filled and paged through, and the windows are closed and deleted. The two plugin dialogs and
+  the ATR, CSV/TSV, R&S and Touchstone windows get the same treatment. Each cycle runs twice
+  while a second thread calls `gc.collect()` every 2 ms. The test passes on 3.8, 3.12 and 3.13.
+
+### 10.5 Headers, comments, revisions, assets
+
+* Every `.py` file has the author's header: Header Info; Created on; Author Information with the
+  e-mail, secondary e-mail and phone; Revisions with the semantic-schema line. Each entry is
+  `# %%%% X.Y.Z:` and `Date:`. The newest entry holds the Function Descriptions (made from the
+  code), the Variable Descriptions and More Info. Older entries are unchanged, newest first.
+* All 358 functions, classes and methods that had no docstring now have one. Files changed only in
+  documentation got a patch version, as listed in § 1. Test and utility scripts have Spyder
+  `# %%` cells (Imports / Tests or Script / Run).
+* Pop-up help: 131 buttons, check boxes, spin boxes, combo boxes, lists and text fields had no
+  tooltip. Every one now has one, in FITS, Franks, both plugins, the shared main window, ATR,
+  CSV/TSV, R&S and Touchstone. This includes the buttons made in loops, such as the delimiter
+  presets and the R&S plot modes. The launcher, the Plots tab and the gap controls already had
+  tooltips.
+* `assets/` had placeholder text notes, not icons. It now has real 256 px PNG icons for every
+  image the launcher looks for. `app_icon.png` is a crop of `GBT_2.ico`. The others are drawn by
+  `tools/make_suite_icons.py`, which recreates them exactly. The placeholder notes were removed.
+
+### 10.6 Data gaps and limits
+
+* Veusz 4.2.1 needs about 130 s to open the 30d project (320 pages, 40 195 datasets). For a quick
+  look, use *Combined (overlay) plots only* or the minimized save.
+* Not tested on Windows. Windows needs `tzdata` for the IANA zone names; both requirement files
+  install it.
+* The cause of the −0.244 s outlier and of the constant UWBR files is not known from the files.
+  Instrument logs or the operators would be needed.
+* DMJD is read as UTC. Each file's PRIMARY header says `TIMESYS = 'UTC'` for DATE-OBS, and
+  DATE-OBS matches the first DMJD of every file checked. The headers do not state the scale of the
+  DMJD column itself.
+
+### 10.7 References (addendum)
+
+| # | Reference (IEEE) |
+|---|---|
+| [12] | P. J. Rousseeuw and C. Croux, "Alternatives to the median absolute deviation," *J. Amer. Statist. Assoc.*, vol. 88, no. 424, pp. 1273–1283, 1993, doi: 10.1080/01621459.1993.10476408. |
+| [13] | The Qt Company, "Threads and QObjects," *Qt 6 documentation*. [Online]. Available: https://doc.qt.io/qt-6/threads-qobject.html |
+| [14] | Python Software Foundation, "weakref — Weak references" (`WeakMethod`), *Python 3 documentation*. [Online]. Available: https://docs.python.org/3/library/weakref.html |
+| [15] | Python Software Foundation, "zoneinfo — IANA time zone support," *Python 3 documentation*. [Online]. Available: https://docs.python.org/3/library/zoneinfo.html |
+| [16] | Python Software Foundation, "tzdata," PyPI. [Online]. Available: https://pypi.org/project/tzdata/ |
+| [17] | conda-forge, "Miniforge." [Online]. Available: https://github.com/conda-forge/miniforge |
+| [18] | Veusz developers, "Axis-broken widget," *Veusz manual*. [Online]. Available: https://veusz.github.io/docs/manual/widgets.html |
+| [19] | A. M. Price-Whelan *et al.*, "The Astropy Project: Sustaining and growing a community-oriented open-source project and the latest major release (v5.0) of the core package," *Astrophys. J.*, vol. 935, no. 2, 167, 2022, doi: 10.3847/1538-4357/ac7c74. |

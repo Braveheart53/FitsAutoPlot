@@ -1,4 +1,21 @@
 #!/usr/bin/env bash
+# %% Header Info
+# setup_py3p8_nrao.sh - Py3p8 environment for the FitsAutoPlot suite (RHEL 8)
+# %%% Author Information
+# @author: William W. Wallace
+# Author Email: wwallace@nrao.edu
+# Author Secondary Email: naval.antennas@gmail.com
+# Author Business Phone: +1 (304) 456-2216
+# %%% Revisions
+# Utilizing Semantic Schema as External Release.Internal Release.Working version
+# %%%% 0.3.0: Whole suite: the tested Python 3.8 wheel set after the conda core.
+# Date: 2026-11-09
+#             After the conda-forge core, pip installs requirements-py38.txt
+#             (the exact set tested on 2026-11-09: PySide6 6.6.3.1,
+#             pyqtgraph 0.13.3, scikit-rf 1.9.0, pandas, scipy, matplotlib,
+#             mpld3, pypdf, python-dateutil, tzdata), so Touchstone, CSV/TSV
+#             and the IANA time zones work too; the check lists them.  See
+#             REQUIREMENTS.md; environment-py38.yml is the plain mamba route.
 # %%%% 0.2.0: pyqtgraph for the interactive Plots tab (0.13.3 is the last
 #             release for Python 3.8; newer Pythons get the current one).
 # Date: 2026-11-05
@@ -225,13 +242,23 @@ else
 fi
 ok "Env '${ENV_NAME}' ready."
 
+# 0.3.0: the exact Python 3.8 set tested on 2026-11-09 (REQUIREMENTS.md).
+if [[ -f "${REPO_DIR}/requirements-py38.txt" ]]; then
+    info "Installing the tested package set (requirements-py38.txt) ..."
+    "${PREFIX}/envs/${ENV_NAME}/bin/python" -m pip install -r "${REPO_DIR}/requirements-py38.txt"
+    ok "Tested package set installed."
+else
+    info "requirements-py38.txt not found next to this script; core packages only."
+fi
+
 # =====================================================================
 # 7.  Verify versions
 # =====================================================================
 info "Verifying installed package versions ..."
 "${PREFIX}/bin/conda" run -n "${ENV_NAME}" python - <<'PY'
 import sys, importlib
-mods = ["numpy", "astropy", "h5py", "psutil", "qtpy", "PySide6", "pyqtgraph"]
+mods = ["numpy", "astropy", "h5py", "psutil", "qtpy", "PySide6", "pyqtgraph",
+        "scipy", "pandas", "skrf", "matplotlib", "pypdf", "dateutil"]
 print("python :", sys.version.split()[0])
 for m in mods:
     try:

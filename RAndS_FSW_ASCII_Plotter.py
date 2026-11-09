@@ -58,10 +58,57 @@ as one trace per y column.
     power (not log) averaging of traces.
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 1.1.2: Header template, docstrings and tooltips.
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+#              * Tooltips (pop-up help) on every button, box and field that
+#                had none (14 widgets, including the three plot modes).
+# %%%%% Function Descriptions
+        _cupy: CuPy module when a CUDA device works, else None (checked on demand).
+        SFTFormatError (class): The file holds no trace this program can read.
+        SFTTrace (class): One sweep (section) of an R&S SFT file: its number, the instrument time stamp text and the trace values.
+        SFTFile (class): A parsed R&S FSP/FSW ASCII trace file (.sft).
+        _header: Parse the 'key;value;unit' header lines of an SFT file.
+        parse_sweep_time: FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime.
+        _float: float(text), or ``default`` (NaN) when text is not a number.
+        _ascii_values: Values of an ASCII section, or None when the block is not ASCII numbers.
+        parse_sft_bytes: Parse one .sft file (see the file layout in the module header).
+        read_sft: Read and parse one SFT file (bytes, any encoding the parser accepts).
+        _read_worker: Process-pool worker: (path, SFTFile or None, error text).
+        read_files: Read in input order ('spawn' process pool for 4+ files); (files, errors).
+        power_mean: Average of traces (rows) in their unit.
+        PlotOptions (class): Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and overlay, 2 = average only; ``use_gpu`` averages with CuPy when available.
+        RnSPlotter (class): Builds the project of a batch of .sft files.
+        build_project: RnSPlotter with every file of ``files`` added and finished.
+        batches: Split whole files into groups of at most ``plots_per_file`` sections (a file with more sections than that is a group of its own).
+        save_split: Write {base}_001.vszh5, {base}_002.vszh5 ...
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "R&S FSW / FSP Trace Plotter"
+        APP_VERSION = "1.1.2"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        PARALLEL_MIN_FILES: fewest files read with a process pool
+        MODE_NAMES: plot mode names (0 all, 1 average + overlay, 2 average only)
+        _SECTION: the 'Section<n>;<time stamp>' line that starts each sweep (bytes)
+        _NUMBER: one numeric token
+# %%%%% More Info
+    Run:  python RAndS_FSW_ASCII_Plotter.py [files]   (GUI; View menu)
+          python RAndS_FSW_ASCII_Plotter.py *.sft --output rns.vszh5 [--split N]
+    Sweep averages can use CuPy (--gpu) when a CUDA device is present.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 1.1.1: Original page names, sweep times as Veusz date-times, notes.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              * Page and graph names follow the 2025 script: a section page
 #                is "<file>::Section N;<time stamp>" (underscores shown as
 #                spaces, as before), an average page "<file> average"; the
@@ -77,7 +124,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                Averages pages list every file with its header.
 #              * Writer 0.0.25 / _autoplot_native 0.3.0.
 # %%%% 1.1.0: Native writer, Plots tab, time-domain axis, binary sections.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              * .vszh5 written by vszh5_writer 0.0.24 through
 #                _autoplot_native.NativeDocument (no veusz.embed window, no
 #                extra legacy .vsz in "Beware_oldVersion").
@@ -113,6 +160,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                AUTOPLOT_HANG_MONITOR=1: an idle Qt event loop looked like
 #                a hang every 20 s.
 # %%%% 1.0.3: Corrected Average+Overlay only mode with AutoSave (2026-01-26).
+Date: 2026-01-26
 =============================================================================
 """
 # %% Import Modules
@@ -134,7 +182,7 @@ import numpy as np  # noqa: E402
 from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
 
 APP_NAME = "R&S FSW / FSP Trace Plotter"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Rohde & Schwarz .sft trace files to native Veusz .vszh5 projects, "
                    "with averages and interactive pyqtgraph plots.")
@@ -159,6 +207,9 @@ class SFTFormatError(ValueError):
 
 @dataclass
 class SFTTrace:
+    """One sweep (section) of an R&S SFT file: its number, the instrument time
+    stamp text and the trace values.
+    """
     number: int
     stamp: str
     values: np.ndarray
@@ -166,6 +217,13 @@ class SFTTrace:
 
 @dataclass
 class SFTFile:
+    """A parsed R&S FSP/FSW ASCII trace file (.sft).
+
+    ``header`` maps lower-case keys to (value, unit); ``header_lines`` keeps
+    the header as written (for page notes); ``x`` is frequency, time or index
+    (``x_kind``) with its label and log flag; ``traces`` are the sweeps and
+    ``warnings`` notes made while parsing.
+    """
     path: str
     header: Dict[str, Tuple[str, str]]      # lower-case key -> (value, unit)
     header_lines: List[str]
@@ -179,9 +237,11 @@ class SFTFile:
 
     @property
     def name(self) -> str:
+        """File name (no folder)."""
         return os.path.basename(self.path)
 
     def value(self, key: str, default: str = "") -> str:
+        """Header value of ``key`` (any case), or ``default``."""
         return self.header.get(key.lower(), (default, ""))[0]
 
 
@@ -190,6 +250,11 @@ _NUMBER = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
 
 
 def _header(text: str) -> Tuple[Dict[str, Tuple[str, str]], List[str]]:
+    """Parse the 'key;value;unit' header lines of an SFT file.
+
+    Returns ({lower-case key: (value, unit)}, non-empty header lines); the
+    first occurrence of a key wins.
+    """
     header: Dict[str, Tuple[str, str]] = {}
     lines: List[str] = []
     for raw in text.splitlines():
@@ -220,6 +285,7 @@ def parse_sweep_time(stamp: str) -> Optional[datetime.datetime]:
 
 
 def _float(text: str, default: float = float("nan")) -> float:
+    """float(text), or ``default`` (NaN) when text is not a number."""
     try:
         return float(text)
     except (TypeError, ValueError):
@@ -326,11 +392,13 @@ def parse_sft_bytes(raw: bytes, path: str = "<bytes>") -> SFTFile:
 
 
 def read_sft(path: str) -> SFTFile:
+    """Read and parse one SFT file (bytes, any encoding the parser accepts)."""
     with open(path, "rb") as handle:
         return parse_sft_bytes(handle.read(), path)
 
 
 def _read_worker(path: str) -> Tuple[str, Optional[SFTFile], str]:
+    """Process-pool worker: (path, SFTFile or None, error text)."""
     try:
         return path, read_sft(path), ""
     except Exception as exc:
@@ -395,6 +463,9 @@ def power_mean(stack: np.ndarray, unit: str, use_gpu: bool = False) -> np.ndarra
 # %% Veusz project (NativeDocument; written by vszh5_writer)
 @dataclass
 class PlotOptions:
+    """Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and
+    overlay, 2 = average only; ``use_gpu`` averages with CuPy when available.
+    """
     mode: int = 0                    # 0 all plots, 1 average + overlay, 2 average only
     use_gpu: bool = False
 
@@ -403,6 +474,9 @@ class RnSPlotter:
     """Builds the project of a batch of .sft files."""
 
     def __init__(self, options: Optional[PlotOptions] = None) -> None:
+        """Empty R&S project with ``options``; pages are added by add_file() and
+        completed by finish().
+        """
         from _autoplot_native import NativeDocument
         self.options = options or PlotOptions()
         self.doc = NativeDocument("R&S trace plotter")
@@ -415,12 +489,23 @@ class RnSPlotter:
         self._overlay_pages: List[Any] = []
 
     def _stem(self, sft: SFTFile) -> str:
+        """Name stem for ``sft``: its file name without extension, with ``_2``,
+        ``_3``, ... for repeated names.
+        """
         stem = os.path.splitext(sft.name)[0]
         count = self._stems.get(stem, 0) + 1
         self._stems[stem] = count
         return stem if count == 1 else "%s_%d" % (stem, count)
 
     def add_file(self, sft: SFTFile) -> str:
+        """Add one file's datasets and pages; return its name stem.
+
+        Stores the x axis, the sweep times (Veusz date-times on the instrument
+        clock, zone not recorded) and each sweep; draws the section pages, the
+        average page and the overlay trace as ``options.mode`` asks.  A section
+        page's notes name only its own sweep (1.1.1 fix: listing every sweep on
+        every page made the notes grow as sweeps squared).
+        """
         doc, mode = self.doc, self.options.mode
         stem = self._stem(sft)
         x_name = "%s_%s" % (stem, "time" if sft.x_kind == "time" else "freq")
@@ -514,6 +599,9 @@ class RnSPlotter:
 
     # ----- pages ---------------------------------------------------------------
     def _overlay(self, sft: SFTFile) -> Any:
+        """Overlay graph for the x kind of ``sft`` (frequency, time, index),
+        created on first use on page AllImported / AllImported_<kind>.
+        """
         kind = sft.x_kind
         if kind not in self._overlays:
             name = "AllImported" if kind == "frequency" else "AllImported_%s" % kind
@@ -529,6 +617,7 @@ class RnSPlotter:
 
     def _page_graph(self, page_name: str, title: str, notes: str, sft: SFTFile,
                     y_label: str, graph_name: str = "graph") -> Any:
+        """New page ``page_name`` with ``notes`` holding one titled graph."""
         page = self.doc.Root.Add("page", name=page_name)
         page.notes.val = notes
         graph = page.Add("grid", columns=2).Add("graph", name=graph_name)
@@ -539,6 +628,9 @@ class RnSPlotter:
     @staticmethod
     def _decorate(graph: Any, title: str, sft: SFTFile, y_label: str, align: str,
                   x_pos: float) -> None:
+        """Title, axis labels (x from the file, y ``y_label``), log x when the
+        file says so, and the legend position (``align``, ``x_pos``).
+        """
         graph.Add("label", name="plotTitle")
         graph.topMargin.val = "1cm"
         graph.plotTitle.Text.size.val = "10pt"
@@ -552,6 +644,7 @@ class RnSPlotter:
 
     @staticmethod
     def _style_overlay(xy: Any, x_name: str, y_name: str, key: str) -> None:
+        """Overlay trace style: small translucent markers, automatic colour."""
         xy.xData.val, xy.yData.val, xy.key.val = x_name, y_name, key
         xy.marker.val = "circle"
         xy.markerSize.val = "2pt"
@@ -564,6 +657,7 @@ class RnSPlotter:
 
     @staticmethod
     def _style_single(xy: Any, x_name: str, y_name: str, key: str) -> None:
+        """Single-page trace style: small markers and a red line."""
         xy.xData.val, xy.yData.val, xy.key.val = x_name, y_name, key
         xy.marker.val = "circle"
         xy.markerSize.val = "2pt"
@@ -580,6 +674,7 @@ class RnSPlotter:
 
 
 def build_project(files: Sequence[SFTFile], options: Optional[PlotOptions] = None) -> RnSPlotter:
+    """RnSPlotter with every file of ``files`` added and finished."""
     plotter = RnSPlotter(options)
     for sft in files:
         plotter.add_file(sft)
@@ -617,6 +712,11 @@ def save_split(files: Sequence[SFTFile], base_path: str, plots_per_file: int,
 
 # %% GUI (imported lazily so --output works without Qt)
 def _build_gui_classes():
+    """Import Qt and define the GUI classes on first use.
+
+    Keeps the batch mode (``--output``) free of Qt; returns (QApplication,
+    EnhancedMainWindow).
+    """
     from qtpy.QtCore import QThread, Signal
     from qtpy.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QFileDialog,
                                 QFormLayout, QGroupBox, QHBoxLayout, QLineEdit,
@@ -626,14 +726,21 @@ def _build_gui_classes():
     import _suite_gui as suite
 
     class FileProcessingThread(QThread):
+        """Qt thread that reads SFT files with a process pool and reports progress.
+        """
         progress_updated = Signal(int)
         processing_finished = Signal(object, object)
 
         def __init__(self, paths: Sequence[str], workers: int) -> None:
+            """Thread that reads ``paths`` with ``workers`` processes."""
             super().__init__()
             self.paths, self.workers = list(paths), workers
 
         def run(self) -> None:
+            """Read the files (progress in percent), then emit
+            ``processing_finished(files, errors)``; an unexpected exception is
+            reported as an error, never raised in the thread.
+            """
             try:
                 files, errors = read_files(
                     self.paths, self.workers,
@@ -646,6 +753,9 @@ def _build_gui_classes():
         """Processing and Plots tabs; File / View / Help menus."""
 
         def __init__(self) -> None:
+            """Main window: Processing and Plots tabs, menus with the light/dark
+            theme, and the suite theme applied.
+            """
             super().__init__()
             self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
             self.resize(1150, 900)
@@ -669,6 +779,9 @@ def _build_gui_classes():
             self._log_message("%s %s ready; theme %s." % (APP_NAME, APP_VERSION, self.theme))
 
         def _setup_ui(self) -> None:
+            """Lay out the Processing tab (files, plot mode, GPU, split projects,
+            workers, progress, log, buttons) and the Plots tab.
+            """
             central = QWidget()
             self.setCentralWidget(central)
             outer = QVBoxLayout(central)
@@ -680,10 +793,16 @@ def _build_gui_classes():
             group = QGroupBox("File Selection")
             box = QVBoxLayout(group)
             self.file_list_widget = QListWidget()
+            self.file_list_widget.setToolTip("Files to process; add them with Browse, remove all with Clear.")
             box.addWidget(self.file_list_widget)
             row = QHBoxLayout()
-            for text, slot in (("Browse Files", self._browse_files), ("Clear Files", self._clear_files)):
+            for text, slot, tip in (
+                    ("Browse Files", self._browse_files,
+                     "Add R&S FSP/FSW ASCII trace files (.sft) to the list."),
+                    ("Clear Files", self._clear_files,
+                     "Remove every file from the list (the files are not touched).")):
                 button = QPushButton(text)
+                button.setToolTip(tip)
                 button.clicked.connect(slot)
                 row.addWidget(button)
             box.addLayout(row)
@@ -693,15 +812,22 @@ def _build_gui_classes():
             form = QFormLayout(options)
             self.enable_mp_checkbox = QCheckBox("Read files in parallel processes (%d or more files)"
                                                 % PARALLEL_MIN_FILES)
+            self.enable_mp_checkbox.setToolTip(
+                "Read the files in separate processes when there are enough of "
+                "them (faster for big batches).")
             self.enable_mp_checkbox.setChecked(True)
             self.enable_mp_checkbox.toggled.connect(
                 lambda on: self._log_message("Multiprocessing %s" % ("on" if on else "off")))
             form.addRow(self.enable_mp_checkbox)
             self.cpu_spinbox = QSpinBox()
+            self.cpu_spinbox.setToolTip("Number of processes used for parallel reading.")
             self.cpu_spinbox.setRange(1, max(1, multiprocessing.cpu_count()))
             self.cpu_spinbox.setValue(max(1, multiprocessing.cpu_count()))
             form.addRow("CPU processes:", self.cpu_spinbox)
             self.enable_gpu_checkbox = QCheckBox("Average on the GPU (CuPy / CUDA)")
+            self.enable_gpu_checkbox.setToolTip(
+                "Compute the power averages with CuPy on an NVIDIA GPU; unticks"
+                " itself when no GPU is found.")
             self.enable_gpu_checkbox.toggled.connect(self._gpu_toggled)
             form.addRow(self.enable_gpu_checkbox)
             layout.addWidget(options)
@@ -709,9 +835,15 @@ def _build_gui_classes():
             plot_group = QGroupBox("Plot Options")
             plot_layout = QVBoxLayout(plot_group)
             self.plot_mode_group = QButtonGroup(self)
+            mode_tips = (
+                "One page per sweep (section), the power average of each file and an "
+                "overlay of all files - the most pages.",
+                "Only the power average of each file and the overlay of all files.",
+                "Only the power average of each file (fewest pages).")
             for index, text in enumerate(("All plots (overlay, every section, averages)",
                                           "Average + Overlay", "Average only")):
                 radio = QRadioButton(text)
+                radio.setToolTip(mode_tips[index])
                 radio.setChecked(index == 0)
                 self.plot_mode_group.addButton(radio, index)
                 plot_layout.addWidget(radio)
@@ -720,12 +852,17 @@ def _build_gui_classes():
             split = QGroupBox("Split Saving")
             split_form = QFormLayout(split)
             self.split_box = QCheckBox("Save several projects of at most N section plots each")
+            self.split_box.setToolTip(
+                "Save the pages as several smaller projects (each opens faster "
+                "in Veusz).")
             split_form.addRow(self.split_box)
             self.plots_spin = QSpinBox()
+            self.plots_spin.setToolTip("Largest number of section plots in one project when splitting.")
             self.plots_spin.setRange(1, 1000000)
             self.plots_spin.setValue(1000)
             split_form.addRow("Plots per project:", self.plots_spin)
             self.base_edit = QLineEdit("RnS_Plots_Batch")
+            self.base_edit.setToolTip("File name stem of the split projects (_1, _2, ... are added).")
             split_form.addRow("Base file name:", self.base_edit)
             for widget in (self.plots_spin, self.base_edit):
                 widget.setEnabled(False)
@@ -733,6 +870,7 @@ def _build_gui_classes():
             layout.addWidget(split)
 
             self.status_text = QTextEdit()
+            self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
             self.status_text.setReadOnly(True)
             self.status_text.setMinimumHeight(110)
             layout.addWidget(self.status_text, 1)
@@ -744,14 +882,22 @@ def _build_gui_classes():
             outer.addWidget(self.progress_bar)
             buttons = QHBoxLayout()
             self.plot_button = QPushButton("Process and Plot")
+            self.plot_button.setToolTip(
+                "Read the listed .sft files and build the pages (shown on the "
+                "Plots tab).")
             self.plot_button.clicked.connect(self._process_and_plot)
             self.save_button = QPushButton("Save Veusz Project (.vszh5)")
+            self.save_button.setToolTip(
+                "Write the project as a native Veusz HDF5 file (.vszh5); Veusz "
+                "is not needed.")
             self.save_button.clicked.connect(self._save_project)
             self.save_button.setEnabled(False)
             self.veusz_button = QPushButton("Open in Veusz...")
+            self.veusz_button.setToolTip("Open the last saved project in Veusz (needs Veusz installed).")
             self.veusz_button.clicked.connect(self._open_in_veusz)
             self.veusz_button.setEnabled(False)
             close = QPushButton("Close")
+            close.setToolTip("Close this window (unsaved projects are lost).")
             close.clicked.connect(self.close)
             for button in (self.plot_button, self.save_button, self.veusz_button, close):
                 buttons.addWidget(button)
@@ -759,16 +905,21 @@ def _build_gui_classes():
 
         # ----- helpers ----------------------------------------------------------
         def _log_message(self, message: str) -> None:
+            """Append ``message`` with an HH:MM:SS time stamp to the log."""
             stamp = datetime.datetime.now().strftime("%H:%M:%S")
             self.status_text.append("[%s] %s" % (stamp, message))
 
         def _set_theme(self, mode: str) -> None:
+            """Apply and save the suite theme and recolour the Plots tab."""
             self.theme = suite.apply_theme(mode)
             if self.plot_panel is not None:
                 self.plot_panel.apply_theme(self.theme == "dark")
             self._log_message("Theme set to %s mode" % self.theme)
 
         def _gpu_toggled(self, on: bool) -> None:
+            """Untick GPU averaging (with a log line) when CuPy or a CUDA device is
+            missing.
+            """
             if on and _cupy() is None:
                 self._log_message("GPU averaging: CuPy with a CUDA device is not available; "
                                   "the CPU is used")
@@ -777,15 +928,19 @@ def _build_gui_classes():
                 self._log_message("GPU averaging %s" % ("on" if on else "off"))
 
         def options(self) -> PlotOptions:
+            """PlotOptions from the GUI (plot mode, GPU)."""
             return PlotOptions(mode=max(0, self.plot_mode_group.checkedId()),
                                use_gpu=self.enable_gpu_checkbox.isChecked())
 
         def _browse_files(self) -> None:
+            """Ask for .sft files and add them to the list."""
             files, _ = QFileDialog.getOpenFileNames(
                 self, "Select SFT Files", "", "R&S SFT Files (*.sft *.SFT);;All Files (*)")
             self.add_files(files)
 
         def add_files(self, files: Sequence[str]) -> None:
+            """Add the new ``files`` (duplicates ignored) and refresh the list.
+            """
             new = [f for f in files if f not in self.selected_files]
             self.selected_files.extend(new)
             self.file_list_widget.clear()
@@ -794,12 +949,14 @@ def _build_gui_classes():
                 self._log_message("Added %d file(s)" % len(new))
 
         def _clear_files(self) -> None:
+            """Empty the file list."""
             self.selected_files.clear()
             self.file_list_widget.clear()
             self._log_message("File list cleared")
 
         # ----- processing -------------------------------------------------------
         def _process_and_plot(self) -> None:
+            """Start reading the selected files in a FileProcessingThread."""
             if not self.selected_files:
                 QMessageBox.warning(self, APP_NAME, "Please select SFT files first.")
                 return
@@ -817,6 +974,9 @@ def _build_gui_classes():
                               % (len(self.selected_files), MODE_NAMES[self.options().mode]))
 
         def _on_processing_finished(self, files: List[SFTFile], errors: List[str]) -> None:
+            """Log errors and warnings, build the project and show it on the Plots
+            tab.
+            """
             self.progress_bar.setVisible(False)
             self.plot_button.setEnabled(True)
             for error in errors:
@@ -846,6 +1006,10 @@ def _build_gui_classes():
                 QMessageBox.warning(self, APP_NAME, "%d file(s) failed. See the log." % len(errors))
 
         def _save_project(self) -> None:
+            """Save the project: one file, or - with "split" - several projects of at
+            most N sections each in a chosen folder; then offer to open the first in
+            Veusz.
+            """
             if self.plotter is None:
                 QMessageBox.information(self, APP_NAME, "Process files first.")
                 return
@@ -880,18 +1044,23 @@ def _build_gui_classes():
                 self._open_in_veusz()
 
         def _open_in_veusz(self) -> None:
+            """Open the last saved project in Veusz."""
             if not self.last_saved:
                 QMessageBox.information(self, APP_NAME, "Save a project first.")
                 return
             suite.open_in_veusz(self, self.last_saved)
 
         def _export(self) -> None:
+            """Export the pages of the last saved project with Veusz (PDF/PNG).
+            """
             if not self.last_saved:
                 QMessageBox.information(self, APP_NAME, "Save a project first.")
                 return
             suite.export_with_veusz(self, self.last_saved, self._log_message)
 
         def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+            """Wait up to 5 s for a running read, clear the plots, then close.
+            """
             if self.thread is not None and self.thread.isRunning():
                 self.thread.wait(5000)
             if self.plot_panel is not None:
@@ -903,6 +1072,12 @@ def _build_gui_classes():
 
 # %% Main Application
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Command line entry point; returns the exit code.
+
+    With ``--output`` the files are plotted in batch (no GUI; ``--mode``,
+    ``--split``, ``--workers``, ``--gpu``) into that project; otherwise the
+    GUI opens with the files in its list.
+    """
     parser = argparse.ArgumentParser(description=APP_DESCRIPTION)
     parser.add_argument("files", nargs="*")
     parser.add_argument("--output", help="write this .vszh5 without opening the GUI")

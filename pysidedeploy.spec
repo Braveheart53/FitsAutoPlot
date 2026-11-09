@@ -1,3 +1,14 @@
+# %% Header Info
+# pysidedeploy.spec - pyside6-deploy settings for the launcher (alternative to PyInstaller)
+# %%% Author Information
+# @author: William W. Wallace
+# Author Email: wwallace@nrao.edu
+# Author Secondary Email: naval.antennas@gmail.com
+# Author Business Phone: +1 (304) 456-2216
+# %%% Revisions
+# Utilizing Semantic Schema as External Release.Internal Release.Working version
+# %%%% 0.0.1: Header template; first numbered version (settings unchanged).
+# Date: 2026-11-09
 [app]
 # title of your application
 title = ScientificPlottingSuite

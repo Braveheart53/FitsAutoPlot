@@ -63,6 +63,80 @@ Environment:
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.1: Real icons in assets/ (no placeholders); header template.
+Date: 2026-11-09
+#              * assets/ now holds real PNG icons for every image the
+#                launcher looks for (app_icon, atr_icon, fits_icon,
+#                franks_icon, csvicon, rands_icon, snp_icon, orbitfr_icon):
+#                the app icon is the 256 px frame of GBT_1.ico, the others
+#                are drawn for each program.  The *.placeholder notes
+#                (including those for old file names) were removed;
+#                ensure_assets_directory() still writes one only for an
+#                image that is missing.
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+# %%%%% Function Descriptions
+        _app_dir: Folder holding the launcher script, or the frozen executable.
+        resource_path: Resolve a launcher-relative path.
+        _log_dir: Per-user folder for the launch logs (created on demand).
+        LaunchTarget (class): One plotting tool the launcher can start.
+        visible_targets: Targets to show: all required ones, optional ones once present.
+        qt_text: Escape '&' so Qt shows it instead of making a keyboard mnemonic.
+        build_palette: Fusion palette for the requested theme.
+        build_about_content: Build the three text blocks of the About dialog.
+        SplashScreenThread (class): Thread that steps the splash-screen progress bar.
+        CustomSplashScreen (class): Splash screen with a progress bar and a status label.
+        LaunchRecord (class): A running (or finished) tool process and its log file.
+        LaunchError (class): Raised when a tool cannot be started.
+        ScriptLauncher (class): Start plotting tools as separate Python processes and track them.
+        read_log_tail: Last ``lines`` lines of a launch log (empty string if unreadable).
+        MainWindow (class): Main application window: one launch button per plotting tool.
+        PlottingSuiteApplication (class): Application object with optional splash screen.
+        setup_qt_plugins: Point Qt at PySide6's platform plugins (frozen builds).
+        ensure_assets_directory: Create the assets folder and a placeholder for every missing image.
+        check_script_dependencies: Print any required tool script that is missing.
+        parse_arguments: Command-line options (unknown Qt options are passed through).
+        main: Main application entry point.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "GBO Electronics Scientific Plotting Suite"
+        APP_VERSION = "0.2.1"
+        REPOSITORY_URL = "https://github.com/Braveheart53/FitsAutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        ORGANIZATION_DOMAIN = "nrao.edu"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        MAIN_BACKGROUND_IMAGE_PATH: Background image configuration - relative to the launcher folder.
+        SPLASH_BACKGROUND_IMAGE_PATH = "assets/load_building.jpg"
+        WINDOW_ICON_CANDIDATES: window icon files, tried in order
+        WINDOW_WIDTH = 900
+        WINDOW_HEIGHT: grows with optional entries; capped to screen
+        SPLASH_MAX_SIZE: largest splash screen size
+        SPLASH_STEP_SECONDS: five steps -> ~1.25 s total
+        BUTTON_RESTORE_MS: button disabled this long after a launch
+        EARLY_EXIT_CHECK_MS: a tool that dies before this is reported
+        REAP_INTERVAL_MS: finished processes are reaped this often
+        LOG_TAIL_LINES: lines of a failed program's log shown
+        GPL_URL: GPL notice shown in Help > About (same wording as the author's other tools)
+        GPL_NOTICE_PARAGRAPHS: licence notice in the About box
+        APP_DIR: folder of the launcher (or of the frozen executable)
+        BUNDLE_DIR: PyInstaller one-file builds unpack bundled data to sys._MEIPASS.
+        LAUNCH_TARGETS: the program buttons: script, icon and file types
+        VEUSZ_PLUGIN_FILES: Veusz Tools-menu plugins shipped in the repository (Help menu lists them).
+        PANEL_STYLES: Only the translucent panels and the window chrome change with the theme; the background image and the button gradient are identical in both.
+        CHROME_STYLES: Menu bar / menus / status bar.  The main window carries a style sheet (the background image), and widgets under a style sheet do not pick up a late...
+        BUTTON_STYLE: Unchanged from 0.1.4 (kept on purpose in both themes).
+        QT_BINDING = "PySide6"
+# %%%%% More Info
+    Run:  python postProcessing_Launcher.py   (splash, then the launcher)
+    Each button starts one program with the same Python; the View menu sets the
+    light/dark theme for the whole suite.  Frozen build:
+    postProcessing_Launcher.spec (PyInstaller) or pysidedeploy.spec.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.0: All secondary GUIs, Help > About, View theme menu, launch fixes
 Date: 2026-11-05
     Added:
@@ -165,7 +239,7 @@ else:
 
 # %% Application identity (shown in the title bar, footer and Help > About)
 APP_NAME = "GBO Electronics Scientific Plotting Suite"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 __version__ = APP_VERSION
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"

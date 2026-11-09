@@ -4,6 +4,7 @@
 FITS_AutoPlot.py
 -----------------------------------------------------------------------------
 # %% Header Info
+--------
 
 Replacement for the older FITS_AutoPlot.py in the FitsAutoPlot repo.
 GUI-driven batch processor for NRAO Green Bank FITS files (OnePpsDeltas
@@ -17,12 +18,91 @@ samplers and any other FITS BinTable / image HDUs) that produces a Veusz
 
 # %%% Author Information
 @author: William W. Wallace
+Author Email: wwallace@nrao.edu
+Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.0: Real GBT files: padding rows, full headers, gaps, local time axes.
+Date: 2026-11-09
+#              Checked with the GBT sampler2log files of 2026-11-09:
+#              azServo1Hz (tack, 10 files, 1 Hz), Rcvr_2500 Temperature and
+#              Vacuum (UWBR, 15 + 15 files, 1 s / 10 s / 60 s logging) and
+#              SiteTime OnePpsDeltas (319 files, 40 channel pairs).
+#              * FIX rows whose DMJD is 0 or NaN (the 7 padding rows at the
+#                end of every OnePpsDeltas file, with empty CHANNELA/B) are
+#                left out and logged; they put a 41st blank-tag trace at MJD
+#                0 and an axis break from 1858 to 2026 on every overlay.
+#              * FIX pages follow the time of their data (first DMJD, then
+#                file name), not the order the reader threads finished.
+#              * Page notes: every header card of the file - PRIMARY and
+#                each extension ("--- HDU 1: OnePpsDeltas ---", EXTNAME,
+#                TTYPE/TUNIT, COMMENT lines); 0.3.0 kept the first 20
+#                PRIMARY cards only.
+#              * Every per-file and overlay page draws its DMJD axis as a
+#                Veusz date-time axis in local ISO 8601 (e.g.
+#                2026-11-05T06:58:23-05:00); the time column is also stored
+#                once per file as a UTC date dataset "<file>__<HDU>__DMJD__utc".
+#                The duplicate _dt/_dt_labels pages are now "Legacy" (off).
+#              * Gaps (GUI): small gap - the line breaks where dt > K x
+#                median dt (or a fixed time); large gap - the x axis breaks
+#                where dt > n x the small gap (default n = 100) or a fixed
+#                time.  The UWBR Temps overlay had 630 axis breaks (its
+#                logging switches between 1 s and 60 s); it now has none and
+#                its lines break at the 60 s steps.
+#              * The memory monitor calls a bound method (_rss_crossed, held
+#                weakly) instead of a lambda that kept the window alive from
+#                the monitor thread; logging from that thread is queued to
+#                the GUI thread (_autoplot_common 0.4.0).
+#              * FITSProcessor.read() docstring lists every returned key.
+#              * Docstrings for every function and method; author contact
+#                lines in the header.
+#              * Tooltips (pop-up help) on every button, box and field that
+#                had none (reader, threads, RSS threshold, date strings, image HDUs,
+#                overlay-only).
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.0"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.0: Date-times as Veusz date-time datasets, local ISO 8601 axes.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              * The time stamps of every dt_labels page (per file, per HDU /
 #                tag and the unit overlays) are stored as Veusz DATE
 #                datasets in UTC (were plain numeric seconds) plus a
@@ -42,13 +122,13 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              * Writer 0.0.25 / _autoplot_native 0.3.0 / _autoplot_common
 #                0.3.0.
 # %%%% 0.2.1: Writer 0.0.24 and the suite-wide theme.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              No code change in this file: the .vszh5 is now written by
 #              vszh5_writer 0.0.24 (through _autoplot_native 0.2.0, atomic
 #              save) and the window opens in the light / dark theme shared
 #              with the launcher (_autoplot_common 0.3.0).
 # %%%% 0.2.0: Interactive pyqtgraph Plots tab (AB monitor style), About.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              After a batch the new "Plots" tab shows every page of the
 #              in-memory project with pyqtgraph (_autoplot_pyqtgraph 0.1.0,
 #              modelled on AB Power Meter Monitor 1.7.0): linked x axes,
@@ -58,7 +138,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              project and Open in Veusz are unchanged.
 #
 # %%%% 0.1.0: Native h5py project generation, no Veusz runtime dependency.
-# Date: 2026-10-11
+Date: 2026-10-11
 #              Uses _autoplot_native.NativeDocument, adapted from the ISP
 #              GUI VszDoc/VeuszWriter/export_veusz methodology.
 #              Astropy supplies raw and sorted data; no ImportFileFITS RPC.
@@ -67,7 +147,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              Preview is now explicit, external, and post-save only.
 #
 # %%%% 0.0.19: Wire string gap parser + hide-keys checkbox through GUI.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              GUI additions:
 #                * New ``self.gap_abs_str`` QLineEdit (placeholder
 #                  "e.g. 5m3d2h (overrides spinbox)") sits below the
@@ -86,7 +166,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              at their defaults (blank string + unchecked).
 #
 # %%%% 0.0.18: Unit-aware time-break detection (manual gap units fix).
-# Date: 2026-05-16
+Date: 2026-05-16
 #              The GUI "Manual gap (hours)" spinbox is converted to
 #              MJD-days in submit_handler (``gap_absolute = hours /
 #              24``).  Pre-v0.0.18 that day-scaled threshold was
@@ -119,7 +199,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  version order.
 #
 # %%%% 0.0.17: Minimized .vszh5 save + sentinel-tag dt overlay filter.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              New GUI checkboxes + correctness fix on the dt overlay
 #              pages:
 #                * Two new checkboxes on the FITS GUI:
@@ -154,7 +234,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  order.
 #
 # %%%% 0.0.16: dt_labels page upgraded to mode='datetime' (true date ticks).
-# Date: 2026-05-16
+Date: 2026-05-16
 #                * The v0.0.15 dt_labels page used a per-point text
 #                  dataset bound to xData with axis mode='labels'.  That
 #                  works for compact "strip" views but the axis is
@@ -202,7 +282,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  change is mirrored in the plugin dialog.
 #
 # %%%% 0.0.15: Density-pct date labels + text-x dt_labels page variant.
-# Date: 2026-05-16
+Date: 2026-05-16
 #                * v0.0.14 dropped the SetDataDateTime path entirely.
 #                  v0.0.15 generalises its "sparse vs full" boolean into
 #                  an integer percentage 0..100 (``datetime_label_density_pct``)
@@ -238,7 +318,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  semantic-version order across every shared file.
 #
 # %%%% 0.0.14: Datetime via xy.labels per-point text labels.
-# Date: 2026-05-16
+Date: 2026-05-16
 #                * The v0.0.11..0.0.13 dt-duplicate pages used a Veusz
 #                  date-time x axis driven by SetDataDateTime.  On Veusz
 #                  3.4 (current NRAO production) that path fires hundreds
@@ -266,7 +346,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  x-ordering on the dt page matches the seconds page.
 
 # %%%% 0.0.13: Identity-stable trace styling + datetime-duplicate hardening.
-# Date: 2026-05-16
+Date: 2026-05-16
 #                * Every xy widget (tagged per-file, untagged per-file,
 #                  datetime-duplicate, and unit-overlay) is now styled by
 #                  apply_trace_style() with identity key (column_name,
@@ -289,7 +369,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  per-tag dt, untagged dt fallback, and overlay dt.
 
 # %%%% 0.0.12: Combined-in-time overlay semantics.  build_unit_overlay_pages
-# Date: 2026-05-16
+Date: 2026-05-16
 #              now collapses each (unit, column) onto a single time-sorted
 #              xy trace stitched across every file that contributes that
 #              column.  The legend names the column (e.g. 'DELTAT'); the
@@ -305,7 +385,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              both on per-file pages and on cross-file overlay pages.
 
 # %%%% 0.0.11: Duplicate plots with a date-time x axis.  A new GUI
-# Date: 2026-05-16
+Date: 2026-05-16
 #              checkbox ("Duplicate plots with datetime X axis") asks
 #              every per-file page and every cross-file unit-overlay
 #              page to be cloned with a parallel Veusz date-time x
@@ -329,7 +409,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                  because their epoch is ambiguous.
 
 # %%%% 0.0.10: Optional GPU acceleration for the per-file argsort step.
-# Date: 2026-05-16
+Date: 2026-05-16
 #              When the 'Use GPU acceleration (CuPy)' checkbox is
 #              checked and CuPy is importable on the host (Windows or
 #              Linux), large time-axis sorts are dispatched to
@@ -340,7 +420,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              when CuPy is absent.
 
 # %%%% 0.0.9: Per-plot broken-x-axis on time gaps + unit-overlay pages.
-# Date: 2026-05-16
+Date: 2026-05-16
 #             FITSProcessor.read() now also captures per-column unit
 #             strings (qt[col].unit if set, else TUNIT header), exposed
 #             via data['units'][(hdu_name, col_name)].  push_to_veusz()
@@ -370,13 +450,12 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                 the full standalone Veusz GUI in the current Python env
 #                 (``python -m veusz <fn>``) without leaving the AutoPlot
 #                 session.
-# %%%%% Function Descriptions
 
 # %%%% 0.0.8: Parallelization audit + Open-in-Veusz button.
-# Date: 2026-05-16
+Date: 2026-05-16
 
 # %%%% 0.0.7: Added two new progress bars in the GUI -- a 'Parsing/pushing'
-# Date: 2026-05-16
+Date: 2026-05-16
 #             file-level bar that ticks once per file as push_to_veusz()
 #             finishes that file (separate from the original 'Reading'
 #             worker-thread bar), and a 'Current file - columns' bar that
@@ -393,7 +472,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             version stream.)
 
 # %%%% 0.0.5: Explicit early-exit in push_to_veusz() and _build_pages()
-# Date: 2026-05-16
+Date: 2026-05-16
 #             when ``data['images']`` is empty (the normal case for NRAO
 #             1PPS-delta files, whose only HDU is OnePpsDeltas). Adds an
 #             explicit log line so it's obvious image processing was
@@ -403,7 +482,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             longer makes the GUI look frozen.
 
 # %%%% 0.0.4: Register the NRAO non-standard FITS unit aliases (``'none'``
-# Date: 2026-05-16
+Date: 2026-05-16
 #             on CHANNELA/CHANNELB, ``'NanoSeconds'`` on DELTAT) at module
 #             load via register_nrao_fits_units(), and wrap fits.open /
 #             QTable.read in suppress_fits_unit_warnings() so a 900-file
@@ -411,7 +490,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             and "kept as MaskedColumn" messages.
 
 # %%%% 0.0.3: NaN values in numeric columns are now explicitly preserved as
-# Date: 2026-05-16
+Date: 2026-05-16
 #             NaN floats in Veusz numeric datasets (Veusz handles NaN
 #             natively; samples are skipped only at plot time, not dropped
 #             from the dataset).  The corresponding date-string text
@@ -419,7 +498,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             array lengths stay aligned with their numeric companions.
 
 # %%%% 0.0.2: Added optional MJD -> YYYY-MM-DD_HH:MM:SS string conversion.
-# Date: 2026-05-16
+Date: 2026-05-16
 #             A new "Generate MJD->date strings" checkbox appears under the
 #             Processing Options form.  When ticked, every numeric column
 #             whose name matches an MJD/JD/TIME hint produces an additional
@@ -427,38 +506,8 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #             the file's base name plus ``datestr``).
 
 # %%%% 0.0.1: Initial port of FITS_AutoPlot to the Touchstone-style GUI
-# Date: 2026-05-16
+Date: 2026-05-16
 
-        main: build QApplication, open AutoPlot main window, run event loop.
-        FITSAutoPlotWindow: qtpy main window subclassing AutoPlotMainWindow;
-            adds the FITS-specific processing-options form (import backend
-            choice, thread count, RSS high-water mark) and orchestrates the
-            batch run through a worker QThread.
-        FITSBatchWorker: QThread that runs the parallel batch read using
-            ``run_in_threadpool``; emits per-file progress signals.
-        FITSProcessor: per-file reader.  Supports both Veusz native FITS
-            import and astropy fallback; transparently handles ``.fits`` and
-            ``.fits.gz`` files; produces a normalised dict of column-shaped
-            arrays keyed by ``(hdu_name, column_name)`` or ``(hdu_name,
-            "IMAGE")`` for image HDUs.
-        push_to_veusz: install one file's worth of column datasets into the
-            running embedded Veusz document, with raw/sorted tagging and
-            per-HDU plot creation.
-# %%%%% Variable Descriptions
-        MAX_THREADS: top-of-file knob for the worker thread pool size.
-        DEFAULT_RSS_HIGH_WATER_MB: RSS threshold for memmap spill.
-        SORTED_KEY_HINT: ordered list of preferred sort keys (DMJD first).
-# %%%%% More Info
-        FITS files from NRAO Green Bank carry a single BinTableHDU named
-        ``OnePpsDeltas`` with columns DMJD (1D), CHANNELA (8A), CHANNELB
-        (8A), DELTAT (J).  We expose every column as its own Veusz dataset
-        plus an additional "sorted" pass (sorted by DMJD) so derived plots
-        match the convention used in the NRAO 1PPS documentation.  The
-        sorted datasets are produced from the raw arrays inside Python
-        because Veusz's internal expressions cannot reorder a structured
-        BinTable on import; the raw datasets are still imported so the
-        user can pivot back to the unsorted representation if desired.
-=============================================================================
 """
 # %% Imports
 from __future__ import annotations
@@ -487,7 +536,7 @@ from astropy.table import QTable
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -575,6 +624,51 @@ TAG_COLUMN_HINTS = ["CHANNELA", "CHANNELB", "CHANNEL", "SAMPLER", "PORT"]
 # ============================================================================
 # %% PER-FILE PROCESSOR
 # ============================================================================
+#: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+TIME_COLUMN_NAMES = ("DMJD", "MJD")
+
+
+def valid_time_rows(table) -> Optional[np.ndarray]:
+    """
+    Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+
+    The first column named DMJD or MJD (any case) decides: a row is kept
+    when its value is finite and > 0.  Returns None when the table has no
+    such column (every row is kept).
+    """
+    for col in table.colnames:
+        if col.upper() in TIME_COLUMN_NAMES:
+            try:
+                values = np.asarray(table[col], dtype=float)
+            except Exception:
+                return None
+            return np.isfinite(values) & (values > 0.0)
+    return None
+
+
+def header_lines(hdul, source: str = "") -> List[str]:
+    """
+    Every header card of an open FITS file as page-note lines (0.4.0).
+
+    "Source: <file>", then the PRIMARY cards and, for each extension, a
+    "--- HDU n: NAME ---" line followed by its cards, each as written in
+    the file (keyword = value / comment) with trailing blanks removed.
+    """
+    lines = ["Source: %s" % source] if source else []
+    for index, hdu in enumerate(hdul):
+        if index:
+            lines.append("")
+            lines.append("--- HDU %d: %s ---" % (index, hdu.name or "HDU%d" % index))
+        for card in hdu.header.cards:
+            try:
+                text = str(card.image).rstrip()
+            except Exception:
+                text = "%s = %r" % (card.keyword, card.value)
+            if text:
+                lines.append(text)
+    return lines
+
+
 class FITSProcessor:
     """
     Read a single FITS file (compressed or not) and return a normalised dict
@@ -587,6 +681,13 @@ class FITSProcessor:
 
     def __init__(self, backend: str, cache: MemoryAwareCache,
                  linked: bool = False, skip_images: bool = False) -> None:
+        """Reader settings shared by every file of a batch.
+
+        ``backend`` must be 'veusz', 'astropy' or 'both' (historical names; all
+        read with astropy).  ``cache`` holds the arrays (spilled to disk above the
+        RSS high-water mark); ``linked`` is kept for old callers; ``skip_images``
+        skips image HDUs entirely (faster for 1PPS files).
+        """
         if backend not in ("veusz", "astropy", "both"):
             raise ValueError("backend must be 'veusz', 'astropy' or 'both'")
         self.backend = "astropy"
@@ -599,6 +700,11 @@ class FITSProcessor:
 
     # ------------------------------------------------------------------
     def _open(self, path: str):
+        """Return (path to read, is_temporary).
+
+        A ``.gz`` file is decompressed to a temporary ``autoplot_fits_*.fits`` copy
+        (removed after reading); any other path is returned unchanged.
+        """
         # astropy.io.fits transparently opens .gz, but we still need a
         # local copy on disk for Veusz's importer if the user picked the
         # veusz backend on a gzipped file (Veusz cannot open .fits.gz).
@@ -613,17 +719,28 @@ class FITSProcessor:
 
     # ------------------------------------------------------------------
     def read(self, path: str) -> Dict[str, Any]:
-        """
+        """Read one FITS file (``.fits`` or ``.fits.gz``) into plain arrays.
+
+        Rows without a usable time stamp (DMJD/MJD 0 or NaN, the padding
+        rows of OnePpsDeltas files) are left out (0.4.0) and counted.
+
         Returns
         -------
         dict with keys:
 
             'columns'     : {(hdu_name, col_name) : np.ndarray}  -- 1D table cols
             'images'      : {hdu_name             : np.ndarray}  -- nD images
-            'sort_key'    : (hdu_name, col_name) or None
-            'header'      : list[str]  -- pretty-printed PRIMARY header lines
-            'fits_for_vz' : path to a non-gzipped FITS file usable by Veusz
-            'tmp_uncompressed' : bool
+            'units'       : {(hdu_name, col_name) : str}         -- TUNITn text
+            'sort_key'    : (hdu_name, col_name) or None (DMJD preferred)
+            'tag_columns' : {hdu_name : [text columns used as tags]}
+            'tag_groups'  : {hdu_name : {tag tuple : row indices}}
+            'header'      : list[str]  -- every header card of every HDU
+                            (header_lines(), 0.4.0; was the first 20
+                            PRIMARY cards)
+            'dropped_rows': {hdu_name : number of rows left out}
+            'fits_for_vz' : path to a non-gzipped copy of the file
+            'tmp_uncompressed' : bool  -- True when that copy is temporary
+            'base_name'   : file name without the FITS extensions
         """
         local_path, did_decompress = self._open(path)
         base = os.path.splitext(os.path.basename(path))[0]
@@ -648,14 +765,15 @@ class FITSProcessor:
             "tmp_uncompressed": did_decompress,
             "base_name": base,
         }
+        out["dropped_rows"] = {}
         with suppress_fits_unit_warnings(), \
                 fits.open(local_path, memmap=True) as hdul:
-            # Collect a compact header dump from PRIMARY
+            # 0.4.0: the page notes carry every header card of the file -
+            # PRIMARY and each extension (0.3.0 kept the first 20 PRIMARY
+            # cards only, so EXTNAME, column units and COMMENT lines of the
+            # table were lost).
             try:
-                out["header"] = [
-                    "%s = %r" % (k, hdul[0].header[k])
-                    for k in list(hdul[0].header.keys())[:20]
-                ]
+                out["header"] = header_lines(hdul, os.path.basename(path))
             except Exception:
                 pass
 
@@ -671,6 +789,14 @@ class FITSProcessor:
                     # outer context (defensive).
                     with suppress_fits_unit_warnings():
                         qt = QTable.read(hdu)
+                    # 0.4.0: rows whose time stamp is missing (NaN) or not
+                    # positive are padding (GBT sampler2log files end with
+                    # rows of DMJD = 0 and empty channel names); they would
+                    # put a point at MJD 0 (1858-11-17) on every time axis.
+                    keep = valid_time_rows(qt)
+                    if keep is not None and not keep.all():
+                        out["dropped_rows"][hname] = int((~keep).sum())
+                        qt = qt[keep]
                     for col in qt.colnames:
                         try:
                             data = np.asarray(qt[col])
@@ -867,6 +993,9 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
     _col_done = 0
 
     def _tick(n: int = 1) -> None:
+        """Count ``n`` finished dataset operations and report them to
+        ``column_cb(done, total)``; callback errors are ignored.
+        """
         # Local helper so each successful sub-push advances the GUI bar by
         # one unit.  Safe no-op when the caller didn't supply a callback.
         nonlocal _col_done
@@ -894,6 +1023,18 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         else:
             doc.SetData(raw_name, array.reshape(-1))
         raw_names.append(raw_name)
+        # 0.4.0: the time column is also stored as a Veusz date-time
+        # dataset in UTC ("<...>__utc"), once per file and HDU; the pages
+        # draw local date-time copies of it (see _autoplot_native 0.5.0).
+        if isinstance(doc, NativeDocument) \
+                and (hname, col) == data.get("sort_key") and str(col).upper() in TIME_COLUMN_NAMES \
+                and array.ndim == 1 and array.dtype.kind in ("f", "i", "u"):
+            utc_name = "%s__%s__%s__utc" % (base, safe_dsname(hname), safe_dsname(col))
+            mjd = np.asarray(array, dtype=float)
+            utc = (mjd - MJD_VEUSZ_EPOCH_MJD) * 86400.0
+            utc[~(np.isfinite(mjd) & (mjd > 0.0))] = np.nan
+            doc.SetDataDateTime(utc_name, utc)
+            raw_names.append(utc_name)
         _tick()
     doc.TagDatasets(base, raw_names)
     doc.TagDatasets("raw", raw_names)
@@ -925,6 +1066,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
 
         # Helper: stringify a tag tuple into a safe dataset suffix.
         def _tag_suffix(tup):
+            """'A_B' style suffix of a tag tuple ('' for none, 'NA' for a blank part)."""
             if not tup:
                 return ""
             return "_".join(safe_dsname(t or "NA") for t in tup)
@@ -2225,12 +2367,17 @@ def build_unit_overlay_pages(doc, file_records,
         by_unit.setdefault(unit_str, []).append((hname, col, tup, members))
 
     def _tup_suffix(tup):
+        """Dataset-name suffix for a tag tuple: parts joined with '_' ('all' for no
+        tag, 'NA' for a missing part).
+        """
         if not tup or tup == (None,):
             return "all"
         return "_".join(safe_dsname(str(t) if t is not None else "NA")
                         for t in tup)
 
     def _tup_label(tup):
+        """Legend text for a tag tuple: parts joined with '.' ('' for no tag).
+        """
         if not tup or tup == (None,):
             return ""
         return ".".join(str(t) if t is not None else "NA" for t in tup)
@@ -2635,6 +2782,22 @@ def build_unit_overlay_pages(doc, file_records,
 # ============================================================================
 # %% WORKER THREAD (parallel read)
 # ============================================================================
+def _result_order(item):
+    """Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0)."""
+    path, data = item
+    first = float("inf")
+    if not isinstance(data, Exception):
+        key = data.get("sort_key")
+        try:
+            values = np.asarray(data["columns"][key], dtype=float) if key else np.empty(0)
+            values = values[np.isfinite(values) & (values > 0)]
+            if values.size:
+                first = float(values.min())
+        except Exception:
+            pass
+    return (first, os.path.basename(str(path)), str(path))
+
+
 class FITSBatchWorker(QThread):
     """Background QThread that reads a batch of FITS files concurrently."""
 
@@ -2646,6 +2809,9 @@ class FITSBatchWorker(QThread):
     def __init__(self, files: List[str], backend: str, max_threads: int,
                  cache: MemoryAwareCache, parent=None,
                  skip_images: bool = False) -> None:
+        """Worker thread for one batch: ``files`` read with ``backend`` on
+        ``max_threads`` threads into ``cache``.
+        """
         super().__init__(parent)
         self.files = files
         self.backend = backend
@@ -2654,6 +2820,11 @@ class FITSBatchWorker(QThread):
         self.skip_images = bool(skip_images)
 
     def run(self) -> None:
+        """Read every file in a thread pool; emit ``progress(done, total, path)``
+        per file, then ``finished_ok(results)`` ({path: read() result or
+        exception}) or ``failed(message with traceback)``.  FITS unit warnings are
+        suppressed for the whole batch.
+        """
         try:
             # Outer suppressor: in addition to the inner wraps inside
             # FITSProcessor.read(), this keeps the worker thread free of
@@ -2679,6 +2850,9 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
     """Top-level window for the FITS AutoPlot script."""
 
     def __init__(self) -> None:
+        """Main window: shared AutoPlot layout plus the FITS options, a memory
+        monitor and an empty project (created on the first batch).
+        """
         super().__init__("%s %s - Native HDF5 Export" % (APP_NAME, APP_VERSION),
                          default_mode="dark")
         self.app_name, self.app_version = APP_NAME, APP_VERSION
@@ -2688,34 +2862,52 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.cache = MemoryAwareCache(MemoryMonitorConfig(
             rss_high_water_mb=DEFAULT_RSS_HIGH_WATER_MB,
         ))
-        self.monitor = MemoryMonitor(
-            self.cache,
-            callback=lambda rss: self.log("RSS crossed high-water mark "
-                                          "(%.1f MiB) -- spilling to disk." % rss),
-        )
+        # 0.4.0: a bound method (held weakly by the monitor thread); log() is
+        # thread-safe.  The old lambda kept the window alive from that thread.
+        self.monitor = MemoryMonitor(self.cache, callback=self._rss_crossed)
         self.monitor.start()
         self.veusz_doc = None
         self.worker = None
         self.log("MAX_THREADS = %d" % MAX_THREADS)
 
+    def _rss_crossed(self, rss: float) -> None:
+        """Memory monitor callback (monitor thread): log the RSS crossing."""
+        self.log("RSS crossed high-water mark (%.1f MiB) -- spilling to disk." % rss)
+
     # ----- options form ----------------------------------------------------
     def _populate_options(self, form: QFormLayout) -> None:
+        """Build the FITS processing options: reader, worker threads, RSS spill
+        threshold, Open-in-Veusz, MJD date strings, skip image HDUs, the
+        small/large gap controls (add_gap_controls), hidden legend keys, combined
+        (overlay) plots only, the legacy duplicate date-time pages and their
+        label density, minimized/full project output and GPU (CuPy) sorting.
+        """
         self.backend_combo = QComboBox()
+        self.backend_combo.setToolTip(
+            "Reader: astropy. The result is a native .vszh5 file (the old "
+            "'veusz' and 'both' choices are no longer needed).")
         self.backend_combo.addItems(["astropy (native HDF5 output)"])
         form.addRow(QLabel("Import backend:"), self.backend_combo)
 
         self.thread_spin = QSpinBox()
+        self.thread_spin.setToolTip("Number of files read at the same time (threads).")
         self.thread_spin.setRange(1, max(1, (os.cpu_count() or 4) * 2))
         self.thread_spin.setValue(MAX_THREADS)
         form.addRow(QLabel("Worker threads:"), self.thread_spin)
 
         self.rss_spin = QSpinBox()
+        self.rss_spin.setToolTip(
+            "Resident memory (MiB) above which large arrays are moved from "
+            "RAM to temporary files on disk (numpy.memmap) - lower it on a "
+            "small computer.")
         self.rss_spin.setRange(128, 65536)
         self.rss_spin.setSingleStep(128)
         self.rss_spin.setValue(DEFAULT_RSS_HIGH_WATER_MB)
         form.addRow(QLabel("RSS spill threshold (MiB):"), self.rss_spin)
 
         self.show_embed_cb = QCheckBox("Native build: use Open in Veusz after saving")
+        self.show_embed_cb.setToolTip(("Not available in the native build: use 'Open in Veusz' after"
+            ' saving (Veusz is only needed to view the project).'))
         self.show_embed_cb.setChecked(False)
         self.show_embed_cb.setEnabled(False)
         form.addRow(self.show_embed_cb)
@@ -2723,6 +2915,9 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.datestr_cb = QCheckBox(
             "Generate MJD -> date strings (YYYY-MM-DD_HH:MM:SS) datasets"
         )
+        self.datestr_cb.setToolTip(("Also store each MJD column as text 'YYYY-MM-DD_HH:MM:SS' "
+            '(UTC) - only needed by old Veusz documents; the time axes '
+            'are date-times without it.'))
         self.datestr_cb.setChecked(False)
         form.addRow(self.datestr_cb)
 
@@ -2732,42 +2927,16 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.skip_images_cb = QCheckBox(
             "Skip image HDUs (faster -- recommended for NRAO 1PPS files)"
         )
+        self.skip_images_cb.setToolTip(
+            "Do not read image HDUs. GBT sampler2log and 1PPS files have "
+            "none, so this only saves time.")
         self.skip_images_cb.setChecked(False)
         form.addRow(self.skip_images_cb)
 
-        # --- Broken-axis / overlay controls (v0.0.9) ----------------------
-        self.gap_k_spin = QDoubleSpinBox()
-        self.gap_k_spin.setRange(1.0, 1000.0)
-        self.gap_k_spin.setSingleStep(1.0)
-        self.gap_k_spin.setDecimals(2)
-        self.gap_k_spin.setValue(10.0)
-        form.addRow(QLabel("Gap K (× median Δt):"), self.gap_k_spin)
-
-        self.gap_abs_spin = QDoubleSpinBox()
-        self.gap_abs_spin.setRange(0.0, 1e12)
-        self.gap_abs_spin.setDecimals(6)
-        self.gap_abs_spin.setSingleStep(1.0)
-        self.gap_abs_spin.setValue(0.0)
-        # v0.0.16: user-facing absolute-gap input is in HOURS for the
-        # primary MJD-axis use case (1 hour = 1/24 MJD-day).  The value
-        # is converted to days when calling detect_time_breaks.  Set 0
-        # to fall back to the K * median(dt) heuristic.
-        form.addRow(QLabel("Manual gap (hours; 0=auto):"),
-                    self.gap_abs_spin)
-
-        # v0.0.19: free-form gap-string input.  Accepts "5m3d2h"-style
-        # text (m=months, d=days, h=hours; case-insensitive; whitespace
-        # tolerated).  When non-empty, OVERRIDES the spinbox above.
-        self.gap_abs_str = QLineEdit()
-        self.gap_abs_str.setPlaceholderText("e.g. 5m3d2h  (overrides spinbox)")
-        self.gap_abs_str.setToolTip(
-            "Optional gap string.  Units: m = months (~30.44 days), "
-            "d = days, h = hours.  Examples: '3d', '120h', '5m 3d 2h'.  "
-            "Leave blank to use the numeric spinbox above.  Bare number "
-            "is interpreted as hours."
-        )
-        form.addRow(QLabel("Manual gap (string; overrides):"),
-                    self.gap_abs_str)
+        # --- Gap controls (0.4.0, shared with Franks AutoPlot) -------------
+        # Line break where dt > K x median(dt); axis break only where
+        # dt > n x K x median(dt) (n = 0: one continuous time axis).
+        self.add_gap_controls(form)
 
         # v0.0.19: hide legend keys on every page when ticked.
         self.hide_keys_cb = QCheckBox("Hide legend keys on all pages")
@@ -2782,6 +2951,10 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.combined_only_cb = QCheckBox(
             "Combined (overlay) plots only -- skip per-file pages"
         )
+        self.combined_only_cb.setToolTip(
+            "Build only the overlay pages (all files on one graph per unit)"
+            " and no page per file - much faster to open for hundreds of "
+            "files.")
         self.combined_only_cb.setChecked(False)
         form.addRow(self.combined_only_cb)
 
@@ -2790,9 +2963,14 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         # page is duplicated against a parallel Veusz date-time x axis
         # (tick labels: YYYY-MM-DD HH:MM:SS, rotated 45 deg).
         self.datetime_dup_cb = QCheckBox(
-            "Duplicate plots with datetime X axis (YYYY-MM-DD HH:MM:SS)"
+            "Legacy: also build duplicate _dt / _dt_labels pages"
         )
         self.datetime_dup_cb.setChecked(False)
+        self.datetime_dup_cb.setToolTip(
+            "0.4.0: every page already plots its time axis as a Veusz "
+            "date-time axis in local ISO 8601 (e.g. 2026-11-05T06:58:23-05:00); "
+            "the duplicate pages of v0.0.11-0.3.0 are only needed for old "
+            "workflows.")
         form.addRow(self.datetime_dup_cb)
 
         # --- v0.0.15: date-label density + dt page variants ----------------
@@ -2884,6 +3062,9 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
 
     # ----- run -------------------------------------------------------------
     def _process_files(self) -> None:
+        """Start a batch: create the project if needed and run FITSBatchWorker on
+        the selected files (buttons disabled, progress bars shown).
+        """
         if not self.selected_files:
             QMessageBox.information(self, "No files", "Select one or more FITS files first.")
             return
@@ -2910,36 +3091,40 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.worker.start()
 
     def _on_worker_progress(self, done: int, total: int, key: str) -> None:
+        """Advance the reading progress bar, log the file and refresh the RSS.
+        """
         self.progress_bar.setValue(done)
         self.log("  read [%d/%d] %s" % (done, total, os.path.basename(key)))
         self.update_mem_label(self.cache.rss_mb())
 
     def _on_worker_failed(self, msg: str) -> None:
+        """Report a failed batch, re-enable Process and hide the progress bars.
+        """
         self.log("Batch failed: %s" % msg)
         QMessageBox.critical(self, "Batch failed", msg)
         self.process_button.setEnabled(True)
         self.hide_progress_bars()
 
     def _on_worker_done(self, results: Dict[str, Any]) -> None:
+        """Turn the batch results into project pages.
+
+        Files are taken in time order (first valid DMJD, then name); each is
+        pushed with push_to_veusz (per-file pages), then the unit overlay pages
+        are built.  The gap settings of the GUI become the project's TimeLayout;
+        dropped padding rows and errors are logged.
+        """
         backend = "astropy"
         emit_datestr = bool(self.datestr_cb.isChecked())
         skip_images = bool(self.skip_images_cb.isChecked())
         # v0.0.9 broken-axis / overlay knobs
         gap_k = float(self.gap_k_spin.value())
-        # v0.0.16: spinbox is now in HOURS -- convert to MJD-days for
-        # detect_time_breaks (which compares against the x-array units).
-        gap_absolute_hours = float(self.gap_abs_spin.value())
-        gap_absolute = gap_absolute_hours / 24.0
-        # v0.0.19: if the user typed a free-form gap string, that takes
-        # precedence (already in MJD-days).
-        gap_string_text = ""
-        try:
-            gap_string_text = self.gap_abs_str.text().strip()
-        except Exception:
-            gap_string_text = ""
-        if gap_string_text:
-            gap_absolute = parse_gap_string(gap_string_text,
-                                            log_cb=self.log)
+        # 0.4.0: the manual gap (hours box or "5m3d2h" string) in days for
+        # the page builders; the final layout of every time axis (line
+        # breaks, axis breaks, local ISO 8601) is the document's
+        # TimeLayout, applied when the project is drawn or saved.
+        gap_absolute = self.gap_manual_days()
+        self.veusz_doc.time_layout = self.time_layout()
+        self.log(self.veusz_doc.time_layout.describe())
         # v0.0.19: hide-legend-keys checkbox
         hide_keys = bool(self.hide_keys_cb.isChecked())
         plot_individual = not bool(self.combined_only_cb.isChecked())
@@ -2960,13 +3145,23 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         # Defined here so it captures the GUI handles, then passed into
         # push_to_veusz() which counts column-level operations.
         def _col_cb(done: int, total_ops: int) -> None:
+            """Per-file column progress: resize the bar to ``total_ops`` when it
+            changes, set it to ``done`` and keep the GUI responsive.
+            """
             if self.column_progress_bar.maximum() != max(1, total_ops):
                 self.column_progress_bar.setRange(0, max(1, total_ops))
             self.column_progress_bar.setValue(done)
             if app is not None:
                 app.processEvents()
         file_records = []  # accumulator for the unit-overlay post-pass
-        for idx, (path, data) in enumerate(results.items(), start=1):
+        # 0.4.0: pages in time order (first time stamp, then file name), not
+        # in the order the worker threads finished.
+        ordered = sorted(results.items(), key=_result_order)
+        for idx, (path, data) in enumerate(ordered, start=1):
+            if not isinstance(data, Exception):
+                for hname, n_drop in sorted((data.get("dropped_rows") or {}).items()):
+                    self.log("  %s / %s: %d row(s) without a valid time stamp "
+                             "(DMJD <= 0 or NaN) left out" % (os.path.basename(path), hname, n_drop))
             if isinstance(data, Exception):
                 self.log("  ERROR processing %s: %s" % (path, data))
                 self.parse_progress_bar.setValue(idx)
@@ -3036,6 +3231,12 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
 
     # ----- save ------------------------------------------------------------
     def _save_project(self) -> None:
+        """Ask for a file name and save the project with the current gap settings.
+
+        With "Minimized Veusz File" the minimized project is written (and, if
+        also ticked, the full one as ``<name>_full.vszh5``); otherwise the full
+        project.  The first file written is offered to "Open in Veusz".
+        """
         if self.veusz_doc is None:
             QMessageBox.information(self, "Nothing to save",
                                     "Process some files first.")
@@ -3045,6 +3246,8 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         )
         if not fn:
             return
+        # 0.4.0: lay out the time axes with the gap settings shown now.
+        self.veusz_doc.time_layout = self.time_layout()
         # v0.0.17: branch on Minimized Veusz File checkbox.
         want_min = bool(self.min_vesz_cb.isChecked())
         want_full = bool(self.full_vesz_cb.isChecked()) and want_min
@@ -3077,6 +3280,9 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
 
     # ----- shutdown --------------------------------------------------------
     def closeEvent(self, event) -> None:
+        """Stop the memory monitor, close the project and delete the cache's
+        spill files before the window closes.
+        """
         try:
             self.monitor.stop()
         except Exception:
@@ -3097,6 +3303,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
 # %% ENTRY POINT
 # ============================================================================
 def main() -> int:
+    """Run the FITS AutoPlot window; returns the Qt exit code."""
     app = QApplication.instance() or QApplication(sys.argv)
     win = FITSAutoPlotWindow()
     win.show()

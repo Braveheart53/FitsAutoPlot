@@ -20,6 +20,26 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.4: Header template and docstrings (no functional change).
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+# %%%%% Function Descriptions
+        switch (class): "Creates a case or switch style statement.
+        select_file: Ask for one or more files with a tkinter dialog.
+        cartesian_to_polar: Convert Cartesian coordinates to polar coordinates.
+        main: execution of main function
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        (no module constants)
+# %%%%% More Info
+    Paste into the Veusz console; not imported by the suite.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.3: select_file works; history newest-first.
 Date: 2026-11-05
 # %%%%% Function Descriptions
@@ -121,6 +141,7 @@ class switch:
     """
 
     def __init__(self, value):
+        """Remember the value to compare against."""
         self.value = value
 
     def __iter__(self):
@@ -128,6 +149,7 @@ class switch:
         yield self.match
 
     def match(self, *args):
+        """True when the value equals any of ``args``."""
         return self.value in args
 
 

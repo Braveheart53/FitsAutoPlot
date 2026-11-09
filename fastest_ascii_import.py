@@ -17,6 +17,26 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.4: Header template, docstrings, __version__ (no functional change).
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+# %%%%% Function Descriptions
+        _data_values: Floats of a comma-separated line of numbers, else [] (strict).
+        _after: Text after the first case-insensitive occurrence of ``pattern``.
+        fastest_file_parser: Comprehensive fast file parser for ASCII text files.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _NUMBER: a line holding one number
+        SFT_FIRST_DATA_LINE: .sft header occupies lines 1-57
+# %%%%% More Info
+    Kept for other scripts; the R&S plotter has its own .sft reader.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.3: Robust decoding and data-line detection.
 Date: 2026-11-05
 # %%%%% Function Descriptions
@@ -87,6 +107,8 @@ Date: 2025-06-16
 
 
 import re as _re
+
+__version__ = "0.0.4"
 
 _NUMBER = _re.compile(r"^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$")
 SFT_FIRST_DATA_LINE = 58          # .sft header occupies lines 1-57

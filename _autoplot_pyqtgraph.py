@@ -4,6 +4,7 @@
 _autoplot_pyqtgraph.py
 -----------------------------------------------------------------------------
 # %% Header Info
+--------
 
 Interactive pyqtgraph plots of an AutoPlot project, for the "Plots" tab of
 FITS_AutoPlot and Franks_AutoPlot.  Modelled on the AB Power Meter Monitor
@@ -50,6 +51,7 @@ downsampling, clip to view), so million-point columns stay responsive.
 @author: William W. Wallace
 Author Email: wwallace@nrao.edu
 Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
 Company: NRAO / Green Bank Observatory (GBO)
 Licence: GPL-3.0-or-later
 Compatible with: Python 3.8+ (pyqtgraph 0.13.3) and 3.12+ (pyqtgraph 0.14),
@@ -73,10 +75,81 @@ Compatible with: Python 3.8+ (pyqtgraph 0.13.3) and 3.12+ (pyqtgraph 0.14),
      2012, ch. 2.4 (the Smith chart).
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.1: Gap rule of the project; local time axes everywhere.
+Date: 2026-11-09
+#              * Time traces break where the step dt > K x median(dt) (or the
+#                manual threshold) of the project's TimeLayout
+#                (_autoplot_native 0.5.0), as the Veusz pages do; GAP_FACTOR
+#                is used only for documents without one.
+#              * MJD axes arrive as local date-time datasets (the document
+#                lays them out before they are drawn), so every time axis is
+#                in local ISO 8601 like the Veusz pages.
+#              * Plots of a page that is left are deleted at once in the GUI
+#                thread (deleteLater + a DeferredDelete pass), not when the
+#                garbage collector - which may run in a worker thread - gets
+#                to them.
+#              * Docstrings for every function, class and method.
+# %%%%% Function Descriptions
+        _ctrl_pressed: True when Ctrl is held during a (scene) wheel event.
+        _utc_text: Wall-clock text of a Unix time ('-' when unknown).
+        _value_text: Compact number; '-' for None/NaN.
+        _align_right: Right-align a table cell (Qt.Alignment on new PySide6, int on old).
+        _swatch: Small square icon in a trace colour (legend column).
+        break_gaps: Insert one NaN after every step longer than ``factor`` x the median step.
+        _scroll_enclosing_area: Scroll the nearest QScrollArea around the plot by the wheel's steps.
+        _wheel_passes_through: True when the wheel must NOT zoom: scroll the page instead.
+        _ViewBox (class): ViewBox whose wheel zoom needs Ctrl.
+        _AxisItem (class): Value axis with the same wheel rule.
+        _DateAxisItem (class): UTC date axis with the same wheel rule.
+        _PlotWidget (class): PlotWidget that reports when the mouse leaves it (to clear the crosshair).
+        configure: Global pyqtgraph options and the wheel rule (call before plots exist).
+        _setting: A NativeWidget setting ('PlotLine/color', 'label', ...).
+        _children: Child widgets of ``widget`` whose kind is one of ``kinds``, in order.
+        _graphs_of: Graphs of a page in drawing order (directly or inside grids).
+        _numeric: (array, kind) of a numeric 1-D or date dataset, else (None, kind).
+        _looks_like_mjd: MJD axis: 'MJD' in the dataset name or axis label and plausible values.
+        document_pages: Pages of a NativeDocument as plain descriptions (no Qt objects).
+        _axis_offset: UTC offset ("-05:00") of a local ISO date-time axis, "local" when the data cross offsets, "" for UTC / not a local axis (0.2.1).
+        _axis_range: (min, max) fixed in the project, None where the limit is Auto.
+        _smith_graph: Description of a Smith chart written by vszh5_writer 0.0.26 (0.3.0).
+        _polar_graph: Description of a Veusz polar graph and its nonorthpoint traces.
+        trace_arrays: (x, y, x_is_unix_time) of one trace, converted for display.
+        TracePlot (class): A pyqtgraph plot with its legend-and-values column beside it (same layout and behaviour as the AB monitor's TracePlot).
+        ImagePlot (class): A 2-D dataset (FITS image HDU) with a colour bar.
+        _nice_ticks: About ``count`` round tick values from low to high.
+        _GridPlot (class): Common base of PolarPlot and SmithPlot: an aspect-locked plot with a drawn grid, and the same legend-and-values column as TracePlot.
+        PolarPlot (class): Veusz-style polar plot of r(theta) traces (e.g.
+        SmithPlot (class): Smith chart (impedance grid "z" or admittance grid "y") of reflection coefficients, with f, Gamma, Z and VSWR of the nearest point under the mouse.
+        html_escape: Minimal HTML escaping for header labels.
+        ProjectPlotPanel (class): The "Plots" tab.
+        self_test: Build and delete one plot; None when pyqtgraph works, else the reason (needs a QApplication).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        COLOURS: 4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+        THEMES: 1e1e2e", "#cdd6f4", "#9399b2"),
+        PLOT_HEIGHT: px per plot row
+        LEGEND_WIDTH: px of the legend column (user can drag the splitter)
+        SYMBOL_MAX_POINTS: point symbols only up to this many points per trace
+        GAP_FACTOR: a step > GAP_FACTOR x median step breaks the line
+        WHEEL_NEEDS_CTRL: plain wheel scrolls the page, Ctrl+wheel zooms
+        VEUSZ_EPOCH_UNIX: 2009-01-01T00:00:00Z: Veusz datetime zero
+        MJD_UNIX_EPOCH: MJD of 1970-01-01T00:00:00Z
+        MJD_PLAUSIBLE: values outside are not treated as MJD
+        SMITH_NOTES_PREFIX: (0.3.0) How a Smith chart graph of vszh5_writer 0.0.26 is recognised (its : notes) and how its trace datasets are named (same values as the writer).
+        _LINE_STYLES: Veusz line style -> Qt pen style
+        _MARKERS: Veusz marker -> pyqtgraph symbol
+# %%%%% More Info
+    The Plots tab of every program (pyqtgraph 0.13 on Python 3.8, 0.14 on
+    3.12, through qtpy/PySide6).  Ctrl + wheel zooms; the wheel alone scrolls.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.0: Smith chart pages of the project drawn as Smith charts.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              * A graph written by vszh5_writer 0.0.26 smith_page() /
 #                _autoplot_native.add_smith_page() (notes "Smith chart (...)")
 #                is drawn with SmithPlot: impedance or admittance grid,
@@ -87,7 +160,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #              * Polar and Smith traces keep named project colours ("blue",
 #                "darkred" ...); only hex colours were used before.
 # %%%% 0.2.1: Local ISO date-time axes; names from the data.
-# Date: 2026-11-09
+Date: 2026-11-09
 #              * document_pages() finalises a NativeDocument first (local
 #                date-time datasets bound, auto-named widgets named after
 #                their data), so the Plots tab shows what the .vszh5 holds.
@@ -96,7 +169,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                are already local, so the date axis shows the same wall
 #                clock as Veusz.
 # %%%% 0.2.0: Polar graphs, Smith chart, log axes, project axis ranges.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              * Veusz 'polar' graphs with 'nonorthpoint' traces (ATR
 #                patterns): PolarPlot draws them with the project's
 #                minradius/maxradius, units (degrees, radians, fractions,
@@ -112,7 +185,7 @@ Utilizing Semantic Schema as External Release.Internal Release.Working version
 #                the cursor converts the view's log10(x) back to x.
 #              * One page in memory at a time, as before.
 # %%%% 0.1.0: First version - pyqtgraph view of the AutoPlot project.
-# Date: 2026-11-05
+Date: 2026-11-05
 #              TracePlot, wheel rule, theme and dispose() follow
 #              ab_live_plots.py 0.1.0; data comes from the NativeDocument
 #              widget tree (pages > graphs > xy / image) instead of a live
@@ -131,11 +204,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 os.environ.setdefault("QT_API", "pyside6")   # qtpy and pyqtgraph pick the same binding
 
 import numpy as np  # noqa: E402
-from qtpy import QtGui, QtWidgets  # noqa: E402
+from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from qtpy.QtCore import Qt, Signal  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 __version__ = VERSION
 
 # %% Settings
@@ -269,6 +342,9 @@ class _ViewBox(pg.ViewBox):
     """ViewBox whose wheel zoom needs Ctrl."""
 
     def wheelEvent(self, ev: Any, axis: Any = None) -> None:  # noqa: N802 - Qt override
+        """Zoom with the wheel only when allowed (Ctrl held, if required);
+        otherwise let the scroll area around the plots scroll.
+        """
         if not _wheel_passes_through(ev):
             super().wheelEvent(ev, axis)
 
@@ -277,6 +353,7 @@ class _AxisItem(pg.AxisItem):
     """Value axis with the same wheel rule."""
 
     def wheelEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+        """Same wheel rule as _ViewBox for wheel events over an axis."""
         if not _wheel_passes_through(event):
             super().wheelEvent(event)
 
@@ -285,6 +362,7 @@ class _DateAxisItem(pg.DateAxisItem):
     """UTC date axis with the same wheel rule."""
 
     def wheelEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+        """Same wheel rule as _ViewBox for wheel events over a date axis."""
         if not _wheel_passes_through(event):
             super().wheelEvent(event)
 
@@ -294,6 +372,8 @@ class _PlotWidget(pg.PlotWidget):
     left = Signal()
 
     def leaveEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+        """Emit ``left`` after Qt's own handling so the crosshair is cleared.
+        """
         super().leaveEvent(event)
         self.left.emit()
 
@@ -312,6 +392,7 @@ def _setting(widget: Any, key: str, default: Any = None) -> Any:
 
 
 def _children(widget: Any, kinds: Sequence[str]) -> List[Any]:
+    """Child widgets of ``widget`` whose kind is one of ``kinds``, in order."""
     return [c for c in getattr(widget, "children", []) if c.kind in kinds]
 
 
@@ -512,6 +593,8 @@ def _polar_graph(doc: Any, graph: Any, page_title: str = "") -> Optional[Dict[st
     title_widget = next((c for c in _children(graph, ("label",)) if c.name == "plotTitle"), None)
 
     def number(key: str) -> Optional[float]:
+        """Numeric graph setting ``key``, or None when it is 'Auto' or not a number.
+        """
         value = _setting(graph, key, "Auto")
         return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
@@ -544,6 +627,17 @@ def trace_arrays(doc: Any, trace: Dict[str, Any], x_kind: str,
     elif x_kind == "mjd" and mjd_as_date:
         x = (x - MJD_UNIX_EPOCH) * 86400.0
         is_time = True
+    layout = getattr(doc, "time_layout", None)
+    if layout is not None and is_time:
+        # 0.3.1: the project's own gap rule (line break where the step
+        # dt > K x median(dt), or > the manual threshold), in seconds - the
+        # same rule the Veusz pages use; already broken gaps stay as they are.
+        import vszh5_writer
+        x = np.asarray(x, dtype=float)
+        cut = vszh5_writer.gap_positions(
+            x, vszh5_writer.gap_threshold(x, layout.k, layout.manual_s))
+        return (vszh5_writer.insert_gaps(x, cut),
+                vszh5_writer.insert_gaps(np.asarray(y, dtype=float), cut), is_time)
     x, y = break_gaps(np.asarray(x, dtype=float), np.asarray(y, dtype=float))
     return x, y, is_time
 
@@ -564,6 +658,12 @@ class TracePlot(QtWidgets.QWidget):
 
     def __init__(self, title: str, x_label: str, y_label: str, date_axis: bool,
                  dark: bool = False, parent: Any = None) -> None:
+        """One pyqtgraph x-y plot with a legend/read-out table beside it.
+
+        ``date_axis`` gives a date-time bottom axis (Veusz date seconds shown on
+        the computer's clock); ``dark`` picks the colour theme.  ``curves`` and
+        ``rows`` map each trace label to its curve item and table row.
+        """
         super().__init__(parent)
         self.title, self.date_axis = title, bool(date_axis)
         self.x_log = False                 # view x is log10(x) when True
@@ -584,8 +684,15 @@ class TracePlot(QtWidgets.QWidget):
         self.view = self.plot.getViewBox()
         self.plot.showGrid(x=True, y=True, alpha=0.25)
         self.plot.setLabel("left", y_label)
-        self.plot.setLabel("bottom", "%s (UTC)" % x_label if self.date_axis and x_label
-                           else ("UTC" if self.date_axis else x_label))
+        # 0.3.1: a local-time axis already names its offset ("Local time
+        # (ISO 8601, UTC-05:00)"); only other date axes are marked UTC.
+        if self.date_axis and x_label and "UTC" in x_label:
+            bottom_label = x_label
+        elif self.date_axis:
+            bottom_label = "%s (UTC)" % x_label if x_label else "UTC"
+        else:
+            bottom_label = x_label
+        self.plot.setLabel("bottom", bottom_label)
         self.view.setAutoVisible(y=True)
         self.vline = pg.InfiniteLine(angle=90, movable=False)
         self.hline = pg.InfiniteLine(angle=0, movable=False)
@@ -778,6 +885,9 @@ class TracePlot(QtWidgets.QWidget):
         return values
 
     def _set_header(self, x: Optional[float]) -> None:
+        """Title line above the table: the cursor x position as a local date-time
+        (date axes) or a number, or "cursor -" when the mouse is outside.
+        """
         if x is None:
             where = "cursor -"
         elif self.date_axis:
@@ -788,6 +898,9 @@ class TracePlot(QtWidgets.QWidget):
             self.title, where, len(self.curves)))
 
     def _mouse_moved(self, event: Any) -> None:
+        """Crosshair handler: emit ``hovered(x, y)`` in data coordinates while the
+        mouse is over the plot, ``unhovered`` when it leaves the view box.
+        """
         pos = event[0]
         if not self.view.sceneBoundingRect().contains(pos):
             self.unhovered.emit()
@@ -796,6 +909,7 @@ class TracePlot(QtWidgets.QWidget):
         self.hovered.emit(float(point.x()), float(point.y()))
 
     def _legend_toggled(self, item: Any) -> None:
+        """Show or hide a trace when its check box in the table changes."""
         if item.column() != 0:
             return
         curve = self.curves.get(item.text())
@@ -804,6 +918,9 @@ class TracePlot(QtWidgets.QWidget):
 
     # ----- look -----------------------------------------------------------------
     def apply_theme(self, dark: bool) -> None:
+        """Recolour background, axes, text and crosshair for the dark or light
+        theme (THEMES).
+        """
         background, foreground, cross = THEMES["dark" if dark else "light"]
         self.widget.setBackground(background)
         for name in ("left", "bottom"):
@@ -820,6 +937,9 @@ class ImagePlot(QtWidgets.QWidget):
 
     def __init__(self, title: str, image: np.ndarray, dark: bool = False,
                  parent: Any = None) -> None:
+        """Show a 2-D dataset ``image`` as a pyqtgraph ImageView with a title line
+        giving its size (columns x rows).
+        """
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -843,12 +963,15 @@ class ImagePlot(QtWidgets.QWidget):
         self.apply_theme(dark)
 
     def dispose(self) -> None:
+        """Release the image data before the widget is deleted."""
         self.item.clear()
 
     def set_cursor(self, *_args: Any) -> Dict[str, Optional[float]]:
+        """Images have no shared cursor; returns an empty read-out."""
         return {}
 
     def apply_theme(self, dark: bool) -> None:
+        """Set the background colour for the dark or light theme."""
         self.widget.setBackground(THEMES["dark" if dark else "light"][0])
 
 
@@ -871,6 +994,9 @@ class _GridPlot(QtWidgets.QWidget):
     date_axis = False
 
     def __init__(self, title: str, dark: bool = False, parent: Any = None) -> None:
+        """Common base of the polar and Smith plots: an aspect-locked view whose
+        grid is drawn as curves and labels, with a legend/read-out table.
+        """
         super().__init__(parent)
         self.title = title
         self.curves: Dict[str, Any] = {}
@@ -919,6 +1045,9 @@ class _GridPlot(QtWidgets.QWidget):
         self._dark = bool(dark)
 
     def _grid_line(self, x: np.ndarray, y: np.ndarray, major: bool = False) -> None:
+        """Add one grid curve (NaN breaks the line); ``major`` lines use the
+        foreground colour, the others the faint grid colour.
+        """
         item = pg.PlotCurveItem(x, y, connect="finite")
         item.setZValue(-10)
         item._major = major
@@ -926,12 +1055,19 @@ class _GridPlot(QtWidgets.QWidget):
         self.grid_items.append(item)
 
     def _grid_text(self, text: str, x: float, y: float, anchor=(0.5, 0.5)) -> None:
+        """Add a grid value label at (x, y); labels do not affect auto-range.
+        """
         label = pg.TextItem(text, anchor=anchor)
         label.setPos(x, y)
         self.plot.addItem(label, ignoreBounds=True)
         self.grid_labels.append(label)
 
     def _add_curve(self, label: str, x: np.ndarray, y: np.ndarray, colour: Optional[str]) -> str:
+        """Add a data trace and its table row; return the (unique) trace key.
+
+        An invalid or missing ``colour`` takes the next colour of COLOURS; a label
+        already in use gets " (2)", " (3)", ... appended.
+        """
         # 0.3.0: any colour Qt knows (hex or an SVG name such as "darkblue", as
         # the Touchstone pages use); otherwise the next suite colour.
         if not (isinstance(colour, str) and colour and QtGui.QColor(colour).isValid()):
@@ -958,10 +1094,14 @@ class _GridPlot(QtWidgets.QWidget):
         return key
 
     def _legend_toggled(self, item: Any) -> None:
+        """Show or hide a trace when its check box in the table changes."""
         if item.column() == 0 and item.text() in self.curves:
             self.curves[item.text()].setVisible(item.checkState() == Qt.CheckState.Checked)
 
     def _mouse_moved(self, event: Any) -> None:
+        """Emit ``hovered(x, y)`` while the mouse is over the chart, else
+        ``unhovered``.
+        """
         pos = event[0]
         if not self.view.sceneBoundingRect().contains(pos):
             self.unhovered.emit()
@@ -970,6 +1110,7 @@ class _GridPlot(QtWidgets.QWidget):
         self.hovered.emit(float(point.x()), float(point.y()))
 
     def dispose(self) -> None:
+        """Disconnect the mouse proxy and clear the curves before deletion."""
         try:
             self._proxy.disconnect()
         except Exception:
@@ -979,6 +1120,9 @@ class _GridPlot(QtWidgets.QWidget):
         self.data.clear()
 
     def apply_theme(self, dark: bool) -> None:
+        """Recolour background, grid lines, grid labels and the table for the dark
+        or light theme.
+        """
         self._dark = bool(dark)
         background, foreground, cross = THEMES["dark" if dark else "light"]
         self.widget.setBackground(background)
@@ -1013,6 +1157,14 @@ class PolarPlot(_GridPlot):
                  units: str = "degrees", direction: str = "anticlockwise",
                  position0: str = "right", log: bool = False, dark: bool = False,
                  parent: Any = None) -> None:
+        """Polar chart matching a Veusz polar graph.
+
+        ``rmin``/``rmax`` set the radial range (None: from the data), ``units`` the
+        angle unit ('degrees', 'radians', 'fractions' or 'percentages' of a
+turn, as in Veusz), ``direction`` 'anticlockwise' or
+        'clockwise' and ``position0`` where angle 0 points (right, top, left,
+        bottom); ``log`` gives a logarithmic radius.
+        """
         super().__init__(title, dark, parent)
         self.rmin, self.rmax = rmin, rmax
         self.units = units if units in self._TO_RADIANS else "degrees"
@@ -1043,6 +1195,9 @@ class PolarPlot(_GridPlot):
         return np.where(scaled > 0.0, scaled, 0.0)
 
     def _unscale(self, rho: float) -> float:
+        """Radius value of a normalised radius ``rho`` (0 at rmin, 1 at rmax),
+        linear or logarithmic.
+        """
         if self.log:
             return float(np.exp(np.log(self.rmin) + rho * (np.log(self.rmax) - np.log(self.rmin))))
         return float(self.rmin + rho * (self.rmax - self.rmin))
@@ -1080,6 +1235,9 @@ class PolarPlot(_GridPlot):
         self.view.setRange(xRange=(-1.2, 1.2), yRange=(-1.2, 1.2), padding=0.0)
 
     def _draw_grid(self) -> None:
+        """Draw the radial circles (nice or decade ticks), the spokes every 30
+        degrees and their labels.
+        """
         circle = np.linspace(0.0, 2.0 * np.pi, 361)
         if self.log:
             ticks = 10.0 ** np.arange(np.ceil(np.log10(self.rmin)), np.floor(np.log10(self.rmax)) + 1)
@@ -1152,6 +1310,11 @@ class SmithPlot(_GridPlot):
     def __init__(self, title: str, chart_type: str = "z", z0: float = 50.0,
                  dark: bool = False, parent: Any = None, draw_labels: bool = True,
                  draw_vswr: bool = False) -> None:
+        """Smith chart (impedance 'z' or admittance 'y') normalised to ``z0`` ohms.
+
+        ``draw_labels`` writes the grid values, ``draw_vswr`` adds VSWR circles.
+        Traces are reflection coefficients Gamma plotted as Im against Re.
+        """
         super().__init__(title, dark, parent)
         self.chart_type = chart_type
         self.z0 = float(z0)
@@ -1163,6 +1326,10 @@ class SmithPlot(_GridPlot):
         self.apply_theme(dark)
 
     def _draw_grid(self) -> None:
+        """Draw the unit circle, the real axis, constant-resistance circles and
+        constant-reactance arcs (mirrored for an admittance chart), clipped to the
+        unit circle, with their values.
+        """
         mirror = -1.0 if self.chart_type == "y" else 1.0
         circle = np.linspace(0.0, 2.0 * np.pi, 721)
         self._grid_line(np.cos(circle), np.sin(circle), major=True)
@@ -1194,6 +1361,11 @@ class SmithPlot(_GridPlot):
 
     def add_trace(self, label: str, gamma: np.ndarray, freq_hz: Optional[np.ndarray] = None,
                   colour: Optional[str] = None) -> None:
+        """Plot the complex reflection coefficients ``gamma`` as one trace.
+
+        ``freq_hz`` (same length) is kept for the read-out; without it the sample
+        index is used.
+        """
         gamma = np.asarray(gamma, dtype=complex)
         key = self._add_curve(label, gamma.real, gamma.imag, colour)
         self.data[key] = gamma
@@ -1203,6 +1375,12 @@ class SmithPlot(_GridPlot):
         self.view.setRange(xRange=(-1.15, 1.15), yRange=(-1.15, 1.15), padding=0.0)
 
     def set_cursor(self, x: Optional[float], y: Optional[float] = None) -> Dict[str, Optional[float]]:
+        """Read-out at chart point (x, y): each trace's frequency nearest the
+        cursor in the table, and for the nearest point overall a marker plus its
+        Gamma, impedance Z = z0 (1 + Gamma) / (1 - Gamma) and VSWR in the header.
+
+        Returns {label: frequency in Hz}; (None, None) clears the read-out.
+        """
         values: Dict[str, Optional[float]] = {}
         self.table.blockSignals(True)
         if x is None or y is None:
@@ -1254,6 +1432,9 @@ class ProjectPlotPanel(QtWidgets.QWidget):
     """
 
     def __init__(self, dark: bool = False, parent: Any = None) -> None:
+        """Plots tab: page selector with previous/next buttons, Fit-all, and a
+        scrolling column with one plot per graph of the selected page.
+        """
         super().__init__(parent)
         self.doc: Any = None
         self.pages: List[Dict[str, Any]] = []
@@ -1336,21 +1517,33 @@ class ProjectPlotPanel(QtWidgets.QWidget):
 
     # ----- page ------------------------------------------------------------------
     def _step(self, delta: int) -> None:
+        """Move ``delta`` pages forward (+1) or back (-1) if possible."""
         index = self.page_box.currentIndex() + delta
         if 0 <= index < self.page_box.count():
             self.page_box.setCurrentIndex(index)
 
     def _update_buttons(self) -> None:
+        """Enable previous/next only where there is a page to go to."""
         index, count = self.page_box.currentIndex(), self.page_box.count()
         self.prev_button.setEnabled(index > 0)
         self.next_button.setEnabled(0 <= index < count - 1)
 
     def _clear_plots(self) -> None:
+        """Dispose of and delete every plot of the page shown.
+
+        0.3.1: each plot's C++ widget tree is deleted at once, in Qt's own
+        order (deleteLater + a DeferredDelete pass for that plot).  Before,
+        a plot waited for the event loop; when Python's garbage collector
+        reached the plot first (MemoryAwareCache.clear() runs gc.collect())
+        it tore down the pyqtgraph items in arbitrary order, which crashed
+        PySide6 6.12 / pyqtgraph 0.14 under Python 3.12.
+        """
         for plot in self.plots:
             plot.dispose()
             self.column.removeWidget(plot)
             plot.setParent(None)
             plot.deleteLater()
+            QtCore.QCoreApplication.sendPostedEvents(plot, QtCore.QEvent.Type.DeferredDelete)
         self.plots = []
 
     def _page_changed(self, index: int) -> None:
@@ -1429,6 +1622,8 @@ class ProjectPlotPanel(QtWidgets.QWidget):
         self.scroller.verticalScrollBar().setValue(0)
 
     def fit_all(self) -> None:
+        """Auto-range every x-y plot and reset polar/Smith charts to the unit disc.
+        """
         for plot in self.plots:
             if isinstance(plot, TracePlot):
                 plot.view.enableAutoRange()
@@ -1437,6 +1632,9 @@ class ProjectPlotPanel(QtWidgets.QWidget):
 
     # ----- crosshair -----------------------------------------------------------
     def _hovered(self, x: float, y: float) -> None:
+        """Share the cursor: x-y plots with the same kind of x axis (date or not)
+        follow the cursor x; polar and Smith charts only show their own cursor.
+        """
         source = self.sender()
         if isinstance(source, _GridPlot):          # polar / Smith: its own cursor only
             source.set_cursor(x, y)
@@ -1446,10 +1644,12 @@ class ProjectPlotPanel(QtWidgets.QWidget):
                 plot.set_cursor(x, y if plot is source else None)
 
     def _unhovered(self) -> None:
+        """Clear the cursor read-out of every plot."""
         for plot in self.plots:
             plot.set_cursor(None)
 
     def apply_theme(self, dark: bool) -> None:
+        """Apply the dark or light theme to the panel and all its plots."""
         self.dark = bool(dark)
         for plot in self.plots:
             plot.apply_theme(dark)

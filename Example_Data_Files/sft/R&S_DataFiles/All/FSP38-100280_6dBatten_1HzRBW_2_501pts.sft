@@ -1,0 +1,57 @@
+ENDSTOP;0x00000097
+CAPDELAYTIME;0.001000
+Type;FSP;
+
+Version;4.50;
+
+Date;z,.Jan 07;
+
+Mode;ANALYZER;
+
+Center Freq;13900000000.000000;Hz
+
+Freq Offset;0.000000;Hz
+
+Span;1000000.000000;Hz
+
+x-Axis;LIN;
+
+Start;13899500000.000000;Hz
+
+Stop;13900500000.000000;Hz
+
+Ref Level;20.000000;dBm
+
+Level Offset;0.000000;dB
+
+Ref Position;100.000000;%
+
+y-Axis;LOG;
+
+Level Range;100.000000;dB
+
+Rf Att;50.000000;dB
+
+RBW;1.000000;Hz
+
+VBW;1000000.000000;Hz
+
+SWT;1000.000000;s
+
+Trace Mode;CLR/WRITE;
+
+Detector;MAXPEAK;
+
+Sweep Count;0;
+
+Trace 1:;;
+
+x-Unit;Hz;
+
+y-Unit;dBm;
+
+Preamplifier;NOT AVAILABLE;
+
+Transducer;OFF;
+
+Values;501;

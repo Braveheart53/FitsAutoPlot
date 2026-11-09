@@ -1,10 +1,40 @@
-# AutoPlot requirements, version 0.2.0 (adds pyqtgraph for the Plots tab)
+# =============================================================================
+# requirements-py38.txt - FitsAutoPlot suite, Python 3.8
+# -----------------------------------------------------------------------------
+# %%%% 0.3.0: Tested set of the 2026-11-09 suite (Python 3.8.20, PySide6).
+# Date: 2026-11-09
+#             Every program, the unit tests and the real GBT FITS files were
+#             run with exactly these versions (see REQUIREMENTS.md).  PySide6
+#             replaces PyQt5 (qtpy picks it up); scikit-rf, scipy, pandas,
+#             matplotlib, mpld3 and pypdf are added for Touchstone, CSV/TSV
+#             and PDF bookmarks; python-dateutil gives IANA time-zone names
+#             on 3.8 (no zoneinfo module before 3.9).
+# %%%% 0.2.0: adds pyqtgraph for the Plots tab.
 # Date: 2026-11-05
-# Tested with Python 3.8.20. Veusz and CuPy are NOT required.
+# Use:  mamba env create -f environment-py38.yml      (recommended)
+#   or  python3.8 -m pip install -r requirements-py38.txt
+# Optional (not installed here): veusz (viewer), cupy-cuda12x (GPU),
+#   backports.zoneinfo (alternative to python-dateutil), pywin32 (ORBIT/FR
+#   COM probe, Windows only).
+# =============================================================================
+# --- core: native .vszh5 writing, FITS, memory -------------------------------
 numpy==1.24.4
-astropy==5.2.2
 h5py==3.11.0
-qtpy==2.4.3
-PyQt5==5.15.11
+astropy==5.2.2
+pyerfa==2.0.0.3
 psutil==7.2.2
+# --- GUI: qtpy on PySide6, pyqtgraph Plots tab --------------------------------
+qtpy==2.4.3
+PySide6==6.6.3.1
 pyqtgraph==0.13.3
+# --- per-program --------------------------------------------------------------
+scipy==1.10.1           # Touchstone (scikit-rf), CSV statistics
+pandas==2.0.3           # CSV/TSV AutoPlot
+scikit-rf==1.9.0        # Touchstone AutoPlot (last release for Python 3.8)
+matplotlib==3.7.5       # Touchstone PDF/PNG Smith-chart export, icons
+mpld3==0.5.12           # Touchstone HTML Smith charts
+pypdf==5.9.0            # PDF bookmarks (vszh5_writer, Touchstone)
+pillow==10.4.0          # images (matplotlib, tools/make_suite_icons.py)
+# --- time zones: IANA names on Python 3.8 -------------------------------------
+python-dateutil==3.0.0
+tzdata==2026.6

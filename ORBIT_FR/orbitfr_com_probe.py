@@ -41,6 +41,31 @@ Licence: GPL-3.0-or-later
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.2: Header template (no functional change).
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+# %%%%% Function Descriptions
+        _read_default: Default value of a registry key, or None.
+        _subkeys: Names of the subkeys of a registry key.
+        find_progids: ProgIDs (HKCR\\<ProgID>\\CLSID) whose name matches ``pattern``.
+        find_typelibs: Registered type libraries (HKCR\\TypeLib) whose title matches ``pattern``.
+        dump_typelib: Markdown lines describing every type in a loaded ITypeLib.
+        load_registered_typelib: pythoncom.LoadRegTypeLib for 'major.minor' (hex) version strings.
+        main: Scan, dump, write the report; returns a process exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        DEFAULT_PATTERN: regular expression of ORBIT/FR names searched for in the registry
+# %%%%% More Info
+    Windows only (pywin32): lists the ORBIT/FR COM registrations and dumps the
+    type library for the planned ORBIT/FR AutoPlot.  See
+    ORBIT_FR/ORBIT_FR_API_REQUIREMENTS.md.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.1: First internal draft - registry scan and type-library dump
 Date: 2026-11-05
     Scans HKCR ProgIDs and HKLM\\SOFTWARE\\Classes (64- and 32-bit views)
@@ -59,7 +84,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 DEFAULT_PATTERN = r"959|orbit|ofr|mvg|datapro|midas|spectrum|fr959|al-?4"
 

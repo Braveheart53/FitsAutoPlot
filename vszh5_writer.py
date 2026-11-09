@@ -9,9 +9,11 @@
 """Native Veusz HDF5 document (.vszh5) writer - no Veusz needed to write.
 
 ===============================================================================
+# %% Header Info
+--------
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.26 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.27 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -35,7 +37,8 @@
                   failed-load renders: 3.6.2 and 4.2.1; 0.0.24 MJD and
                   local ISO-8601 time axes: 3.6.2; 0.0.25 names, notes and
                   local time axes: 4.2.1; 0.0.26 Smith charts: 4.2.1,
-                  settings checked in the 3.6.2 source)
+                  settings checked in the 3.6.2 source; 0.0.27 gap rule:
+                  4.2.1 with real GBT sampler2log files)
  Lineage        : 0.0.20 joins the two releases that were both numbered
                   0.0.18 - the R&S FSP logger 0.9.0 release (render fixes)
                   and the AB Power Meter Monitor 1.6.0 release (appender) -
@@ -53,10 +56,18 @@
                   names plot widgets after their data, writes source-file
                   headers into page notes and adds local date-time helpers
                   for Veusz date datasets. 0.0.26 (FitsAutoPlot suite,
-                  Touchstone AutoPlot 0.7.0) adds Smith charts; additions
-                  only. One master copy: the RF project document
+                  Touchstone AutoPlot 0.7.0) adds Smith charts; 0.0.27
+                  (FitsAutoPlot, FITS AutoPlot 0.4.0) the small/large gap
+                  rule and exact DST change instants. One master copy: the
+                  RF project document
                   claude/vszh5_writer.py (see claude/vszh5-writer-registry.md).
 ===============================================================================
+# %%% Author Information
+@author: William W. Wallace
+Author Email: wwallace@nrao.edu
+Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
+
 
 LICENCE
 -------
@@ -235,9 +246,13 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
   frequency), smith_page / smith_graph_spec (aspect-locked graph, hidden
   axes, legend beside the chart), gamma_from_impedance,
   impedance_from_gamma, vswr_from_gamma; title_settings.
+* (0.0.27) Time gaps: median_step, gap_threshold (K x median step),
+  gap_positions/insert_gaps (NaN rows: the line breaks at a small gap),
+  axis_break_pairs (intervals of a broken axis at a large gap, shrunk by a
+  fraction of the gap); local_time_axis names the minute a DST change
+  happens.
 
-REFERENCES
-----------
+# %%% References
 [R1] Veusz Developers, Veusz 4.2.1 source: veusz/document/doc.py
      (saveToHDF5File), veusz/document/loader.py (loadHDF5Doc),
      veusz/utils/textrender.py (latexEscape, symbols), veusz/veusz_main.py.
@@ -253,438 +268,633 @@ REFERENCES
      doi: 10.1109/MMM.2021.3117139 (Smith grid values, VSWR circles,
      admittance chart convention).
 
-REVISION HISTORY
-----------------
-0.0.26 2026-11-09  FitsAutoPlot suite: Touchstone AutoPlot 0.7.0 (Smith
-                   chart pages in the project), built on master 0.0.25
-                   (SHA-256 fb481290...18b9a). Additions only: every 0.0.25
-                   name, parameter, default and output is unchanged (the
-                   scripts of xy/grid/image/bar pages compared byte for
-                   byte; _add_traces and add_title now share their settings
-                   with the new widget-tree builders).
-                   * NEW smith_grid(prefix, kind="z"|"y", resistances=,
-                     reactances=, vswr=, labels=, ...) -> SmithGrid: the
-                     constant-resistance circles (centre r/(1+r), radius
-                     1/(1+r)) and constant-reactance arcs (traced exactly as
-                     Gamma(r) = (r + jx - 1)/(r + jx + 1)), the unit circle,
-                     the real axis, optional VSWR circles (radius
-                     (S-1)/(S+1)) and the grid values, as NaN-joined 1-D
-                     datasets (one xy widget per family) and text datasets
-                     printed as point labels. kind="y" rotates the grid by
-                     180 degrees (admittance chart, as scikit-rf).
-                     SmithGrid.write(target) writes the datasets with a
-                     VeuszWriter or any object with SetData/SetDataText
-                     (_autoplot_native.NativeDocument, veusz.embed).
-                   * NEW smith_trace_datasets(stem, gamma, frequency_hz) ->
-                     "<stem>_re", "<stem>_im", "<stem>_freq_Hz";
-                     smith_trace(stem, label, ...) -> Trace(Im vs Re).
-                   * NEW smith_graph_spec(grid, traces, ...) -> (graph
-                     settings, [(type, name, settings), ...]): aspect ratio
-                     1, hidden axes at +/-SMITH_LIMIT, no border, notes
-                     "Smith chart (impedance|admittance)", the grid widgets
-                     "grid_*", the traces, the legend (beside the chart by
-                     default). smith_has_key(), smith_page_layout() and
-                     smith_page(doc, page, traces, grid, title, ...) build a
-                     whole page in a VszDoc script.
-                   * NEW gamma_from_impedance, impedance_from_gamma,
-                     vswr_from_gamma; SMITH_RESISTANCES, SMITH_REACTANCES,
-                     SMITH_VSWR, SMITH_LIMIT, SMITH_NOTES_PREFIX and the
-                     dataset suffixes; title_settings().
-                   Checked: tests/test_smith_chart.py (grid geometry against
-                   the circle equations, Gamma/Z/VSWR round trips, page
-                   scripts) and renders of impedance and admittance charts
-                   in real Veusz 4.2.1; every setting used exists in the
-                   Veusz 3.6.2 source (graph aspect, axis hide, xy labels
-                   and Label/posnHorz/posnVert, key horzManual).
-0.0.25 2026-11-09  FitsAutoPlot suite (ATR, CSV/TSV, FITS, Franks, R&S,
-                   Touchstone), built on master 0.0.24 (SHA-256
-                   199f30a8...a901). Every 0.0.24 name and parameter is still
-                   accepted; the CHANGED defaults are the widget names.
-                   * CHANGED widget names of the page helpers, from the data
-                     instead of generic names: xy_page graph "g_<y>" for one
-                     trace, "g_<page>" for several (was "graph"); traces are
-                     named after their y dataset (was "trace0", "trace1",
-                     ...); grid_page graphs "g_<first y>" (was "graph0"...);
-                     image_page graph "g_<dataset>", image "img_<dataset>",
-                     colour bar "cbar_<dataset>" (were "graph", "image",
-                     "colorbar"); bar_page graph "g_<page>" and bars
-                     "bars_<first length>". New Trace.name, Panel.name and
-                     graph_name= parameters choose a name explicitly
-                     (graph_name="graph" gives the 0.0.24 layout). The page
-                     helpers return the graph name(s); frequency_time_pages
-                     no longer reaches into "graph/x" by path (it passes
-                     datetime_format to the helpers), so its output is
-                     unchanged apart from the names.
-                   * NEW widget_name(text) (a valid Veusz widget name: no
-                     '/', no surrounding blanks, not '.'/'..') and
-                     unique_widget_name(name, used).
-                   * NEW header_notes(header, source=, title=, extra=): page
-                     notes from a source-file header - a mapping ("KEY =
-                     value", like Veusz shows FITS cards), lines, or text -
-                     and set_notes(doc, notes). xy_page, image_page,
-                     grid_page, bar_page, text_page and time_pair_pages take
-                     notes= and write it to the page's notes (Veusz:
-                     Properties > notes).
-                   * NEW veusz_to_epoch(), display_zone() and
-                     local_time_from_veusz(veusz_utc, zone=None, label=):
-                     the LocalTimeAxis of UTC date values that are already
-                     in Veusz seconds (FITS MJD, CSV dates). zone=None now
-                     means "VSZH5_DISPLAY_TZ if set, else this computer's
-                     zone"; the variable takes "UTC", a fixed offset
-                     ("-05:00") or, on Python >= 3.9, an IANA name. Fixed
-                     offsets also work on Python 3.8 (no zoneinfo).
-                   * NEW LOCAL_DATETIME_ROTATE (45) and
-                     style_datetime_axis(doc, axis, local_axis): mode
-                     datetime, ISO-8601 24-hour tick format with the offset
-                     (%VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00), label naming
-                     the offset, exact range, rotated tick labels.
-                   Checked: tests in FitsAutoPlot (writer names, notes and
-                   local axes) and renders in real Veusz 4.2.1.
-0.0.24 2026-11-03  Released with MHM2010 / T4 Maser Timing Workbench 0.2.0
-                   (Maser and timing analysis chat), built on master 0.0.23
-                   (SHA-256 90833d76...eaac6). Additions only: every 0.0.23
-                   name, parameter, default and output is unchanged.
-                   * NEW mjd_to_epoch(mjd) and mjd_to_veusz(mjd, offset_s):
-                     UTC MJD days -> Unix seconds / Veusz date seconds
-                     (Unix epoch = MJD 40587).
-                   * NEW iso_offset_text(offset_s): "+HH:MM" / "-HH:MM".
-                   * NEW LocalTimeAxis and local_time_axis(epoch_s, zone=None):
-                     Veusz date values on the wall clock of the computer that
-                     processes the data (or an IANA zone, Python >= 3.9), per
-                     sample and DST-aware (local_utc_offsets), plus a Veusz
-                     tick format giving ISO-8601 date-times. With one offset
-                     over the data the offset is part of every tick label
-                     ("%VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00"); Veusz formats
-                     are static, so when the data cross a DST change the
-                     ticks carry no offset and the axis label lists each
-                     offset and the instant it starts.
-                   * NEW iso_local_strings(epoch_s, zone=None): the same
-                     instants as ISO-8601 text with offsets (text datasets,
-                     CSV columns).
-                   * NEW with_x(traces, x): the same traces on another x
-                     dataset; time_pair_pages(): one xy page against MJD and
-                     one against local date-time from the same traces.
-                   * NEW Panel.datetime_format (default ""): tick format of a
-                     datetime x axis in grid_page().
-                   Checked: tests/test_writer_time_axes.py (workbench) and
-                   renders in real Veusz 3.6.2 (ISO ticks with offset).
-0.0.23 2026-11-03  Built on 0.0.22 (MHM2010 Workbench review), with the open
-                   points of the RF_Equipment_Comms and GBO Maser Control
-                   reviews of 2026-11-03. Every public name, parameter and
-                   default is unchanged; valid 1-D input is written exactly
-                   as before.
-                   * CORRECTION to the 0.0.22 note: VeuszWriter(
-                     resizable=True) never flattened a 2-D date array - its
-                     resizable layout is used for 1-D input only, so the
-                     array was stored 2-D, as without resizable. The silent
-                     flattening was in VeuszAppender (next item). Checked
-                     with 0.0.21 and 0.0.22 (h5py shapes, real Veusz).
-                   * FIX VeuszAppender.create_1d(), create_date() and
-                     append(): input with more than one dimension is
-                     rejected (ValueError) instead of being flattened with
-                     ravel() into a longer column (a (2, 3) array became 6
-                     rows). A single number is still one row; an empty
-                     sequence still creates an empty dataset.
-                   * FIX VeuszAppender.append()/truncate() on a dataset that
-                     an earlier writer stored with more than one dimension
-                     (0.0.21 dataset_date, 2-D input): rejected with a
-                     message saying the document must be rewritten, and the
-                     file is left unchanged. 0.0.22 flattened it (2 x 3 dates
-                     + 1 row became 7 rows) while converting it to the
-                     growable layout.
-                   * FIX VeuszWriter.dataset_1d() and dataset_text(): every
-                     check and conversion now runs before the dataset group
-                     is created, as 0.0.22 did for dataset_date(). A wrong
-                     serr/perr/nerr length, or text input that is not a
-                     sequence, left an empty group behind and blocked the
-                     name ("written twice") for a corrected retry.
-                   * FIX render_pages() reported success for a document whose
-                     pages loaded but whose data did not. Veusz's loader
-                     (loader.loadHDF5Doc) builds the pages first and loads
-                     the datasets afterwards, and `veusz --listen` runs each
-                     script line on its own and only prints an exception, so
-                     a dataset Veusz refuses ("Only 1-dimensional arrays or
-                     lists allowed", e.g. a 0.0.21 2-D date) gave PDF and PNG
-                     files of empty 0..1 axes and no error. The load now
-                     reports its pages only when the whole load succeeded;
-                     otherwise no page is exported (an earlier PDF of the
-                     same name is kept) and the render fails with Veusz's own
-                     message, then method "auto" tries the veusz package.
-                   * FIX render_pages(method="inprocess" or the "auto"
-                     fallback): a load error from the veusz package is raised
-                     as RuntimeError, as documented, instead of escaping as a
-                     bare ValueError (which also hid the program error in
-                     "auto" mode).
-                   Checked: probe_writer_issues.py 0.0.1 (16 cases, 0.0.21 /
-                   0.0.22 / 0.0.23 side by side) with real Veusz 3.6.2 and
-                   4.2.1; tests/test_vszh5_writer.py 0.0.3; and as a drop-in
-                   in the FSP logger 0.10.0, SHR Converter 0.0.2 and AB Power
-                   Meter Monitor 1.7.0 suites (see the 0.0.23 release notes).
-0.0.22 2026-11-03  MHM2010 Workbench review. FIX dataset_date(): reject
-                   multidimensional input before creating the HDF5 group.
-                   Previously a 2-D date array silently produced an invalid
-                   date dataset (or was flattened with resizable=True).
-                   No valid 1-D caller changes; no other writer code changed.
-0.0.21 2026-10-28  Released with SHR Converter 0.0.2. FIX regularize_rows():
-                   with jittered time stamps the grid step came from the
-                   median interval, whose slots then drifted from the rows
-                   and left an empty (NaN) row every few dozen rows - seen
-                   on a real SM200C recording (32-35 ms sweep intervals,
-                   median 33 ms, mean 33.35 ms: a blank line about every
-                   47 sweeps). The step is now the MEAN of the ordinary
-                   intervals; an interval longer than (1 + 2 x tolerance)
-                   median intervals is a gap and gets rint(gap / step)
-                   slots. Rows that are not strictly increasing still
-                   fall back to "even". Signature and return values are
-                   unchanged; nothing else in the writer changed (drop-in
-                   for every program that uses 0.0.20).
-0.0.20 2026-10-28  Released with SHR Converter 0.0.1. One writer again: the
-                   two releases numbered 0.0.18 (see that entry) had
-                   diverged, and 0.0.19 had been built on the AB-monitor
-                   branch only, so it lacked the FSP-branch render fixes.
-                   Every public call of both branches is kept unchanged.
-                   * MERGED from 0.0.18 (FSP logger 0.9.0 branch):
-                     - FIX render_pages(png_pages="first"): the --listen
-                       script bounded its PNG loop with min(1, len(names));
-                       Veusz 4.2.1 evaluates listen scripts with NumPy's
-                       names imported, so min was numpy.min(1, axis=n) ->
-                       AxisError, printed and swallowed: no PNG at all. The
-                       bound is now (1 if names else 0). Present in 0.0.19.
-                     - FIX render_pages(): the PDF was named with
-                       stem.with_suffix(".pdf"), so "run v0.0.2.vszh5" gave
-                       "run v0.0.pdf"; it is now "<file stem>.pdf" whatever
-                       dots the name holds (the PNGs already were). Present
-                       in 0.0.19.
-                     - FIX render_pages(): an Export() error inside
-                       `veusz --listen` is printed, not raised, and the done
-                       marker still arrives; a requested PDF or PNG that was
-                       not written now raises RuntimeError instead of
-                       returning a list without it. Present in 0.0.19.
-                     - Spyder cell markers of the frequency-page (0.0.16) and
-                       linear-power (0.0.17) sections put back above their
-                       own code (0.0.19 had the two markers stacked above
-                       linear_power_mean_dbm()).
-                   * KEPT from 0.0.19 and widened: Veusz finishing the script
-                     with no page loaded is a failed program render whether
-                     or not its log holds a Traceback (0.0.19 needed one; the
-                     FSP branch did not), with Veusz's own message and a hint
-                     that Veusz needs h5py to open .vszh5. Method "auto"
-                     then tries the veusz Python package, as before.
-                   * KEPT from 0.0.18 (AB-monitor branch): VeuszAppender,
-                     AppendLockedError, VeuszWriter(resizable=True),
-                     APPEND_CHUNK_ELEMENTS, APPEND_META_GROUP.
-                   * NEW image_page(xmode=, ymode=, datetime_format=): either
-                     image axis can be a date axis ("datetime"), so a
-                     spectrogram can show UTC time on y; the image range is
-                     then given in Veusz date seconds (epoch_to_veusz).
-                     Defaults unchanged ("numeric").
-                   * NEW xy_page(datetime_format=): tick-label format of a
-                     date x axis in one call (frequency_time_pages() set it
-                     afterwards; it still works that way).
-                   * NEW block_reduce(values, row_factor, column_factor,
-                     method): decimates a 2-D array in blocks for plotting -
-                     "max" (peak hold: a short or narrow signal survives),
-                     "min", "mean", "power_mean_db" (dB values averaged as
-                     power, 10 log10 mean 10^(x/10), max-referenced so it
-                     cannot overflow) and "power_mean_linear" (amplitudes
-                     averaged as power, sqrt(mean x^2), i.e. RMS). Trailing
-                     partial blocks are reduced over the rows/columns they
-                     have, never padded. Works on NumPy arrays or, with
-                     xp=cupy, on the GPU. REDUCE_METHODS lists the names.
-                   * FIX (Linux/macOS): documents published by finish() had
-                     mode 0600 - the private mode of the mkstemp() temporary
-                     file used since 0.0.15 - so other users (a web server,
-                     Grafana, a colleague) could not read them. finish() now
-                     gives the file the mode it replaces, or a new file the
-                     usual 0666 minus the umask. No effect on Windows.
-                   * NEW render_pages(png_background=): background colour of
-                     the PNG files ("white", "#ffffffff", ...). The default
-                     "" keeps Veusz's transparent background as before.
-                   * NEW regularize_rows(image, centres): puts image rows
-                     with uneven time stamps onto an even grid, with NaN
-                     (transparent) rows where the recording paused. Veusz
-                     draws an image whose x/y axis is given as uneven
-                     edges/centres through its slow non-linear path:
-                     measured on a 1964 x 1334 three-hour spectrogram, 30.3 s
-                     and 3.2 GB to render against 2.7 s and 0.31 GB on an
-                     even grid (Veusz 3.6.2). image_page() docstring notes it.
-                   * DIFFERENCES list completed (0.0.16, 0.0.17) and put in
-                     version order.
-                   Checked: tests/test_vszh5_writer.py (stand-in Veusz render
-                   protocol, block_reduce against loops, regularize_rows,
-                   file modes, date-axis images rendered in real Veusz
-                   3.6.2 and 4.2.1), and as a drop-in replacement in every
-                   program that ships a copy (their own suites, unchanged
-                   apart from version literals):
-                     - R&S FSP logger 0.9.0: 44/44 with PyQt5 and PySide6,
-                       each with Veusz 3.6.2 and 4.2.1 (the About test's
-                       expected writer version updated 0.0.18 -> 0.0.20);
-                     - AB Power Meter Monitor 1.7.0: 8 suites, 45/45, real
-                       renders in Veusz 4.2.1 and 3.6.2;
-                     - SA Time Stability Tools 0.0.3: run_all 7/7 and
-                       validate_vszh5_in_veusz 22/22 (Veusz 4.2.1);
-                     - QuickSyn package 0.0.10: 44 pass; its three checks
-                       that pin the writer's version string (0.0.10) and its
-                       pre-0.0.15 temporary name "<file>.part" fail as they
-                       do with 0.0.19 - test literals, not behaviour.
-0.0.19 2026-10-26  render_pages(): when Veusz runs the script but cannot load
-                   the document (a Traceback and no page in its log - e.g. a
-                   Veusz environment without h5py: "No HDF5 support as h5py
-                   module is missing"), the render now fails with Veusz's own
-                   message instead of returning an empty list. Released with
-                   AB Power Meter Monitor 1.6.2.
-0.0.18 2026-10-26  Two releases carried this number (merged in 0.0.20):
-                   (a) R&S FSP logger bundle 0.9.0 - fixes only; the HDF5
-                   layout and every public signature unchanged:
-                   * FIX render_pages(png_pages="first"): the --listen
-                     script limited the PNG loop with min(1, len(names)).
-                     Veusz 4.2.1 runs listen scripts with NumPy's names
-                     imported, so min was numpy.min(1, axis=n) -> AxisError,
-                     printed and swallowed by --listen: no PNG was written.
-                     The bound is now (1 if names else 0). Reported against
-                     0.0.5 by SA Time Stability Tools 0.0.3; still present
-                     through 0.0.17.
-                   * FIX render_pages(): the PDF path was
-                     stem.with_suffix(".pdf"), so "run v0.0.2.vszh5" gave
-                     "run v0.0.pdf". It is now "<file stem>.pdf" whatever
-                     dots the name holds (the PNG names already were).
-                   * FIX render_pages(): a load or Export() error inside
-                     `veusz --listen` is printed, not raised, and the done
-                     marker still arrives, so 0.0.17 returned success with
-                     no files (found with a Veusz lacking h5py). Zero
-                     loaded pages is now a failed program render (method
-                     "auto" then tries the veusz package), and a missing
-                     PDF or PNG raises RuntimeError.
-                   * Revision history repaired: 0.0.17 listed two blocks
-                     with the same number; the frequency-page block is
-                     0.0.16. DIFFERENCES list in version order.
-                   (b) AB Power Meter Monitor 1.6.0 - additions only; every
-                   0.0.17 call is unchanged:
-                   * VeuszAppender: open an existing .vszh5 'r+' (or create
-                     an empty, valid one atomically) and append rows to
-                     resizable 1-D and date datasets, create new datasets
-                     back-filled with NaN, pad or truncate datasets to a
-                     length, replace the document script, add tags, and keep
-                     private JSON bookkeeping under /VszAppend (ignored
-                     by Veusz). AppendLockedError is raised when another
-                     process holds the HDF5 file lock, so a logger can
-                     retry on its next poll instead of failing.
-                   * VeuszWriter(resizable=True): 1-D and date datasets
-                     are written chunked and resizable (fill value NaN,
-                     uncompressed) so the document can be appended later.
-                   * APPEND_CHUNK_ELEMENTS (1024 rows = 8 KiB per chunk).
-                   * Revision history: the second "0.0.17" block (frequency
-                     pages) is renumbered 0.0.16, so versions are unique
-                     and in descending numeric order; the section marker
-                     of frequency_time_pages() says 0.0.16 to match.
-                   Checked by loading appended documents in real Veusz
-                   4.2.1 (conda-forge) and exporting PNG and PDF.
-0.0.17 2026-10-23  Consolidate numerically stable, chunked linear-power dBm
-                   averaging for the merged logger/report release 0.8.3.
-0.0.16 2026-10-23  Add precise frequency_ghz_text() and frequency_time_pages():
-                   Freq_N_GHz and Combined_Freq_vs_Time with datetime axes.
-                   Independent analyzer traces are never averaged together.
-0.0.15 2026-10-23  Python 3.8-safe typing alias; private atomic temp files;
-                   flushed renderer markers to prevent export-complete hangs.
-0.0.14 2026-10-19  Released with the GBT RFI Interference Evaluator 0.0.1.
-                   Additions only; every 0.0.13 call is unchanged:
-                   * Trace.fill ("below" | "above" | ""), fill_colour and
-                     fill_transparency: shades the region between a trace
-                     and the bottom/top of the graph (Veusz xy FillBelow /
-                     FillAbove), e.g. the part of a spectrum above a mask.
-                   * bar_page(): category bar chart (Veusz 'bar' widget,
-                     x axis in 'labels' mode from a text dataset), linear
-                     or log value axis, legend for grouped bars.
-                   * step_mask(): (x, y) arrays of a stepped mask from band
-                     edges and levels, NaN between bands so Veusz and
-                     pyqtgraph draw separate steps.
-                   * reference_line(): two-point (x, y) arrays for a
-                     horizontal or vertical threshold/marker line.
-                   * Revision history re-ordered newest first (numeric
-                     version order), the author's house style.
-                   Checked by rendering in Veusz 3.6.2 (PDF and PNG).
-0.0.13 2026-10-15  Released with EMF Envelope FFT Analyzer 0.0.4. Additions
-                   only:
-                   * dataset_names(), read_text_dataset() and page_names():
-                     read back what a document holds without Veusz (e.g. the
-                     unit sections an analyzer stored as a text dataset, to
-                     rebuild the PDF bookmarks when a document is rendered
-                     later, or to list its pages).
-0.0.12 2026-10-15  Released with EMF Envelope FFT Analyzer 0.0.3. Additions
-                   only; every earlier call is unchanged:
-                   * Panel and grid_page(): several graphs on one page in a
-                     Veusz grid widget (rows x columns), each with its own
-                     traces, axes, log/date modes and a small panel title.
-                   * text_page(): lines of text (monospaced by default) on a
-                     page, continued on further pages when long; Veusz
-                     markup is escaped and lines joined with Veusz's line
-                     break, so a summary prints as written.
-                   * "Veusz not found" messages name both variables that
-                     find_veusz_exe() reads (VEUSZ_EXE, QUICKSYN_VEUSZ).
-                   * xy_page() and grid_page() share _add_traces/_add_key.
-                   Checked by rendering in Veusz 4.2.1 (PDF and PNG).
-0.0.11 2026-10-15  Released with EMF Envelope FFT Analyzer 0.0.2. Additions
-                   only; every 0.0.10 call is unchanged:
-                   * VeuszWriter.dataset_2d(): 2-D (image) datasets in the
-                     layout of Veusz's Dataset2D.saveDataDumpToHDF5 - 'data'
-                     (ny, nx) plus xrange/xedge/xcent and yrange/yedge/ycent,
-                     linked by vsz_<key> object references. Regular edges or
-                     centres are stored as a range, as Veusz does on load.
-                   * Plot-page helpers: TRACE_COLOURS, Trace, add_title(),
-                     xy_page() and image_page(). image_page() places the
-                     colour bar manually (horzPosn/vertPosn 'manual', right
-                     of the graph, labels reflected): with the default
-                     placement Veusz 4.2.1 does not draw it.
-                   * xy_page(xmode="datetime") for date datasets on x;
-                     x_autorange/y_autorange ("exact" for time axes).
-                     Image axes and the colour bar use "exact" ranges, so
-                     the bar is not padded with white past zmin/zmax.
-                   Checked by rendering in Veusz 4.2.1 (PDF and PNG).
-0.0.10 2026-10-14  Released with QuickSyn package 0.0.10. The GUI now also
-                   uses VszDoc/VeuszWriter in-process to export a power
-                   calibration table (Calibration tab). No change to this
-                   module's code.
-0.0.9  2026-10-12  Released with QuickSyn package 0.0.9 (10 MHz output command
-                   path in the GUI). No change to this module's code.
-0.0.8  2026-10-12  Released with QuickSyn package 0.0.8 (hardware-session
-                   fixes in the GUI). No change to this module's code.
-0.0.7  2026-10-12  Released with QuickSyn package 0.0.7 (output-power fix in
-                   the GUI). No change to this module's code.
-0.0.6  2026-10-11  add_pdf_bookmarks(): writes a bookmark (outline) hierarchy
-                   and the document title, author and subject into a PDF with
-                   pypdf, atomically, and opens the outline pane by default.
-                   render_pages() calls it for the multipage PDF (new
-                   parameters bookmarks= and pdf_info=; one bookmark per page
-                   unless the caller supplies a hierarchy); skipped with a
-                   warning, never an error, when pypdf is not installed.
-                   FIX (Veusz 4.x): PDF pages were drawn at 48 % scale in the
-                   top-left corner. Veusz 4.2.1 (and master) lays a PDF out
-                   at 72 dpi, the only resolution Qt's PDF engine reports,
-                   but sets the printer to Export()'s pdfdpi, default 150;
-                   PDFs are now exported with pdfdpi=72 (PDF_DPI). Veusz
-                   3.6.2 was unaffected. The PNGs were always correct, which
-                   is why the 0.0.4 checks, which inspected PNGs, missed it.
-                   FIX: render_pages() returns the files it wrote even when
-                   they already existed. 0.0.5 compared against the folder
-                   listing taken at the start, so a second render into the
-                   same folder returned an empty list (the files were
-                   rewritten, but the export reported no plots).
-                   Released with QuickSyn package 0.0.6 (0.0.5 was never
-                   packaged; its changes ship here).
-0.0.5  2026-10-11  render_pages(): Windows paths fixed (the PNG path sat
-                   inside an exec() string, so C:\\Users... was unescaped twice;
-                   it is now bound on its own line); method "auto" falls back
-                   to the veusz package when the Veusz program found fails to
-                   render (e.g. a distribution package built for another
-                   Python) and reports both errors otherwise. A program that
-                   exits before reading its script (broken pipe) or cannot
-                   be started is now reported as a failed render rather than
-                   raising BrokenPipeError/OSError, so the fallback runs. The
-                   stdout pipe is closed (ResourceWarning) and Veusz is never
-                   left running after an error.
-0.0.4  2026-10-11  First version, released with QuickSyn package 0.0.4
-                   (version follows the package). Extracted from
-                   isp_speed_monitor.py 1.3.0 and extended as listed above.
+# %%% Revisions
+--------
+Utilizing Semantic Schema as External Release.Internal Release.Working version
+
+# %%%% 0.0.27: FitsAutoPlot suite: FITS / Franks AutoPlot 0.4.0 (gap rule
+Date: 2026-11-09
+#              chosen by the user; real GBT sampler2log files), built on
+#              master 0.0.26 (SHA-256 d826c679...a32a18). Additions plus
+#              one label change:
+#              * NEW TIME GAPS section: median_step(t) (median of the
+#                positive finite steps), gap_threshold(t, k, manual)
+#                = manual, or k * median_step(t) - a multiple of the
+#                median step, never a ratio; gap_positions(t, threshold)
+#                and insert_gaps(values, positions): NaN rows after
+#                every step > threshold, so Veusz and pyqtgraph break
+#                the line at a SMALL gap while the axis stays
+#                continuous; axis_break_pairs(t, threshold, margin):
+#                the (start, end) intervals of a broken axis at a LARGE
+#                gap. GAP_K = 10, GAP_AXIS_N = 100 (large gap = 100 x
+#                the small-gap threshold), GAP_AXIS_MARGIN = 0.02.
+#              * FIX (for callers' broken axes) the interval shrink is a
+#                fraction of the gap; FitsAutoPlot shrank every break by
+#                1e-9 x |t|, about 5.3 s at MJD 61000, which removed
+#                gaps up to 10.6 s from MJD axes.
+#              * CHANGED local_time_axis(): across a DST change the
+#                label gives the minute the offset changes (bisection,
+#                e.g. "UTC-04:00 from 2026-03-08T03:00:00-04:00"), not
+#                the first sample after it; tick formats and values
+#                are unchanged.
+#              Checked: tests/test_time_gaps.py 0.0.1 (FitsAutoPlot) and
+#              Veusz 4.2.1 renders of the UWBR, tack and 1PPS files.
+#              * FIX (Python 3.8) NEW iana_zone(name): an IANA zone name
+#                (America/New_York) from zoneinfo (3.9+), else
+#                backports.zoneinfo, else dateutil.tz; ValueError when
+#                none knows it.  VSZH5_DISPLAY_TZ=America/New_York raised
+#                ModuleNotFoundError: zoneinfo on 3.8; display_zone() now
+#                warns (RuntimeWarning) and uses the computer's zone for
+#                a name it cannot resolve.
+#              * Header in the author's template (Header Info, Author
+#                Information, References, Revisions with "# %%%%" entries,
+#                Function/Variable Descriptions, More Info); docstrings for
+#                every function, class and method.  No code change.
+#              Checked on Python 3.8.20, 3.12.3 and 3.13.
+# %%%%% Function Descriptions
+        epoch_to_veusz: Unix epoch seconds -> Veusz date value (seconds since 2009-01-01).
+        local_utc_offsets: Local UTC offset in seconds for every timestamp, DST-aware.
+        vz_text: Escape Veusz text-markup characters so a string prints literally.
+        escape_hdf_name: Escape a dataset name for use as an HDF5 member name, as Veusz does.
+        widget_name: Any text -> a valid Veusz widget name (0.0.25).
+        unique_widget_name: ``name``, or ``name_2``, ``name_3`` ...
+        header_notes: Page notes text from a source-file header (0.0.25).
+        set_notes: Set the notes of the current widget (a page) when ``notes`` is not empty.
+        VszDoc (class): Builder for the Veusz command script stored in the document.
+        VeuszWriter (class): Write Veusz datasets and a document script to a .vszh5 file.
+        _default_file_mode: Mode a new file would get from open(): 0o666 minus the process umask.
+        _one_dimensional: ``values`` as a contiguous float64 1-D array, or ValueError (0.0.23).
+        _create_resizable_1d: Create ``group[key]``: a chunked, resizable, uncompressed float64 array.
+        _is_regular: True when the spacing of ``values`` is constant (relative 1e-6).
+        _image_axis: Choose and check the stored form of one image axis (see dataset_2d).
+        Trace (class): One line or marker series (Veusz 'xy' widget) for xy_page().
+        add_title: Centred title label near the top of the current page.
+        title_settings: Settings of add_title()'s page title label (0.0.26: shared with the widget-tree builders, same values and order as before).
+        _distance_cm: A physical Veusz distance ("15cm", "6in", "20pt") in cm; None otherwise.
+        _graph_name: (0.0.25) Explicit name, else "g_<y>" for one trace, else "g_<page>".
+        _open_page_and_graph: Add a page (sized, with notes), its title and a graph; leave the graph current.
+        _add_axes: The x and y axes of the current graph, with labels, scales and limits.
+        xy_page: A page with one graph of line/marker traces; returns the graph name.
+        _add_traces: Add the xy widgets of ``traces`` to the current graph (0.0.25: named after Trace.name or the y dataset, unique in the graph); returns the names.
+        _trace_settings: Settings of the xy widget that draws ``trace`` (relative paths, in the order Veusz receives them); shared by _add_traces and smith_graph_spec (0.0....
+        _add_key: Legend in the current graph: True, False or "auto" (more than one label).
+        image_page: A page with a 2-D dataset drawn as an image, and a colour bar; returns the graph name.
+        Panel (class): One graph of grid_page(): traces, axes and a small title (0.0.12).
+        grid_page: A page with several graphs in a Veusz grid (rows filled left to right).
+        linear_power_mean_dbm: Equal-weight power mean of finite dBm samples, returned in dBm.
+        frequency_ghz_text: Scale decimal Hz to GHz without coarse rounding/name collisions.
+        frequency_time_pages: Append one page per frequency and a combined page; preserve all raw data.
+        mjd_to_epoch: UTC Modified Julian Date (days) -> Unix epoch seconds.
+        mjd_to_veusz: UTC MJD -> Veusz date seconds; ``offset_s`` shifts to a local clock.
+        iso_offset_text: UTC offset in seconds -> ISO-8601 "+HH:MM" / "-HH:MM" (e.g.
+        _zone_from_text: "UTC"/"Z", "+HH:MM", "-5", "UTC-05:00" or an IANA name -> tzinfo.
+        iana_zone: An IANA zone ("America/New_York") as a tzinfo on every Python (0.0.27).
+        display_zone: Zone for local date-time axes (0.0.25): VSZH5_DISPLAY_TZ when set, else ``default`` (None = the time zone of this computer).
+        _zone_offsets: Per-sample UTC offset (s) in ``zone`` (None = VSZH5_DISPLAY_TZ, else this computer's zone).
+        LocalTimeAxis (class): A local wall-clock date axis for Veusz (0.0.24), see local_time_axis().
+        _offset_change_instant: First whole UTC minute in (before, after] whose offset is ``offset_after`` (bisection; the zone changes offset once between two samples) (0.0.27).
+        local_time_axis: Veusz date values and an ISO-8601 tick format on a local clock.
+        veusz_to_epoch: Veusz date seconds (since 2009-01-01, UTC) -> Unix epoch seconds (0.0.25).
+        local_time_from_veusz: local_time_axis() for UTC values already in Veusz date seconds (0.0.25).
+        style_datetime_axis: Make ``axis`` (path from the current widget, e.g.
+        iso_local_strings: ISO-8601 local date-times with offsets, e.g.
+        with_x: The same traces drawn against another x dataset (0.0.24).
+        time_pair_pages: Two xy pages from one set of traces: against MJD and against local time.
+        median_step: Median of the positive, finite steps of ``t`` (0.0 when there is none).
+        gap_threshold: Line-break threshold in the units of ``t``: ``manual`` when > 0, else ``k * median_step(t)`` (0.0 = no threshold, e.g.
+        gap_positions: Insertion indices of the gap rows: ``i + 1`` for every step ``t[i+1] - t[i] > threshold``.
+        insert_gaps: ``values`` (float) with a NaN inserted before each of ``positions`` (from gap_positions); the input is not changed.
+        axis_break_pairs: (start, end) intervals to leave out of a broken axis.
+        gamma_from_impedance: Reflection coefficient Gamma = (Z - Z0) / (Z + Z0) (complex array).
+        impedance_from_gamma: Impedance Z = Z0 (1 + Gamma) / (1 - Gamma); Gamma = 1 gives inf.
+        vswr_from_gamma: VSWR = (1 + |Gamma|) / (1 - |Gamma|); inf for |Gamma| >= 1.
+        _joined: Concatenate (x, y) curves with a NaN point between them (Veusz breaks an xy line at NaN, nanHandling 'break-on', its default).
+        SmithGrid (class): Datasets and widget specifications of a Smith-chart grid (0.0.26).
+        _grid_line_settings: xy settings of a grid line family: no markers, no legend entry.
+        _grid_label_settings: xy settings that print a text dataset at points (no line, no marker).
+        smith_grid: The grid of a Smith chart as Veusz datasets and xy widget settings.
+        smith_trace_datasets: Datasets of one Smith trace: "<stem>_re", "<stem>_im" and, when given, "<stem>_freq_Hz" (read by the suite's interactive Smith plot).
+        smith_trace: Trace of Im(Gamma) against Re(Gamma) for the datasets of smith_trace_datasets(stem, ...); keyword arguments go to Trace.
+        smith_has_key: True when a Smith graph gets a legend: key=True, or "auto" with more than one labelled trace (as xy_page).
+        smith_graph_spec: Settings of a Smith graph and its children, for any Veusz builder.
+        smith_page_layout: (page width, page height, graph top margin) of a Smith page: the chart about ``size`` across, 1 cm more height for the title, ``key_width`` more wi...
+        smith_page: A page with one Smith chart; returns the graph name (0.0.26).
+        text_page: Pages of plain text lines (escaped; monospaced by default) (0.0.12).
+        step_mask: (x, y) arrays of a stepped mask: one flat segment per band.
+        reference_line: (x, y) arrays of a straight threshold or marker line.
+        bar_page: A page with a vertical category bar chart (0.0.14); returns the graph name.
+        _reduce_axis: Reduce ``values`` along ``axis`` in groups of ``factor`` (see block_reduce).
+        _reduce_groups: Collapse ``axis`` of a grouped array with ``method``.
+        block_reduce: Decimate a 2-D array in blocks of ``row_factor`` x ``column_factor``.
+        regularize_rows: Image rows with (possibly uneven) centres -> an even grid for drawing.
+        dataset_names: Names of the datasets stored in a .vszh5 document (unescaped, sorted).
+        read_text_dataset: The strings of a text dataset written by dataset_text(), or None if absent.
+        page_names: Names of the pages of a written document, in page order (0.0.13).
+        AppendLockedError (class): The document is locked by another process (HDF5 file locking).
+        _is_lock_error: True for HDF5's "unable to lock file" open failure (any platform).
+        VeuszAppender (class): Grow an existing .vszh5 document in place, a few rows at a time.
+        _decode: bytes or numpy bytes -> str (UTF-8); anything else -> str().
+        find_veusz_exe: Locate the Veusz program: explicit path, env var, PATH, usual folders.
+        _popen_kwargs: Hide the console window of child processes on Windows.
+        _render_script: The script piped into `veusz --listen`.
+        _outline_parts: Split an outline entry into (title, page, children).
+        add_pdf_bookmarks: Write a bookmark (outline) hierarchy into an existing PDF, in place.
+        render_pages: Render a .vszh5 to one multipage PDF and per-page PNG files.
+        _page_names_from_log: Veusz page names from the VSZH5_PAGES line the render script prints.
+        _run_listen: Pipe a script into `veusz --listen --quiet` and wait for the marker.
+        _render_in_process: Fallback: render with the veusz Python package in this process.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VSZH5_FORMAT: Highest document format the Veusz 3.6 and 4.2 loaders accept.
+        VSZH5_LAYOUT_VERSION: Veusz release whose HDF5 layout this writer follows (written as vsz_version).
+        COMPRESS_MIN_ELEMENTS: Arrays at least this long are gzip+shuffle compressed when compress=True.
+        APPEND_CHUNK_ELEMENTS: (0.0.18) Rows per chunk of a resizable (appendable) 1-D or date dataset: : 1024 float64 = 8 KiB, at the low end of the 10 KiB - 1 MiB range h5py :...
+        PDF_DPI: Resolution passed to Veusz's Export() for PDF. Veusz 4.x lays a PDF page : out at the nearest resolution the Qt PDF engine supports (72) but sets t...
+        VEUSZ_EPOCH: Veusz date origin, and the offset that maps Unix seconds onto it.
+        UNIX_TO_VEUSZ_S: -1230768000
+        WIDGET_NAME_MAX: Longest widget name the helpers make (Veusz has no limit; long names make : the widget tree and PDF bookmarks hard to read).
+        TRACE_COLOURS: 1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+        _CM_PER_UNIT: Centimetres per unit for the physical Veusz distance units.
+        MJD_UNIX_EPOCH: Modified Julian Date of the Unix epoch, 1970-01-01T00:00:00 UTC.
+        ISO_DATETIME_FORMAT: Veusz tick format of an ISO-8601 date-time without offset (Veusz %VD codes).
+        DISPLAY_TZ_ENV: (0.0.25) Environment variable that overrides the computer's time zone for : local date-time axes: "UTC", a fixed offset such as "-05:00" or "+0530"...
+        _FIXED_OFFSET: fixed UTC offset text (-05:00, UTC-05:00, GMT+0100) for VSZH5_DISPLAY_TZ
+        LOCAL_DATETIME_ROTATE: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis; a : 25-character "2026-11-09T08:39:00-05:00" label needs it.
+        GAP_K: Default line-break multiplier K (gap when dt > K * median(dt)).
+        GAP_AXIS_N: Default axis-break multiple n (axis cut when dt > n * K * median(dt)); 0 = never.
+        GAP_AXIS_MARGIN: Fraction of a gap kept visible at each side of an axis break.
+        SMITH_RESISTANCES: Normalized resistance (conductance) circles and reactance (susceptance) : arcs drawn by default - the values of scikit-rf's and the Plots tab's chart.
+        SMITH_REACTANCES: normalised reactances of the Smith grid arcs
+        SMITH_VSWR: VSWR circles of scikit-rf's draw_vswr=True.
+        SMITH_GRID_COLOUR: a6a6a6"
+        SMITH_FRAME_COLOUR: 4d4d4d"
+        SMITH_LABEL_COLOUR: 595959"
+        SMITH_LIMIT: Half-width of the Re/Im Gamma axes: room outside |Gamma| = 1 for labels.
+        SMITH_NOTES_PREFIX: First words of the notes of every Smith graph (how readers recognise one).
+        VEUSZ_LINE_BREAK: Veusz text markup for a line break (two backslashes in the label text).
+        REDUCE_METHODS: Methods of block_reduce().
+        APPEND_META_GROUP: Top-level HDF5 group for the appender's private bookkeeping (e.g. a logger's : column index). Veusz reads only /Veusz [R1: loader.loadHDF5Doc], so...
+# %%%%% More Info
+    Master copy: RF project document claude/vszh5_writer.py (registry
+    claude/vszh5-writer-registry.md).  Needs numpy and h5py; Veusz only to open
+    or render; pypdf only for PDF bookmarks; on Python 3.8 backports.zoneinfo
+    or python-dateutil for IANA zone names (VSZH5_DISPLAY_TZ=America/New_York).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.0.26: FitsAutoPlot suite: Touchstone AutoPlot 0.7.0 (Smith
+Date: 2026-11-09
+#              chart pages in the project), built on master 0.0.25
+#              (SHA-256 fb481290...18b9a). Additions only: every 0.0.25
+#              name, parameter, default and output is unchanged (the
+#              scripts of xy/grid/image/bar pages compared byte for
+#              byte; _add_traces and add_title now share their settings
+#              with the new widget-tree builders).
+#              * NEW smith_grid(prefix, kind="z"|"y", resistances=,
+#                reactances=, vswr=, labels=, ...) -> SmithGrid: the
+#                constant-resistance circles (centre r/(1+r), radius
+#                1/(1+r)) and constant-reactance arcs (traced exactly as
+#                Gamma(r) = (r + jx - 1)/(r + jx + 1)), the unit circle,
+#                the real axis, optional VSWR circles (radius
+#                (S-1)/(S+1)) and the grid values, as NaN-joined 1-D
+#                datasets (one xy widget per family) and text datasets
+#                printed as point labels. kind="y" rotates the grid by
+#                180 degrees (admittance chart, as scikit-rf).
+#                SmithGrid.write(target) writes the datasets with a
+#                VeuszWriter or any object with SetData/SetDataText
+#                (_autoplot_native.NativeDocument, veusz.embed).
+#              * NEW smith_trace_datasets(stem, gamma, frequency_hz) ->
+#                "<stem>_re", "<stem>_im", "<stem>_freq_Hz";
+#                smith_trace(stem, label, ...) -> Trace(Im vs Re).
+#              * NEW smith_graph_spec(grid, traces, ...) -> (graph
+#                settings, [(type, name, settings), ...]): aspect ratio
+#                1, hidden axes at +/-SMITH_LIMIT, no border, notes
+#                "Smith chart (impedance|admittance)", the grid widgets
+#                "grid_*", the traces, the legend (beside the chart by
+#                default). smith_has_key(), smith_page_layout() and
+#                smith_page(doc, page, traces, grid, title, ...) build a
+#                whole page in a VszDoc script.
+#              * NEW gamma_from_impedance, impedance_from_gamma,
+#                vswr_from_gamma; SMITH_RESISTANCES, SMITH_REACTANCES,
+#                SMITH_VSWR, SMITH_LIMIT, SMITH_NOTES_PREFIX and the
+#                dataset suffixes; title_settings().
+#              Checked: tests/test_smith_chart.py (grid geometry against
+#              the circle equations, Gamma/Z/VSWR round trips, page
+#              scripts) and renders of impedance and admittance charts
+#              in real Veusz 4.2.1; every setting used exists in the
+#              Veusz 3.6.2 source (graph aspect, axis hide, xy labels
+#              and Label/posnHorz/posnVert, key horzManual).
+# %%%% 0.0.25: FitsAutoPlot suite (ATR, CSV/TSV, FITS, Franks, R&S,
+Date: 2026-11-09
+#              Touchstone), built on master 0.0.24 (SHA-256
+#              199f30a8...a901). Every 0.0.24 name and parameter is still
+#              accepted; the CHANGED defaults are the widget names.
+#              * CHANGED widget names of the page helpers, from the data
+#                instead of generic names: xy_page graph "g_<y>" for one
+#                trace, "g_<page>" for several (was "graph"); traces are
+#                named after their y dataset (was "trace0", "trace1",
+#                ...); grid_page graphs "g_<first y>" (was "graph0"...);
+#                image_page graph "g_<dataset>", image "img_<dataset>",
+#                colour bar "cbar_<dataset>" (were "graph", "image",
+#                "colorbar"); bar_page graph "g_<page>" and bars
+#                "bars_<first length>". New Trace.name, Panel.name and
+#                graph_name= parameters choose a name explicitly
+#                (graph_name="graph" gives the 0.0.24 layout). The page
+#                helpers return the graph name(s); frequency_time_pages
+#                no longer reaches into "graph/x" by path (it passes
+#                datetime_format to the helpers), so its output is
+#                unchanged apart from the names.
+#              * NEW widget_name(text) (a valid Veusz widget name: no
+#                '/', no surrounding blanks, not '.'/'..') and
+#                unique_widget_name(name, used).
+#              * NEW header_notes(header, source=, title=, extra=): page
+#                notes from a source-file header - a mapping ("KEY =
+#                value", like Veusz shows FITS cards), lines, or text -
+#                and set_notes(doc, notes). xy_page, image_page,
+#                grid_page, bar_page, text_page and time_pair_pages take
+#                notes= and write it to the page's notes (Veusz:
+#                Properties > notes).
+#              * NEW veusz_to_epoch(), display_zone() and
+#                local_time_from_veusz(veusz_utc, zone=None, label=):
+#                the LocalTimeAxis of UTC date values that are already
+#                in Veusz seconds (FITS MJD, CSV dates). zone=None now
+#                means "VSZH5_DISPLAY_TZ if set, else this computer's
+#                zone"; the variable takes "UTC", a fixed offset
+#                ("-05:00") or, on Python >= 3.9, an IANA name. Fixed
+#                offsets also work on Python 3.8 (no zoneinfo).
+#              * NEW LOCAL_DATETIME_ROTATE (45) and
+#                style_datetime_axis(doc, axis, local_axis): mode
+#                datetime, ISO-8601 24-hour tick format with the offset
+#                (%VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00), label naming
+#                the offset, exact range, rotated tick labels.
+#              Checked: tests in FitsAutoPlot (writer names, notes and
+#              local axes) and renders in real Veusz 4.2.1.
+# %%%% 0.0.24: Released with MHM2010 / T4 Maser Timing Workbench 0.2.0
+Date: 2026-11-03
+#              (Maser and timing analysis chat), built on master 0.0.23
+#              (SHA-256 90833d76...eaac6). Additions only: every 0.0.23
+#              name, parameter, default and output is unchanged.
+#              * NEW mjd_to_epoch(mjd) and mjd_to_veusz(mjd, offset_s):
+#                UTC MJD days -> Unix seconds / Veusz date seconds
+#                (Unix epoch = MJD 40587).
+#              * NEW iso_offset_text(offset_s): "+HH:MM" / "-HH:MM".
+#              * NEW LocalTimeAxis and local_time_axis(epoch_s, zone=None):
+#                Veusz date values on the wall clock of the computer that
+#                processes the data (or an IANA zone, Python >= 3.9), per
+#                sample and DST-aware (local_utc_offsets), plus a Veusz
+#                tick format giving ISO-8601 date-times. With one offset
+#                over the data the offset is part of every tick label
+#                ("%VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00"); Veusz formats
+#                are static, so when the data cross a DST change the
+#                ticks carry no offset and the axis label lists each
+#                offset and the instant it starts.
+#              * NEW iso_local_strings(epoch_s, zone=None): the same
+#                instants as ISO-8601 text with offsets (text datasets,
+#                CSV columns).
+#              * NEW with_x(traces, x): the same traces on another x
+#                dataset; time_pair_pages(): one xy page against MJD and
+#                one against local date-time from the same traces.
+#              * NEW Panel.datetime_format (default ""): tick format of a
+#                datetime x axis in grid_page().
+#              Checked: tests/test_writer_time_axes.py (workbench) and
+#              renders in real Veusz 3.6.2 (ISO ticks with offset).
+# %%%% 0.0.23: Built on 0.0.22 (MHM2010 Workbench review), with the open
+Date: 2026-11-03
+#              points of the RF_Equipment_Comms and GBO Maser Control
+#              reviews of 2026-11-03. Every public name, parameter and
+#              default is unchanged; valid 1-D input is written exactly
+#              as before.
+#              * CORRECTION to the 0.0.22 note: VeuszWriter(
+#                resizable=True) never flattened a 2-D date array - its
+#                resizable layout is used for 1-D input only, so the
+#                array was stored 2-D, as without resizable. The silent
+#                flattening was in VeuszAppender (next item). Checked
+#                with 0.0.21 and 0.0.22 (h5py shapes, real Veusz).
+#              * FIX VeuszAppender.create_1d(), create_date() and
+#                append(): input with more than one dimension is
+#                rejected (ValueError) instead of being flattened with
+#                ravel() into a longer column (a (2, 3) array became 6
+#                rows). A single number is still one row; an empty
+#                sequence still creates an empty dataset.
+#              * FIX VeuszAppender.append()/truncate() on a dataset that
+#                an earlier writer stored with more than one dimension
+#                (0.0.21 dataset_date, 2-D input): rejected with a
+#                message saying the document must be rewritten, and the
+#                file is left unchanged. 0.0.22 flattened it (2 x 3 dates
+#                + 1 row became 7 rows) while converting it to the
+#                growable layout.
+#              * FIX VeuszWriter.dataset_1d() and dataset_text(): every
+#                check and conversion now runs before the dataset group
+#                is created, as 0.0.22 did for dataset_date(). A wrong
+#                serr/perr/nerr length, or text input that is not a
+#                sequence, left an empty group behind and blocked the
+#                name ("written twice") for a corrected retry.
+#              * FIX render_pages() reported success for a document whose
+#                pages loaded but whose data did not. Veusz's loader
+#                (loader.loadHDF5Doc) builds the pages first and loads
+#                the datasets afterwards, and `veusz --listen` runs each
+#                script line on its own and only prints an exception, so
+#                a dataset Veusz refuses ("Only 1-dimensional arrays or
+#                lists allowed", e.g. a 0.0.21 2-D date) gave PDF and PNG
+#                files of empty 0..1 axes and no error. The load now
+#                reports its pages only when the whole load succeeded;
+#                otherwise no page is exported (an earlier PDF of the
+#                same name is kept) and the render fails with Veusz's own
+#                message, then method "auto" tries the veusz package.
+#              * FIX render_pages(method="inprocess" or the "auto"
+#                fallback): a load error from the veusz package is raised
+#                as RuntimeError, as documented, instead of escaping as a
+#                bare ValueError (which also hid the program error in
+#                "auto" mode).
+#              Checked: probe_writer_issues.py 0.0.1 (16 cases, 0.0.21 /
+#              0.0.22 / 0.0.23 side by side) with real Veusz 3.6.2 and
+#              4.2.1; tests/test_vszh5_writer.py 0.0.3; and as a drop-in
+#              in the FSP logger 0.10.0, SHR Converter 0.0.2 and AB Power
+#              Meter Monitor 1.7.0 suites (see the 0.0.23 release notes).
+# %%%% 0.0.22: MHM2010 Workbench review. FIX dataset_date(): reject
+Date: 2026-11-03
+#              multidimensional input before creating the HDF5 group.
+#              Previously a 2-D date array silently produced an invalid
+#              date dataset (or was flattened with resizable=True).
+#              No valid 1-D caller changes; no other writer code changed.
+# %%%% 0.0.21: Released with SHR Converter 0.0.2. FIX regularize_rows():
+Date: 2026-10-28
+#              with jittered time stamps the grid step came from the
+#              median interval, whose slots then drifted from the rows
+#              and left an empty (NaN) row every few dozen rows - seen
+#              on a real SM200C recording (32-35 ms sweep intervals,
+#              median 33 ms, mean 33.35 ms: a blank line about every
+#              47 sweeps). The step is now the MEAN of the ordinary
+#              intervals; an interval longer than (1 + 2 x tolerance)
+#              median intervals is a gap and gets rint(gap / step)
+#              slots. Rows that are not strictly increasing still
+#              fall back to "even". Signature and return values are
+#              unchanged; nothing else in the writer changed (drop-in
+#              for every program that uses 0.0.20).
+# %%%% 0.0.20: Released with SHR Converter 0.0.1. One writer again: the
+Date: 2026-10-28
+#              two releases numbered 0.0.18 (see that entry) had
+#              diverged, and 0.0.19 had been built on the AB-monitor
+#              branch only, so it lacked the FSP-branch render fixes.
+#              Every public call of both branches is kept unchanged.
+#              * MERGED from 0.0.18 (FSP logger 0.9.0 branch):
+#                - FIX render_pages(png_pages="first"): the --listen
+#                  script bounded its PNG loop with min(1, len(names));
+#                  Veusz 4.2.1 evaluates listen scripts with NumPy's
+#                  names imported, so min was numpy.min(1, axis=n) ->
+#                  AxisError, printed and swallowed: no PNG at all. The
+#                  bound is now (1 if names else 0). Present in 0.0.19.
+#                - FIX render_pages(): the PDF was named with
+#                  stem.with_suffix(".pdf"), so "run v0.0.2.vszh5" gave
+#                  "run v0.0.pdf"; it is now "<file stem>.pdf" whatever
+#                  dots the name holds (the PNGs already were). Present
+#                  in 0.0.19.
+#                - FIX render_pages(): an Export() error inside
+#                  `veusz --listen` is printed, not raised, and the done
+#                  marker still arrives; a requested PDF or PNG that was
+#                  not written now raises RuntimeError instead of
+#                  returning a list without it. Present in 0.0.19.
+#                - Spyder cell markers of the frequency-page (0.0.16) and
+#                  linear-power (0.0.17) sections put back above their
+#                  own code (0.0.19 had the two markers stacked above
+#                  linear_power_mean_dbm()).
+#              * KEPT from 0.0.19 and widened: Veusz finishing the script
+#                with no page loaded is a failed program render whether
+#                or not its log holds a Traceback (0.0.19 needed one; the
+#                FSP branch did not), with Veusz's own message and a hint
+#                that Veusz needs h5py to open .vszh5. Method "auto"
+#                then tries the veusz Python package, as before.
+#              * KEPT from 0.0.18 (AB-monitor branch): VeuszAppender,
+#                AppendLockedError, VeuszWriter(resizable=True),
+#                APPEND_CHUNK_ELEMENTS, APPEND_META_GROUP.
+#              * NEW image_page(xmode=, ymode=, datetime_format=): either
+#                image axis can be a date axis ("datetime"), so a
+#                spectrogram can show UTC time on y; the image range is
+#                then given in Veusz date seconds (epoch_to_veusz).
+#                Defaults unchanged ("numeric").
+#              * NEW xy_page(datetime_format=): tick-label format of a
+#                date x axis in one call (frequency_time_pages() set it
+#                afterwards; it still works that way).
+#              * NEW block_reduce(values, row_factor, column_factor,
+#                method): decimates a 2-D array in blocks for plotting -
+#                "max" (peak hold: a short or narrow signal survives),
+#                "min", "mean", "power_mean_db" (dB values averaged as
+#                power, 10 log10 mean 10^(x/10), max-referenced so it
+#                cannot overflow) and "power_mean_linear" (amplitudes
+#                averaged as power, sqrt(mean x^2), i.e. RMS). Trailing
+#                partial blocks are reduced over the rows/columns they
+#                have, never padded. Works on NumPy arrays or, with
+#                xp=cupy, on the GPU. REDUCE_METHODS lists the names.
+#              * FIX (Linux/macOS): documents published by finish() had
+#                mode 0600 - the private mode of the mkstemp() temporary
+#                file used since 0.0.15 - so other users (a web server,
+#                Grafana, a colleague) could not read them. finish() now
+#                gives the file the mode it replaces, or a new file the
+#                usual 0666 minus the umask. No effect on Windows.
+#              * NEW render_pages(png_background=): background colour of
+#                the PNG files ("white", "#ffffffff", ...). The default
+#                "" keeps Veusz's transparent background as before.
+#              * NEW regularize_rows(image, centres): puts image rows
+#                with uneven time stamps onto an even grid, with NaN
+#                (transparent) rows where the recording paused. Veusz
+#                draws an image whose x/y axis is given as uneven
+#                edges/centres through its slow non-linear path:
+#                measured on a 1964 x 1334 three-hour spectrogram, 30.3 s
+#                and 3.2 GB to render against 2.7 s and 0.31 GB on an
+#                even grid (Veusz 3.6.2). image_page() docstring notes it.
+#              * DIFFERENCES list completed (0.0.16, 0.0.17) and put in
+#                version order.
+#              Checked: tests/test_vszh5_writer.py (stand-in Veusz render
+#              protocol, block_reduce against loops, regularize_rows,
+#              file modes, date-axis images rendered in real Veusz
+#              3.6.2 and 4.2.1), and as a drop-in replacement in every
+#              program that ships a copy (their own suites, unchanged
+#              apart from version literals):
+#                - R&S FSP logger 0.9.0: 44/44 with PyQt5 and PySide6,
+#                  each with Veusz 3.6.2 and 4.2.1 (the About test's
+#                  expected writer version updated 0.0.18 -> 0.0.20);
+#                - AB Power Meter Monitor 1.7.0: 8 suites, 45/45, real
+#                  renders in Veusz 4.2.1 and 3.6.2;
+#                - SA Time Stability Tools 0.0.3: run_all 7/7 and
+#                  validate_vszh5_in_veusz 22/22 (Veusz 4.2.1);
+#                - QuickSyn package 0.0.10: 44 pass; its three checks
+#                  that pin the writer's version string (0.0.10) and its
+#                  pre-0.0.15 temporary name "<file>.part" fail as they
+#                  do with 0.0.19 - test literals, not behaviour.
+# %%%% 0.0.19: render_pages(): when Veusz runs the script but cannot load
+Date: 2026-10-26
+#              the document (a Traceback and no page in its log - e.g. a
+#              Veusz environment without h5py: "No HDF5 support as h5py
+#              module is missing"), the render now fails with Veusz's own
+#              message instead of returning an empty list. Released with
+#              AB Power Meter Monitor 1.6.2.
+# %%%% 0.0.18: Two releases carried this number (merged in 0.0.20):
+Date: 2026-10-26
+#              (a) R&S FSP logger bundle 0.9.0 - fixes only; the HDF5
+#              layout and every public signature unchanged:
+#              * FIX render_pages(png_pages="first"): the --listen
+#                script limited the PNG loop with min(1, len(names)).
+#                Veusz 4.2.1 runs listen scripts with NumPy's names
+#                imported, so min was numpy.min(1, axis=n) -> AxisError,
+#                printed and swallowed by --listen: no PNG was written.
+#                The bound is now (1 if names else 0). Reported against
+#                0.0.5 by SA Time Stability Tools 0.0.3; still present
+#                through 0.0.17.
+#              * FIX render_pages(): the PDF path was
+#                stem.with_suffix(".pdf"), so "run v0.0.2.vszh5" gave
+#                "run v0.0.pdf". It is now "<file stem>.pdf" whatever
+#                dots the name holds (the PNG names already were).
+#              * FIX render_pages(): a load or Export() error inside
+#                `veusz --listen` is printed, not raised, and the done
+#                marker still arrives, so 0.0.17 returned success with
+#                no files (found with a Veusz lacking h5py). Zero
+#                loaded pages is now a failed program render (method
+#                "auto" then tries the veusz package), and a missing
+#                PDF or PNG raises RuntimeError.
+#              * Revision history repaired: 0.0.17 listed two blocks
+#                with the same number; the frequency-page block is
+#                0.0.16. DIFFERENCES list in version order.
+#              (b) AB Power Meter Monitor 1.6.0 - additions only; every
+#              0.0.17 call is unchanged:
+#              * VeuszAppender: open an existing .vszh5 'r+' (or create
+#                an empty, valid one atomically) and append rows to
+#                resizable 1-D and date datasets, create new datasets
+#                back-filled with NaN, pad or truncate datasets to a
+#                length, replace the document script, add tags, and keep
+#                private JSON bookkeeping under /VszAppend (ignored
+#                by Veusz). AppendLockedError is raised when another
+#                process holds the HDF5 file lock, so a logger can
+#                retry on its next poll instead of failing.
+#              * VeuszWriter(resizable=True): 1-D and date datasets
+#                are written chunked and resizable (fill value NaN,
+#                uncompressed) so the document can be appended later.
+#              * APPEND_CHUNK_ELEMENTS (1024 rows = 8 KiB per chunk).
+#              * Revision history: the second "0.0.17" block (frequency
+#                pages) is renumbered 0.0.16, so versions are unique
+#                and in descending numeric order; the section marker
+#                of frequency_time_pages() says 0.0.16 to match.
+#              Checked by loading appended documents in real Veusz
+#              4.2.1 (conda-forge) and exporting PNG and PDF.
+# %%%% 0.0.17: Consolidate numerically stable, chunked linear-power dBm
+Date: 2026-10-23
+#              averaging for the merged logger/report release 0.8.3.
+# %%%% 0.0.16: Add precise frequency_ghz_text() and frequency_time_pages():
+Date: 2026-10-23
+#              Freq_N_GHz and Combined_Freq_vs_Time with datetime axes.
+#              Independent analyzer traces are never averaged together.
+# %%%% 0.0.15: Python 3.8-safe typing alias; private atomic temp files;
+Date: 2026-10-23
+#              flushed renderer markers to prevent export-complete hangs.
+# %%%% 0.0.14: Released with the GBT RFI Interference Evaluator 0.0.1.
+Date: 2026-10-19
+#              Additions only; every 0.0.13 call is unchanged:
+#              * Trace.fill ("below" | "above" | ""), fill_colour and
+#                fill_transparency: shades the region between a trace
+#                and the bottom/top of the graph (Veusz xy FillBelow /
+#                FillAbove), e.g. the part of a spectrum above a mask.
+#              * bar_page(): category bar chart (Veusz 'bar' widget,
+#                x axis in 'labels' mode from a text dataset), linear
+#                or log value axis, legend for grouped bars.
+#              * step_mask(): (x, y) arrays of a stepped mask from band
+#                edges and levels, NaN between bands so Veusz and
+#                pyqtgraph draw separate steps.
+#              * reference_line(): two-point (x, y) arrays for a
+#                horizontal or vertical threshold/marker line.
+#              * Revision history re-ordered newest first (numeric
+#                version order), the author's house style.
+#              Checked by rendering in Veusz 3.6.2 (PDF and PNG).
+# %%%% 0.0.13: Released with EMF Envelope FFT Analyzer 0.0.4. Additions
+Date: 2026-10-15
+#              only:
+#              * dataset_names(), read_text_dataset() and page_names():
+#                read back what a document holds without Veusz (e.g. the
+#                unit sections an analyzer stored as a text dataset, to
+#                rebuild the PDF bookmarks when a document is rendered
+#                later, or to list its pages).
+# %%%% 0.0.12: Released with EMF Envelope FFT Analyzer 0.0.3. Additions
+Date: 2026-10-15
+#              only; every earlier call is unchanged:
+#              * Panel and grid_page(): several graphs on one page in a
+#                Veusz grid widget (rows x columns), each with its own
+#                traces, axes, log/date modes and a small panel title.
+#              * text_page(): lines of text (monospaced by default) on a
+#                page, continued on further pages when long; Veusz
+#                markup is escaped and lines joined with Veusz's line
+#                break, so a summary prints as written.
+#              * "Veusz not found" messages name both variables that
+#                find_veusz_exe() reads (VEUSZ_EXE, QUICKSYN_VEUSZ).
+#              * xy_page() and grid_page() share _add_traces/_add_key.
+#              Checked by rendering in Veusz 4.2.1 (PDF and PNG).
+# %%%% 0.0.11: Released with EMF Envelope FFT Analyzer 0.0.2. Additions
+Date: 2026-10-15
+#              only; every 0.0.10 call is unchanged:
+#              * VeuszWriter.dataset_2d(): 2-D (image) datasets in the
+#                layout of Veusz's Dataset2D.saveDataDumpToHDF5 - 'data'
+#                (ny, nx) plus xrange/xedge/xcent and yrange/yedge/ycent,
+#                linked by vsz_<key> object references. Regular edges or
+#                centres are stored as a range, as Veusz does on load.
+#              * Plot-page helpers: TRACE_COLOURS, Trace, add_title(),
+#                xy_page() and image_page(). image_page() places the
+#                colour bar manually (horzPosn/vertPosn 'manual', right
+#                of the graph, labels reflected): with the default
+#                placement Veusz 4.2.1 does not draw it.
+#              * xy_page(xmode="datetime") for date datasets on x;
+#                x_autorange/y_autorange ("exact" for time axes).
+#                Image axes and the colour bar use "exact" ranges, so
+#                the bar is not padded with white past zmin/zmax.
+#              Checked by rendering in Veusz 4.2.1 (PDF and PNG).
+# %%%% 0.0.10: Released with QuickSyn package 0.0.10. The GUI now also
+Date: 2026-10-14
+#              uses VszDoc/VeuszWriter in-process to export a power
+#              calibration table (Calibration tab). No change to this
+#              module's code.
+# %%%% 0.0.9: Released with QuickSyn package 0.0.9 (10 MHz output command
+Date: 2026-10-12
+#              path in the GUI). No change to this module's code.
+# %%%% 0.0.8: Released with QuickSyn package 0.0.8 (hardware-session
+Date: 2026-10-12
+#              fixes in the GUI). No change to this module's code.
+# %%%% 0.0.7: Released with QuickSyn package 0.0.7 (output-power fix in
+Date: 2026-10-12
+#              the GUI). No change to this module's code.
+# %%%% 0.0.6: add_pdf_bookmarks(): writes a bookmark (outline) hierarchy
+Date: 2026-10-11
+#              and the document title, author and subject into a PDF with
+#              pypdf, atomically, and opens the outline pane by default.
+#              render_pages() calls it for the multipage PDF (new
+#              parameters bookmarks= and pdf_info=; one bookmark per page
+#              unless the caller supplies a hierarchy); skipped with a
+#              warning, never an error, when pypdf is not installed.
+#              FIX (Veusz 4.x): PDF pages were drawn at 48 % scale in the
+#              top-left corner. Veusz 4.2.1 (and master) lays a PDF out
+#              at 72 dpi, the only resolution Qt's PDF engine reports,
+#              but sets the printer to Export()'s pdfdpi, default 150;
+#              PDFs are now exported with pdfdpi=72 (PDF_DPI). Veusz
+#              3.6.2 was unaffected. The PNGs were always correct, which
+#              is why the 0.0.4 checks, which inspected PNGs, missed it.
+#              FIX: render_pages() returns the files it wrote even when
+#              they already existed. 0.0.5 compared against the folder
+#              listing taken at the start, so a second render into the
+#              same folder returned an empty list (the files were
+#              rewritten, but the export reported no plots).
+#              Released with QuickSyn package 0.0.6 (0.0.5 was never
+#              packaged; its changes ship here).
+# %%%% 0.0.5: render_pages(): Windows paths fixed (the PNG path sat
+Date: 2026-10-11
+#              inside an exec() string, so C:\\Users... was unescaped twice;
+#              it is now bound on its own line); method "auto" falls back
+#              to the veusz package when the Veusz program found fails to
+#              render (e.g. a distribution package built for another
+#              Python) and reports both errors otherwise. A program that
+#              exits before reading its script (broken pipe) or cannot
+#              be started is now reported as a failed render rather than
+#              raising BrokenPipeError/OSError, so the fallback runs. The
+#              stdout pipe is closed (ResourceWarning) and Veusz is never
+#              left running after an error.
+# %%%% 0.0.4: First version, released with QuickSyn package 0.0.4
+Date: 2026-10-11
+#              (version follows the package). Extracted from
+#              isp_speed_monitor.py 1.3.0 and extended as listed above.
 ===============================================================================
 """
 
@@ -716,7 +926,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.26"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.27"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -756,6 +966,9 @@ __all__ = [
     "gamma_from_impedance", "impedance_from_gamma", "vswr_from_gamma", "SmithGrid",
     "smith_grid", "smith_trace_datasets", "smith_trace", "smith_has_key",
     "smith_graph_spec", "smith_page_layout", "smith_page", "title_settings",
+    # 0.0.27: time gaps
+    "GAP_K", "GAP_AXIS_N", "GAP_AXIS_MARGIN", "median_step", "gap_threshold",
+    "gap_positions", "insert_gaps", "axis_break_pairs",
 ]
 
 # %% ===========================================================================
@@ -932,6 +1145,9 @@ class VszDoc:
     """
 
     def __init__(self, generator: str = "", veusz_version: str = VSZH5_LAYOUT_VERSION) -> None:
+        """Start a document script with the Veusz header comment, the generator
+        name (if given) and the UTC save time.
+        """
         stamp = _dt.datetime.now(_dt.timezone.utc).isoformat()
         self.lines: list[str] = [f"# Veusz saved document (version {veusz_version})"]
         if generator:
@@ -1000,6 +1216,15 @@ class VeuszWriter:
     def __init__(self, path: str | os.PathLike, compress: bool = False,
                  atomic: bool = True, veusz_version: str = VSZH5_LAYOUT_VERSION,
                  writer_tag: str = "", resizable: bool = False) -> None:
+        """Open a new .vszh5 file for writing (h5py required).
+
+        With ``atomic`` (default) everything goes to a private ``<name>.*.part``
+        file in the same folder, renamed over ``path`` only by finish(), so a
+        crash never leaves a half-written document; an existing file's
+        permissions are kept.  ``compress`` gzips large arrays; ``resizable``
+        uses the appendable layout of VeuszAppender for 1-D and date data;
+        ``writer_tag`` is stored as an attribute Veusz ignores.
+        """
         if h5py is None:
             raise RuntimeError("h5py is required to write .vszh5 files "
                                "(mamba install -c conda-forge h5py)")
@@ -1034,14 +1259,21 @@ class VeuszWriter:
 
     # --- context manager ------------------------------------------------------
     def __enter__(self) -> "VeuszWriter":
+        """Context manager: return the writer."""
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """Abort (delete the temporary file) on an exception or when finish()
+        was never called.
+        """
         if exc_type is not None or not self._finished:
             self.abort()
 
     # --- internals --------------------------------------------------------------
     def _group(self, name: str, datatype: str) -> Any:
+        """Create the HDF5 group of dataset ``name`` (escaped) with its Veusz
+        datatype; a name written twice raises ValueError.
+        """
         if name in self.names:
             raise ValueError(f"dataset {name!r} written twice")
         self.names.append(name)
@@ -1050,6 +1282,9 @@ class VeuszWriter:
         return g
 
     def _array(self, group: Any, key: str, values: np.ndarray, vsz_name: str) -> Any:
+        """Store ``values`` as member ``key`` of ``group`` (resizable or gzip
+        compressed when configured) and record the Veusz name.
+        """
         if self.resizable and values.ndim == 1 and group.attrs.get("vsz_datatype") in ("1d", "date"):
             # 0.0.18: appendable layout shared with VeuszAppender.
             ds = _create_resizable_1d(group, key, values)
@@ -1065,6 +1300,7 @@ class VeuszWriter:
         return ds
 
     def _tag(self, name: str, tags: Iterable[str]) -> None:
+        """Remember that dataset ``name`` carries each of ``tags``."""
         for t in tags:
             self.tags.setdefault(t, []).append(name)
 
@@ -1867,15 +2103,50 @@ def _zone_from_text(text: str) -> Any:
         sign = -1 if match.group(1) == "-" else 1
         minutes = int(match.group(2)) * 60 + int(match.group(3) or 0)
         return _dt.timezone(_dt.timedelta(minutes=sign * minutes))
-    from zoneinfo import ZoneInfo               # Python >= 3.9
-    return ZoneInfo(text)
+    return iana_zone(text)
+
+
+def iana_zone(name: str) -> Any:
+    """An IANA zone ("America/New_York") as a tzinfo on every Python (0.0.27).
+
+    zoneinfo (Python >= 3.9), else backports.zoneinfo, else dateutil.tz
+    (installed with pandas and matplotlib) - so Python 3.8 accepts IANA
+    names too. ValueError when none of them knows the name.
+    """
+    try:
+        from zoneinfo import ZoneInfo           # Python >= 3.9
+    except ImportError:
+        try:
+            from backports.zoneinfo import ZoneInfo     # pip install backports.zoneinfo
+        except ImportError:
+            ZoneInfo = None
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(name)
+        except Exception as exc:                # unknown name, missing tzdata
+            raise ValueError(f"unknown time zone {name!r}: {exc}") from exc
+    try:
+        from dateutil import tz as _dateutil_tz
+    except ImportError as exc:
+        raise ValueError(f"time zone {name!r} needs Python >= 3.9, backports.zoneinfo "
+                         "or python-dateutil") from exc
+    zone = _dateutil_tz.gettz(name)
+    if zone is None:
+        raise ValueError(f"unknown time zone {name!r}")
+    return zone
 
 
 def display_zone(default: Any = None) -> Any:
     """Zone for local date-time axes (0.0.25): VSZH5_DISPLAY_TZ when set,
     else ``default`` (None = the time zone of this computer)."""
     text = os.environ.get(DISPLAY_TZ_ENV, "").strip()
-    return _zone_from_text(text) if text else default
+    if not text:
+        return default
+    try:
+        return _zone_from_text(text)
+    except ValueError as exc:                   # 0.0.27: warn, use this computer's zone
+        warnings.warn(f"{DISPLAY_TZ_ENV}={text!r} ignored: {exc}", RuntimeWarning, stacklevel=2)
+        return default
 
 
 def _zone_offsets(epoch_s: np.ndarray, zone: Any) -> np.ndarray:
@@ -1907,6 +2178,22 @@ class LocalTimeAxis:
     changes: tuple                   # ((ISO instant, "+HH:MM"), ...) offset starts
 
 
+def _offset_change_instant(before: float, after: float, offset_after: float, zone: Any) -> float:
+    """First whole UTC minute in (before, after] whose offset is ``offset_after``
+    (bisection; the zone changes offset once between two samples) (0.0.27)."""
+    low = math.floor(before / 60.0) + 1                 # minutes since the Unix epoch
+    high = math.floor(after / 60.0)
+    if high < low:
+        return after
+    while low < high:
+        middle = (low + high) // 2
+        if _zone_offsets(np.array([middle * 60.0]), zone)[0] == offset_after:
+            high = middle
+        else:
+            low = middle + 1
+    return low * 60.0
+
+
 def local_time_axis(epoch_s: Any, zone: Any = None, label: str = "Local time") -> LocalTimeAxis:
     """Veusz date values and an ISO-8601 tick format on a local clock.
 
@@ -1934,9 +2221,16 @@ def local_time_axis(epoch_s: Any, zone: Any = None, label: str = "Local time") -
     changes = []
     if finite.any():
         index = np.flatnonzero(finite)
-        starts = index[np.r_[True, np.diff(offsets[index]) != 0]]
-        for start in starts:
-            instant = _dt.datetime.fromtimestamp(epoch[start] + offsets[start], _dt.timezone.utc
+        changed = np.r_[True, np.diff(offsets[index]) != 0]
+        for position in np.flatnonzero(changed):
+            start = index[position]
+            when = float(epoch[start])
+            if position > 0:
+                # 0.0.27: the instant the offset really changes (a DST
+                # transition), to the minute, not the first sample after it.
+                when = _offset_change_instant(float(epoch[index[position - 1]]), when,
+                                              float(offsets[start]), zone)
+            instant = _dt.datetime.fromtimestamp(when + offsets[start], _dt.timezone.utc
                                                  ).replace(tzinfo=None).isoformat(timespec="seconds")
             changes.append((instant + iso_offset_text(offsets[start]), iso_offset_text(offsets[start])))
     if len(distinct) == 1:
@@ -2031,6 +2325,109 @@ def time_pair_pages(doc: VszDoc, page: str, traces: Sequence[Trace], mjd_x: str,
     xy_page(doc, page + "_local", with_x(traces, local_x), title=title, xlabel=local_axis.label,
             ylabel=ylabel, xmode="datetime", datetime_format=local_axis.datetime_format, **xy_kwargs)
     return [page + "_mjd", page + "_local"]
+
+
+# %% ===========================================================================
+#    TIME GAPS: LINE BREAKS AND AXIS BREAKS (0.0.27)
+# =============================================================================
+# A time series has a GAP between samples i and i+1 when
+#
+#     dt_i = t[i+1] - t[i]  >  K * median(dt)                      (line break)
+#
+# where median(dt) is the median of the positive sample steps of THAT trace
+# and K a multiplier (default GAP_K = 10). The threshold is a multiple of the
+# median step: nothing is divided. The trace is broken there (a NaN row is
+# inserted after sample i, so Veusz and pyqtgraph stop the line and restart
+# it after the gap), while the time axis stays one continuous axis.
+#
+# A LARGE gap may also break the axis itself (an axis-broken widget that
+# leaves the empty interval out):
+#
+#     dt  >  n * K * median(dt)                                   (axis break)
+#
+# with n = 0 meaning "never" (one continuous axis); the default n = 100 cuts
+# the axis only at gaps 100 times longer than a line break. On a graph
+# with several traces the axis is cut only where NO trace has data for
+# longer than n times the largest line-break threshold of its traces, so an
+# axis break always falls where every line is already broken.
+# A manual threshold in seconds (manual_s > 0) replaces K * median(dt).
+
+#: Default line-break multiplier K (gap when dt > K * median(dt)).
+GAP_K = 10.0
+#: Default axis-break multiple n (axis cut when dt > n * K * median(dt)); 0 = never.
+GAP_AXIS_N = 100.0
+#: Fraction of a gap kept visible at each side of an axis break.
+GAP_AXIS_MARGIN = 0.02
+
+
+def median_step(t: Any) -> float:
+    """Median of the positive, finite steps of ``t`` (0.0 when there is none).
+
+    ``t`` should be in time order; NaN samples (and the steps next to them)
+    are ignored, so a series that already holds NaN gap rows is measured on
+    its real samples.
+    """
+    values = np.asarray(t, dtype=float).ravel()
+    steps = np.diff(values)
+    steps = steps[np.isfinite(steps) & (steps > 0)]
+    return float(np.median(steps)) if steps.size else 0.0
+
+
+def gap_threshold(t: Any, k: float = GAP_K, manual: float = 0.0) -> float:
+    """Line-break threshold in the units of ``t``: ``manual`` when > 0, else
+    ``k * median_step(t)`` (0.0 = no threshold, e.g. fewer than 2 samples)."""
+    if manual and float(manual) > 0.0:
+        return float(manual)
+    return float(k) * median_step(t)
+
+
+def gap_positions(t: Any, threshold: float) -> np.ndarray:
+    """Insertion indices of the gap rows: ``i + 1`` for every step
+    ``t[i+1] - t[i] > threshold``. Empty when ``threshold`` <= 0 or ``t``
+    is not in time order (unsorted data cannot be cut at gaps)."""
+    values = np.asarray(t, dtype=float).ravel()
+    if values.size < 2 or not threshold or threshold <= 0.0:
+        return np.zeros(0, dtype=np.int64)
+    steps = np.diff(values)
+    finite = np.isfinite(steps)
+    if np.any(steps[finite] < 0):
+        return np.zeros(0, dtype=np.int64)
+    return (np.flatnonzero(finite & (steps > threshold)) + 1).astype(np.int64)
+
+
+def insert_gaps(values: Any, positions: Any) -> np.ndarray:
+    """``values`` (float) with a NaN inserted before each of ``positions``
+    (from gap_positions); the input is not changed."""
+    array = np.asarray(values, dtype=float).ravel()
+    where = np.asarray(positions, dtype=np.int64).ravel()
+    return array.copy() if where.size == 0 else np.insert(array, where, np.nan)
+
+
+def axis_break_pairs(t: Any, threshold: float,
+                     margin: float = GAP_AXIS_MARGIN) -> list[tuple[float, float]]:
+    """(start, end) intervals to leave out of a broken axis.
+
+    ``t`` holds the x values of every trace on the axis (any order, NaN
+    allowed); an interval is every step of the sorted values longer than
+    ``threshold`` (> 0), shrunk by ``margin`` of its own length at each end
+    so the samples beside the gap stay visible. Units are those of ``t``.
+    0.0.27: the shrink is relative to the gap; an absolute 1e-9 x |t| (the
+    FitsAutoPlot rule before) is about 5 s at MJD 61000, which swallowed
+    short gaps on MJD axes.
+    """
+    if not threshold or threshold <= 0.0:
+        return []
+    values = np.unique(np.asarray(t, dtype=float).ravel())
+    values = values[np.isfinite(values)]
+    if values.size < 2:
+        return []
+    steps = np.diff(values)
+    pairs = []
+    for index in np.flatnonzero(steps > threshold):
+        start, stop = float(values[index]), float(values[index + 1])
+        pad = float(margin) * (stop - start)
+        pairs.append((start + pad, stop - pad))
+    return pairs
 
 
 # %% ===========================================================================
@@ -2220,6 +2617,9 @@ def smith_grid(prefix: str = "", kind: str = "z", *,
 
     def add_lines(part: str, curves: Sequence[tuple[np.ndarray, np.ndarray]], line_colour: str,
                   width: str, style: str = "solid") -> None:
+        """Add one family of grid curves as joined x/y datasets (NaN between
+        curves, rotated for an admittance chart) and its xy line widget.
+        """
         x_values, y_values = _joined(curves)
         x_name, y_name = f"{prefix}_{part}_x", f"{prefix}_{part}_y"
         numeric[x_name], numeric[y_name] = turn * x_values, turn * y_values
@@ -2228,6 +2628,9 @@ def smith_grid(prefix: str = "", kind: str = "z", *,
 
     def add_labels(part: str, positions: Sequence[tuple[float, float]], strings: Sequence[str],
                    horizontal: str, vertical: str) -> None:
+        """Add grid value labels for one family (nothing when labels are off or
+        there are no strings).
+        """
         if not labels or not strings:
             return
         x_name, y_name, t_name = (f"{prefix}_{part}_lx", f"{prefix}_{part}_ly",
@@ -2824,6 +3227,11 @@ class VeuszAppender:
 
     def __init__(self, path: str | os.PathLike, create: bool = True, locking: Any = None,
                  veusz_version: str = VSZH5_LAYOUT_VERSION, writer_tag: str = "") -> None:
+        """Open ``path`` for appending (created when missing and ``create``).
+
+        ``locking`` is passed to h5py (None: h5py's default); a file locked by
+        another process raises AppendLockedError.
+        """
         if h5py is None:
             raise RuntimeError("h5py is required to append to .vszh5 files "
                                "(mamba install -c conda-forge h5py)")
@@ -2867,14 +3275,17 @@ class VeuszAppender:
 
     # --- context manager ------------------------------------------------------
     def __enter__(self) -> "VeuszAppender":
+        """Context manager: return the appender."""
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """Close the file, flushing unless an exception occurred."""
         # Flush tags/timestamps only when the block succeeded; always close.
         self.close(flush=exc_type is None)
 
     # --- inspection -----------------------------------------------------------
     def _group(self, name: str) -> Any:
+        """HDF5 group of dataset ``name``, or None when it does not exist."""
         return self.data.get(escape_hdf_name(name))
 
     def has(self, name: str) -> bool:
@@ -2901,6 +3312,12 @@ class VeuszAppender:
     # --- creating datasets ------------------------------------------------------
     def _create(self, name: str, datatype: str, values: Any, prefix_nan: int,
                 tags: Sequence[str]) -> None:
+        """Create appendable dataset ``name`` of ``datatype`` ('1d' or 'date').
+
+        Refuses an existing name and multidimensional ``values`` before anything
+        is written (0.0.23); ``prefix_nan`` NaN rows come first so a new column
+        lines up with older ones; ``tags`` are attached.
+        """
         if self.has(name):
             raise ValueError(f"dataset {name!r} already exists")
         # 0.0.23: refuse 2-D (or higher) input before the group exists; it
@@ -3184,6 +3601,9 @@ def add_pdf_bookmarks(pdf_path: str | os.PathLike, outline: Sequence[OutlineEntr
     n_pages = len(writer.pages)
 
     def first_page(entry: OutlineEntry) -> int | None:
+        """Page of an outline entry: its own page, else the first page of its
+        children (None when neither has one).
+        """
         _, page, children = _outline_parts(entry)
         if page is not None:
             return int(page)
@@ -3192,6 +3612,9 @@ def add_pdf_bookmarks(pdf_path: str | os.PathLike, outline: Sequence[OutlineEntr
     count = 0
 
     def add(entries: Sequence[OutlineEntry], parent: Any) -> None:
+        """Add ``entries`` (and their children, recursively) under ``parent``;
+        an entry pointing outside the PDF raises ValueError.
+        """
         nonlocal count
         for entry in entries:
             name, _, children = _outline_parts(entry)

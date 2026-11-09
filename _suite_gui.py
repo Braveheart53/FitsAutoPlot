@@ -4,6 +4,7 @@
 _suite_gui.py
 -----------------------------------------------------------------------------
 # %% Header Info
+--------
 
 Shared window chrome for every GUI of the GBO Electronics Scientific Plotting
 Suite (ATR, CSV/TSV, R&S FSW, Touchstone, FITS and Franks AutoPlot):
@@ -23,15 +24,58 @@ Suite (ATR, CSV/TSV, R&S FSW, Touchstone, FITS and Franks AutoPlot):
 @author: William W. Wallace
 Author Email: wwallace@nrao.edu
 Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
 Company: NRAO / Green Bank Observatory (GBO)
 Licence: GPL-3.0-or-later
 Compatible with: Python 3.8+, qtpy (PySide6 preferred; PyQt5/PyQt6 work)
 
 # %%% Revisions
+--------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.1.1: Header template and docstrings (no functional change).
+Date: 2026-11-09
+#              * Header in the author's template: author contact lines and,
+#                under this entry, Function Descriptions, Variable
+#                Descriptions and More Info.
+#              * Docstrings for every function, class and method.  No change
+#                to what the program does.
+# %%%%% Function Descriptions
+        saved_theme: The suite's stored theme ('light' or 'dark').
+        save_theme: Store the suite theme (shared with the launcher).
+        build_palette: Fusion palette for 'light' or 'dark' (the launcher's colours).
+        apply_theme: Fusion style and the theme's palette for the whole application.
+        dialog_stylesheet: Style sheet that themes ONE dialog and its children (plugins in Veusz).
+        add_view_menu: View > Light Mode / Dark Mode (exclusive); returns (light, dark) actions.
+        add_file_menu: File menu: the given (text, slot, shortcut) entries, then Exit (Ctrl+Q).
+        _module_version: ``__version__`` of module ``name``; 'installed' when it has none, 'not installed' when it cannot be imported.
+        about_details: Plain-text runtime details for the About dialog.
+        show_about: Help > About in the suite's common layout.
+        add_help_menu: Help > About <name> and About Qt.
+        make_plot_panel: (widget, panel): the pyqtgraph ProjectPlotPanel, or an explanation label (panel None) when pyqtgraph is missing; processing and saving still work.
+        find_veusz: Veusz program: VEUSZ_EXECUTABLE, then vszh5_writer.find_veusz_exe().
+        export_with_veusz: PDF (one bookmark per page) and per-page PNG files of a saved project, rendered by Veusz through vszh5_writer.render_pages; returns the files.
+        open_in_veusz: Open a saved project in the Veusz program (optional viewer).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION = "0.1.1"
+        SUITE_ORG = "NRAO-GBO"
+        SUITE_APP = "GBO Electronics Scientific Plotting Suite"
+        THEME_KEY = "theme"
+        AUTHOR = "William W. Wallace"
+        EMAIL = "wwallace@nrao.edu"
+        COMPANY = "NRAO / Green Bank Observatory (GBO)"
+        LICENCE = "GPL-3.0-or-later"
+        COPYRIGHT = "Copyright (C) 2025-2026 William W. Wallace"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+# %%%%% More Info
+    Shared by the launcher and every program (theme, menus, About box, Veusz helpers).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.1.0: First version - suite-wide theme, menus, About, Plots tab.
-# Date: 2026-11-05
+Date: 2026-11-05
 =============================================================================
 """
 # %% Import Modules
@@ -55,7 +99,7 @@ except ImportError:  # pragma: no cover - qtpy 1.x with Qt5
     from qtpy.QtWidgets import QAction, QActionGroup  # type: ignore  # noqa: E402
 from qtpy.QtWidgets import QApplication, QLabel, QMessageBox  # noqa: E402
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 __version__ = VERSION
 
 # %% Suite identity (same values as postProcessing_Launcher.py)
@@ -200,6 +244,9 @@ def add_file_menu(window: Any, actions: Iterable[Tuple[str, Callable[[], Any], s
 
 
 def _module_version(name: str) -> str:
+    """``__version__`` of module ``name``; 'installed' when it has none,
+    'not installed' when it cannot be imported.
+    """
     try:
         module = sys.modules.get(name) or __import__(name)
         return str(getattr(module, "__version__", "installed"))
