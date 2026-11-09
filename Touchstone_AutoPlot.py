@@ -14,7 +14,8 @@ Batch Touchstone (.s1p ... .sNp) processor with a Qt GUI:
       band-pass or band-stop, gated response shown in the time domain and
       back in the frequency domain on the measured frequency axis,
     * Smith charts (scikit-rf) with PNG / SVG / PDF / interactive HTML
-      export; combined PDF with a file > parameter bookmark hierarchy,
+      export; combined PDF with a file > parameter bookmark hierarchy;
+      Smith chart pages in the Veusz project (0.7.0),
     * native Veusz project (.vszh5) written with h5py through
       ``_autoplot_native.NativeDocument`` - Veusz is NOT needed to create
       the file, only (optionally) to view it.
@@ -36,6 +37,61 @@ Optional: cupy (GPU time-domain transform), pypdf or PyPDF2 (bookmarked PDF),
 # %%% Revisions
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
+
+# %%%% 0.7.0: Smith charts in the Veusz project (writer 0.0.26)
+Date: 2026-11-09
+    Added:
+      * "Smith chart pages in the Veusz project" (Smith settings, on by
+        default): Prepare Smith Charts also adds a page "Smith_<file>" per
+        file with its reflection parameters (S11, S22, ...) at the reference
+        impedance, drawn with ordinary Veusz widgets by vszh5_writer 0.0.26
+        (aspect-locked graph, resistance / reactance or conductance /
+        susceptance grid, labels and VSWR circles as chosen, legend beside
+        the chart).  Graph "<file>_Smith_Graph"; traces named after their
+        Im(Gamma) dataset "<file>_<Sii>_gamma_im" (Re in "_re", frequency in
+        "_freq_Hz").  The Plots tab draws these pages as interactive Smith
+        charts (f, Gamma, Z, VSWR at the cursor).
+      * Writer 0.0.26 / _autoplot_native 0.4.0 / _autoplot_pyqtgraph 0.3.0.
+
+# %%%% 0.6.1: Names as in 0.4.x, traces named after their data, writer 0.0.25
+Date: 2026-11-09
+    Changed:
+      * Graph names of the time-gated pages are those of the 0.4.x script
+        again: "<file>_<Sij>_TG_Graph" (time domain) and
+        "<file>_<Sij>_TG_Freq_Graph" (gated frequency response); 0.5.0 had
+        shortened them to _TD / _FD.  Every trace is named after its y
+        dataset ("<file>_S11_mag_dB", "<file>_S21_td_gated_dB", ...)
+        instead of "S11_mag", "S21_td" ..., so names are unique and say
+        what they draw.
+      * Page notes: "Plot title", "Source: <file>", the Touchstone header
+        (comment and option lines) and a summary line (ports, points,
+        frequency span, z0), built with vszh5_writer.header_notes.
+      * Writer 0.0.25 / _autoplot_native 0.3.0.
+
+# %%%% 0.6.0: pyqtgraph previews and Plots tab, suite theme, writer 0.0.24
+Date: 2026-11-05
+    Changed:
+      * Time-domain preview drawn with pyqtgraph (shared
+        _autoplot_pyqtgraph.TracePlot): time response (ungated / gated, dB)
+        with the gate as a shaded region, and the measured / gated
+        frequency response below, both with values at the cursor.  In
+        Manual gate mode the region can be dragged; the gate centre and
+        span boxes follow.
+      * Smith chart preview drawn with pyqtgraph (SmithPlot): impedance or
+        admittance grid, optional labels and VSWR circles (scikit-rf's 1.5,
+        2, 3, 5), readout of f, Gamma, Z and VSWR under the cursor.
+        Matplotlib (Agg, no Qt backend) is used only for the Smith chart
+        files (PNG / SVG / PDF with bookmarks / mpld3 HTML).  Without
+        pyqtgraph the matplotlib previews are used as before.
+      * New "Plots" tab: every page of the Veusz project (frequency and
+        time-gated pages) in pyqtgraph.
+      * Theme: the suite-wide light / dark setting shared with the launcher
+        and the other tools (_suite_gui), instead of a Touchstone-only
+        setting; the previews follow the theme.
+      * The .vszh5 is written by vszh5_writer 0.0.24 through
+        _autoplot_native 0.2.0 (atomic save, gzip for large arrays).
+      * Open in Veusz and the new File > Export PDF / PNG (Veusz) use the
+        suite helpers.
 
 # %%%% 0.5.0: scikit-rf time domain and gating, native .vszh5, defect fixes
 Date: 2026-11-05
@@ -103,7 +159,6 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import warnings
@@ -125,9 +180,8 @@ from skrf import time as skrf_time
 
 # %%% Qt (qtpy first so matplotlib's Qt backend picks the same binding)
 if getattr(sys, "frozen", False):
-    from PySide6.QtCore import QSettings, Qt, QThread, Signal, qVersion
-    from PySide6.QtGui import (QAction, QActionGroup, QColor, QKeySequence,
-                               QPalette)
+    from PySide6.QtCore import Qt, QThread, Signal, qVersion
+    from PySide6.QtGui import QAction, QActionGroup, QKeySequence
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
         QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
@@ -136,8 +190,8 @@ if getattr(sys, "frozen", False):
     QT_BINDING = "PySide6"
 else:
     import qtpy
-    from qtpy.QtCore import QSettings, Qt, QThread, Signal, qVersion
-    from qtpy.QtGui import QColor, QKeySequence, QPalette
+    from qtpy.QtCore import Qt, QThread, Signal, qVersion
+    from qtpy.QtGui import QKeySequence
     try:
         from qtpy.QtGui import QAction, QActionGroup
     except ImportError:  # pragma: no cover - qtpy 1.x
@@ -151,11 +205,18 @@ else:
 
 # %%% Plotting
 import matplotlib
-matplotlib.use("QtAgg")
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+
+# %%% Interactive previews and the Plots tab (pyqtgraph); suite theme / About
+import _suite_gui as suite
+try:
+    import _autoplot_pyqtgraph as autoplot_pg
+    autoplot_pg.configure(antialias=True, wheel_needs_ctrl=True)
+    PYQTGRAPH_ERROR = ""
+except Exception as _exc:  # pragma: no cover - pyqtgraph missing
+    autoplot_pg = None
+    PYQTGRAPH_ERROR = "%s: %s" % (type(_exc).__name__, _exc)
 
 # %%% Optional modules
 try:
@@ -200,7 +261,7 @@ except ImportError:  # pragma: no cover - script copied without the module
 
 # %% Application identity
 APP_NAME = "Touchstone AutoPlot"
-__version__ = "0.5.0"
+__version__ = "0.7.0"
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO / Green Bank Observatory (GBO)"
@@ -867,6 +928,7 @@ class TouchstonePlotter:
         self.dataset_name = dataset_name
         self.run_tag = sanitize_name(dataset_name)
         self.unwrap_phase = unwrap_phase
+        self._smith_grids: Dict[str, Any] = {}     # 0.7.0: grid datasets written once
         if VEUSZ_BACKEND == "native":
             self.doc = NativeDocument("Touchstone_AutoPlot")
         elif VEUSZ_BACKEND == "embedded":
@@ -971,9 +1033,9 @@ class TouchstonePlotter:
             self.doc.SetData(phase_name, np.degrees(phase))
             names += [mag_name, phase_name]
             color = get_sparam_color(param)
-            self._configure_xy_plot(graph_mag.Add('xy', name="%s_mag" % param),
+            self._configure_xy_plot(graph_mag.Add('xy', name=mag_name),
                                     freq_name, mag_name, color, key=param)
-            self._configure_xy_plot(graph_phase.Add('xy', name="%s_phase" % param),
+            self._configure_xy_plot(graph_phase.Add('xy', name=phase_name),
                                     freq_name, phase_name, color, key=param)
         self._tag(base, names)
 
@@ -1009,18 +1071,18 @@ class TouchstonePlotter:
                 self.doc.SetData(td_name, to_db(entry['td']))
                 self.doc.SetData(tdg_name, to_db(entry['td_gated']))
                 names += [td_name, tdg_name]
-                graph = grid.Add('graph', name="%s_%s_TD" % (base, param))
+                graph = grid.Add('graph', name="%s_%s_TG_Graph" % (base, param))
                 self._configure_standard_graph(
                     graph, "%s - %s time domain (gate %.4g +/- %.4g ns)" % (
                         key, param, entry['gate_center_ns'],
                         entry['gate_span_ns'] / 2.0),
                     'Time (ns)', 'Magnitude (dB)',
                     td_axis_floor(entry['td'], entry['td_gated']), "Auto")
-                self._configure_xy_plot(graph.Add('xy', name="%s_td" % param),
+                self._configure_xy_plot(graph.Add('xy', name=td_name),
                                         time_name, td_name, 'grey',
                                         key="%s ungated" % param,
                                         style="dotted", marker="none")
-                self._configure_xy_plot(graph.Add('xy', name="%s_td_gated" % param),
+                self._configure_xy_plot(graph.Add('xy', name=tdg_name),
                                         time_name, tdg_name, color,
                                         key="%s gated" % param, transparency=30)
             if plot_frequency_domain:
@@ -1029,24 +1091,91 @@ class TouchstonePlotter:
                 self.doc.SetData(fd_name, to_db(entry['s']))
                 self.doc.SetData(fdg_name, to_db(entry['s_gated']))
                 names += [fd_name, fdg_name]
-                graph = grid.Add('graph', name="%s_%s_FD" % (base, param))
+                graph = grid.Add('graph', name="%s_%s_TG_Freq_Graph" % (base, param))
                 self._configure_standard_graph(
                     graph, "%s - %s gated frequency response" % (key, param),
                     'Frequency (GHz)', 'Magnitude (dB)')
-                self._configure_xy_plot(graph.Add('xy', name="%s_fd" % param),
+                self._configure_xy_plot(graph.Add('xy', name=fd_name),
                                         freq_name, fd_name, 'grey',
                                         key="%s measured" % param,
                                         style="dotted", marker="none")
-                self._configure_xy_plot(graph.Add('xy', name="%s_fd_gated" % param),
+                self._configure_xy_plot(graph.Add('xy', name=fdg_name),
                                         freq_name, fdg_name, color,
                                         key="%s gated" % param, transparency=30)
         self._tag(base, names)
 
+    def create_smith_page(self, key: str, data: Dict[str, Any], networks: Dict[str, Network],
+                          chart: "SmithChartConfig") -> str:
+        """
+        Smith chart page of one file in the Veusz project (0.7.0).
+
+        Parameters
+        ----------
+        key : str
+            File key (as for the other pages).
+        data : dict
+            Processed file (header, path, network) for the page notes.
+        networks : dict
+            {parameter: one-port Network at the chart's reference impedance},
+            normally the reflection parameters S11, S22, ...
+        chart : SmithChartConfig
+            Chart type (z / y), labels, VSWR circles and reference impedance.
+
+        Returns
+        -------
+        str
+            Page name "Smith_<file>"; the graph is "<file>_Smith_Graph" and
+            each trace is named after its Im(Gamma) dataset
+            "<file>_<Sii>_gamma_im" (Re in "_re", frequency in "_freq_Hz").
+            The grid (vszh5_writer.smith_grid) is written once per chart
+            style and shared by every Smith page of the project.
+        """
+        import vszh5_writer as vw
+        from _autoplot_native import add_smith_page
+        base = sanitize_name(key)
+        prefix = "smith_%s%s%s" % (chart.chart_type, "_vswr" if chart.draw_vswr else "",
+                                   "" if chart.draw_labels else "_nolabels")
+        grid = self._smith_grids.get(prefix)
+        if grid is None:
+            grid = vw.smith_grid(prefix, chart.chart_type, labels=chart.draw_labels,
+                                 vswr=vw.SMITH_VSWR if chart.draw_vswr else ())
+            grid.write(self.doc)
+            self._smith_grids[prefix] = grid
+        traces, names = [], list(grid.dataset_names())
+        for param, op in networks.items():
+            stem = "%s_%s_gamma" % (base, param)
+            for name, values in vw.smith_trace_datasets(stem, op.s[:, 0, 0], op.f).items():
+                self.doc.SetData(name, values)
+                names.append(name)
+            colour = get_sparam_color(param)
+            traces.append(vw.smith_trace(stem, param, colour="" if colour == "auto" else colour,
+                                         width="1.5pt"))
+        page_name = "Smith_%s" % base
+        self._remove_page(page_name)
+        kind = "admittance" if chart.chart_type == "y" else "impedance"
+        add_smith_page(self.doc.Root, page_name, grid, traces,
+                       title="%s - Smith chart (%s, Z0 = %g ohm)" % (key, kind,
+                                                                    chart.reference_impedance),
+                       notes="%s\nSmith chart: %s, renormalized to Z0 = %g ohm" % (
+                           self._notes(data), ", ".join(networks), chart.reference_impedance),
+                       graph_name="%s_Smith_Graph" % base,
+                       graph_notes="Z0 = %g ohm" % chart.reference_impedance,
+                       key=True)
+        self._tag(base, names)
+        return page_name
+
     def _notes(self, data: Dict[str, Any]) -> str:
-        """Page notes: run title, file path and the Touchstone header."""
-        lines = ["Plot title: %s" % self.plot_title,
-                 "File: %s" % data.get('file_path', '')]
-        return "\n".join(lines + list(data.get('header_info', [])))
+        """Page notes: run title, source file and the Touchstone header
+        (comment and option lines), via vszh5_writer.header_notes."""
+        from vszh5_writer import header_notes
+        network = data.get('network')
+        extra = []
+        if network is not None:
+            extra.append("%d-port, %d points, %.6g - %.6g GHz, z0 %s ohm" % (
+                network.nports, len(network.f), network.f[0] / 1e9, network.f[-1] / 1e9,
+                ", ".join("%g" % z for z in np.unique(np.real(network.z0)))))
+        return header_notes(list(data.get('header_info', [])), source=data.get('file_path', ''),
+                            title="Plot title: %s" % self.plot_title, extra=extra)
 
     def save(self, filename: str) -> str:
         """
@@ -1067,33 +1196,118 @@ class TouchstonePlotter:
         return target
 
 
-# %% Matplotlib preview canvas
-class TouchstonePlotCanvas(FigureCanvas):
-    """Matplotlib canvas for the time-domain and Smith chart previews."""
+# %% Previews: pyqtgraph (matplotlib Qt canvas only when pyqtgraph is missing)
+def _matplotlib_canvas(parent, width, height):
+    """Fallback matplotlib Qt canvas (imported only when needed)."""
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+    fig = Figure(figsize=(width, height), dpi=100, tight_layout=True)
+    canvas = FigureCanvasQTAgg(fig)
+    canvas.setParent(parent)
+    return canvas, fig
 
-    def __init__(self, parent=None, width=8, height=6, dpi=100):
-        """Create the figure (white background in both themes)."""
-        self.fig = Figure(figsize=(width, height), dpi=dpi, tight_layout=True)
-        super().__init__(self.fig)
-        self.setParent(parent)
-        self.fig.patch.set_facecolor('white')
 
+class TouchstonePlotCanvas(QWidget):
+    """
+    Time-domain and Smith chart previews.
+
+    pyqtgraph (shared _autoplot_pyqtgraph plots, light / dark) when it is
+    installed, otherwise the matplotlib canvas of 0.5.0.  ``gate_dragged``
+    (callable(centre_ns, span_ns)) is called when the user drags the gate
+    region of a manual gate.
+    """
+
+    def __init__(self, parent=None, width=8, height=6, dpi=100, dark=False):
+        super().__init__(parent)
+        self.dark = bool(dark)
+        self.gate_dragged: Optional[Callable[[float, float], None]] = None
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._plots: List[Any] = []
+        self.fig = None
+        self._canvas = None
+        if autoplot_pg is None:
+            self._canvas, self.fig = _matplotlib_canvas(self, width, height)
+            self._layout.addWidget(self._canvas)
+
+    # ----- helpers -----------------------------------------------------------
+    def _clear(self) -> None:
+        for plot in self._plots:
+            try:
+                plot.dispose()
+            except Exception:
+                pass
+            plot.setParent(None)
+            plot.deleteLater()
+        self._plots = []
+
+    def _add(self, plot) -> None:
+        self._layout.addWidget(plot, 1)
+        self._plots.append(plot)
+        plot.hovered.connect(lambda x, y, p=plot: p.set_cursor(x, y))
+        plot.unhovered.connect(lambda p=plot: p.set_cursor(None))
+
+    def apply_theme(self, dark: bool) -> None:
+        self.dark = bool(dark)
+        for plot in self._plots:
+            plot.apply_theme(self.dark)
+
+    # ----- Smith chart --------------------------------------------------------
     def plot_smith_chart(self, network, title="Smith Chart", chart_type="z",
                          draw_labels=True, draw_vswr=True):
         """Smith chart of a one-port."""
-        make_smith_figure(network, title, chart_type, draw_labels, draw_vswr,
-                          figure=self.fig)
-        self.draw()
+        if self.fig is not None:
+            make_smith_figure(network, title, chart_type, draw_labels, draw_vswr,
+                              figure=self.fig)
+            self._canvas.draw()
+            return
+        self._clear()
+        z0 = float(np.real(np.ravel(network.z0)[0])) if np.size(network.z0) else 50.0
+        plot = autoplot_pg.SmithPlot(
+            "%s (%s)" % (title, "impedance" if chart_type == "z" else "admittance"),
+            chart_type=chart_type, z0=z0, dark=self.dark,
+            draw_labels=draw_labels, draw_vswr=draw_vswr)
+        plot.add_trace(title.split(" - ")[-1], network.s[:, 0, 0], network.f)
+        self._add(plot)
 
+    # ----- time domain -------------------------------------------------------
     def plot_time_domain(self, time_ns, td, td_gated, freq_hz=None, s=None,
-                         s_gated=None, gate=None, title="Time Domain"):
+                         s_gated=None, gate=None, title="Time Domain", movable=False):
         """Time domain (dB) with the gate shaded; gated frequency response below."""
+        if self.fig is not None:
+            self._plot_time_domain_mpl(time_ns, td, td_gated, freq_hz, s, s_gated, gate, title)
+            return
+        self._clear()
+        top = autoplot_pg.TracePlot(title, "Time (ns)", "Magnitude (dB)", False, dark=self.dark)
+        top.add_trace("ungated", time_ns, to_db(td), "#9399b2", "dotted")
+        top.add_trace("gated", time_ns, to_db(td_gated), "#f28e2b")
+        floor = td_axis_floor(td, td_gated)
+        peak = float(np.nanmax(to_db(np.concatenate([np.ravel(td), np.ravel(td_gated)]))))
+        top.plot.setYRange(floor, peak + 5.0, padding=0.02)
+        if gate is not None:
+            centre, span = gate
+            top.set_region(centre - span / 2.0, centre + span / 2.0, movable=movable,
+                           on_change=self._region_moved if movable else None)
+        top._set_header(None)
+        self._add(top)
+        if freq_hz is not None and s is not None:
+            bottom = autoplot_pg.TracePlot("Frequency response", "Frequency (GHz)",
+                                           "Magnitude (dB)", False, dark=self.dark)
+            bottom.add_trace("measured", freq_hz / 1e9, to_db(s), "#9399b2", "dotted")
+            bottom.add_trace("gated", freq_hz / 1e9, to_db(s_gated), "#4e79a7")
+            bottom._set_header(None)
+            self._add(bottom)
+
+    def _region_moved(self, start: float, stop: float) -> None:
+        if self.gate_dragged is not None and stop > start:
+            self.gate_dragged(0.5 * (start + stop), stop - start)
+
+    def _plot_time_domain_mpl(self, time_ns, td, td_gated, freq_hz, s, s_gated, gate, title):
+        """0.5.0 matplotlib preview (pyqtgraph missing)."""
         self.fig.clear()
         two = freq_hz is not None and s is not None
         ax = self.fig.add_subplot(211 if two else 111)
         ax.plot(time_ns, to_db(td), ':', color='grey', label="ungated")
-        ax.plot(time_ns, to_db(td_gated), '-', linewidth=1.5, alpha=0.8,
-                label="gated")
+        ax.plot(time_ns, to_db(td_gated), '-', linewidth=1.5, alpha=0.8, label="gated")
         if gate is not None:
             center, span = gate
             ax.axvspan(center - span / 2.0, center + span / 2.0, color='orange',
@@ -1107,13 +1321,13 @@ class TouchstonePlotCanvas(FigureCanvas):
         if two:
             ax2 = self.fig.add_subplot(212)
             ax2.plot(freq_hz / 1e9, to_db(s), ':', color='grey', label="measured")
-            ax2.plot(freq_hz / 1e9, to_db(s_gated), '-', linewidth=1.5,
-                     alpha=0.8, label="gated")
+            ax2.plot(freq_hz / 1e9, to_db(s_gated), '-', linewidth=1.5, alpha=0.8,
+                     label="gated")
             ax2.set_xlabel("Frequency (GHz)")
             ax2.set_ylabel("Magnitude (dB)")
             ax2.grid(True, alpha=0.3)
             ax2.legend(loc="lower left", fontsize=8)
-        self.draw()
+        self._canvas.draw()
 
 
 # %% File loading
@@ -1216,29 +1430,7 @@ class FunctionWorker(QThread):
             self.error_occurred.emit("%s: %s" % (type(exc).__name__, exc))
 
 
-# %% Theme (View > Light Mode / Dark Mode)
-def build_palette(mode: str) -> QPalette:
-    """Fusion palette for 'light' or 'dark'."""
-    app = QApplication.instance()
-    if mode != "dark":
-        return app.style().standardPalette()
-    roles = QPalette.ColorRole
-    pal = QPalette()
-    window, base, text = QColor(53, 53, 53), QColor(35, 35, 35), QColor(220, 220, 220)
-    for role, color in ((roles.Window, window), (roles.WindowText, text),
-                        (roles.Base, base), (roles.AlternateBase, window),
-                        (roles.ToolTipBase, QColor(44, 62, 80)),
-                        (roles.ToolTipText, text), (roles.Text, text),
-                        (roles.Button, window), (roles.ButtonText, text),
-                        (roles.BrightText, QColor(255, 85, 85)),
-                        (roles.Link, QColor(93, 173, 226)),
-                        (roles.Highlight, QColor(42, 130, 218)),
-                        (roles.HighlightedText, QColor(0, 0, 0))):
-        pal.setColor(role, color)
-    disabled = QPalette.ColorGroup.Disabled
-    for role in (roles.Text, roles.ButtonText, roles.WindowText):
-        pal.setColor(disabled, role, QColor(127, 127, 127))
-    return pal
+# %% Theme: _suite_gui (suite-wide light / dark, shared with the launcher)
 
 
 def _module_version(name: str) -> str:
@@ -1306,8 +1498,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.td_results: Dict[str, dict] = {}
         self.smith_networks: Dict[str, dict] = {}
         self._worker: Optional[QThread] = None
-        self.settings = QSettings(ORGANIZATION_NAME, APP_NAME)
-        self.theme_mode = str(self.settings.value("theme", "light"))
+        self.theme_mode = suite.saved_theme()     # shared with the launcher and tools
 
         self._build_menu()
         self.setup_ui()
@@ -1328,7 +1519,9 @@ class TouchstoneMainWindow(QMainWindow):
         for text, slot, shortcut in (
                 ("&Open Touchstone Files...", self._browse_files, "Ctrl+O"),
                 ("&Clear File List", self._clear_files, ""),
-                ("&Save Veusz Project (.vszh5)...", self._save_project, "Ctrl+S")):
+                ("&Save Veusz Project (.vszh5)...", self._save_project, "Ctrl+S"),
+                ("Open Last Project in &Veusz", self._open_last_in_veusz, ""),
+                ("&Export Last Project to PDF / PNG (Veusz)", self._export_pages, "")):
             act = QAction(text, self)
             if shortcut:
                 act.setShortcut(QKeySequence(shortcut))
@@ -1358,19 +1551,16 @@ class TouchstoneMainWindow(QMainWindow):
         help_menu.addAction(act)
 
     def _apply_theme(self, mode: str, persist: bool = True):
-        """Light or dark palette (plots keep a white background)."""
-        mode = "dark" if mode == "dark" else "light"
+        """Suite light / dark theme (stored for every tool); previews follow."""
+        mode = suite.apply_theme(mode, persist=persist)
         self.theme_mode = mode
-        app = QApplication.instance()
-        app.setStyle("Fusion")
-        app.setPalette(build_palette(mode))
         self.act_light.setChecked(mode == "light")
         self.act_dark.setChecked(mode == "dark")
-        if persist:
-            try:
-                self.settings.setValue("theme", mode)
-            except Exception:
-                pass
+        for widget in (getattr(self, "td_plot_canvas", None),
+                       getattr(self, "smith_plot_canvas", None),
+                       getattr(self, "plot_panel", None)):
+            if widget is not None:
+                widget.apply_theme(mode == "dark")
 
     def show_about(self):
         """Help > About."""
@@ -1396,6 +1586,8 @@ class TouchstoneMainWindow(QMainWindow):
         self.setup_main_tab()
         self.setup_time_domain_tab()
         self.setup_smith_chart_tab()
+        widget, self.plot_panel = suite.make_plot_panel(self.theme_mode == "dark")
+        self.tab_widget.addTab(widget, "Plots")
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -1577,8 +1769,9 @@ class TouchstoneMainWindow(QMainWindow):
         layout.addWidget(controls)
 
         right = QVBoxLayout()
-        self.td_plot_canvas = TouchstonePlotCanvas(tab, width=8, height=6)
-        right.addWidget(NavigationToolbar(self.td_plot_canvas, tab))
+        self.td_plot_canvas = TouchstonePlotCanvas(tab, width=8, height=6,
+                                                   dark=self.theme_mode == "dark")
+        self.td_plot_canvas.gate_dragged = self._gate_dragged
         right.addWidget(self.td_plot_canvas)
         layout.addLayout(right, stretch=1)
 
@@ -1621,6 +1814,12 @@ class TouchstoneMainWindow(QMainWindow):
         self.draw_vswr_checkbox.setChecked(self.smith_config.draw_vswr)
         self.draw_vswr_checkbox.toggled.connect(self._update_draw_vswr)
         sm.addRow(self.draw_vswr_checkbox)
+        self.smith_pages_checkbox = QCheckBox("Smith chart pages in the Veusz project")
+        self.smith_pages_checkbox.setToolTip(
+            "Prepare also adds one Smith chart page per file (reflection parameters "
+            "S11, S22, ...) to the .vszh5 project, drawn with Veusz widgets.")
+        self.smith_pages_checkbox.setChecked(True)
+        sm.addRow(self.smith_pages_checkbox)
         cl.addWidget(smith_group)
 
         export_group = QGroupBox("Export")
@@ -1646,9 +1845,8 @@ class TouchstoneMainWindow(QMainWindow):
         layout.addWidget(controls)
 
         right = QVBoxLayout()
-        self.smith_plot_canvas = TouchstonePlotCanvas(tab, width=8, height=8)
-        self.smith_toolbar = NavigationToolbar(self.smith_plot_canvas, tab)
-        right.addWidget(self.smith_toolbar)
+        self.smith_plot_canvas = TouchstonePlotCanvas(tab, width=8, height=8,
+                                                      dark=self.theme_mode == "dark")
         right.addWidget(self.smith_plot_canvas)
         layout.addLayout(right, stretch=1)
 
@@ -1834,7 +2032,8 @@ class TouchstoneMainWindow(QMainWindow):
             result['time_ns'], entry['td'], entry['td_gated'],
             result['frequency_hz'], entry['s'], entry['s_gated'],
             gate=(entry['gate_center_ns'], entry['gate_span_ns']),
-            title="%s - %s" % (key, param))
+            title="%s - %s" % (key, param),
+            movable=self.td_config.gating_type == "manual")
         for note in result['notes']:
             self._log_message("%s: %s" % (key, note))
 
@@ -1929,6 +2128,7 @@ class TouchstoneMainWindow(QMainWindow):
                           "(phase %s)" % (len(good), len(bad), phase))
         self._refresh_combos()
         self._set_busy(False)
+        self._show_plots()
         if bad:
             QMessageBox.warning(self, "Processing Warnings",
                                 "%d file(s) failed. See the log for details." % len(bad))
@@ -1988,6 +2188,7 @@ class TouchstoneMainWindow(QMainWindow):
                                     self.td_config.plot_frequency_domain)) if on]
         self._log_message("Time-gated pages for %d file(s): %s. Save the project to "
                           "keep them." % (made, ", ".join(outputs)))
+        self._show_plots()
 
     def _on_worker_error(self, message: str):
         self._worker = None
@@ -2013,6 +2214,30 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message("Prepared %d Smith charts at %.4g ohm. Click Export to "
                           "save them." % (len(self.smith_networks),
                                           self.smith_config.reference_impedance))
+        if self.smith_pages_checkbox.isChecked() and self.touchstone_plotter is not None:
+            self._add_smith_pages()
+
+    def _add_smith_pages(self):
+        """Smith chart pages (reflection parameters) of every file in the project (0.7.0)."""
+        pages = 0
+        for key, data in self.processed_data.items():
+            reflections = {}
+            for i, j, param in s_param_names(data['network'].nports):
+                if i == j:
+                    op = self._smith_network(key, param)
+                    if op is not None:
+                        reflections[param] = op
+            if not reflections:
+                continue
+            try:
+                self.touchstone_plotter.create_smith_page(key, data, reflections,
+                                                          self.smith_config)
+                pages += 1
+            except Exception as exc:
+                self._log_message("Smith page error %s: %s" % (key, exc))
+        self._log_message("Smith chart pages added to the project: %d (save the project "
+                          "to keep them)" % pages)
+        self._show_plots()
 
     def _export_smith_charts(self):
         """Write the charts (process pool) and optionally merge a bookmarked PDF."""
@@ -2110,6 +2335,7 @@ class TouchstoneMainWindow(QMainWindow):
             QMessageBox.critical(self, "Save Error", "Failed to save project:\n%s" % exc)
             return
         self._log_message("Project saved: %s" % saved)
+        self.last_saved = saved
         reply = QMessageBox.question(self, "Open in Veusz",
                                      "Open the saved project in Veusz?",
                                      QMessageBox.StandardButton.Yes |
@@ -2119,22 +2345,43 @@ class TouchstoneMainWindow(QMainWindow):
 
     def _open_in_veusz(self, filename: str):
         """External Veusz viewer (VEUSZ_EXECUTABLE, PATH, or python -m veusz)."""
+        if suite.open_in_veusz(self, filename):
+            self._log_message("Opening in Veusz: %s" % filename)
+
+    def _gate_dragged(self, centre_ns: float, span_ns: float):
+        """Manual gate dragged in the preview: update the boxes (and preview)."""
+        for spin, value in ((self.gate_center_spin, centre_ns), (self.gate_span_spin, span_ns)):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
+        self.td_config.gate_center = float(self.gate_center_spin.value())
+        self.td_config.gate_span = float(self.gate_span_spin.value())
+        self._update_td_preview()
+
+    def _show_plots(self):
+        """Refresh the Plots tab from the project (native backend)."""
+        if self.plot_panel is None or self.touchstone_plotter is None:
+            return
+        doc = getattr(self.touchstone_plotter, "doc", None)
+        if doc is None or not hasattr(doc, "datasets"):
+            return
         try:
-            from _autoplot_common import open_in_veusz_app
-            open_in_veusz_app(filename)
-            return
-        except ImportError:
-            pass
+            pages = self.plot_panel.set_document(doc)
+            self._log_message("Plots tab: %d page(s)" % pages)
         except Exception as exc:
-            QMessageBox.warning(self, "Open in Veusz failed", str(exc))
+            self._log_message("Plots tab could not draw the project: %s" % exc)
+
+    def _open_last_in_veusz(self):
+        if not getattr(self, "last_saved", None):
+            QMessageBox.information(self, APP_NAME, "Save a project first.")
             return
-        exe = os.environ.get("VEUSZ_EXECUTABLE") or shutil.which("veusz")
-        if not exe:
-            QMessageBox.warning(self, "Veusz not found",
-                                "Install Veusz or set VEUSZ_EXECUTABLE. Veusz is not "
-                                "needed to create the file.")
+        self._open_in_veusz(self.last_saved)
+
+    def _export_pages(self):
+        if not getattr(self, "last_saved", None):
+            QMessageBox.information(self, APP_NAME, "Save a project first.")
             return
-        subprocess.Popen([exe, filename])
+        suite.export_with_veusz(self, self.last_saved, self._log_message)
 
     def _log_message(self, message: str):
         """Time-stamped line in the log pane."""
@@ -2145,6 +2392,8 @@ class TouchstoneMainWindow(QMainWindow):
         """Wait for a running worker so the process pool shuts down cleanly."""
         if self._worker is not None and self._worker.isRunning():
             self._worker.wait(5000)
+        if getattr(self, "plot_panel", None) is not None:
+            self.plot_panel.clear()
         super().closeEvent(event)
 
 

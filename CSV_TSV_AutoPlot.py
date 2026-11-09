@@ -1,1219 +1,911 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-CSV/TSV AutoPlot V6 - Automatic data visualization with Veusz Embedded API.
+=============================================================================
+# %% Header Info
+--------
+CSV_TSV_AutoPlot.py
 
-This script provides a complete GUI application for loading CSV, TSV, and other
-delimited text files, configuring custom delimiters, and generating publication-
-quality plots using Veusz's embedded API (separate window with toolbar).
+Comma / tab / custom-delimited text files -> native Veusz project (.vszh5)
+and interactive pyqtgraph plots:
 
-VERSION 6 (2026-02-03) - SEPARATE PAGES FOR INDIVIDUAL PLOTS:
-- Individual plots now on separate pages (not grid/subgrid)
-- Total pages = Number_of_files + 1 (overlay page + one page per file)
-- Fixed legend/key implementation (boolean False, not string "False")
-- Page notes stored in page.notes.val (not separate label widget)
-- Each file uses its own independent X-axis data
+    * one overlay page (every selected Y column of every file against that
+      file's own X column) and one page per file;
+    * X column offered only when it exists in ALL files (button turns red
+      otherwise), Y columns from any file (missing ones skipped and logged);
+    * numeric columns, and date/time X columns (Veusz datetime axis);
+    * the .vszh5 is written by the author's shared writer (vszh5_writer.py
+      0.0.24 through _autoplot_native.NativeDocument) - Veusz is NOT needed
+      to create the file, only (optionally) to view or export it;
+    * Plots tab (pyqtgraph), light / dark theme shared with the suite.
 
-VERSION 5 features retained:
-- X-axis column shows only COMMON columns across ALL files (intersection)
-- Y-axis columns show ALL columns from ALL files (union)
-- Plot button turns RED/disabled when X column not in all files
-- Plot button turns GREEN/enabled when X column exists in all files
-- RED warning message in GUI when X column missing from files
-- Missing Y columns skipped per file (logged to file)
-- Full support for files with different numbers of columns
-- Dataset naming: [filename]_[column_name] for each file
-- Veusz API corrections and style mappings
-- Logging checkbox and log file creation
-- "Save to Veusz" button for .vszh5 export
+Batch use without the GUI:
+    python CSV_TSV_AutoPlot.py --x "Frequency [Hz]" --y "Magnitude [dBm]" \\
+        --output out.vszh5 file1.csv file2.csv
 
-Author: Based on William W. Wallace's framework
-Last Updated: 2026-02-03
-Python Version: 3.8+
+Created on 2025 (V1-V6 by William W. Wallace's framework)
 
-Dependencies:
-- PyQt5/PySide6 (GUI framework)
-- pandas (data loading and manipulation)
-- numpy (numerical computing)
-- veusz (plot generation)
+# %%% Author Information
+@author: William W. Wallace
+Author Email: wwallace@nrao.edu
+Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
+Company: NRAO / Green Bank Observatory (GBO)
+Licence: GPL-3.0-or-later (GNU General Public License v3.0 or later)
+Compatible with: Python 3.8+ (pandas >= 1.3, qtpy with PySide6 or PyQt5)
 
-Installation:
-pip install pandas numpy veusz pyside6
+# %%% References
+[1] W. W. Wallace, "vszh5_writer.py 0.0.24," shared Veusz HDF5 writer, 2026.
+[2] pandas developers, "pandas.read_csv," pandas documentation.
+    https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html
+[3] Y. Shafranovich, "Common Format and MIME Type for Comma-Separated Values
+    (CSV) Files," IETF RFC 4180, Oct. 2005.
+    https://www.rfc-editor.org/rfc/rfc4180
+[4] J. Sanders, "Veusz - a scientific plotting package," Veusz 4.2
+    (datetime axes count seconds from 2009-01-01T00:00:00 UTC).
+    https://veusz.github.io/
 
-Usage:
-python CSV_TSV_AutoPlot_V6.py
+# %%% Revisions
+Utilizing Semantic Schema as External Release.Internal Release.Working version
+
+# %%%% 6.1.1: Date-times stored as Veusz date-times, shown in local ISO 8601.
+# Date: 2026-11-09
+#              * A date/time X column is stored as a Veusz DATE dataset in
+#                UTC ("<file>_<column>") plus "<file>_<column>_local" on the
+#                clock of the computer doing the processing (DST-aware;
+#                VSZH5_DISPLAY_TZ overrides).  The pages draw the local one;
+#                the ticks read 2026-11-09T08:39:00-05:00 (ISO 8601, 24 h,
+#                with the UTC offset) and the axis label names the offset.
+#              * Time stamps with an offset or "Z" are exact; time stamps
+#                without one are read as UTC (default) or as local time of
+#                this computer ("Times without a zone" option, --naive-time).
+#              * The source-file lines before the header stay in the notes
+#                of every page; the overlay page lists every file.
+#              * Writer 0.0.25 / _autoplot_native 0.3.0.
+# %%%% 6.1.0: Native writer, pyqtgraph Plots tab, suite theme, data fixes.
+# Date: 2026-11-05
+#              * .vszh5 written by vszh5_writer 0.0.24 through
+#                _autoplot_native.NativeDocument (no veusz.embed window per
+#                "Generate"; Veusz is optional, for viewing / PDF export).
+#              * Plots tab (pyqtgraph) with the same pages, legend values at
+#                the cursor; View > Light / Dark (suite theme); Help > About.
+#              * X and Y were each passed through dropna() separately, so a
+#                blank cell in one column shifted every later point of that
+#                trace against X.  Now both keep their rows; non-numeric
+#                cells become gaps (NaN) and rows stay aligned.
+#              * Text columns were sent to Veusz as strings (save failure or
+#                garbage); columns are now classified numeric / date-time /
+#                text.  A date-time X column gives a Veusz datetime axis;
+#                text columns are skipped with a log line.
+#              * Multi-character delimiters were read as regular expressions
+#                by pandas; they are now literal ("\\s+" and "\\t" keep their
+#                usual meaning).  Undecodable bytes are replaced instead of
+#                stopping the load.  Files are loaded in parallel threads.
+#              * Files with the same name in different folders no longer
+#                overwrite each other (keys are full paths, dataset names
+#                are made unique).
+#              * Log X / Log Y options; trace colours are hex, so Veusz and
+#                the Plots tab show the same colours.
+#              * The optional log file is written next to the saved project
+#                (it used to land in the current working directory).
+# %%%% 6.0.0: V6 (2026-02-03) - separate pages per file, X-column
+#              intersection / Y-column union, red/green Generate button,
+#              logging, Save to Veusz.
+=============================================================================
 """
+# %% Import Modules
+from __future__ import annotations
 
+import argparse
 import datetime
-import multiprocessing
 import os
-import subprocess
+import re
 import sys
-import traceback
-from dataclasses import dataclass
-from typing import List, Dict, Tuple, Optional, Set
+import warnings
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-# Data Processing
-import numpy as np
-import pandas as pd
+os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
-try:
-    import scipy.stats as stats
-except ImportError:
-    stats = None
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from vszh5_writer import header_notes  # noqa: E402
 
-# Veusz for plots
-try:
-    import veusz.embed as vz
-except ImportError:
-    print("WARNING: Veusz not installed. Plot generation will not work.")
-    print("Install with: pip install veusz")
-    vz = None
+APP_NAME = "CSV/TSV AutoPlot"
+APP_VERSION = "6.1.1"
+__version__ = APP_VERSION
+APP_DESCRIPTION = ("Delimited text files (CSV, TSV, custom) to native Veusz .vszh5 "
+                   "projects, with interactive pyqtgraph plots.")
 
-# Qt Framework
-if getattr(sys, 'frozen', False):
-    from PySide6.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QFileDialog, QLabel, QMessageBox, QTextEdit,
-        QCheckBox, QGroupBox, QListWidget, QLineEdit, QComboBox,
-        QFormLayout, QTableWidget, QTableWidgetItem, QSpinBox
-    )
-    from PySide6.QtGui import QPalette, QColor
-    from PySide6.QtCore import Qt
-else:
-    try:
-        from qtpy.QtCore import Qt, QTimer, QThread, Signal, QSize, QRect
-        from qtpy.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush, QColor
-        from qtpy.QtWidgets import (
-            QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-            QPushButton, QFileDialog, QLabel, QMessageBox, QTextEdit,
-            QProgressBar, QCheckBox, QSpinBox, QGroupBox, QListWidget,
-            QLineEdit, QTabWidget, QComboBox, QDoubleSpinBox, QGridLayout,
-            QFormLayout, QFrame, QListWidgetItem, QTableWidget, QTableWidgetItem,
-            QHeaderView, QDialog, QProgressDialog, QDialogButtonBox, QScrollArea,
-            QSplitter
-        )
-    except ImportError:
-        print("ERROR: Neither PySide6 nor QtPy available.")
-        print("Install with: pip install pyside6 OR pip install qtpy")
-        sys.exit(1)
+VEUSZ_EPOCH = pd.Timestamp("2009-01-01 00:00:00")   # Veusz datetime zero (UTC)
+MIN_PARSED_FRACTION = 0.8      # a column is numeric / date when >= 80 % of its cells parse
+#: Trace colours (Tableau 10, as the Plots tab) - hex so Veusz shows the same colours.
+COLOURS = ("#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+           "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac")
 
 
-# ============================================================================
-# CONFIGURATION CLASSES
-# ============================================================================
-
+# %% Configuration
 @dataclass
 class CSVProcessingConfig:
-    """Configuration class for CSV/TSV processing settings."""
-    enable_multiprocessing: bool = True
-    num_processes: int = multiprocessing.cpu_count()
-    max_workers: int = multiprocessing.cpu_count()
-    chunk_size: int = 1000
-    encoding: str = 'utf-8'
-    header_line: int = 0  # Line number where column headers exist (0-indexed)
-    skip_footer: int = 0
+    """How the files are read."""
+    delimiter: str = ","
+    header_line: int = 0          # 0-indexed line holding the column names
+    encoding: str = "utf-8"
     skip_empty_lines: bool = True
+    workers: int = max(1, min(8, os.cpu_count() or 1))
 
 
 @dataclass
 class PlotConfig:
-    """Configuration class for plot formatting."""
+    """Plot formatting."""
     title: str = "Data Plot"
     x_label: str = "X Axis"
     y_label: str = "Y Axis"
-    x_scale: str = "linear"  # 'linear' or 'log'
-    y_scale: str = "linear"  # 'linear' or 'log'
+    x_scale: str = "linear"       # 'linear' or 'log'
+    y_scale: str = "linear"
     show_grid: bool = True
     show_legend: bool = True
-    legend_position: str = "best"
-    line_style: str = "-"  # Matplotlib-style notation
+    line_style: str = "-"         # matplotlib-style notation
     line_width: float = 2.0
-    marker_style: str = "o"  # Matplotlib-style notation
+    marker_style: str = "o"
     marker_size: float = 6.0
+    naive_time: str = "utc"       # 6.1.1: date-times without a zone: "utc" or "local"
 
 
-# ============================================================================
-# CSV/TSV LOADING AND PROCESSING FUNCTIONS
-# ============================================================================
+@dataclass
+class LoadedFile:
+    """One delimited file in memory."""
+    path: str
+    frame: pd.DataFrame
+    metadata: List[str] = field(default_factory=list)
 
-def detect_delimiter(file_path: str, sample_size: int = 5) -> str:
-    """
-    Attempt to auto-detect the delimiter in a delimited text file.
+    @property
+    def name(self) -> str:
+        return os.path.basename(self.path)
 
-    Parameters:
-        file_path (str): Path to the delimited text file.
-        sample_size (int): Number of lines to sample for detection.
 
-    Returns:
-        str: Detected delimiter character.
-    """
-    delimiters = [',', '\t', ';', '|']
-    delimiter_counts = {d: 0 for d in delimiters}
+# %% Reading
+def delimiter_from_text(text: str) -> str:
+    """GUI text -> delimiter ('\\t' typed as two characters means a tab)."""
+    if text in ("\\t", "tab", "TAB"):
+        return "\t"
+    return text or ","
 
+
+def detect_delimiter(file_path: str, sample_size: int = 20) -> str:
+    """Most frequent of , TAB ; | in the first non-comment lines."""
+    counts = {d: 0 for d in (",", "\t", ";", "|")}
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as handle:
             for _ in range(sample_size):
-                line = f.readline()
+                line = handle.readline()
                 if not line:
                     break
-                if not line.strip() or line.startswith('#'):
+                if not line.strip() or line.startswith("#"):
                     continue
-                for delimiter in delimiters:
-                    delimiter_counts[delimiter] += line.count(delimiter)
-
-        if max(delimiter_counts.values()) > 0:
-            return max(delimiter_counts, key=delimiter_counts.get)
-        else:
-            return ','
-    except Exception as e:
-        print(f"Error detecting delimiter: {e}")
-        return ','
+                for delimiter in counts:
+                    counts[delimiter] += line.count(delimiter)
+    except OSError:
+        return ","
+    best = max(counts, key=counts.get)
+    return best if counts[best] else ","
 
 
 def read_file_metadata(file_path: str, header_line: int) -> List[str]:
-    """
-    Read metadata lines from file (lines before header).
-
-    Parameters:
-        file_path (str): Path to the file.
-        header_line (int): 0-indexed line number where headers exist.
-
-    Returns:
-        List[str]: List of metadata lines.
-    """
-    metadata_lines = []
+    """The lines before the header line."""
+    lines: List[str] = []
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            for i in range(header_line):
-                line = f.readline()
-                if line:
-                    metadata_lines.append(line.rstrip('\n\r'))
-    except Exception as e:
-        print(f"Error reading metadata from {file_path}: {e}")
+        with open(file_path, "r", encoding="utf-8", errors="replace") as handle:
+            for _ in range(header_line):
+                line = handle.readline()
+                if not line:
+                    break
+                lines.append(line.rstrip("\r\n"))
+    except OSError:
+        pass
+    return lines
 
-    return metadata_lines
 
-
-def load_csv_file(file_path: str, delimiter: str = ',',
-                  config: CSVProcessingConfig = None) -> Tuple[Optional[pd.DataFrame], str, List[str]]:
-    """
-    Load a CSV/TSV file into a pandas DataFrame.
-
-    Parameters:
-        file_path (str): Path to the CSV/TSV file.
-        delimiter (str): Delimiter character or string.
-        config (CSVProcessingConfig): Processing configuration including header_line.
-
-    Returns:
-        Tuple[DataFrame or None, str, List[str]]: Loaded DataFrame, status message, and metadata lines.
-    """
-    if config is None:
-        config = CSVProcessingConfig()
-
+def load_csv_file(file_path: str, config: Optional[CSVProcessingConfig] = None
+                  ) -> Tuple[Optional[LoadedFile], str]:
+    """(LoadedFile or None, status message) of one file."""
+    config = config or CSVProcessingConfig()
+    delimiter = config.delimiter
+    kwargs: Dict[str, Any] = {}
+    if len(delimiter) == 1:
+        kwargs["engine"] = "c"                 # fast; releases the GIL (thread pool)
+    elif delimiter == r"\s+":
+        kwargs["engine"] = "python"
+    else:                                      # pandas treats longer separators as regex
+        delimiter = re.escape(delimiter)
+        kwargs["engine"] = "python"
     try:
-        # Read metadata lines before header
-        metadata_lines = read_file_metadata(file_path, config.header_line)
-
-        # Calculate skiprows: skip all lines before header_line
-        skiprows = list(range(config.header_line)
-                        ) if config.header_line > 0 else None
-
-        df = pd.read_csv(
-            file_path,
-            delimiter=delimiter,
-            encoding=config.encoding,
-            skiprows=skiprows,
-            skip_blank_lines=config.skip_empty_lines,
-            engine='python'
-        )
-        status_msg = f"Successfully loaded {file_path}: {df.shape[0]} rows, {df.shape[1]} columns (header at line {config.header_line + 1})"
-        return df, status_msg, metadata_lines
-    except Exception as e:
-        error_msg = f"Error loading {file_path}: {str(e)}"
-        return None, error_msg, []
+        frame = pd.read_csv(file_path, sep=delimiter, encoding=config.encoding,
+                            encoding_errors="replace",
+                            skiprows=range(config.header_line) if config.header_line else None,
+                            skip_blank_lines=config.skip_empty_lines, **kwargs)
+    except Exception as exc:
+        return None, "Error loading %s: %s" % (file_path, exc)
+    frame.columns = [str(c).strip() for c in frame.columns]
+    loaded = LoadedFile(file_path, frame, read_file_metadata(file_path, config.header_line))
+    return loaded, ("Loaded %s: %d rows, %d columns (header at line %d)"
+                    % (loaded.name, frame.shape[0], frame.shape[1], config.header_line + 1))
 
 
-def get_common_columns(data_dict: Dict[str, pd.DataFrame]) -> Set[str]:
-    """
-    Get columns that are common to ALL loaded DataFrames (intersection).
+def load_files(paths: Sequence[str], config: CSVProcessingConfig
+               ) -> Tuple[List[LoadedFile], List[str]]:
+    """Load files in parallel threads; (files in input order, messages)."""
+    paths = list(dict.fromkeys(paths))
+    with ThreadPoolExecutor(max_workers=max(1, config.workers)) as pool:
+        results = list(pool.map(lambda p: load_csv_file(p, config), paths))
+    files = [loaded for loaded, _msg in results if loaded is not None]
+    return files, [msg for _loaded, msg in results]
 
-    Parameters:
-        data_dict: Dictionary mapping filenames to DataFrames.
 
-    Returns:
-        Set[str]: Set of column names present in all DataFrames.
-    """
-    if not data_dict:
+def get_common_columns(files: Sequence[LoadedFile]) -> Set[str]:
+    """Columns in ALL files (intersection)."""
+    if not files:
         return set()
-
-    # Start with columns from first DataFrame
-    common_cols = set(next(iter(data_dict.values())).columns)
-
-    # Intersect with columns from all other DataFrames
-    for df in data_dict.values():
-        common_cols = common_cols.intersection(set(df.columns))
-
-    return common_cols
+    common = set(files[0].frame.columns)
+    for loaded in files[1:]:
+        common &= set(loaded.frame.columns)
+    return common
 
 
-def get_all_columns(data_dict: Dict[str, pd.DataFrame]) -> Set[str]:
+def get_all_columns(files: Sequence[LoadedFile]) -> Set[str]:
+    """Columns of ANY file (union)."""
+    columns: Set[str] = set()
+    for loaded in files:
+        columns |= set(loaded.frame.columns)
+    return columns
+
+
+def _naive_zone():
+    """Zone of time stamps written without one, when they are local time."""
+    import vszh5_writer
+    zone = vszh5_writer.display_zone()
+    if zone is None:
+        from dateutil import tz           # a pandas dependency
+        zone = tz.tzlocal()
+    return zone
+
+
+def column_values(series: pd.Series, naive_time: str = "utc") -> Tuple[str, np.ndarray]:
     """
-    Get all unique columns from ALL loaded DataFrames (union).
+    ('numeric' | 'date' | 'text', values) of one column, rows kept.
 
-    Parameters:
-        data_dict: Dictionary mapping filenames to DataFrames.
-
-    Returns:
-        Set[str]: Set of all unique column names across all DataFrames.
+    numeric : float64, cells that do not parse -> NaN
+    date    : seconds since 2009-01-01 UTC (Veusz datetime), NaN where missing.
+              Stamps with an offset or "Z" are exact; stamps without one are
+              UTC (``naive_time="utc"``) or this computer's local time
+              ("local"; VSZH5_DISPLAY_TZ overrides the zone).
+    text    : the original values (not plotted)
     """
-    all_cols = set()
+    non_empty = series.dropna()
+    if series.dtype == object:
+        non_empty = non_empty[non_empty.astype(str).str.strip() != ""]
+    n_cells = len(non_empty)
+    if pd.api.types.is_bool_dtype(series):
+        return "numeric", series.astype(float).to_numpy()
+    if pd.api.types.is_numeric_dtype(series):
+        return "numeric", series.to_numpy(dtype=float, na_value=np.nan)
+    numbers = pd.to_numeric(series, errors="coerce")
+    if n_cells and numbers.notna().sum() >= MIN_PARSED_FRACTION * n_cells:
+        return "numeric", numbers.to_numpy(dtype=float, na_value=np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")        # "could not infer format" etc.
+        stamps = pd.to_datetime(series, errors="coerce", utc=True)
+        if naive_time == "local":
+            plain = pd.to_datetime(series, errors="coerce")
+            if pd.api.types.is_datetime64_dtype(plain) and \
+                    not isinstance(plain.dtype, pd.DatetimeTZDtype):
+                stamps = plain.dt.tz_localize(_naive_zone(), ambiguous="NaT",
+                                              nonexistent="NaT").dt.tz_convert("UTC")
+    if n_cells and stamps.notna().sum() >= MIN_PARSED_FRACTION * n_cells:
+        stamps = stamps.dt.tz_convert(None)    # UTC, naive
+        seconds = (stamps - VEUSZ_EPOCH).dt.total_seconds()
+        return "date", seconds.to_numpy(dtype=float, na_value=np.nan)
+    return "text", series.to_numpy()
 
-    for df in data_dict.values():
-        all_cols = all_cols.union(set(df.columns))
 
-    return all_cols
-
-
-# ============================================================================
-# VEUSZ PLOTTING CLASS
-# ============================================================================
-
+# %% Veusz project (NativeDocument; written by vszh5_writer)
 class VeuszPlotter:
-    """
-    Handles plot generation in Veusz for CSV/TSV data.
+    """Builds the project: one overlay page and one page per file."""
 
-    This class wraps the Veusz embedding API to create publication-quality
-    plots from pandas DataFrames loaded from CSV/TSV files.
-    """
+    LINE_STYLE_MAP = {"-": "solid", "--": "dashed", "-.": "dash-dot", ":": "dotted",
+                      "solid": "solid", "dashed": "dashed", "dashdot": "dash-dot",
+                      "dotted": "dotted"}
+    MARKER_STYLE_MAP = {"o": "circle", "s": "square", "^": "triangle",
+                        "v": "triangledown", "d": "diamond", "+": "plus", "x": "cross",
+                        "*": "star", "circle": "circle", "square": "square",
+                        "triangle": "triangle", "diamond": "diamond", "none": "none"}
 
-    # FIXED: Mapping from matplotlib line styles to Veusz line styles
-    LINE_STYLE_MAP = {
-        '-': 'solid',
-        '--': 'dashed',
-        '-.': 'dashdot',
-        ':': 'dotted',
-        'solid': 'solid',
-        'dashed': 'dashed',
-        'dashdot': 'dashdot',
-        'dotted': 'dotted'
-    }
-
-    # FIXED: Mapping from matplotlib markers to Veusz markers
-    MARKER_STYLE_MAP = {
-        'o': 'circle',
-        's': 'square',
-        '^': 'triangle',
-        'v': 'triangledown',
-        'd': 'diamond',
-        '+': 'plus',
-        'x': 'cross',
-        '*': 'star',
-        'circle': 'circle',
-        'square': 'square',
-        'triangle': 'triangle',
-        'diamond': 'diamond'
-    }
-
-    def __init__(self, plot_title: str = "CSV Data Plot"):
-        """Initialize Veusz plotter."""
+    def __init__(self, plot_title: str = "CSV Data Plot") -> None:
+        from _autoplot_native import NativeDocument
         self.plot_title = plot_title
-        self.doc = None
-        self.log_file = None
-        self.enable_logging = False
+        self.doc = NativeDocument("CSV/TSV AutoPlot")
+        self.messages: List[str] = []
 
-        try:
-            if vz is not None:
-                self.doc = vz.Embedded(plot_title, hidden=False)
-                self.doc.EnableToolbar()
-        except Exception as e:
-            print(f"Warning: Could not initialize Veusz: {e}")
+    def log_message(self, message: str) -> None:
+        stamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.messages.append("[%s] %s" % (stamp, message))
 
-    def set_logging(self, enable: bool, log_path: str = None):
-        """
-        Enable or disable logging.
+    @staticmethod
+    def _unique(stem: str, used: Set[str]) -> str:
+        candidate, index = stem, 2
+        while candidate in used:
+            candidate = "%s_%d" % (stem, index)
+            index += 1
+        used.add(candidate)
+        return candidate
 
-        Parameters:
-            enable (bool): Enable logging.
-            log_path (str): Path to log file.
-        """
-        self.enable_logging = enable
-        if enable and log_path:
-            try:
-                self.log_file = open(log_path, 'w')
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                self.log_file.write(f"CSV/TSV AutoPlot V6 Log - {timestamp}\n")
-                self.log_file.write("="*60 + "\n\n")
-            except Exception as e:
-                print(f"Error opening log file: {e}")
-                self.log_file = None
+    def create_overlay_and_individual_plots(self, files: Sequence[LoadedFile], x_column: str,
+                                            y_columns: Sequence[str],
+                                            plot_config: Optional[PlotConfig] = None) -> int:
+        """Build every page; returns the number of traces."""
+        config = plot_config or PlotConfig()
+        doc = self.doc
+        notes = ["File Metadata:", "=" * 60, ""]
+        for loaded in files:
+            notes += ["File: %s" % loaded.path, "-" * 60]
+            notes += loaded.metadata or ["(No metadata lines before header)"]
+            notes.append("")
+        notes_text = "\n".join(notes)
+        line_style = self.LINE_STYLE_MAP.get(config.line_style, "solid")
+        marker = self.MARKER_STYLE_MAP.get(config.marker_style, "circle")
 
-    def log_message(self, message: str):
-        """Write message to log file."""
-        if self.enable_logging and self.log_file:
-            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            self.log_file.write(f"[{timestamp}] {message}\n")
-            self.log_file.flush()
-
-    def create_overlay_and_individual_plots(
-        self,
-        data_dict: Dict[str, pd.DataFrame],
-        metadata_dict: Dict[str, List[str]],
-        x_column: str,
-        y_columns: List[str],
-        plot_config: PlotConfig = None
-    ) -> bool:
-        """
-        Create overlay plot (all files on one page) and individual plots (one page per file).
-        Each file uses its own independent X-axis data.
-
-        V6 CHANGE: Individual plots are now on SEPARATE PAGES, not in a grid.
-        Total pages = Number_of_files + 1 (overlay + individual pages)
-
-        Parameters:
-            data_dict: Dictionary mapping filenames to DataFrames
-            metadata_dict: Dictionary mapping filenames to metadata lines
-            x_column: Name of column to use for X axis (must exist in all files)
-            y_columns: Names of columns to use for Y axes (matched by name per file)
-            plot_config: Plot configuration
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if self.doc is None:
-            return False
-
-        if plot_config is None:
-            plot_config = PlotConfig()
-
-        try:
-            # Prepare metadata text (used for all pages)
-            notes_text = "File Metadata:\n" + "="*60 + "\n\n"
-            for filename, metadata_lines in metadata_dict.items():
-                notes_text += f"File: {filename}\n"
-                notes_text += "-"*60 + "\n"
-                if metadata_lines:
-                    for line in metadata_lines:
-                        notes_text += f"{line}\n"
-                else:
-                    notes_text += "(No metadata lines before header)\n"
-                notes_text += "\n"
-
-            # Color palette for plots
-            colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown',
-                      'cyan', 'magenta', 'yellow', 'black']
-
-            # ========== CREATE OVERLAY PAGE (all files on one page) ==========
-            overlay_page = self.doc.Root.Add('page', name='OverlayPlot')
-            overlay_page.notes.val = notes_text  # Store metadata in page notes
-
-            overlay_graph = overlay_page.Add('graph', name='OverlayGraph')
-
-            plot_idx = 0
-            for filename, df in data_dict.items():
-                base_filename = os.path.splitext(filename)[0]
-
-                # Check if X column exists (should always exist due to validation)
-                if x_column not in df.columns:
-                    msg = f"WARNING: X column '{x_column}' not found in {filename}"
-                    self.log_message(msg)
-                    print(msg)
-                    continue
-
-                # Add X data with filename tag (independent for each file)
-                x_data = df[x_column].dropna().values.tolist()
-                dataset_x_name = f'{base_filename}_{x_column}'
-                self.doc.SetData(dataset_x_name, x_data)
-                self.doc.TagDatasets(base_filename, [dataset_x_name])
-
-                # Add Y data for each selected column
-                for y_col in y_columns:
-                    if y_col not in df.columns:
-                        msg = f"WARNING: Y column '{y_col}' not found in {filename} - skipping"
-                        self.log_message(msg)
-                        print(msg)
-                        continue
-
-                    y_data = df[y_col].dropna().values.tolist()
-                    dataset_y_name = f'{base_filename}_{y_col}'
-                    self.doc.SetData(dataset_y_name, y_data)
-                    self.doc.TagDatasets(base_filename, [dataset_y_name])
-
-                    # Create XY plot on overlay (each trace uses its file's own X data)
-                    xy_plot = overlay_graph.Add('xy',
-                                                name=f'Overlay_{base_filename}_{y_col}',
-                                                xData=dataset_x_name,  # File-specific X data
-                                                yData=dataset_y_name)
-
-                    # Convert styles
-                    veusz_line_style = self.LINE_STYLE_MAP.get(
-                        plot_config.line_style, 'solid')
-                    veusz_marker = self.MARKER_STYLE_MAP.get(
-                        plot_config.marker_style, 'circle')
-
-                    # Configure appearance
-                    with self._wrap_widget(xy_plot) as plot:
-                        plot.PlotLine.color.val = colors[plot_idx % len(
-                            colors)]
-                        plot.PlotLine.style.val = veusz_line_style
-                        plot.PlotLine.width.val = f'{plot_config.line_width}pt'
-                        plot.marker.val = veusz_marker
-                        plot.markerSize.val = f'{plot_config.marker_size}pt'
-                        plot.key.val = f'{base_filename}_{y_col}'
-
-                    plot_idx += 1
-
-            # Configure overlay graph
-            with self._wrap_widget(overlay_graph) as g:
-                g.Add('label', name='plotTitle')
-                g.plotTitle.Text.size.val = '12pt'
-                g.plotTitle.label.val = f"Overlay: {plot_config.title}"
-                g.plotTitle.alignHorz.val = 'centre'
-                g.plotTitle.yPos.val = 1.05
-                g.plotTitle.xPos.val = 0.5
-                g.topMargin.val = '1cm'
-
-                g.x.label.val = plot_config.x_label
-                g.y.label.val = plot_config.y_label
-                g.x.log.val = (plot_config.x_scale == 'log')
-                g.y.log.val = (plot_config.y_scale == 'log')
-                g.x.GridLines.hide.val = not plot_config.show_grid
-                g.y.GridLines.hide.val = not plot_config.show_grid
-
-                if plot_config.show_legend:
-                    key = g.Add('key')
-                    key.hide.val = False
-                    key.horzPosn.val = 'right'
-                    key.vertPosn.val = 'top'
-
-            # ========== CREATE INDIVIDUAL PAGES (one page per file) ==========
-            for filename, df in data_dict.items():
-                base_filename = os.path.splitext(filename)[0]
-
-                # Create separate page for this file
-                file_page = self.doc.Root.Add(
-                    'page', name=f'Page_{base_filename}')
-                file_page.notes.val = notes_text  # Store metadata in page notes
-
-                # Create graph for this file
-                file_graph = file_page.Add(
-                    'graph', name=f'Graph_{base_filename}')
-
-                # Check if X column exists
-                if x_column not in df.columns:
-                    continue
-
-                dataset_x_name = f'{base_filename}_{x_column}'
-
-                plot_idx = 0
-                for y_col in y_columns:
-                    if y_col not in df.columns:
-                        continue
-
-                    dataset_y_name = f'{base_filename}_{y_col}'
-
-                    # Create XY plot (uses this file's own X data)
-                    xy_plot = file_graph.Add('xy',
-                                             name=f'{base_filename}_{y_col}',
-                                             xData=dataset_x_name,  # File-specific X data
-                                             yData=dataset_y_name)
-
-                    # Convert styles
-                    veusz_line_style = self.LINE_STYLE_MAP.get(
-                        plot_config.line_style, 'solid')
-                    veusz_marker = self.MARKER_STYLE_MAP.get(
-                        plot_config.marker_style, 'circle')
-
-                    # Configure appearance
-                    with self._wrap_widget(xy_plot) as plot:
-                        plot.PlotLine.color.val = colors[plot_idx % len(
-                            colors)]
-                        plot.PlotLine.style.val = veusz_line_style
-                        plot.PlotLine.width.val = f'{plot_config.line_width}pt'
-                        plot.marker.val = veusz_marker
-                        plot.markerSize.val = f'{plot_config.marker_size}pt'
-                        plot.key.val = y_col
-
-                    plot_idx += 1
-
-                # Configure individual graph
-                with self._wrap_widget(file_graph) as g:
-                    g.Add('label', name='plotTitle')
-                    g.plotTitle.Text.size.val = '12pt'
-                    g.plotTitle.label.val = f"{base_filename}"
-                    g.plotTitle.alignHorz.val = 'centre'
-                    g.plotTitle.yPos.val = 1.05
-                    g.plotTitle.xPos.val = 0.5
-                    g.topMargin.val = '1cm'
-
-                    g.x.label.val = plot_config.x_label
-                    g.y.label.val = plot_config.y_label
-                    g.x.log.val = (plot_config.x_scale == 'log')
-                    g.y.log.val = (plot_config.y_scale == 'log')
-                    g.x.GridLines.hide.val = not plot_config.show_grid
-                    g.y.GridLines.hide.val = not plot_config.show_grid
-
-                    if plot_config.show_legend:
-                        key = g.Add('key')
-                        key.hide.val = False  # FIXED: Boolean False, not string "False"
-                        key.horzPosn.val = 'right'
-                        key.vertPosn.val = 'top'
-
-            num_files = len(data_dict)
-            total_pages = 1 + num_files
-            self.log_message(
-                f"Created {total_pages} pages: 1 overlay + {num_files} individual file pages")
-
-            return True
-
-        except Exception as e:
-            msg = f"Error creating plots: {e}"
-            self.log_message(msg)
-            print(msg)
-            traceback.print_exc()
-            return False
-
-    def _wrap_widget(self, widget):
-        """Context manager for widget configuration in Veusz."""
-        class WidgetWrapper:
-            def __init__(self, w):
-                self.widget = w
-
-            def __enter__(self):
-                return self.widget
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-        return WidgetWrapper(widget)
-
-    def save_project(self, file_path: str) -> bool:
-        """
-        Save Veusz project to HDF5 file (.vszh5).
-
-        Parameters:
-            file_path (str): Path where to save the Veusz project.
-
-        Returns:
-            bool: True if successful, False otherwise.
-        """
-        if self.doc is None:
-            return False
-
-        try:
-            # Ensure .vszh5 extension
-            if not file_path.endswith('.vszh5'):
-                file_path = file_path.rsplit('.', 1)[0] + '.vszh5'
-
-            self.doc.Save(file_path, 'hdf5')
-            msg = f"Saved Veusz project: {file_path}"
-            self.log_message(msg)
-            return True
-        except Exception as e:
-            msg = f"Error saving Veusz project: {e}"
-            self.log_message(msg)
-            print(msg)
-            return False
-
-    def export_plot(self, file_path: str, format_type: str = 'png') -> bool:
-        """Export plot to image file."""
-        if self.doc is None:
-            return False
-
-        try:
-            pages = [c for c in self.doc.Root.children if c.typename == 'page']
-            if pages:
-                page = pages[0]
-                self.doc.Export(file_path, format=format_type, page=page.name)
-                return True
-        except Exception as e:
-            print(f"Error exporting plot: {e}")
-            return False
-
-    def open_gui(self, file_path: str = None):
-        """Open the Veusz GUI window."""
-        if self.doc is None:
-            return
-
-        try:
-            if sys.platform.startswith('win'):
-                veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
+        overlay_page = doc.Root.Add("page", name="OverlayPlot")
+        overlay_page.notes.val = notes_text
+        overlay = overlay_page.Add("graph", name="OverlayGraph")
+        overlay_kind: Optional[str] = None
+        used_stems: Set[str] = set()
+        per_file: List[Tuple[LoadedFile, str, str, str, List[Tuple[str, str]]]] = []
+        n_traces = 0
+        for loaded in files:
+            if x_column not in loaded.frame.columns:
+                self.log_message("WARNING: X column '%s' not found in %s" % (x_column, loaded.name))
+                continue
+            stem = self._unique(os.path.splitext(loaded.name)[0], used_stems)
+            x_kind, x_values = column_values(loaded.frame[x_column], config.naive_time)
+            if x_kind == "text":
+                self.log_message("WARNING: X column '%s' of %s is text, not numbers or "
+                                 "dates - file skipped" % (x_column, loaded.name))
+                continue
+            x_name = "%s_%s" % (stem, x_column)
+            if x_kind == "date":
+                doc.SetDataDateTime(x_name, x_values)          # UTC
+                tagged_local = doc.SetDataLocalTime(x_name)    # local display copy
             else:
-                veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
+                doc.SetData(x_name, x_values)
+            tagged = [x_name] + ([tagged_local] if x_kind == "date" else [])
+            traces: List[Tuple[str, str]] = []
+            for y_col in y_columns:
+                if y_col not in loaded.frame.columns:
+                    self.log_message("WARNING: Y column '%s' not found in %s - skipping"
+                                     % (y_col, loaded.name))
+                    continue
+                y_kind, y_values = column_values(loaded.frame[y_col])
+                if y_kind != "numeric":
+                    self.log_message("WARNING: Y column '%s' of %s is %s, not numbers - "
+                                     "skipping" % (y_col, loaded.name, y_kind))
+                    continue
+                gaps = int(np.isnan(y_values).sum())
+                if gaps:
+                    self.log_message("%s: '%s' has %d empty or non-numeric cell(s), drawn "
+                                     "as gaps" % (loaded.name, y_col, gaps))
+                y_name = "%s_%s" % (stem, y_col)
+                doc.SetData(y_name, y_values)
+                tagged.append(y_name)
+                traces.append((y_col, y_name))
+            doc.TagDatasets(stem, tagged)
+            per_file.append((loaded, stem, x_kind, x_name, traces))
+            if overlay_kind is None:
+                overlay_kind = x_kind
+            for y_col, y_name in traces:
+                if x_kind != overlay_kind:
+                    self.log_message("WARNING: %s has a %s X column; the overlay uses %s X "
+                                     "values - not overlaid" % (loaded.name, x_kind, overlay_kind))
+                    break
+                self._style(overlay.Add("xy", name="Overlay_%s" % y_name, xData=x_name,
+                                        yData=y_name), COLOURS[n_traces % len(COLOURS)],
+                            line_style, marker, config, "%s_%s" % (stem, y_col))
+                n_traces += 1
+        self._configure_graph(overlay, "Overlay: %s" % config.title, config,
+                              overlay_kind == "date")
+        for loaded, stem, x_kind, x_name, traces in per_file:
+            page = doc.Root.Add("page", name="Page_%s" % stem)
+            page.notes.val = header_notes(
+                loaded.metadata or ["(No metadata lines before header)"], source=loaded.path,
+                extra=["X: %s; Y: %s" % (x_column, ", ".join(t[0] for t in traces))])
+            graph = page.Add("graph", name="Graph_%s" % stem)
+            for index, (y_col, y_name) in enumerate(traces):
+                self._style(graph.Add("xy", name=y_name, xData=x_name, yData=y_name),
+                            COLOURS[index % len(COLOURS)], line_style, marker, config, y_col)
+            self._configure_graph(graph, stem, config, x_kind == "date")
+        self.log_message("Created %d pages: 1 overlay + %d file pages, %d overlay trace(s)"
+                         % (1 + len(per_file), len(per_file), n_traces))
+        return n_traces
 
-            if os.path.exists(veusz_exe):
-                if file_path:
-                    subprocess.Popen([veusz_exe, file_path])
-                else:
-                    subprocess.Popen([veusz_exe])
-        except Exception as e:
-            print(f"Error opening Veusz GUI: {e}")
+    @staticmethod
+    def _style(xy: Any, colour: str, line_style: str, marker: str, config: PlotConfig,
+               key: str) -> None:
+        xy.PlotLine.color.val = colour
+        xy.PlotLine.style.val = line_style
+        xy.PlotLine.width.val = "%gpt" % config.line_width
+        xy.marker.val = marker
+        xy.markerSize.val = "%gpt" % config.marker_size
+        xy.MarkerFill.color.val = colour
+        xy.key.val = key
 
-    def close_log(self):
-        """Close log file."""
-        if self.log_file:
-            self.log_file.close()
-            self.log_file = None
-
-
-# ============================================================================
-# MAIN APPLICATION WINDOW
-# ============================================================================
-
-class CSVAutoPlotMainWindow(QMainWindow):
-    """Main application window for CSV/TSV AutoPlot V6."""
-
-    def __init__(self):
-        """Initialize the main window."""
-        super().__init__()
-        self.setWindowTitle("CSV/TSV AutoPlot V6 - Data Visualization Tool")
-        self.setGeometry(100, 100, 1400, 900)
-
-        # Data storage
-        self.selected_files = []
-        self.loaded_data = {}  # filename -> DataFrame
-        self.metadata_dict = {}  # filename -> metadata lines
-
-        # Configuration
-        self.csv_config = CSVProcessingConfig()
-        self.plot_config = PlotConfig()
-
-        # Veusz plotter instance
-        self.plotter = None
-
-        # Setup UI
-        self.setup_ui()
-        self.log_message("CSV/TSV AutoPlot V6 initialized successfully")
-        self.log_message("Browse for CSV or TSV files to begin")
-
-    def setup_ui(self):
-        """Set up the user interface."""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-
-        # ====== FILE SELECTION AREA ======
-        file_group = QGroupBox("File Selection and Delimiter Configuration")
-        file_layout = QHBoxLayout(file_group)
-
-        # Left side: File list
-        left_layout = QVBoxLayout()
-        button_layout = QHBoxLayout()
-
-        browse_btn = QPushButton("Browse Files")
-        browse_btn.clicked.connect(self.browse_files)
-        clear_btn = QPushButton("Clear Files")
-        clear_btn.clicked.connect(self.clear_files)
-
-        button_layout.addWidget(browse_btn)
-        button_layout.addWidget(clear_btn)
-        button_layout.addStretch()
-        left_layout.addLayout(button_layout)
-
-        self.file_list_widget = QListWidget()
-        self.file_list_widget.itemSelectionChanged.connect(
-            self.on_file_selection_changed)
-        left_layout.addWidget(QLabel("Loaded Files:"))
-        left_layout.addWidget(self.file_list_widget)
-
-        # Right side: Delimiter configuration
-        right_layout = QVBoxLayout()
-
-        delimiter_group = QGroupBox("Delimiter Configuration")
-        delimiter_form = QFormLayout(delimiter_group)
-
-        auto_detect_btn = QPushButton("Auto-Detect Delimiter")
-        auto_detect_btn.clicked.connect(self.auto_detect_delimiter)
-        delimiter_form.addRow("Auto-Detection:", auto_detect_btn)
-
-        self.delimiter_input = QLineEdit()
-        self.delimiter_input.setText(',')
-        self.delimiter_input.setMaximumWidth(100)
-        self.delimiter_input.textChanged.connect(self.on_delimiter_changed)
-        delimiter_form.addRow("Delimiter:", self.delimiter_input)
-
-        # Data start line (header row line number)
-        self.data_start_line_spinbox = QSpinBox()
-        self.data_start_line_spinbox.setMinimum(1)
-        self.data_start_line_spinbox.setMaximum(10000)
-        self.data_start_line_spinbox.setValue(
-            1)  # Default: line 1 (0-indexed as 0)
-        self.data_start_line_spinbox.setMaximumWidth(100)
-        self.data_start_line_spinbox.setToolTip(
-            "Line number where column headers exist (1-indexed)")
-        self.data_start_line_spinbox.valueChanged.connect(
-            self.on_data_start_line_changed)
-        delimiter_form.addRow("Header Line Number:",
-                              self.data_start_line_spinbox)
-
-        # Logging checkbox
-        self.enable_logging_checkbox = QCheckBox("Enable Logging")
-        self.enable_logging_checkbox.setChecked(True)
-        self.enable_logging_checkbox.setToolTip(
-            "Log missing data warnings to file")
-        delimiter_form.addRow("", self.enable_logging_checkbox)
-
-        # Preset buttons
-        preset_layout = QHBoxLayout()
-        for name, delim in [("Comma", ","), ("Tab", "\t"), ("Semicolon", ";"), ("Pipe", "|")]:
-            btn = QPushButton(name)
-            btn.clicked.connect(lambda checked, d=delim: self.set_delimiter(d))
-            btn.setMaximumWidth(80)
-            preset_layout.addWidget(btn)
-        preset_layout.addStretch()
-
-        form_layout = QVBoxLayout()
-        form_layout.addWidget(delimiter_group)
-
-        delimiter_group2 = QGroupBox("Delimiter Presets")
-        preset_form = QVBoxLayout(delimiter_group2)
-        preset_form.addLayout(preset_layout)
-        form_layout.addWidget(delimiter_group2)
-
-        right_layout.addLayout(form_layout)
-        right_layout.addStretch()
-
-        file_layout.addLayout(left_layout, 1)
-        file_layout.addLayout(right_layout, 0)
-        main_layout.addWidget(file_group)
-
-        # ====== DATA PREVIEW AREA ======
-        preview_group = QGroupBox("Data Preview")
-        preview_layout = QVBoxLayout(preview_group)
-
-        self.data_preview_table = QTableWidget()
-        self.data_preview_table.setMaximumHeight(200)
-        preview_layout.addWidget(QLabel("First 10 rows:"))
-        preview_layout.addWidget(self.data_preview_table)
-        main_layout.addWidget(preview_group)
-
-        # ====== COLUMN SELECTION FOR PLOTTING ======
-        column_group = QGroupBox("Column Selection for Plotting")
-        column_layout = QVBoxLayout(column_group)
-
-        selection_form = QFormLayout()
-        self.x_column_combo = QComboBox()
-        self.x_column_combo.currentTextChanged.connect(
-            self.on_plot_config_changed)
-        selection_form.addRow(
-            "X-Axis Column (common to all files):", self.x_column_combo)
-
-        # X-axis validation warning label
-        self.x_axis_warning_label = QLabel("")
-        self.x_axis_warning_label.setStyleSheet(
-            "color: red; font-weight: bold;")
-        self.x_axis_warning_label.setWordWrap(True)
-        selection_form.addRow("", self.x_axis_warning_label)
-
-        y_label = QLabel("Y-Axis Columns (select multiple - all available):")
-        self.y_columns_list = QListWidget()
-        self.y_columns_list.setSelectionMode(
-            self.y_columns_list.SelectionMode.MultiSelection
-        )
-        self.y_columns_list.itemSelectionChanged.connect(
-            self.on_plot_config_changed)
-        self.y_columns_list.setMaximumHeight(120)
-
-        column_layout.addLayout(selection_form)
-        column_layout.addWidget(y_label)
-        column_layout.addWidget(self.y_columns_list)
-        main_layout.addWidget(column_group)
-
-        # ====== PLOT CONFIGURATION ======
-        plot_group = QGroupBox("Plot Configuration")
-        plot_layout = QFormLayout(plot_group)
-
-        self.title_input = QLineEdit()
-        self.title_input.setText(self.plot_config.title)
-        self.title_input.textChanged.connect(self.on_plot_config_changed)
-        plot_layout.addRow("Plot Title:", self.title_input)
-
-        self.x_label_input = QLineEdit()
-        self.x_label_input.setText(self.plot_config.x_label)
-        self.x_label_input.textChanged.connect(self.on_plot_config_changed)
-        plot_layout.addRow("X-Axis Label:", self.x_label_input)
-
-        self.y_label_input = QLineEdit()
-        self.y_label_input.setText(self.plot_config.y_label)
-        self.y_label_input.textChanged.connect(self.on_plot_config_changed)
-        plot_layout.addRow("Y-Axis Label:", self.y_label_input)
-
-        self.show_legend_checkbox = QCheckBox("Show Legend")
-        self.show_legend_checkbox.setChecked(self.plot_config.show_legend)
-        self.show_legend_checkbox.stateChanged.connect(
-            self.on_plot_config_changed)
-        plot_layout.addRow(self.show_legend_checkbox)
-
-        main_layout.addWidget(plot_group)
-
-        # ====== ACTION BUTTONS ======
-        button_group = QGroupBox("")
-        button_layout = QHBoxLayout(button_group)
-
-        self.generate_btn = QPushButton("Generate Plots in Veusz")
-        self.generate_btn.clicked.connect(self.generate_plots)
-        self.generate_btn.setStyleSheet(
-            "background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
-
-        save_veusz_btn = QPushButton("Save to Veusz (.vszh5)")
-        save_veusz_btn.clicked.connect(self.save_to_veusz)
-        save_veusz_btn.setToolTip("Save Veusz project in HDF5 format")
-
-        button_layout.addWidget(self.generate_btn)
-        button_layout.addWidget(save_veusz_btn)
-        button_layout.addStretch()
-        main_layout.addWidget(button_group)
-
-        # ====== STATUS/LOGGING AREA ======
-        status_group = QGroupBox("Status Log")
-        status_layout = QVBoxLayout(status_group)
-
-        self.status_text = QTextEdit()
-        self.status_text.setReadOnly(True)
-        self.status_text.setMaximumHeight(120)
-        status_layout.addWidget(self.status_text)
-        main_layout.addWidget(status_group)
-
-    def browse_files(self):
-        """Open file dialog to select CSV/TSV files."""
-        file_dialog = QFileDialog()
-        file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        file_dialog.setNameFilter(
-            "Delimited Files (*.csv *.tsv *.txt);;All Files (*)")
-        file_dialog.setWindowTitle("Select CSV/TSV Files")
-
-        if file_dialog.exec() == QFileDialog.Accepted:
-            selected_files = file_dialog.selectedFiles()
-            self.selected_files.extend(selected_files)
-            self.load_files()
-
-    def load_files(self):
-        """Load selected files into memory."""
-        delimiter = self.delimiter_input.text() or ','
-
-        # Update config with current header line setting (convert 1-indexed to 0-indexed)
-        self.csv_config.header_line = self.data_start_line_spinbox.value() - 1
-
-        for file_path in self.selected_files:
-            if file_path not in [os.path.join(d, f) for d, f in
-                                 [os.path.split(self._get_file_path(name))
-                                 for name in self.loaded_data.keys()]]:
-                df, msg, metadata_lines = load_csv_file(
-                    file_path, delimiter, self.csv_config)
-                if df is not None:
-                    filename = os.path.basename(file_path)
-                    self.loaded_data[filename] = df
-                    self.metadata_dict[filename] = metadata_lines
-                    self.log_message(msg)
-                else:
-                    self.log_message(msg)
-
-        self.update_file_list()
-        self.update_column_selectors()
-
-    def _get_file_path(self, filename: str) -> str:
-        """Get full file path from filename."""
-        for file_path in self.selected_files:
-            if os.path.basename(file_path) == filename:
-                return file_path
-        return ""
-
-    def update_file_list(self):
-        """Update the file list widget."""
-        self.file_list_widget.clear()
-        for filename in self.loaded_data.keys():
-            self.file_list_widget.addItem(filename)
-
-    def clear_files(self):
-        """Clear the selected files list."""
-        self.selected_files.clear()
-        self.loaded_data.clear()
-        self.metadata_dict.clear()
-        self.update_file_list()
-        self.update_column_selectors()
-        self.log_message("File list cleared")
-
-    def on_file_selection_changed(self):
-        """Handle file selection change."""
-        current_item = self.file_list_widget.currentItem()
-        if current_item:
-            filename = current_item.text()
-            self.display_data_preview(filename)
-            self.log_message(f"Selected: {filename}")
-
-    def update_column_selectors(self):
-        """
-        Update column selection dropdowns based on ALL loaded files.
-        X-axis: Shows only COMMON columns (intersection).
-        Y-axis: Shows ALL columns (union).
-        """
-        self.x_column_combo.clear()
-        self.y_columns_list.clear()
-
-        if not self.loaded_data:
-            return
-
-        # Get common columns for X-axis (intersection)
-        common_cols = get_common_columns(self.loaded_data)
-        common_cols_sorted = sorted(list(common_cols))
-
-        # Get all columns for Y-axis (union)
-        all_cols = get_all_columns(self.loaded_data)
-        all_cols_sorted = sorted(list(all_cols))
-
-        # Populate X-axis combo with common columns only
-        if common_cols_sorted:
-            self.x_column_combo.addItems(common_cols_sorted)
-            self.x_column_combo.setCurrentIndex(0)
-            self.log_message(
-                f"X-axis options: {len(common_cols_sorted)} common columns")
+    @staticmethod
+    def _configure_graph(graph: Any, title: str, config: PlotConfig, date_x: bool) -> None:
+        graph.Add("label", name="plotTitle")
+        graph.plotTitle.Text.size.val = "12pt"
+        graph.plotTitle.label.val = title
+        graph.plotTitle.alignHorz.val = "centre"
+        graph.plotTitle.yPos.val = 1.05
+        graph.plotTitle.xPos.val = 0.5
+        graph.topMargin.val = "1cm"
+        graph.x.label.val = config.x_label
+        graph.y.label.val = config.y_label
+        if date_x:
+            from _autoplot_native import mark_local_time_axis
+            default_label = config.x_label in ("", PlotConfig.x_label)
+            mark_local_time_axis(graph.x, "Local time" if default_label else config.x_label)
+            graph.x.TickLabels.rotate.val = "45"
         else:
-            self.log_message(
-                "WARNING: No common columns found across all files!")
+            graph.x.log.val = config.x_scale == "log"
+        graph.y.log.val = config.y_scale == "log"
+        graph.x.GridLines.hide.val = not config.show_grid
+        graph.y.GridLines.hide.val = not config.show_grid
+        if config.show_legend:
+            key = graph.Add("key")
+            key.horzPosn.val = "right"
+            key.vertPosn.val = "top"
 
-        # Populate Y-axis list with all columns
-        if all_cols_sorted:
-            self.y_columns_list.addItems(all_cols_sorted)
-            self.log_message(
-                f"Y-axis options: {len(all_cols_sorted)} total columns")
+    def save_project(self, file_path: str, log_file: bool = False) -> str:
+        """Write the .vszh5 (atomic); optionally the log next to it. Returns the path."""
+        written = self.doc.save(file_path)
+        self.log_message("Saved Veusz project: %s" % written)
+        if log_file:
+            log_path = os.path.splitext(written)[0] + "_log.txt"
+            with open(log_path, "w", encoding="utf-8") as handle:
+                handle.write("%s %s log - %s\n%s\n\n" % (
+                    APP_NAME, APP_VERSION,
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "=" * 60))
+                handle.write("\n".join(self.messages) + "\n")
+        return written
 
-        # Validate X-axis selection
-        self.validate_x_axis_selection()
 
-    def validate_x_axis_selection(self):
-        """
-        Validate that selected X-axis column exists in ALL loaded files.
-        Update button state and warning message accordingly.
-        """
-        x_column = self.x_column_combo.currentText()
+# %% GUI (imported lazily so --output works without Qt)
+def _build_gui_classes():
+    from qtpy.QtCore import Qt
+    from qtpy.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
+                                QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+                                QLineEdit, QListWidget, QMainWindow, QMessageBox,
+                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
+                                QTabWidget, QTextEdit, QVBoxLayout, QWidget)
+    import _suite_gui as suite
 
-        if not x_column or not self.loaded_data:
-            self.generate_btn.setEnabled(False)
-            self.generate_btn.setStyleSheet(
-                "background-color: gray; color: white; font-weight: bold; padding: 8px;")
-            self.x_axis_warning_label.setText("")
-            return
+    class CSVAutoPlotMainWindow(QMainWindow):
+        """Processing and Plots tabs; File / View / Help menus."""
 
-        # Check if X column exists in all files
-        missing_files = []
-        for filename, df in self.loaded_data.items():
-            if x_column not in df.columns:
-                missing_files.append(filename)
+        def __init__(self) -> None:
+            super().__init__()
+            self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
+            self.resize(1400, 950)
+            self.selected_files: List[str] = []
+            self.loaded: Dict[str, LoadedFile] = {}       # full path -> file
+            self.csv_config = CSVProcessingConfig()
+            self.plot_config = PlotConfig()
+            self.plotter: Optional[VeuszPlotter] = None
+            self.last_saved: Optional[str] = None
+            self.theme = suite.apply_theme(suite.saved_theme(), persist=False)
+            suite.add_file_menu(self, [
+                ("&Add Files...", self.browse_files, "Ctrl+O"),
+                ("&Clear Files", self.clear_files, ""),
+                ("&Generate Plots", self.generate_plots, "F5"),
+                ("&Save Veusz Project (.vszh5)...", self.save_to_veusz, "Ctrl+S"),
+                ("Open Last Project in &Veusz", self.open_in_veusz, ""),
+                ("&Export Last Project to PDF / PNG (Veusz)", self.export_pages, ""),
+            ])
+            self.act_light, self.act_dark = suite.add_view_menu(self, self._set_theme, self.theme)
+            suite.add_help_menu(self, APP_NAME, APP_VERSION, APP_DESCRIPTION, ("pandas",))
+            self.setup_ui()
+            self.log_message("%s %s ready; theme %s." % (APP_NAME, APP_VERSION, self.theme))
 
-        if missing_files:
-            # X column NOT in all files - RED button, disabled
-            self.generate_btn.setEnabled(False)
-            self.generate_btn.setStyleSheet(
-                "background-color: #DC143C; color: white; font-weight: bold; padding: 8px;")
+        # ----- layout -------------------------------------------------------------
+        def setup_ui(self) -> None:
+            central = QWidget()
+            self.setCentralWidget(central)
+            outer = QVBoxLayout(central)
+            self.tabs = QTabWidget()
+            outer.addWidget(self.tabs, 1)
+            processing = QWidget()
+            self.tabs.addTab(processing, "Processing")
+            main_layout = QVBoxLayout(processing)
 
-            # Display RED warning message in all caps
-            warning_msg = f"WARNING: NOT ALL LOADED FILES CONTAIN THE SELECTED X AXIS COLUMN '{x_column}'"
-            self.x_axis_warning_label.setText(warning_msg)
-            self.log_message(f"X-axis validation FAILED: {warning_msg}")
-            self.log_message(f"Missing from: {', '.join(missing_files)}")
-        else:
-            # X column exists in all files - GREEN button, enabled
-            self.generate_btn.setEnabled(True)
-            self.generate_btn.setStyleSheet(
-                "background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
-            self.x_axis_warning_label.setText("")
-            self.log_message(
-                f"X-axis validation PASSED: '{x_column}' exists in all {len(self.loaded_data)} files")
+            file_group = QGroupBox("File Selection and Delimiter Configuration")
+            file_layout = QHBoxLayout(file_group)
+            left = QVBoxLayout()
+            row = QHBoxLayout()
+            for text, slot in (("Browse Files", self.browse_files), ("Clear Files", self.clear_files)):
+                button = QPushButton(text)
+                button.clicked.connect(slot)
+                row.addWidget(button)
+            row.addStretch()
+            left.addLayout(row)
+            self.file_list_widget = QListWidget()
+            self.file_list_widget.itemSelectionChanged.connect(self.on_file_selection_changed)
+            left.addWidget(QLabel("Loaded Files:"))
+            left.addWidget(self.file_list_widget)
+            right = QVBoxLayout()
+            delimiter_group = QGroupBox("Delimiter Configuration")
+            form = QFormLayout(delimiter_group)
+            detect = QPushButton("Auto-Detect Delimiter")
+            detect.clicked.connect(self.auto_detect_delimiter)
+            form.addRow("Auto-Detection:", detect)
+            self.delimiter_input = QLineEdit(",")
+            self.delimiter_input.setMaximumWidth(100)
+            self.delimiter_input.setToolTip("Literal text; \\t = tab, \\s+ = any whitespace")
+            self.delimiter_input.editingFinished.connect(self.reload_files)
+            form.addRow("Delimiter:", self.delimiter_input)
+            self.header_spin = QSpinBox()
+            self.header_spin.setRange(1, 100000)
+            self.header_spin.setMaximumWidth(100)
+            self.header_spin.setToolTip("Line number holding the column names (1 = first line)")
+            self.header_spin.valueChanged.connect(lambda _v: self.reload_files())
+            form.addRow("Header Line Number:", self.header_spin)
+            self.logging_box = QCheckBox("Write a log file next to the saved project")
+            self.logging_box.setChecked(True)
+            form.addRow("", self.logging_box)
+            right.addWidget(delimiter_group)
+            presets = QGroupBox("Delimiter Presets")
+            preset_row = QHBoxLayout(presets)
+            for name, delimiter in (("Comma", ","), ("Tab", "\\t"), ("Semicolon", ";"),
+                                    ("Pipe", "|"), ("Spaces", "\\s+")):
+                button = QPushButton(name)
+                button.clicked.connect(lambda _c=False, d=delimiter: self.set_delimiter(d))
+                preset_row.addWidget(button)
+            right.addWidget(presets)
+            right.addStretch()
+            file_layout.addLayout(left, 1)
+            file_layout.addLayout(right, 0)
+            main_layout.addWidget(file_group)
 
-    def display_data_preview(self, filename: str):
-        """Display a preview of the loaded data in the table."""
-        if filename not in self.loaded_data:
-            return
+            preview_group = QGroupBox("Data Preview (first 10 rows)")
+            preview_layout = QVBoxLayout(preview_group)
+            self.data_preview_table = QTableWidget()
+            self.data_preview_table.setMaximumHeight(200)
+            preview_layout.addWidget(self.data_preview_table)
+            main_layout.addWidget(preview_group)
 
-        df = self.loaded_data[filename]
-        preview_df = df.head(10)
+            column_group = QGroupBox("Column Selection for Plotting")
+            column_layout = QVBoxLayout(column_group)
+            selection = QFormLayout()
+            self.x_column_combo = QComboBox()
+            self.x_column_combo.currentTextChanged.connect(lambda _t: self.validate_x_axis_selection())
+            selection.addRow("X-Axis Column (common to all files):", self.x_column_combo)
+            self.x_axis_warning_label = QLabel("")
+            self.x_axis_warning_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+            self.x_axis_warning_label.setWordWrap(True)
+            selection.addRow("", self.x_axis_warning_label)
+            column_layout.addLayout(selection)
+            column_layout.addWidget(QLabel("Y-Axis Columns (select one or more, from any file):"))
+            self.y_columns_list = QListWidget()
+            self.y_columns_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+            self.y_columns_list.setMaximumHeight(120)
+            column_layout.addWidget(self.y_columns_list)
+            main_layout.addWidget(column_group)
 
-        self.data_preview_table.setRowCount(preview_df.shape[0])
-        self.data_preview_table.setColumnCount(preview_df.shape[1])
-        self.data_preview_table.setHorizontalHeaderLabels(preview_df.columns)
+            plot_group = QGroupBox("Plot Configuration")
+            plot_form = QFormLayout(plot_group)
+            self.title_input = QLineEdit(self.plot_config.title)
+            plot_form.addRow("Plot Title:", self.title_input)
+            self.x_label_input = QLineEdit(self.plot_config.x_label)
+            plot_form.addRow("X-Axis Label:", self.x_label_input)
+            self.y_label_input = QLineEdit(self.plot_config.y_label)
+            plot_form.addRow("Y-Axis Label:", self.y_label_input)
+            toggles = QHBoxLayout()
+            self.show_legend_checkbox = QCheckBox("Show Legend")
+            self.show_legend_checkbox.setChecked(True)
+            self.log_x_box = QCheckBox("Log X")
+            self.log_y_box = QCheckBox("Log Y")
+            self.grid_box = QCheckBox("Grid lines")
+            self.grid_box.setChecked(True)
+            self.naive_combo = QComboBox()
+            self.naive_combo.addItems(["Times without a zone are UTC",
+                                       "Times without a zone are local time"])
+            self.naive_combo.setToolTip("Date/time X columns are stored as Veusz date-times "
+                                        "(UTC) and shown in this computer's local time "
+                                        "(ISO 8601 with the UTC offset).")
+            for box in (self.show_legend_checkbox, self.log_x_box, self.log_y_box, self.grid_box,
+                        self.naive_combo):
+                toggles.addWidget(box)
+            toggles.addStretch()
+            plot_form.addRow(toggles)
+            main_layout.addWidget(plot_group)
 
-        for i, row in enumerate(preview_df.values):
-            for j, value in enumerate(row):
-                item = QTableWidgetItem(str(value))
-                self.data_preview_table.setItem(i, j, item)
+            self.status_text = QTextEdit()
+            self.status_text.setReadOnly(True)
+            self.status_text.setMaximumHeight(130)
+            main_layout.addWidget(self.status_text)
 
-        self.data_preview_table.resizeColumnsToContents()
+            widget, self.plot_panel = suite.make_plot_panel(self.theme == "dark")
+            self.tabs.addTab(widget, "Plots")
 
-    def auto_detect_delimiter(self):
-        """Auto-detect delimiter from currently selected file."""
-        current_item = self.file_list_widget.currentItem()
-        if not current_item:
-            QMessageBox.warning(self, "No File Selected",
-                                "Please select a file first")
-            return
+            buttons = QHBoxLayout()
+            self.generate_btn = QPushButton("Generate Plots")
+            self.generate_btn.clicked.connect(self.generate_plots)
+            self.save_btn = QPushButton("Save Veusz Project (.vszh5)")
+            self.save_btn.clicked.connect(self.save_to_veusz)
+            self.save_btn.setEnabled(False)
+            self.veusz_btn = QPushButton("Open in Veusz...")
+            self.veusz_btn.clicked.connect(self.open_in_veusz)
+            self.veusz_btn.setEnabled(False)
+            close = QPushButton("Close")
+            close.clicked.connect(self.close)
+            for button in (self.generate_btn, self.save_btn, self.veusz_btn, close):
+                buttons.addWidget(button)
+            outer.addLayout(buttons)
+            self.validate_x_axis_selection()
 
-        filename = current_item.text()
-        file_path = self._get_file_path(filename)
+        # ----- helpers ------------------------------------------------------------
+        def log_message(self, message: str) -> None:
+            stamp = datetime.datetime.now().strftime("%H:%M:%S")
+            self.status_text.append("[%s] %s" % (stamp, message))
 
-        if file_path:
-            detected_delim = detect_delimiter(file_path)
-            self.delimiter_input.setText(detected_delim)
-            self.log_message(
-                f"Auto-detected delimiter: {repr(detected_delim)}")
+        def _set_theme(self, mode: str) -> None:
+            self.theme = suite.apply_theme(mode)
+            if self.plot_panel is not None:
+                self.plot_panel.apply_theme(self.theme == "dark")
+            self.validate_x_axis_selection()
+            self.log_message("Theme set to %s mode" % self.theme)
 
-    def set_delimiter(self, delimiter: str):
-        """Set the delimiter and reload files."""
-        self.delimiter_input.setText(delimiter)
-        self.loaded_data.clear()
-        self.metadata_dict.clear()
-        self.load_files()
-        self.log_message(f"Delimiter set to: {repr(delimiter)}")
+        def _config(self) -> CSVProcessingConfig:
+            self.csv_config.delimiter = delimiter_from_text(self.delimiter_input.text())
+            self.csv_config.header_line = self.header_spin.value() - 1
+            return self.csv_config
 
-    def on_delimiter_changed(self):
-        """Handle delimiter change."""
-        self.loaded_data.clear()
-        self.metadata_dict.clear()
-        self.load_files()
+        # ----- files --------------------------------------------------------------
+        def browse_files(self) -> None:
+            files, _ = QFileDialog.getOpenFileNames(
+                self, "Select CSV/TSV Files", "",
+                "Delimited Files (*.csv *.tsv *.txt *.dat);;All Files (*)")
+            self.add_files(files)
 
-    def on_data_start_line_changed(self):
-        """Handle data start line change."""
-        self.loaded_data.clear()
-        self.metadata_dict.clear()
-        self.load_files()
-        self.log_message(
-            f"Header line set to: {self.data_start_line_spinbox.value()}")
+        def add_files(self, files: Sequence[str]) -> None:
+            new = [f for f in files if f not in self.selected_files]
+            if not new:
+                return
+            self.selected_files.extend(new)
+            self._load(new)
 
-    def on_plot_config_changed(self):
-        """Handle plot configuration change."""
-        # Update config values
-        self.plot_config.title = self.title_input.text()
-        self.plot_config.x_label = self.x_label_input.text()
-        self.plot_config.y_label = self.y_label_input.text()
-        self.plot_config.show_legend = self.show_legend_checkbox.isChecked()
+        def _load(self, paths: Sequence[str]) -> None:
+            files, messages = load_files(paths, self._config())
+            for message in messages:
+                self.log_message(message)
+            for loaded in files:
+                self.loaded[loaded.path] = loaded
+            self.update_file_list()
+            self.update_column_selectors()
 
-        # Validate X-axis selection whenever config changes
-        self.validate_x_axis_selection()
+        def reload_files(self) -> None:
+            self.loaded.clear()
+            if self.selected_files:
+                self._load(self.selected_files)
 
-    def generate_plots(self):
-        """Generate plots in Veusz."""
-        if not self.loaded_data:
-            QMessageBox.warning(
-                self, "No Data", "Please load CSV/TSV files first")
-            return
+        def update_file_list(self) -> None:
+            self.file_list_widget.clear()
+            for path in self.selected_files:
+                if path in self.loaded:
+                    self.file_list_widget.addItem(os.path.basename(path))
+                    self.file_list_widget.item(self.file_list_widget.count() - 1).setToolTip(path)
+                    self.file_list_widget.item(self.file_list_widget.count() - 1).setData(
+                        Qt.ItemDataRole.UserRole, path)
 
-        x_column = self.x_column_combo.currentText()
-        y_columns = [item.text()
-                     for item in self.y_columns_list.selectedItems()]
+        def clear_files(self) -> None:
+            self.selected_files.clear()
+            self.loaded.clear()
+            self.update_file_list()
+            self.update_column_selectors()
+            self.log_message("File list cleared")
 
-        if not x_column or not y_columns:
-            QMessageBox.warning(self, "No Columns Selected",
-                                "Please select X and Y columns")
-            return
+        def on_file_selection_changed(self) -> None:
+            item = self.file_list_widget.currentItem()
+            if item is not None:
+                self.display_data_preview(item.data(Qt.ItemDataRole.UserRole))
 
-        # Final validation check
-        missing_files = []
-        for filename, df in self.loaded_data.items():
-            if x_column not in df.columns:
-                missing_files.append(filename)
+        def _files(self) -> List[LoadedFile]:
+            return [self.loaded[p] for p in self.selected_files if p in self.loaded]
 
-        if missing_files:
-            QMessageBox.critical(self, "Invalid X-Axis Selection",
-                                 f"X-axis column '{x_column}' not found in the following files:\n" +
-                                 "\n".join(missing_files))
-            return
+        def update_column_selectors(self) -> None:
+            current_x = self.x_column_combo.currentText()
+            selected_y = {i.text() for i in self.y_columns_list.selectedItems()}
+            self.x_column_combo.blockSignals(True)
+            self.x_column_combo.clear()
+            self.y_columns_list.clear()
+            files = self._files()
+            common = sorted(get_common_columns(files))
+            self.x_column_combo.addItems(common)
+            if current_x in common:
+                self.x_column_combo.setCurrentText(current_x)
+            self.x_column_combo.blockSignals(False)
+            self.y_columns_list.addItems(sorted(get_all_columns(files)))
+            for index in range(self.y_columns_list.count()):
+                item = self.y_columns_list.item(index)
+                item.setSelected(item.text() in selected_y)
+            if files:
+                self.log_message("X-axis options: %d common column(s); Y-axis options: %d"
+                                 % (len(common), self.y_columns_list.count()))
+                if not common:
+                    self.log_message("WARNING: No common columns found across all files!")
+            self.validate_x_axis_selection()
 
-        try:
-            # Create plotter instance
-            self.plotter = VeuszPlotter(plot_title=self.plot_config.title)
+        def validate_x_axis_selection(self) -> bool:
+            x_column = self.x_column_combo.currentText()
+            files = self._files()
+            missing = [f.name for f in files if x_column not in f.frame.columns]
+            ok = bool(x_column and files and not missing)
+            self.generate_btn.setEnabled(ok)
+            colour = "#4CAF50" if ok else ("#DC143C" if missing else "#7f8c8d")
+            self.generate_btn.setStyleSheet("background-color: %s; color: white; "
+                                            "font-weight: bold; padding: 6px;" % colour)
+            self.x_axis_warning_label.setText(
+                "WARNING: NOT ALL LOADED FILES CONTAIN THE SELECTED X AXIS COLUMN '%s'"
+                % x_column if missing else "")
+            return ok
 
-            # Setup logging if enabled
-            if self.enable_logging_checkbox.isChecked():
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                log_path = f"CSV_AutoPlot_V6_Log_{timestamp}.txt"
-                self.plotter.set_logging(True, log_path)
-                self.log_message(f"Logging enabled: {log_path}")
+        def display_data_preview(self, path: str) -> None:
+            loaded = self.loaded.get(path)
+            if loaded is None:
+                return
+            preview = loaded.frame.head(10)
+            self.data_preview_table.setRowCount(preview.shape[0])
+            self.data_preview_table.setColumnCount(preview.shape[1])
+            self.data_preview_table.setHorizontalHeaderLabels([str(c) for c in preview.columns])
+            for i, row in enumerate(preview.itertuples(index=False)):
+                for j, value in enumerate(row):
+                    self.data_preview_table.setItem(i, j, QTableWidgetItem(str(value)))
+            self.data_preview_table.resizeColumnsToContents()
 
-            # Generate overlay and individual plots
-            success = self.plotter.create_overlay_and_individual_plots(
-                self.loaded_data,
-                self.metadata_dict,
-                x_column,
-                y_columns,
-                self.plot_config
-            )
+        def auto_detect_delimiter(self) -> None:
+            item = self.file_list_widget.currentItem()
+            path = item.data(Qt.ItemDataRole.UserRole) if item else (
+                self.selected_files[0] if self.selected_files else "")
+            if not path:
+                QMessageBox.warning(self, APP_NAME, "Add a file first.")
+                return
+            detected = detect_delimiter(path)
+            self.set_delimiter("\\t" if detected == "\t" else detected)
+            self.log_message("Auto-detected delimiter: %r" % detected)
 
-            if success:
-                num_files = len(self.loaded_data)
-                total_pages = 1 + num_files
-                self.log_message("Plots created successfully in Veusz")
-                QMessageBox.information(self, "Success",
-                                        f"Overlay plot and individual plots created successfully!\n"
-                                        f"Total pages: {total_pages} (1 overlay + {num_files} individual file pages)\n"
-                                        f"Each file uses its own independent X-axis data.\n"
-                                        "Use 'Save to Veusz' button to save the project.")
-            else:
-                QMessageBox.critical(
-                    self, "Error", "Failed to create plots in Veusz")
+        def set_delimiter(self, text: str) -> None:
+            self.delimiter_input.setText(text)
+            self.reload_files()
+            self.log_message("Delimiter set to: %r" % delimiter_from_text(text))
 
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Error", f"Error generating plots: {str(e)}")
-            self.log_message(f"Plot generation error: {str(e)}")
-            traceback.print_exc()
+        # ----- plots and project -------------------------------------------------
+        def _plot_config(self) -> PlotConfig:
+            config = self.plot_config
+            config.title = self.title_input.text()
+            config.x_label = self.x_label_input.text()
+            config.y_label = self.y_label_input.text()
+            config.show_legend = self.show_legend_checkbox.isChecked()
+            config.show_grid = self.grid_box.isChecked()
+            config.x_scale = "log" if self.log_x_box.isChecked() else "linear"
+            config.y_scale = "log" if self.log_y_box.isChecked() else "linear"
+            config.naive_time = "local" if self.naive_combo.currentIndex() == 1 else "utc"
+            return config
 
-    def save_to_veusz(self):
-        """Save current Veusz project to .vszh5 file."""
-        if self.plotter is None or self.plotter.doc is None:
-            QMessageBox.warning(self, "No Plot",
-                                "Please generate plots first before saving")
-            return
-
-        file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getSaveFileName(
-            self, "Save Veusz Project",
-            "", "Veusz HDF5 (*.vszh5);;All Files (*)"
-        )
-
-        if file_path:
+        def generate_plots(self) -> None:
+            if not self.validate_x_axis_selection():
+                QMessageBox.warning(self, APP_NAME, "Load files and choose an X column that "
+                                    "exists in every file.")
+                return
+            y_columns = [i.text() for i in self.y_columns_list.selectedItems()]
+            if not y_columns:
+                QMessageBox.warning(self, APP_NAME, "Select one or more Y columns.")
+                return
+            config = self._plot_config()
+            plotter = VeuszPlotter(config.title)
             try:
-                success = self.plotter.save_project(file_path)
-                if success:
-                    self.log_message(f"Saved Veusz project: {file_path}")
-                    QMessageBox.information(self, "Success",
-                                            f"Veusz project saved successfully:\n{file_path}")
+                n_traces = plotter.create_overlay_and_individual_plots(
+                    self._files(), self.x_column_combo.currentText(), y_columns, config)
+            except Exception as exc:
+                QMessageBox.critical(self, APP_NAME, "Plot generation failed:\n%s" % exc)
+                self.log_message("Plot generation error: %s" % exc)
+                return
+            for message in plotter.messages:
+                self.status_text.append(message)
+            self.plotter = plotter
+            self.save_btn.setEnabled(True)
+            if self.plot_panel is not None:
+                try:
+                    pages = self.plot_panel.set_document(plotter.doc)
+                    self.log_message("Plots tab: %d page(s), %d overlay trace(s)."
+                                     % (pages, n_traces))
+                    self.tabs.setCurrentIndex(1)
+                except Exception as exc:
+                    self.log_message("Plots tab could not draw the project: %s" % exc)
 
-                    # Ask to open in Veusz
-                    reply = QMessageBox.question(
-                        self, "Open in Veusz",
-                        "Would you like to open the file in Veusz?",
-                        QMessageBox.Yes | QMessageBox.No
-                    )
+        def save_to_veusz(self) -> None:
+            if self.plotter is None:
+                QMessageBox.warning(self, APP_NAME, "Generate plots first.")
+                return
+            path, _ = QFileDialog.getSaveFileName(self, "Save Veusz Project", "",
+                                                  "Veusz HDF5 Project (*.vszh5)")
+            if not path:
+                return
+            try:
+                self.last_saved = self.plotter.save_project(path, self.logging_box.isChecked())
+            except Exception as exc:
+                QMessageBox.critical(self, APP_NAME, "Error saving:\n%s" % exc)
+                self.log_message("Save error: %s" % exc)
+                return
+            self.log_message("Saved Veusz project: %s" % self.last_saved)
+            self.veusz_btn.setEnabled(True)
+            if QMessageBox.question(self, "Open in Veusz", "Open the saved project in Veusz?") \
+                    == QMessageBox.StandardButton.Yes:
+                self.open_in_veusz()
 
-                    if reply == QMessageBox.Yes:
-                        self.plotter.open_gui(file_path)
-                else:
-                    QMessageBox.critical(
-                        self, "Error", "Failed to save Veusz project")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error saving: {str(e)}")
-                self.log_message(f"Save error: {str(e)}")
+        def open_in_veusz(self) -> None:
+            if not self.last_saved:
+                QMessageBox.information(self, APP_NAME, "Save a project first.")
+                return
+            suite.open_in_veusz(self, self.last_saved)
 
-    def log_message(self, message: str):
-        """Add message to status log."""
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        self.status_text.append(f"[{timestamp}] {message}")
+        def export_pages(self) -> None:
+            if not self.last_saved:
+                QMessageBox.information(self, APP_NAME, "Save a project first.")
+                return
+            suite.export_with_veusz(self, self.last_saved, self.log_message)
 
-    def closeEvent(self, event):
-        """Handle window close event."""
-        if self.plotter:
-            self.plotter.close_log()
-        event.accept()
+        def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+            if self.plot_panel is not None:
+                self.plot_panel.clear()
+            super().closeEvent(event)
+
+    return QApplication, CSVAutoPlotMainWindow
 
 
-# ============================================================================
-# APPLICATION ENTRY POINT
-# ============================================================================
-
-def main():
-    """Main application entry point."""
-    app = QApplication(sys.argv)
-    window = CSVAutoPlotMainWindow()
+# %% Main Execution
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=APP_DESCRIPTION)
+    parser.add_argument("files", nargs="*")
+    parser.add_argument("--output", help="write this .vszh5 without opening the GUI")
+    parser.add_argument("--x", help="X column (batch)")
+    parser.add_argument("--y", action="append", default=[], help="Y column (repeatable)")
+    parser.add_argument("--delimiter", default=",")
+    parser.add_argument("--header-line", type=int, default=1, help="1 = first line")
+    parser.add_argument("--title", default=PlotConfig.title)
+    parser.add_argument("--naive-time", choices=("utc", "local"), default="utc",
+                        help="date-times written without a zone are UTC or local time")
+    parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
+    args = parser.parse_args(argv)
+    if args.output:
+        if not args.x or not args.y:
+            parser.error("--output needs --x and at least one --y")
+        config = CSVProcessingConfig(delimiter=delimiter_from_text(args.delimiter),
+                                     header_line=max(0, args.header_line - 1))
+        files, messages = load_files(args.files, config)
+        print("\n".join(messages))
+        plotter = VeuszPlotter(args.title)
+        plotter.create_overlay_and_individual_plots(
+            files, args.x, args.y, PlotConfig(title=args.title, x_label=args.x,
+                                              y_label=", ".join(args.y),
+                                              naive_time=args.naive_time))
+        print("\n".join(plotter.messages))
+        print("Wrote", plotter.save_project(args.output))
+        return 0
+    QApplication, Window = _build_gui_classes()
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    window = Window()
+    window.add_files(args.files)
     window.show()
-    sys.exit(app.exec())
+    return app.exec()
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    sys.exit(main())

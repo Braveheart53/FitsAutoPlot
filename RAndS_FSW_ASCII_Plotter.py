@@ -1,1013 +1,950 @@
-# CORRECTED FILE 2: RAndS_FSW_ASCII_Plotter_lrgFiles.py
-# Full corrected version with all CUDA and Veusz fixes applied
-# Date: January 26, 2026
-# All issues fixed: CUDA detection + Data registration sequence + Validation
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-Enhanced R&S FSW ASCII Plotter with Multiprocessing and GPU Support
+# %% Header Info
+--------
+RAndS_FSW_ASCII_Plotter.py
+
+Rohde & Schwarz spectrum-analyzer trace files (.sft: FSP/FSW "Section"
+files in ASCII or binary, and FSW ASCII x;y exports) -> native Veusz
+project (.vszh5) and interactive pyqtgraph plots:
+
+    * x axis from the header: frequency (x-Unit Hz; LIN -> linspace,
+      LOG -> geomspace from Start to Stop) or time (x-Unit s, zero span:
+      0 .. SWT);
+    * every section (sweep) of every file, per-file power averages and an
+      average of all files that share one x axis;
+    * plot modes: all plots / average + overlay / average only;
+    * optional split into several project files of at most N section pages;
+    * the .vszh5 is written by the author's shared writer (vszh5_writer.py
+      0.0.24 through _autoplot_native.NativeDocument) - Veusz is NOT needed
+      to create the file, only (optionally) to view or export it.
+
+Batch use without the GUI:
+    python RAndS_FSW_ASCII_Plotter.py --mode 0 --output out.vszh5 a.sft b.sft
+
 Created on 2025-06-28
-Enhanced version with parallel processing and GPU acceleration capabilities
-Author: William W. Wallace (Enhanced)
+
+# %%% Author Information
+@author: William W. Wallace
 Author Email: wwallace@nrao.edu
 Author Secondary Email: naval.antennas@gmail.com
 Author Business Phone: +1 (304) 456-2216
-Version: 1.0.3 - Corrected Average+Overlay only mode with AutoSave functionality
+Company: NRAO / Green Bank Observatory (GBO)
+Licence: GPL-3.0-or-later (GNU General Public License v3.0 or later)
+Compatible with: Python 3.8+ (qtpy with PySide6 or PyQt5; CuPy optional)
+
+# %%% File layout (from the examples in Example_Data_Files/sft)
+Header lines "Key;Value;Unit;" (Type, Version, Mode, Center Freq, Span,
+x-Axis LIN|LOG, Start, Stop, Ref Level, RBW, VBW, SWT, Trace Mode, Detector,
+x-Unit, y-Unit, Values N, ...).  Then one block per sweep:
+    "Section N;YYYY.M.D_h.m.s:ms" newline, then N values, either one
+    comma-separated ASCII line (FSP firmware 4.50 examples) or N little-
+    endian float32 values followed by one byte (binary example
+    ngRADAR_003.sft: 2004 + 1 bytes for N = 501).
+FSW ASCII exports without sections ("x;y;" rows after "Values") are read
+as one trace per y column.
+
+# %%% References
+[1] Rohde & Schwarz, "R&S FSW Signal and Spectrum Analyzer User Manual,"
+    ch. "Trace export / ASCII file export format," Munich, Germany.
+    https://www.rohde-schwarz.com/manual/fsw/
+[2] Rohde & Schwarz, "R&S FSP Spectrum Analyzer Operating Manual," ch.
+    "ASCII file export format (TRACE ... ASCII FILE EXPORT)," Munich, Germany.
+[3] W. W. Wallace, "vszh5_writer.py 0.0.24," shared Veusz HDF5 writer,
+    2026 (linear_power_mean_dbm: average of mW, not of dB).
+[4] IEEE Standard for Spectrum Analyzers, IEEE Std 748-1979 (R2007) -
+    power (not log) averaging of traces.
+
+# %%% Revisions
+Utilizing Semantic Schema as External Release.Internal Release.Working version
+
+# %%%% 1.1.1: Original page names, sweep times as Veusz date-times, notes.
+# Date: 2026-11-09
+#              * Page and graph names follow the 2025 script: a section page
+#                is "<file>::Section N;<time stamp>" (underscores shown as
+#                spaces, as before), an average page "<file> average"; the
+#                graphs are named after their y dataset ("<file>_Section1",
+#                "<file>_avg_dB") instead of "graph".
+#              * The sweep time stamps ("2025.6.17_9.26.44:783") are stored
+#                as a Veusz DATE dataset "<file>_sweep_time" (instrument
+#                clock; the file does not say which zone) and listed in the
+#                page notes.
+#              * Page notes: "Source: <file>", the full header and the sweep
+#                count; a section page adds its own sweep time, the file's
+#                average page lists every sweep time; the overlay and
+#                Averages pages list every file with its header.
+#              * Writer 0.0.25 / _autoplot_native 0.3.0.
+# %%%% 1.1.0: Native writer, Plots tab, time-domain axis, binary sections.
+# Date: 2026-11-05
+#              * .vszh5 written by vszh5_writer 0.0.24 through
+#                _autoplot_native.NativeDocument (no veusz.embed window, no
+#                extra legacy .vsz in "Beware_oldVersion").
+#              * Plots tab (pyqtgraph), View > Light / Dark (suite theme),
+#                Help > About, File menu, Export PDF / PNG (Veusz).
+#              * Time domain: x-Unit "s" (zero span) gives a time axis
+#                0 .. SWT labelled "Time (s)"; it was drawn against
+#                Start .. Stop as if it were a frequency sweep.  x-Axis LOG
+#                gives logarithmically spaced points (was linear) and a log
+#                x axis.
+#              * Header read by key (the old pattern search matched
+#                "ENDSTOP" for "Stop" and "Trace Mode" for "Trace"), binary
+#                float32 sections read (ngRADAR_003.sft was unreadable),
+#                empty sections and short traces reported, not fatal.
+#              * Averages: power mean in mW (vszh5_writer.
+#                linear_power_mean_dbm; NaN-aware fallback), optional CuPy.
+#                "Average only" produced no plot at all and "Average +
+#                Overlay" only added the average to the overlay: every mode
+#                now has a page per file average and an "Averages" page
+#                (each file, plus all files when they share one x axis).
+#              * Dataset names: {file}_freq / {file}_time and
+#                {file}_Section{N} (the bare "Section N;time" names of
+#                different files could collide); the time stamp is in the
+#                legend text.
+#              * Check boxes use toggled(bool) (stateChanged == Qt.Checked
+#                was always False under PySide6).  The no-op GPU "process"
+#                step (multiply by 1.0) and the per-worker GPU context were
+#                removed; GPU is used for the averages when CuPy works.
+#              * Split saving writes {base}_001.vszh5 ... next to the chosen
+#                file when saving (it used to create a folder in the current
+#                working directory during processing).
+#              * The hang monitor (Hanging_Threads) only runs with
+#                AUTOPLOT_HANG_MONITOR=1: an idle Qt event loop looked like
+#                a hang every 20 s.
+# %%%% 1.0.3: Corrected Average+Overlay only mode with AutoSave (2026-01-26).
 =============================================================================
 """
-# TODO: compare GPU based processing on this one to Touchstone
-# TODO: ensure plot of the average trace is created in both avg only and avg with overlay. Avg of each file and all
-# %% Import all required modules
-# %%% System Interface Modules
+# %% Import Modules
+from __future__ import annotations
+
+import argparse
+import datetime
+import multiprocessing
 import os
 import re
-import subprocess
 import sys
-import warnings
-from collections import defaultdict
-from dataclasses import dataclass
-from operator import itemgetter
-
-warnings.filterwarnings('ignore', message='.*CUDA path could not be detected.*')
-from Hanging_Threads import start_monitoring
-import datetime
-
-# %%% GUI Module Imports - QtPy for cross-platform compatibility
-if getattr(sys, 'frozen', False):
-    os.environ['QT_API'] = 'pyside6'
-    from PySide6.QtCore import Qt, QThread, Signal
-    from PySide6.QtWidgets import (
-        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-        QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QLineEdit
-    )
-else:
-    from qtpy.QtCore import Qt, QThread, Signal
-    from qtpy.QtWidgets import (
-        QApplication, QVBoxLayout, QHBoxLayout, QPushButton,
-        QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-        QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-        QSpinBox, QGroupBox, QListWidget, QLineEdit
-    )
-# %%% Math and Processing Modules
-import numpy as np
-from fastest_ascii_import import fastest_file_parser as fparser
-# %%% Parallel Processing Modules
-import threading
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from multiprocessing import cpu_count
-import multiprocessing as mp
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-# %%% GPU Acceleration Modules
-# Multi-level GPU detection with fallback
-CUPY_AVAILABLE = False
-CUPY_AVAILABLE_VERIFIED = False
-try:
-    import cupy as cp
+os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
+import numpy as np  # noqa: E402
+from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
+
+APP_NAME = "R&S FSW / FSP Trace Plotter"
+APP_VERSION = "1.1.1"
+__version__ = APP_VERSION
+APP_DESCRIPTION = ("Rohde & Schwarz .sft trace files to native Veusz .vszh5 projects, "
+                   "with averages and interactive pyqtgraph plots.")
+PARALLEL_MIN_FILES = 4
+MODE_NAMES = ("All plots", "Average + Overlay", "Average only")
+
+
+def _cupy():
+    """CuPy module when a CUDA device works, else None (checked on demand)."""
     try:
-        cp.cuda.Device(0).use()
-        CUPY_AVAILABLE = True
-        CUPY_AVAILABLE_VERIFIED = True
-        print("✓ CuPy/CUDA available and verified")
-    except RuntimeError as e:
-        print(f"⚠ CuPy found but CUDA not accessible: {e}")
-        print("  Falling back to CPU processing")
-        CUPY_AVAILABLE = False
-except ImportError:
-    print("ℹ CuPy not installed. Using CPU processing.")
-    CUPY_AVAILABLE = False
-except Exception as e:
-    print(f"⚠ CuPy error: {e}")
-    print("  Falling back to CPU processing")
-    CUPY_AVAILABLE = False
-try:
-    import pyopencl as cl
-
-    PYOPENCL_AVAILABLE = True
-except ImportError:
-    PYOPENCL_AVAILABLE = False
-# %%% Plotting Environment
-import veusz.embed as embed
+        import cupy
+        cupy.cuda.Device(0).use()
+        return cupy
+    except Exception:
+        return None
 
 
-# %% Configuration and Data Classes
-@dataclass
-class ProcessingConfig:
-    """Configuration class for processing settings."""
-    enable_multiprocessing: bool = True
-    enable_gpu_processing: bool = False
-    use_opencl: bool = True
-    num_processes: int = cpu_count()
-    max_workers: int = cpu_count()
-    chunk_size: int = min(1000, max(100, cpu_count() * 10))
-    plot_mode: int = 0
-    enable_auto_save: bool = False
-    plots_per_file: int = 1000
-    auto_save_base_name: str = "RnS_Plots_Batch"
-    enable_async_processing: bool = True
-    memory_optimization: bool = True
-    use_shared_memory: bool = True
-    batch_plot_generation: bool = True
+# %% SFT reader (no Qt; runs in worker processes)
+class SFTFormatError(ValueError):
+    """The file holds no trace this program can read."""
 
 
 @dataclass
-class plotDescInfo:
-    """Setting up general plot info class to update as needed."""
-    xAxis_label: str
-    yAxis_label: str
-    graph_notes: str
-    graph_title: str
-    base_name: str
-    first_plot: bool
+class SFTTrace:
+    number: int
+    stamp: str
+    values: np.ndarray
 
 
-# %% GPU Processing Classes
-class GPUProcessor:
-    """Handles GPU acceleration using either CuPy or PyOpenCL."""
+@dataclass
+class SFTFile:
+    path: str
+    header: Dict[str, Tuple[str, str]]      # lower-case key -> (value, unit)
+    header_lines: List[str]
+    x: np.ndarray
+    x_kind: str                             # "frequency", "time" or "index"
+    x_label: str
+    x_log: bool
+    y_unit: str
+    traces: List[SFTTrace]
+    warnings: List[str] = field(default_factory=list)
 
-    def __init__(self, config: ProcessingConfig):
-        """Initialize GPU processor based on available libraries."""
-        self.config = config
-        self.gpu_available = False
-        self.context = None
-        self.queue = None
-        if config.enable_gpu_processing:
-            self._initialize_gpu()
+    @property
+    def name(self) -> str:
+        return os.path.basename(self.path)
 
-    def _initialize_gpu(self):
-        """Initialize GPU context based on available libraries."""
-        if self.config.use_opencl and PYOPENCL_AVAILABLE:
-            self._initialize_opencl()
-        elif CUPY_AVAILABLE:
-            self._initialize_cupy()
-        else:
-            print("No GPU libraries available. Falling back to CPU processing.")
-
-    def _initialize_opencl(self):
-        """Initialize OpenCL context for cross-platform GPU support."""
-        try:
-            platforms = cl.get_platforms()
-            if platforms:
-                platform = platforms[0]
-                devices = platform.get_devices(cl.device_type.GPU)
-                if not devices:
-                    devices = platform.get_devices(cl.device_type.CPU)
-                if devices:
-                    self.context = cl.Context(devices=[devices[0]])
-                    self.queue = cl.CommandQueue(self.context)
-                    self.gpu_available = True
-                    print(f"OpenCL initialized with device: {devices[0].name}")
-        except Exception as e:
-            print(f"OpenCL initialization failed: {e}")
-
-    def _initialize_cupy(self):
-        """Initialize CuPy for NVIDIA GPU acceleration with proper CUDA detection."""
-        try:
-            if not CUPY_AVAILABLE:
-                print("CuPy not available - skipping GPU initialization")
-                self.gpu_available = False
-                return
-            cp.cuda.Device(0).use()
-            self.memory_pool = cp.get_default_memory_pool()
-            self.gpu_available = True
-            print("CuPy initialized successfully with CUDA device")
-        except RuntimeError as cuda_runtime_error:
-            print(f"Warning: CUDA device not found or not accessible: {cuda_runtime_error}")
-            print("Falling back to CPU processing")
-            self.gpu_available = False
-        except Exception as e:
-            print(f"Warning: CuPy initialization failed: {e}")
-            print("Falling back to CPU processing")
-            self.gpu_available = False
-
-    def process_array_gpu(self, data_array):
-        """Process numpy array using GPU acceleration."""
-        if not self.gpu_available:
-            return data_array
-        try:
-            if self.config.use_opencl and self.context:
-                return self._process_opencl(data_array)
-            elif CUPY_AVAILABLE:
-                return self._process_cupy(data_array)
-        except Exception as e:
-            print(f"GPU processing failed: {e}. Falling back to CPU.")
-            return data_array
-
-    def _process_opencl(self, data_array):
-        """Process data using OpenCL."""
-        mf = cl.mem_flags
-        data_buffer = cl.Buffer(self.context, mf.READ_WRITE | mf.COPY_HOST_PTR,
-                                hostbuf=data_array.astype(np.float32))
-        kernel_source = """
-        __kernel void process_data(__global float* data) {
-            int gid = get_global_id(0);
-            data[gid] = data[gid] * 1.0f;
-        }
-        """
-        program = cl.Program(self.context, kernel_source).build()
-        kernel = program.process_data
-        kernel(self.queue, (len(data_array),), None, data_buffer)
-        result = np.empty_like(data_array, dtype=np.float32)
-        cl.enqueue_copy(self.queue, result, data_buffer)
-        self.queue.finish()
-        return result.astype(data_array.dtype)
-
-    def _process_cupy(self, data_array):
-        """Process data using CuPy."""
-        gpu_array = cp.asarray(data_array)
-        processed_gpu = gpu_array * 1.0
-        return cp.asnumpy(processed_gpu)
+    def value(self, key: str, default: str = "") -> str:
+        return self.header.get(key.lower(), (default, ""))[0]
 
 
-# %% Multiprocessing Worker Functions
-def process_file_worker(file_info):
-    """Worker function for processing individual SFT files in parallel."""
-    filename, search_strings, sft_lines, config = file_info
+_SECTION = re.compile(rb"Section\s*(\d+);([^\r\n]*)\r?\n")
+_NUMBER = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
+
+
+def _header(text: str) -> Tuple[Dict[str, Tuple[str, str]], List[str]]:
+    header: Dict[str, Tuple[str, str]] = {}
+    lines: List[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        lines.append(line)
+        parts = [p.strip() for p in line.split(";")]
+        key = parts[0].rstrip(":").lower()
+        if key and key not in header:
+            header[key] = (parts[1] if len(parts) > 1 else "",
+                           parts[2] if len(parts) > 2 else "")
+    return header, lines
+
+
+def parse_sweep_time(stamp: str) -> Optional[datetime.datetime]:
+    """FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime."""
+    match = re.match(r"\s*(\d{4})\.(\d{1,2})\.(\d{1,2})[_ T](\d{1,2})\.(\d{1,2})\.(\d{1,2})"
+                     r"(?::(\d{1,3}))?", stamp or "")
+    if not match:
+        return None
+    year, month, day, hour, minute, second = (int(g) for g in match.groups()[:6])
+    millis = int((match.group(7) or "0").ljust(3, "0"))
     try:
-        data_returned = fparser(filename, line_targets=sft_lines,
-                                string_patterns=search_strings)
-        if config.enable_gpu_processing:
-            gpu_processor = GPUProcessor(config)
-            for key, data_match in data_returned['data_matches'].items():
-                if 'extracted_value' in data_match:
-                    data_array = np.array(data_match['extracted_value'])
-                    processed_array = gpu_processor.process_array_gpu(data_array)
-                    data_returned['data_matches'][key]['extracted_value'] = processed_array.tolist()
-        return {
-            'filename': filename,
-            'data': data_returned,
-            'success': True,
-            'error': None
-        }
-    except Exception as e:
-        return {
-            'filename': filename,
-            'data': None,
-            'success': False,
-            'error': str(e)
-        }
+        return datetime.datetime(year, month, day, hour, minute, second, millis * 1000)
+    except ValueError:
+        return None
 
 
-def save_batch_worker(save_info):
-    """Worker function for saving batches in parallel."""
-    doc, filename, mode = save_info
+def _float(text: str, default: float = float("nan")) -> float:
     try:
-        doc.Save(filename, mode=mode)
-        return {
-            'filename': filename,
-            'success': True,
-            'error': None
-        }
-    except Exception as e:
-        return {
-            'filename': filename,
-            'success': False,
-            'error': str(e)
-        }
+        return float(text)
+    except (TypeError, ValueError):
+        return default
 
 
-def extract_with_regex(inputText: str, delim: str = ';'):
-    """Extract all substrings enclosed by the same delimiter using regex."""
-    esc = re.escape(delim)
-    pattern = rf"{esc}(.*?){esc}"
-    return re.findall(pattern, inputText)
+def _ascii_values(block: bytes) -> Optional[np.ndarray]:
+    """Values of an ASCII section, or None when the block is not ASCII numbers."""
+    try:
+        text = block.decode("ascii").strip()
+    except UnicodeDecodeError:
+        return None
+    tokens = [t for t in re.split(r"[,;\s]+", text) if t]
+    if not tokens or not all(_NUMBER.match(t) for t in tokens):
+        return None
+    return np.array(tokens, dtype=float)
 
 
-# %% Enhanced Qt GUI Classes
-class FileProcessingThread(QThread):
-    """Thread for handling file processing without blocking the GUI."""
-    progress_updated = Signal(int)
-    processing_finished = Signal(object)
-    error_occurred = Signal(str)
-
-    def __init__(self, file_list, config, search_strings, sft_lines):
-        """Initialize processing thread."""
-        super().__init__()
-        self.file_list = file_list
-        self.config = config
-        self.search_strings = search_strings
-        self.sft_lines = sft_lines
-
-    def run(self):
-        """Execute file processing in separate thread."""
-        try:
-            if self.config.enable_multiprocessing and len(self.file_list) > 1:
-                results = self._process_files_parallel()
-            else:
-                results = self._process_files_sequential()
-            self.processing_finished.emit(results)
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-    def _process_files_parallel(self):
-        """Process files using multiprocessing."""
-        file_info_list = [
-            (filename, self.search_strings, self.sft_lines, self.config)
-            for filename in self.file_list
-        ]
-        results = []
-        with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
-            future_to_file = {
-                executor.submit(process_file_worker, file_info): file_info[0]
-                for file_info in file_info_list
-            }
-            completed = 0
-            for future in as_completed(future_to_file):
-                result = future.result()
-                results.append(result)
-                completed += 1
-                progress = int((completed / len(self.file_list)) * 100)
-                self.progress_updated.emit(progress)
-        return results
-
-    def _process_files_sequential(self):
-        """Process files sequentially."""
-        results = []
-        for i, filename in enumerate(self.file_list):
-            file_info = (filename, self.search_strings,
-                         self.sft_lines, self.config)
-            result = process_file_worker(file_info)
-            results.append(result)
-            progress = int(((i + 1) / len(self.file_list)) * 100)
-            self.progress_updated.emit(progress)
-        return results
-
-
-class EnhancedMainWindow(QMainWindow):
-    """Enhanced main window with modern Qt interface."""
-
-    def __init__(self):
-        """Initialize the enhanced main window."""
-        super().__init__()
-        self.setWindowTitle("Enhanced R&S SFT File Plotter - Large Files")
-        self.setGeometry(100, 100, 800, 850)
-        self.config = ProcessingConfig()
-        self.vzplot = VZPlotRnS(self.config)
-        self.selected_files = []
-        self._setup_ui()
-
-    def _setup_ui(self):
-        """Set up the user interface."""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        # File selection section
-        file_group = QGroupBox("File Selection")
-        file_layout = QVBoxLayout(file_group)
-        self.file_list_widget = QListWidget()
-        file_layout.addWidget(self.file_list_widget)
-        browse_layout = QHBoxLayout()
-        self.browse_button = QPushButton("Browse Files")
-        self.browse_button.clicked.connect(self._browse_files)
-        browse_layout.addWidget(self.browse_button)
-        self.clear_button = QPushButton("Clear Files")
-        self.clear_button.clicked.connect(self._clear_files)
-        browse_layout.addWidget(self.clear_button)
-        file_layout.addLayout(browse_layout)
-        main_layout.addWidget(file_group)
-        # Processing options
-        options_group = QGroupBox("Processing Options")
-        options_layout = QVBoxLayout(options_group)
-        self.enable_mp_checkbox = QCheckBox("Enable Multiprocessing")
-        self.enable_mp_checkbox.setChecked(self.config.enable_multiprocessing)
-        self.enable_mp_checkbox.stateChanged.connect(self._update_mp_config)
-        options_layout.addWidget(self.enable_mp_checkbox)
-        cpu_layout = QHBoxLayout()
-        cpu_layout.addWidget(QLabel("CPU Cores:"))
-        self.cpu_spinbox = QSpinBox()
-        self.cpu_spinbox.setMinimum(1)
-        self.cpu_spinbox.setMaximum(cpu_count())
-        self.cpu_spinbox.setValue(self.config.num_processes)
-        self.cpu_spinbox.valueChanged.connect(self._update_cpu_config)
-        cpu_layout.addWidget(self.cpu_spinbox)
-        cpu_layout.addStretch()
-        options_layout.addLayout(cpu_layout)
-        self.enable_gpu_checkbox = QCheckBox("Enable GPU Processing")
-        self.enable_gpu_checkbox.setChecked(self.config.enable_gpu_processing)
-        self.enable_gpu_checkbox.stateChanged.connect(self._update_gpu_config)
-        options_layout.addWidget(self.enable_gpu_checkbox)
-        self.use_opencl_checkbox = QCheckBox("Prefer OpenCL (Cross-platform)")
-        self.use_opencl_checkbox.setChecked(self.config.use_opencl)
-        self.use_opencl_checkbox.stateChanged.connect(self._update_opencl_config)
-        options_layout.addWidget(self.use_opencl_checkbox)
-        self.memory_opt_checkbox = QCheckBox("Memory Optimization")
-        self.memory_opt_checkbox.setChecked(self.config.memory_optimization)
-        self.memory_opt_checkbox.stateChanged.connect(self._update_memory_config)
-        options_layout.addWidget(self.memory_opt_checkbox)
-        main_layout.addWidget(options_group)
-        # Plot options
-        plot_group = QGroupBox("Plot Options")
-        plot_layout = QVBoxLayout(plot_group)
-        self.plot_mode_group = QButtonGroup()
-        self.all_plots_radio = QRadioButton("All plots (original behavior)")
-        self.all_plots_radio.setChecked(True)
-        self.plot_mode_group.addButton(self.all_plots_radio, 0)
-        plot_layout.addWidget(self.all_plots_radio)
-        self.avg_overlay_radio = QRadioButton("Average + Overlay only")
-        self.plot_mode_group.addButton(self.avg_overlay_radio, 1)
-        plot_layout.addWidget(self.avg_overlay_radio)
-        self.avg_only_radio = QRadioButton("Average only")
-        self.plot_mode_group.addButton(self.avg_only_radio, 2)
-        plot_layout.addWidget(self.avg_only_radio)
-        self.plot_mode_group.buttonClicked.connect(self._update_plot_mode)
-        main_layout.addWidget(plot_group)
-        # Auto-save options
-        autosave_group = QGroupBox("Auto-Save Options")
-        autosave_layout = QVBoxLayout(autosave_group)
-        self.enable_autosave_checkbox = QCheckBox("Enable automatic batch saving")
-        self.enable_autosave_checkbox.stateChanged.connect(self._update_autosave_config)
-        autosave_layout.addWidget(self.enable_autosave_checkbox)
-        plots_layout = QHBoxLayout()
-        plots_layout.addWidget(QLabel("Plots per file:"))
-        self.plots_per_file_edit = QLineEdit("1000")
-        self.plots_per_file_edit.setEnabled(False)
-        self.plots_per_file_edit.textChanged.connect(self._update_plots_per_file)
-        plots_layout.addWidget(self.plots_per_file_edit)
-        plots_layout.addStretch()
-        autosave_layout.addLayout(plots_layout)
-        filename_layout = QHBoxLayout()
-        filename_layout.addWidget(QLabel("Base filename:"))
-        self.base_filename_edit = QLineEdit("RnS_Plots_Batch")
-        self.base_filename_edit.setEnabled(False)
-        self.base_filename_edit.textChanged.connect(self._update_base_filename)
-        filename_layout.addWidget(self.base_filename_edit)
-        filename_layout.addStretch()
-        autosave_layout.addLayout(filename_layout)
-        main_layout.addWidget(autosave_group)
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        main_layout.addWidget(self.progress_bar)
-        # Status text
-        self.status_text = QTextEdit()
-        self.status_text.setMaximumHeight(100)
-        self.status_text.setReadOnly(True)
-        main_layout.addWidget(self.status_text)
-        # Control buttons
-        button_layout = QHBoxLayout()
-        self.plot_button = QPushButton("Process and Plot")
-        self.plot_button.clicked.connect(self._process_and_plot)
-        button_layout.addWidget(self.plot_button)
-        self.save_button = QPushButton("Save Project")
-        self.save_button.clicked.connect(self._save_project)
-        self.save_button.setEnabled(False)
-        button_layout.addWidget(self.save_button)
-        self.close_button = QPushButton("Close")
-        self.close_button.clicked.connect(self.close)
-        button_layout.addWidget(self.close_button)
-        main_layout.addLayout(button_layout)
-
-    def _browse_files(self):
-        """Open file dialog to select multiple SFT files."""
-        file_dialog = QFileDialog()
-        file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        file_dialog.setNameFilter("R&S SFT Files (*.sft)")
-        file_dialog.setWindowTitle("Select SFT Files")
-        if file_dialog.exec_() == QFileDialog.Accepted:
-            selected_files = file_dialog.selectedFiles()
-            self.selected_files.extend(selected_files)
-            self._update_file_list()
-            self._log_message(f"Selected {len(selected_files)} files")
-
-    def _clear_files(self):
-        """Clear the selected files list."""
-        self.selected_files.clear()
-        self._update_file_list()
-        self._log_message("File list cleared")
-
-    def _update_file_list(self):
-        """Update the file list widget."""
-        self.file_list_widget.clear()
-        for file_path in self.selected_files:
-            self.file_list_widget.addItem(os.path.basename(file_path))
-
-    def _update_mp_config(self, state):
-        """Update multiprocessing configuration."""
-        self.config.enable_multiprocessing = state == Qt.Checked
-        self._log_message(f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}")
-
-    def _update_cpu_config(self, value):
-        """Update CPU cores configuration."""
-        self.config.num_processes = value
-        self.config.max_workers = value
-        self._log_message(f"CPU cores set to: {value}")
-
-    def _update_gpu_config(self, state):
-        """Update GPU processing configuration."""
-        self.config.enable_gpu_processing = state == Qt.Checked
-        self._log_message(f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}")
-
-    def _update_opencl_config(self, state):
-        """Update OpenCL preference configuration."""
-        self.config.use_opencl = state == Qt.Checked
-        self._log_message(f"OpenCL preference: {'Enabled' if self.config.use_opencl else 'Disabled'}")
-
-    def _update_memory_config(self, state):
-        """Update memory optimization configuration."""
-        self.config.memory_optimization = state == Qt.Checked
-        self._log_message(f"Memory optimization: {'Enabled' if self.config.memory_optimization else 'Disabled'}")
-
-    def _update_plot_mode(self, button):
-        """Update plot mode configuration."""
-        self.config.plot_mode = self.plot_mode_group.id(button)
-        mode_names = ["All plots", "Average + Overlay only", "Average only"]
-        self._log_message(f"Plot mode: {mode_names[self.config.plot_mode]}")
-
-    def _update_autosave_config(self, state):
-        """Update auto-save configuration."""
-        self.config.enable_auto_save = state == Qt.Checked
-        self.plots_per_file_edit.setEnabled(self.config.enable_auto_save)
-        self.base_filename_edit.setEnabled(self.config.enable_auto_save)
-        self.vzplot.auto_save_enabled = self.config.enable_auto_save
-        self._log_message(f"Auto-save: {'Enabled' if self.config.enable_auto_save else 'Disabled'}")
-
-    def _update_plots_per_file(self, text):
-        """Update plots per file configuration."""
-        try:
-            value = int(text) if text else 1000
-            self.config.plots_per_file = max(1, value)
-            self.vzplot.plots_per_file = self.config.plots_per_file
-        except ValueError:
-            self.config.plots_per_file = 1000
-
-    def _update_base_filename(self, text):
-        """Update base filename configuration."""
-        self.config.auto_save_base_name = text if text else "RnS_Plots_Batch"
-
-    def _log_message(self, message):
-        """Add message to status text."""
-        self.status_text.append(f"[{self._get_timestamp()}] {message}")
-
-    def _get_timestamp(self):
-        """Get current timestamp string."""
-        return datetime.datetime.now().strftime("%H:%M:%S")
-
-    def _process_and_plot(self):
-        """Process selected files and create plots."""
-        if not self.selected_files:
-            QMessageBox.warning(self, "Warning", "Please select SFT files first.")
-            return
-        self.plot_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-        self.processing_thread = FileProcessingThread(
-            self.selected_files,
-            self.config,
-            self.vzplot.searchData_strings,
-            self.vzplot.sft_lines
-        )
-        self.processing_thread.progress_updated.connect(self.progress_bar.setValue)
-        self.processing_thread.processing_finished.connect(self._on_processing_finished)
-        self.processing_thread.error_occurred.connect(self._on_processing_error)
-        self.processing_thread.start()
-        self._log_message("Processing started...")
-
-    def _on_processing_finished(self, results):
-        """Handle processing completion."""
-        self.progress_bar.setVisible(False)
-        self.plot_button.setEnabled(True)
-        successful_results = [r for r in results if r['success']]
-        failed_results = [r for r in results if not r['success']]
-        self._log_message(f"Processing completed: {len(successful_results)} successful, {len(failed_results)} failed")
-        if failed_results:
-            error_msg = "\n".join([f"{r['filename']}: {r['error']}" for r in failed_results])
-            QMessageBox.warning(self, "Processing Errors", f"Some files failed:\n{error_msg}")
-        if successful_results:
-            self._create_plots(successful_results)
-            self.save_button.setEnabled(True)
-
-    def _on_processing_error(self, error_message):
-        """Handle processing error."""
-        self.progress_bar.setVisible(False)
-        self.plot_button.setEnabled(True)
-        self._log_message(f"Processing error: {error_message}")
-        QMessageBox.critical(self, "Processing Error", error_message)
-
-    def _create_plots(self, results):
-        """Create Veusz plots from processed results."""
-        self._log_message("Creating plots...")
-        for result in results:
-            filename = result['filename']
-            data_returned = result['data']
-            try:
-                self.vzplot._process_file_data(filename, data_returned)
-            except Exception as e:
-                self._log_message(f"Plot creation failed for {filename}: {e}")
-        self._log_message("Plot creation completed")
-
-    def _save_project(self):
-        """Save Veusz project."""
-        file_dialog = QFileDialog()
-        save_path, _ = file_dialog.getSaveFileName(
-            self, "Save Veusz Project", "",
-            "Veusz High Precision Files (*.vszh5)"
-        )
-        if save_path:
-            try:
-                self.vzplot.save(save_path)
-                self._log_message(f"Project saved: {save_path}")
-                reply = QMessageBox.question(
-                    self, "Open in Veusz",
-                    "Would you like to open the file in Veusz?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if reply == QMessageBox.Yes:
-                    VZPlotRnS.open_veusz_gui(save_path)
-            except Exception as e:
-                QMessageBox.critical(self, "Save Error", f"Failed to save project: {e}")
-
-
-# %% Auto Plotter Class
-class VZPlotRnS:
-    """Enhanced Veusz plotting class with multiprocessing support."""
-
-    def __init__(self, config: ProcessingConfig):
-        """Initialize VZPlotRnS with enhanced capabilities."""
-        self.config = config
-        self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
-        self.first_1d = True
-        self.doc.EnableToolbar(enable=True)
-        # NEW: Initialize auto-save tracking variables
-        self.plot_count = 0
-        self.file_batch_number = 1
-        self.base_save_path = None
-        self.auto_save_enabled = False
-        self.plots_per_file = 1000
-        # NEW: Dataset tracking for validation
-        self.registered_datasets = set()
-        self.frequency_data = None
-        self.frequency_registered = False
-        # Search strings for data parsing
-        self.searchData_strings = {
-            'version': 'VERSION',
-            'type': 'TYPE',
-            'mode': 'MODE',
-            'center freq': 'CENTER FREQ',
-            'freq offset': 'FREQ OFFSET',
-            'span': 'SPAN',
-            'x-axis': 'X-AXIS',
-            'start': 'START',
-            'stop': 'STOP',
-            'stop_2': 'STOP',
-            'ref level': 'REF LEVEL',
-            'level offset': 'LEVEL OFFSET',
-            'ref position': 'REF POSITION',
-            'y-axis': 'Y-AXIS',
-            'level range': 'LEVEL RANGE',
-            'rf att': 'RF ATT',
-            'rbw': 'RBW',
-            'vbw': 'VBW',
-            'swt': 'SWT',
-            'trace mode': 'TRACE MODE',
-            'detector': 'DETECTOR',
-            'sweep count': "SWEEP COUNT",
-            'trace': 'TRACE',
-            'x-unit': 'X-UNIT',
-            'y-unit': 'Y-UNIT',
-            'preamplifier': 'PREAMPLIFIER',
-            'transducer': 'TRANSDUCER',
-            'values': 'VALUES',
-            'section': 'SECTION'
-        }
-        # Line targets for header parsing
-        self.sft_lines = [1, 2, 3] + list(range(5, 58, 2))
-        # Plot info initialization
-        self.plotInfo = plotDescInfo(
-            xAxis_label='Frequency (Hz)',
-            yAxis_label='Uncalibrated (dBm)',
-            graph_notes=None,
-            graph_title='Title',
-            base_name=None,
-            first_plot=True
-        )
-        # Track datasets for average calculation
-        self._datasets_by_base = defaultdict(list)
-
-    def _setup_auto_save_path(self):
-        """Setup automatic save path based on configuration."""
-        if self.base_save_path is None and self.auto_save_enabled:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_dir = f"RnS_AutoSave_{timestamp}"
-            os.makedirs(save_dir, exist_ok=True)
-            self.base_save_path = os.path.join(save_dir, self.config.auto_save_base_name)
-            print(f"Auto-save directory created: {save_dir}")
-
-    def _auto_save_if_needed(self):
-        """Automatically save file if plot count threshold is reached."""
-        if not self.auto_save_enabled:
-            return
-        if self.plot_count > 0 and self.plot_count % self.plots_per_file == 0:
-            if self.base_save_path is None:
-                self._setup_auto_save_path()
-            batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
-            if self.config.enable_multiprocessing:
-                self._save_batch_parallel(batch_filename)
-            else:
-                self._save_batch_sequential(batch_filename)
-            print(f"Auto-saved batch {self.file_batch_number} with {self.plots_per_file} plots to: {batch_filename}")
-            self.file_batch_number += 1
-            self._reset_for_next_batch()
-
-    def _save_batch_parallel(self, filename):
-        """Save current batch using parallel processing."""
-        try:
-            def save_worker():
-                self.doc.Save(filename, mode='hdf5')
-
-            save_thread = threading.Thread(target=save_worker)
-            save_thread.start()
-            save_thread.join(timeout=30)
-            if save_thread.is_alive():
-                print(f"Warning: Save operation for {filename} timed out")
-        except Exception as e:
-            print(f"Error during parallel save: {e}")
-            self._save_batch_sequential(filename)
-
-    def _save_batch_sequential(self, filename):
-        """Save current batch sequentially."""
-        try:
-            self.doc.Save(filename, mode='hdf5')
-        except Exception as e:
-            print(f"Error during sequential save: {e}")
-
-    def _reset_for_next_batch(self):
-        """Reset document for next batch while preserving settings."""
-        self.doc = embed.Embedded('Enhanced R&S SFT File Plotter')
-        self.doc.EnableToolbar(enable=True)
-        self.first_1d = True
-        self._datasets_by_base.clear()
-
-    def _create_average_datasets(self, base_name: str):
-        """Average all datasets belonging to base_name."""
-        candidates = [ds for ds in self._datasets_by_base[base_name]
-                      if ('freq' not in ds.lower()
-                          and not ds.endswith(('_avg_dB', '_avg_lin')))]
-        if len(candidates) < 2:
-            return
-        use_gpu = self.config.enable_gpu_processing and CUPY_AVAILABLE
-        xp = cp if use_gpu else np
-
-        def _db_to_lin(arr):
-            return xp.power(10.0, arr / 10.0)
-
-        data_arrays = [xp.asarray(self.doc.GetData(ds)[0])
-                       for ds in candidates]
-        if (self.config.enable_multiprocessing and not use_gpu
-                and len(candidates) > 1 and self.config.num_processes > 1):
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=self.config.num_processes) as exe:
-                linear_arrays = list(exe.map(lambda a: 10.0 ** (a / 10.0), data_arrays))
-            linear_stack = xp.vstack(linear_arrays)
+def parse_sft_bytes(raw: bytes, path: str = "<bytes>") -> SFTFile:
+    """Parse one .sft file (see the file layout in the module header)."""
+    name = os.path.basename(path)
+    warnings: List[str] = []
+    matches = list(_SECTION.finditer(raw))
+    head_end = matches[0].start() if matches else len(raw)
+    header, header_lines = _header(raw[:head_end].decode("ascii", errors="replace"))
+    declared = _float(header.get("values", ("", ""))[0])
+    n_values = int(declared) if np.isfinite(declared) and declared > 0 else None
+    traces: List[SFTTrace] = []
+    rows_x: Optional[np.ndarray] = None
+    if matches:
+        for index, match in enumerate(matches):
+            start = match.end()
+            stop = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
+            block = raw[start:stop]
+            number = int(match.group(1))
+            stamp = match.group(2).decode("ascii", errors="replace").strip()
+            values = _ascii_values(block)
+            if values is None and n_values:
+                if len(block) >= 4 * n_values:           # binary float32 trace
+                    values = np.frombuffer(block[:4 * n_values], dtype="<f4").astype(float)
+            if values is None or values.size == 0:
+                warnings.append("section %d (%s) holds no readable trace; skipped" % (number, stamp))
+                continue
+            if n_values and values.size != n_values:
+                warnings.append("section %d has %d values, the header says %d; skipped"
+                                % (number, values.size, n_values))
+                continue
+            traces.append(SFTTrace(number, stamp, values))
+    else:                                               # FSW ASCII export: x;y;... rows
+        text = raw.decode("ascii", errors="replace").splitlines()
+        rows = []
+        after_values = False
+        for line in text:
+            if line.strip().lower().startswith("values"):
+                after_values = True
+                continue
+            if not after_values:
+                continue
+            tokens = [t for t in re.split(r"[;,\s]+", line.strip()) if t]
+            if len(tokens) >= 2 and all(_NUMBER.match(t) for t in tokens):
+                rows.append([float(t) for t in tokens])
+        if rows and len({len(r) for r in rows}) == 1:
+            table = np.array(rows)
+            rows_x = table[:, 0]
+            for column in range(1, table.shape[1]):
+                traces.append(SFTTrace(column, "column %d" % column, table[:, column]))
+            n_values = table.shape[0]
+    if not traces:
+        raise SFTFormatError("%s: no trace data (header only or unknown layout)" % name)
+    n = traces[0].values.size
+    x_unit = header.get("x-unit", ("", ""))[0]
+    x_log = header.get("x-axis", ("LIN", ""))[0].upper().startswith("LOG")
+    start = _float(header.get("start", ("nan", ""))[0])
+    stop = _float(header.get("stop", ("nan", ""))[0])
+    sweep = _float(header.get("swt", ("nan", ""))[0])
+    if rows_x is not None:
+        x, x_kind = rows_x, ("time" if x_unit.lower() == "s" else "frequency")
+        x_label = "Time (s)" if x_kind == "time" else "Frequency (%s)" % (x_unit or "Hz")
+    elif x_unit.lower() == "s":                         # zero span: time domain
+        if not np.isfinite(sweep) or sweep <= 0:
+            raise SFTFormatError("%s: x-Unit s but no sweep time (SWT)" % name)
+        x = np.linspace(0.0, sweep, n)
+        x_kind, x_label = "time", "Time (s)"
+        warnings.append("x-Unit s: time axis 0 to %g s (sweep time); Start/Stop are not "
+                        "used" % sweep)
+        x_log = False
+    elif np.isfinite(start) and np.isfinite(stop):
+        if x_log and start > 0 and stop > 0:
+            x = np.geomspace(start, stop, n)
         else:
-            linear_stack = xp.vstack([_db_to_lin(a) for a in data_arrays])
-        avg_lin = xp.mean(linear_stack, axis=0)
-        avg_db = 10.0 * xp.log10(avg_lin)
-        if use_gpu:
-            avg_lin = cp.asnumpy(avg_lin)
-            avg_db = cp.asnumpy(avg_db)
-        lin_name = f"{base_name}_avg_lin"
-        db_name = f"{base_name}_avg_dB"
-        self.doc.SetData(name=lin_name, val=avg_lin)
-        self.doc.SetData(name=db_name, val=avg_db)
-        self.doc.TagDatasets('Avg_dB', [db_name])
-        self.doc.TagDatasets('Avg_Linear', [lin_name])
-        self.doc.TagDatasets(base_name, [db_name, lin_name])
-        self._datasets_by_base[base_name].extend([lin_name, db_name])
-        if self.config.plot_mode >= 1:
-            prev_title = self.plotInfo.graph_title
-            self.plotInfo.graph_title = f"{base_name} average"
-            self._plot_1d(db_name)
-            self.plotInfo.graph_title = prev_title
+            if x_log:
+                warnings.append("x-Axis LOG with Start <= 0: linear points used")
+            x_log = False
+            x = np.linspace(start, stop, n)
+        x_kind, x_label = "frequency", "Frequency (%s)" % (x_unit or "Hz")
+    else:
+        x = np.arange(n, dtype=float)
+        x_kind, x_label = "index", "Point"
+        warnings.append("no Start/Stop in the header: x is the point number")
+    y_unit = header.get("y-unit", ("dBm", ""))[0] or "dBm"
+    return SFTFile(path=path, header=header, header_lines=header_lines, x=x, x_kind=x_kind,
+                   x_label=x_label, x_log=x_log, y_unit=y_unit, traces=traces,
+                   warnings=warnings)
 
-    def _process_file_data(self, filename, data_returned):
-        """Process individual file data and create plots."""
-        base_name = os.path.splitext(os.path.basename(filename))[0]
-        self.plotInfo.base_name = base_name
-        if self.auto_save_enabled and self.base_save_path is None:
-            self._setup_auto_save_path()
-        data_sections = dict(filter(
-            lambda item: 'section' in item[0],
-            data_returned['pattern_matches'].items()
-        ))
-        if len(data_sections) != len(data_returned['data_matches']):
-            raise ValueError(f"Data sections mismatch in file {filename}")
-        data_y_values = list(map(itemgetter('extracted_value'),
-                                 data_returned['data_matches'].values()))
-        data_line_numbers = list(map(itemgetter('line_number'),
-                                     data_returned['data_matches'].values()))
-        data_section_line_numbers = list(map(itemgetter('line_number'),
-                                             data_sections.values()))
-        data_section_content = list(map(itemgetter('content'),
-                                        data_sections.values()))
-        data_fields = data_returned['pattern_matches']
-        num_pts = extract_with_regex(data_fields['values']['extracted_value'])
-        if len(num_pts) != 1:
-            raise ValueError(f"Invalid VALUES field in {filename}")
-        num_pts = int(num_pts[0])
-        freq_start = float(extract_with_regex(
-            data_fields['start']['extracted_value'])[0])
-        freq_stop = float(extract_with_regex(
-            data_fields['stop_2']['extracted_value'])[0])
-        freq_range = np.linspace(freq_start, freq_stop, num=num_pts,
-                                 endpoint=True, dtype=np.float64)
-        data_header = data_returned['line_data']
-        data_notes = '\n'.join(data_header.values())
-        data_notes = os.path.split(filename)[1] + '\n\n' + data_notes
-        # ========== CRITICAL SECTION: REGISTER DATA BEFORE PLOTTING ==========
-        for index, label in enumerate(data_section_content):
-            dataset_name = label
-            # STEP 1: Register frequency data (only once)
-            if index == 0:
-                x_data_name = base_name + '_freq'
-                self.doc.SetData(name=x_data_name, val=freq_range)  # ← REGISTER
-                self.doc.TagDatasets(base_name, [x_data_name])
-                self._datasets_by_base[base_name].append(x_data_name)
-                self.registered_datasets.add(x_data_name)
-                self.frequency_registered = True
-                self.frequency_data = freq_range
-            # Verify data alignment
-            if (data_line_numbers[index] - 1 != data_section_line_numbers[index]):
-                raise ValueError(f"Data alignment error in {filename}")
-            # STEP 2: Register Y data
-            self.doc.SetData(name=dataset_name, val=data_y_values[index])  # ← REGISTER
-            self.doc.TagDatasets(base_name, [dataset_name])
-            self._datasets_by_base[base_name].append(dataset_name)
-            self.registered_datasets.add(dataset_name)
-            # Update plot info
-            self.plotInfo.graph_notes = data_notes
-            self.plotInfo.graph_title = base_name + '::' + dataset_name
-            self.plotInfo.graph_title = self.plotInfo.graph_title.replace('_', ' ')
-            # STEP 3: Create plot (data now exists!)
-            if self.config.plot_mode == 0:
-                self._plot_1d(dataset_name)
-            # Increment plot count and check for auto-save
-            self.plot_count += 1
-            self._auto_save_if_needed()
-        # Create the averaged datasets after everything is processed
-        self._create_average_datasets(base_name)
 
-    def _create_page(self, dataset: str):
-        """Create a new page and grid."""
-        self.page = self.doc.Root.Add('page', name=dataset)
-        self.grid = self.page.Add('grid', columns=2)
+def read_sft(path: str) -> SFTFile:
+    with open(path, "rb") as handle:
+        return parse_sft_bytes(handle.read(), path)
 
-    def _plot_1d(self, dataset: str):
-        """Create line plot for 1D datasets with enhanced styling."""
-        try:
-            # NEW: Validation at the beginning
-            if dataset not in self.registered_datasets:
-                print(f"Warning: Dataset '{dataset}' not registered. Skipping plot.")
-                return
-            if not self.frequency_registered:
-                print(f"Warning: Frequency data not registered. Skipping plot.")
-                return
-            create_overlay = (self.config.plot_mode == 0) or (self.config.plot_mode == 1)
-            create_individual = (self.config.plot_mode == 0)
-            if create_overlay and 'AllImported' not in self.doc.Root.childnames:
-                self._create_page('AllImported')
-                self.page.notes.val = "All Imported and Plottable Data Overlay"
-                graph_all = self.grid.Add('graph', name='Imported_Overlay')
-                graph_all.Add('label', name='plotTitle')
-                graph_all.topMargin.val = '1cm'
-                graph_all.plotTitle.Text.size.val = '10pt'
-                graph_all.plotTitle.label.val = 'Overlay of All Imported'
-                graph_all.plotTitle.alignHorz.val = 'centre'
-                graph_all.plotTitle.yPos.val = 1.05
-                graph_all.plotTitle.xPos.val = 0.5
-                graph_all.notes.val = 'All imported overlay, see individual plots for specifics.'
-                graph_all.x.label.val = self.plotInfo.xAxis_label
-                graph_all.y.label.val = self.plotInfo.yAxis_label
-                self.doc.Root.colorTheme.val = 'max128'
-            elif create_overlay:
-                self.page = self.doc.Root.AllImported
-                # graph_all = self.doc.Root.AllImported.grid1.Imported_Overlay
-                graph_all = self.page.grid1.Imported_Overlay
-            if create_overlay:
-                all_overlay_xy = graph_all.Add('xy', name=dataset)
-                all_overlay_xy.yData.val = dataset
-                all_overlay_xy.xData.val = self.plotInfo.base_name + '_freq'
-                all_overlay_xy.nanHandling = 'break-on'
-                all_overlay_xy.marker.val = 'circle'
-                all_overlay_xy.markerSize.val = '2pt'
-                all_overlay_xy.MarkerLine.color.val = 'transparent'
-                all_overlay_xy.MarkerFill.color.val = 'auto'
-                all_overlay_xy.MarkerFill.transparency.val = 80
-                all_overlay_xy.MarkerFill.style.val = 'solid'
-                all_overlay_xy.FillBelow.transparency.val = 90
-                all_overlay_xy.FillBelow.style.val = 'solid'
-                all_overlay_xy.FillBelow.fillto.val = 'bottom'
-                all_overlay_xy.FillBelow.color.val = 'darkgreen'
-                all_overlay_xy.FillBelow.hide.val = True
-                all_overlay_xy.PlotLine.color.val = 'auto'
-                self.plotInfo.first_plot = False
-            if create_individual:
-                self._create_page(self.plotInfo.graph_title)
-                self.page.notes.val = self.plotInfo.graph_notes
-                graph = self.grid.Add('graph', name=dataset)
-                graph.Add('label', name='plotTitle')
-                graph.topMargin.val = '1cm'
-                graph.plotTitle.Text.size.val = '10pt'
-                graph.plotTitle.label.val = self.plotInfo.graph_title
-                graph.plotTitle.alignHorz.val = 'left'
-                graph.plotTitle.yPos.val = 1.05
-                graph.plotTitle.xPos.val = -0.3
-                graph.notes.val = self.plotInfo.graph_notes
-                xy = graph.Add('xy', name=dataset)
-                xy.yData.val = dataset
-                xy.xData.val = self.plotInfo.base_name + '_freq'
-                xy.nanHandling = 'break-on'
-                graph.x.label.val = self.plotInfo.xAxis_label
-                graph.y.label.val = self.plotInfo.yAxis_label
-                xy.marker.val = 'circle'
-                xy.markerSize.val = '2pt'
-                xy.MarkerLine.color.val = 'transparent'
-                xy.MarkerFill.color.val = 'foreground'
-                xy.MarkerFill.transparency.val = 80
-                xy.MarkerFill.style.val = 'solid'
-                xy.FillBelow.transparency.val = 90
-                xy.FillBelow.style.val = 'solid'
-                xy.FillBelow.fillto.val = 'bottom'
-                xy.FillBelow.color.val = 'darkgreen'
-                xy.FillBelow.hide.val = False
-                xy.PlotLine.color.val = 'red'
-            if self.first_1d:
-                self.first_1d = False
-        except Exception as e:
-            raise RuntimeError(f"Failed to create 1D plot: {e}")
 
-    def save(self, filename: str):
-        """Save Veusz document with high precision support."""
-        filename_root = os.path.splitext(filename)[0]
-        filename_hp = filename_root + '.vszh5'
-        file_split = os.path.split(filename)
-        filename_vsz = (file_split[0] + '/Beware_oldVersion/' +
-                        os.path.splitext(file_split[1])[0] + '_BEWARE.vsz')
-        self.doc.Save(filename_hp, mode='hdf5')
-        os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
-        self.doc.Save(filename_vsz, mode='vsz')
-        if self.auto_save_enabled and self.plot_count % self.plots_per_file != 0:
-            if self.base_save_path is not None:
-                final_batch_filename = f"{self.base_save_path}_{self.file_batch_number:03d}.vszh5"
-                try:
-                    self.doc.Save(final_batch_filename, mode='hdf5')
-                    print(
-                        f"Final batch saved with {self.plot_count % self.plots_per_file} plots to: {final_batch_filename}")
-                except Exception as e:
-                    print(f"Error saving final batch: {e}")
+def _read_worker(path: str) -> Tuple[str, Optional[SFTFile], str]:
+    try:
+        return path, read_sft(path), ""
+    except Exception as exc:
+        return path, None, "%s: %s" % (type(exc).__name__, exc)
+
+
+def read_files(paths: Sequence[str], workers: int = 1,
+               progress: Optional[Any] = None) -> Tuple[List[SFTFile], List[str]]:
+    """Read in input order ('spawn' process pool for 4+ files); (files, errors)."""
+    paths = list(dict.fromkeys(paths))
+    results: Dict[str, Tuple[Optional[SFTFile], str]] = {}
+    if workers > 1 and len(paths) >= PARALLEL_MIN_FILES:
+        context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
+            futures = [pool.submit(_read_worker, p) for p in paths]
+            for done, future in enumerate(as_completed(futures), start=1):
+                path, parsed, error = future.result()
+                results[path] = (parsed, error)
+                if progress:
+                    progress(done, len(paths))
+    else:
+        for done, path in enumerate(paths, start=1):
+            _p, parsed, error = _read_worker(path)
+            results[path] = (parsed, error)
+            if progress:
+                progress(done, len(paths))
+    files, errors = [], []
+    for path in paths:
+        parsed, error = results[path]
+        if parsed is None:
+            errors.append("%s: %s" % (os.path.basename(path), error))
+        else:
+            files.append(parsed)
+    return files, errors
+
+
+# %% Averages
+def power_mean(stack: np.ndarray, unit: str, use_gpu: bool = False) -> np.ndarray:
+    """
+    Average of traces (rows) in their unit.
+
+    Log units (dBm, dB, dBuV ...): mean of the linear powers, back in dB:
+        P_avg = 10 log10( (1/K) sum_k 10^(P_k / 10) )
+    Linear units: arithmetic mean.  NaN samples are left out.
+    """
+    stack = np.asarray(stack, dtype=float)
+    if not unit.lower().startswith("db"):
+        return np.nanmean(stack, axis=0)
+    if np.all(np.isfinite(stack)) and not use_gpu:
+        from vszh5_writer import linear_power_mean_dbm
+        return linear_power_mean_dbm(stack, axis=0)
+    xp = _cupy() if use_gpu else None
+    xp = xp or np
+    data = xp.asarray(stack)
+    peak = xp.nanmax(data, axis=0)                      # overflow-safe reference
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = xp.nanmean(xp.power(10.0, (data - peak) / 10.0), axis=0)
+        result = peak + 10.0 * xp.log10(mean)
+    return xp.asnumpy(result) if xp is not np else result
+
+
+# %% Veusz project (NativeDocument; written by vszh5_writer)
+@dataclass
+class PlotOptions:
+    mode: int = 0                    # 0 all plots, 1 average + overlay, 2 average only
+    use_gpu: bool = False
+
+
+class RnSPlotter:
+    """Builds the project of a batch of .sft files."""
+
+    def __init__(self, options: Optional[PlotOptions] = None) -> None:
+        from _autoplot_native import NativeDocument
+        self.options = options or PlotOptions()
+        self.doc = NativeDocument("R&S trace plotter")
+        self.doc.Root.colorTheme.val = "max128"
+        self.messages: List[str] = []
+        self._stems: Dict[str, int] = {}
+        self._overlays: Dict[str, Any] = {}
+        self._averages: Dict[str, List[Tuple[str, str, SFTFile]]] = {}
+        self._file_notes: List[str] = []
+        self._overlay_pages: List[Any] = []
+
+    def _stem(self, sft: SFTFile) -> str:
+        stem = os.path.splitext(sft.name)[0]
+        count = self._stems.get(stem, 0) + 1
+        self._stems[stem] = count
+        return stem if count == 1 else "%s_%d" % (stem, count)
+
+    def add_file(self, sft: SFTFile) -> str:
+        doc, mode = self.doc, self.options.mode
+        stem = self._stem(sft)
+        x_name = "%s_%s" % (stem, "time" if sft.x_kind == "time" else "freq")
+        doc.SetData(x_name, sft.x)
+        names = [x_name]
+        stamps = [parse_sweep_time(t.stamp) for t in sft.traces]
+        if any(s is not None for s in stamps):       # instrument clock, zone not recorded
+            time_name = "%s_sweep_time" % stem
+            doc.SetDataDateTime(time_name, [(s - VEUSZ_EPOCH).total_seconds() if s else np.nan
+                                            for s in stamps])
+            names.append(time_name)
+        summary = "%d sweep(s); x: %s; y: %s" % (len(sft.traces), sft.x_label, sft.y_unit)
+        # The average page lists every sweep time; a section page names only
+        # its own sweep (listing all of them on every section page made the
+        # notes grow as sweeps^2: an 11.5 MB script for 588 pages).
+        notes = header_notes(sft.header_lines, source=sft.path, extra=[summary]
+            + ["Section %d: %s" % (t.number, t.stamp) for t in sft.traces[:2000]]
+            + (["... %d more" % (len(sft.traces) - 2000)] if len(sft.traces) > 2000 else []))
+        self._file_notes.append(header_notes(sft.header_lines, source=sft.path))
+        y_label = "Uncalibrated (%s)" % sft.y_unit
+        for trace in sft.traces:
+            y_name = "%s_Section%d" % (stem, trace.number)
+            doc.SetData(y_name, trace.values)
+            names.append(y_name)
+            key = "%s S%d %s" % (stem, trace.number, trace.stamp)
+            if mode in (0, 1):
+                overlay = self._overlay(sft)
+                xy = overlay.Add("xy", name=y_name)
+                self._style_overlay(xy, x_name, y_name, key)
+            if mode == 0:
+                title = ("%s::Section %d;%s" % (stem, trace.number, trace.stamp)).replace("_", " ")
+                section_notes = header_notes(sft.header_lines, source=sft.path, extra=[
+                    summary, "Section %d of %d: %s" % (trace.number, len(sft.traces), trace.stamp)])
+                graph = self._page_graph(title, title, section_notes, sft, y_label,
+                                         graph_name=y_name)
+                self._style_single(graph.Add("xy", name=y_name), x_name, y_name, key)
+        stack = np.vstack([t.values for t in sft.traces])
+        avg_db = power_mean(stack, sft.y_unit, self.options.use_gpu)
+        db_name = "%s_avg_dB" % stem
+        doc.SetData(db_name, avg_db)
+        names.append(db_name)
+        if sft.y_unit.lower().startswith("db"):
+            lin_name = "%s_avg_lin" % stem
+            doc.SetData(lin_name, np.power(10.0, avg_db / 10.0))
+            names.append(lin_name)
+            doc.TagDatasets("Avg_Linear", [lin_name])
+        doc.TagDatasets("Avg_dB", [db_name])
+        doc.TagDatasets(stem, names)
+        title = ("%s average of %d sweep(s)" % (stem, len(sft.traces))).replace("_", " ")
+        graph = self._page_graph("%s average" % stem, title, notes, sft, y_label,
+                                 graph_name=db_name)
+        self._style_single(graph.Add("xy", name=db_name), x_name, db_name,
+                           "%s average (%d)" % (stem, len(sft.traces)))
+        self._averages.setdefault(sft.x_kind, []).append((x_name, db_name, sft))
+        for warning in sft.warnings:
+            self.messages.append("%s: %s" % (sft.name, warning))
+        return stem
+
+    def finish(self) -> None:
+        """Averages page(s): every file average, and all files on one x axis."""
+        for page in self._overlay_pages:
+            page.notes.val = "\n\n".join(["All Imported and Plottable Data Overlay"]
+                                          + self._file_notes)
+        for kind, entries in self._averages.items():
+            suffix = "" if kind == "frequency" else "_" + kind
+            sft0 = entries[0][2]
+            graph = self._page_graph("Averages%s" % suffix, "Average of each file",
+                                     "\n\n".join(["Power averages of every file"]
+                                                  + self._file_notes), sft0,
+                                     "Uncalibrated (%s)" % sft0.y_unit,
+                                     graph_name="Averages%s_avg_dB" % suffix)
+            for index, (x_name, db_name, sft) in enumerate(entries):
+                xy = graph.Add("xy", name=db_name)
+                self._style_overlay(xy, x_name, db_name, db_name.replace("_avg_dB", ""))
+            same = all(np.array_equal(e[2].x, sft0.x) and e[2].y_unit == sft0.y_unit
+                       for e in entries)
+            if len(entries) > 1 and same:
+                stack = np.vstack([t.values for e in entries for t in e[2].traces])
+                name = "AllFiles%s_avg_dB" % suffix
+                self.doc.SetData(name, power_mean(stack, sft0.y_unit, self.options.use_gpu))
+                self.doc.TagDatasets("Avg_dB", [name])
+                xy = graph.Add("xy", name=name)
+                self._style_single(xy, entries[0][0], name,
+                                   "All files (%d sweeps)" % stack.shape[0])
+                xy.PlotLine.color.val = "black"
+                xy.PlotLine.width.val = "1.5pt"
+                xy.FillBelow.hide.val = True
+            elif len(entries) > 1:
+                self.messages.append("Averages%s: the files have different x axes or units; "
+                                     "no all-files average" % suffix)
+
+    # ----- pages ---------------------------------------------------------------
+    def _overlay(self, sft: SFTFile) -> Any:
+        kind = sft.x_kind
+        if kind not in self._overlays:
+            name = "AllImported" if kind == "frequency" else "AllImported_%s" % kind
+            page = self.doc.Root.Add("page", name=name)
+            page.notes.val = "All Imported and Plottable Data Overlay"
+            self._overlay_pages.append(page)
+            graph = page.Add("grid", columns=2).Add("graph", name="Imported_Overlay")
+            self._decorate(graph, "Overlay of All Imported", sft, "Uncalibrated (%s)" % sft.y_unit,
+                           "centre", 0.5)
+            graph.notes.val = "All imported overlay, see individual plots for specifics."
+            self._overlays[kind] = graph
+        return self._overlays[kind]
+
+    def _page_graph(self, page_name: str, title: str, notes: str, sft: SFTFile,
+                    y_label: str, graph_name: str = "graph") -> Any:
+        page = self.doc.Root.Add("page", name=page_name)
+        page.notes.val = notes
+        graph = page.Add("grid", columns=2).Add("graph", name=graph_name)
+        self._decorate(graph, title, sft, y_label, "left", -0.3)
+        graph.notes.val = notes
+        return graph
 
     @staticmethod
-    def open_veusz_gui(filename: str):
-        """Launch Veusz GUI with generated project file."""
-        if sys.platform.startswith('win'):
-            veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
-        else:
-            veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
-        if not os.path.exists(veusz_exe):
-            QMessageBox.critical(
-                None, "Veusz Not Found",
-                "Veusz not found in Python environment.\n"
-                "Install with: [pip OR conda OR mamba] install veusz"
-            )
-            return
-        try:
-            subprocess.Popen([veusz_exe, filename])
-        except Exception as e:
-            QMessageBox.critical(
-                None, "Launch Error",
-                f"Failed to start Veusz: {e}"
-            )
+    def _decorate(graph: Any, title: str, sft: SFTFile, y_label: str, align: str,
+                  x_pos: float) -> None:
+        graph.Add("label", name="plotTitle")
+        graph.topMargin.val = "1cm"
+        graph.plotTitle.Text.size.val = "10pt"
+        graph.plotTitle.label.val = title
+        graph.plotTitle.alignHorz.val = align
+        graph.plotTitle.yPos.val = 1.05
+        graph.plotTitle.xPos.val = x_pos
+        graph.x.label.val = sft.x_label
+        graph.y.label.val = y_label
+        graph.x.log.val = bool(sft.x_log)
+
+    @staticmethod
+    def _style_overlay(xy: Any, x_name: str, y_name: str, key: str) -> None:
+        xy.xData.val, xy.yData.val, xy.key.val = x_name, y_name, key
+        xy.marker.val = "circle"
+        xy.markerSize.val = "2pt"
+        xy.MarkerLine.color.val = "transparent"
+        xy.MarkerFill.color.val = "auto"
+        xy.MarkerFill.transparency.val = 80
+        xy.MarkerFill.style.val = "solid"
+        xy.FillBelow.hide.val = True
+        xy.PlotLine.color.val = "auto"
+
+    @staticmethod
+    def _style_single(xy: Any, x_name: str, y_name: str, key: str) -> None:
+        xy.xData.val, xy.yData.val, xy.key.val = x_name, y_name, key
+        xy.marker.val = "circle"
+        xy.markerSize.val = "2pt"
+        xy.MarkerLine.color.val = "transparent"
+        xy.MarkerFill.color.val = "foreground"
+        xy.MarkerFill.transparency.val = 80
+        xy.MarkerFill.style.val = "solid"
+        xy.FillBelow.transparency.val = 90
+        xy.FillBelow.style.val = "solid"
+        xy.FillBelow.fillto.val = "bottom"
+        xy.FillBelow.color.val = "darkgreen"
+        xy.FillBelow.hide.val = False
+        xy.PlotLine.color.val = "red"
 
 
-# %% Utility Functions
-def setup_qt_plugins():
-    """Setup Qt platform plugin paths for compiled applications."""
-    try:
-        import PySide6
-        dirname = os.path.dirname(PySide6.__file__)
-        plugin_path = os.path.join(dirname, 'plugins', 'platforms')
-        if os.path.exists(plugin_path):
-            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
-    except ImportError:
-        pass
+def build_project(files: Sequence[SFTFile], options: Optional[PlotOptions] = None) -> RnSPlotter:
+    plotter = RnSPlotter(options)
+    for sft in files:
+        plotter.add_file(sft)
+    plotter.finish()
+    return plotter
+
+
+def batches(files: Sequence[SFTFile], plots_per_file: int) -> List[List[SFTFile]]:
+    """Split whole files into groups of at most ``plots_per_file`` sections
+    (a file with more sections than that is a group of its own)."""
+    groups: List[List[SFTFile]] = []
+    current: List[SFTFile] = []
+    count = 0
+    for sft in files:
+        n = len(sft.traces)
+        if current and count + n > plots_per_file:
+            groups.append(current)
+            current, count = [], 0
+        current.append(sft)
+        count += n
+    if current:
+        groups.append(current)
+    return groups
+
+
+def save_split(files: Sequence[SFTFile], base_path: str, plots_per_file: int,
+               options: PlotOptions) -> List[str]:
+    """Write {base}_001.vszh5, {base}_002.vszh5 ... (one project per group)."""
+    root = os.path.splitext(base_path)[0]
+    written = []
+    for index, group in enumerate(batches(files, plots_per_file), start=1):
+        written.append(build_project(group, options).doc.save("%s_%03d.vszh5" % (root, index)))
+    return written
+
+
+# %% GUI (imported lazily so --output works without Qt)
+def _build_gui_classes():
+    from qtpy.QtCore import QThread, Signal
+    from qtpy.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QFileDialog,
+                                QFormLayout, QGroupBox, QHBoxLayout, QLineEdit,
+                                QListWidget, QMainWindow, QMessageBox, QProgressBar,
+                                QPushButton, QRadioButton, QSpinBox, QTabWidget,
+                                QTextEdit, QVBoxLayout, QWidget)
+    import _suite_gui as suite
+
+    class FileProcessingThread(QThread):
+        progress_updated = Signal(int)
+        processing_finished = Signal(object, object)
+
+        def __init__(self, paths: Sequence[str], workers: int) -> None:
+            super().__init__()
+            self.paths, self.workers = list(paths), workers
+
+        def run(self) -> None:
+            try:
+                files, errors = read_files(
+                    self.paths, self.workers,
+                    lambda done, total: self.progress_updated.emit(int(100 * done / total)))
+            except Exception as exc:
+                files, errors = [], ["batch failed: %s: %s" % (type(exc).__name__, exc)]
+            self.processing_finished.emit(files, errors)
+
+    class EnhancedMainWindow(QMainWindow):
+        """Processing and Plots tabs; File / View / Help menus."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
+            self.resize(1150, 900)
+            self.selected_files: List[str] = []
+            self.files: List[SFTFile] = []
+            self.plotter: Optional[RnSPlotter] = None
+            self.last_saved: Optional[str] = None
+            self.thread: Optional[FileProcessingThread] = None
+            self.theme = suite.apply_theme(suite.saved_theme(), persist=False)
+            suite.add_file_menu(self, [
+                ("&Add SFT Files...", self._browse_files, "Ctrl+O"),
+                ("&Clear File List", self._clear_files, ""),
+                ("&Process and Plot", self._process_and_plot, "F5"),
+                ("&Save Veusz Project (.vszh5)...", self._save_project, "Ctrl+S"),
+                ("Open Last Project in &Veusz", self._open_in_veusz, ""),
+                ("&Export Last Project to PDF / PNG (Veusz)", self._export, ""),
+            ])
+            self.act_light, self.act_dark = suite.add_view_menu(self, self._set_theme, self.theme)
+            suite.add_help_menu(self, APP_NAME, APP_VERSION, APP_DESCRIPTION, ("cupy",))
+            self._setup_ui()
+            self._log_message("%s %s ready; theme %s." % (APP_NAME, APP_VERSION, self.theme))
+
+        def _setup_ui(self) -> None:
+            central = QWidget()
+            self.setCentralWidget(central)
+            outer = QVBoxLayout(central)
+            self.tabs = QTabWidget()
+            outer.addWidget(self.tabs, 1)
+            processing = QWidget()
+            self.tabs.addTab(processing, "Processing")
+            layout = QVBoxLayout(processing)
+            group = QGroupBox("File Selection")
+            box = QVBoxLayout(group)
+            self.file_list_widget = QListWidget()
+            box.addWidget(self.file_list_widget)
+            row = QHBoxLayout()
+            for text, slot in (("Browse Files", self._browse_files), ("Clear Files", self._clear_files)):
+                button = QPushButton(text)
+                button.clicked.connect(slot)
+                row.addWidget(button)
+            box.addLayout(row)
+            layout.addWidget(group)
+
+            options = QGroupBox("Processing Options")
+            form = QFormLayout(options)
+            self.enable_mp_checkbox = QCheckBox("Read files in parallel processes (%d or more files)"
+                                                % PARALLEL_MIN_FILES)
+            self.enable_mp_checkbox.setChecked(True)
+            self.enable_mp_checkbox.toggled.connect(
+                lambda on: self._log_message("Multiprocessing %s" % ("on" if on else "off")))
+            form.addRow(self.enable_mp_checkbox)
+            self.cpu_spinbox = QSpinBox()
+            self.cpu_spinbox.setRange(1, max(1, multiprocessing.cpu_count()))
+            self.cpu_spinbox.setValue(max(1, multiprocessing.cpu_count()))
+            form.addRow("CPU processes:", self.cpu_spinbox)
+            self.enable_gpu_checkbox = QCheckBox("Average on the GPU (CuPy / CUDA)")
+            self.enable_gpu_checkbox.toggled.connect(self._gpu_toggled)
+            form.addRow(self.enable_gpu_checkbox)
+            layout.addWidget(options)
+
+            plot_group = QGroupBox("Plot Options")
+            plot_layout = QVBoxLayout(plot_group)
+            self.plot_mode_group = QButtonGroup(self)
+            for index, text in enumerate(("All plots (overlay, every section, averages)",
+                                          "Average + Overlay", "Average only")):
+                radio = QRadioButton(text)
+                radio.setChecked(index == 0)
+                self.plot_mode_group.addButton(radio, index)
+                plot_layout.addWidget(radio)
+            layout.addWidget(plot_group)
+
+            split = QGroupBox("Split Saving")
+            split_form = QFormLayout(split)
+            self.split_box = QCheckBox("Save several projects of at most N section plots each")
+            split_form.addRow(self.split_box)
+            self.plots_spin = QSpinBox()
+            self.plots_spin.setRange(1, 1000000)
+            self.plots_spin.setValue(1000)
+            split_form.addRow("Plots per project:", self.plots_spin)
+            self.base_edit = QLineEdit("RnS_Plots_Batch")
+            split_form.addRow("Base file name:", self.base_edit)
+            for widget in (self.plots_spin, self.base_edit):
+                widget.setEnabled(False)
+                self.split_box.toggled.connect(widget.setEnabled)
+            layout.addWidget(split)
+
+            self.status_text = QTextEdit()
+            self.status_text.setReadOnly(True)
+            self.status_text.setMinimumHeight(110)
+            layout.addWidget(self.status_text, 1)
+
+            widget, self.plot_panel = suite.make_plot_panel(self.theme == "dark")
+            self.tabs.addTab(widget, "Plots")
+            self.progress_bar = QProgressBar()
+            self.progress_bar.setVisible(False)
+            outer.addWidget(self.progress_bar)
+            buttons = QHBoxLayout()
+            self.plot_button = QPushButton("Process and Plot")
+            self.plot_button.clicked.connect(self._process_and_plot)
+            self.save_button = QPushButton("Save Veusz Project (.vszh5)")
+            self.save_button.clicked.connect(self._save_project)
+            self.save_button.setEnabled(False)
+            self.veusz_button = QPushButton("Open in Veusz...")
+            self.veusz_button.clicked.connect(self._open_in_veusz)
+            self.veusz_button.setEnabled(False)
+            close = QPushButton("Close")
+            close.clicked.connect(self.close)
+            for button in (self.plot_button, self.save_button, self.veusz_button, close):
+                buttons.addWidget(button)
+            outer.addLayout(buttons)
+
+        # ----- helpers ----------------------------------------------------------
+        def _log_message(self, message: str) -> None:
+            stamp = datetime.datetime.now().strftime("%H:%M:%S")
+            self.status_text.append("[%s] %s" % (stamp, message))
+
+        def _set_theme(self, mode: str) -> None:
+            self.theme = suite.apply_theme(mode)
+            if self.plot_panel is not None:
+                self.plot_panel.apply_theme(self.theme == "dark")
+            self._log_message("Theme set to %s mode" % self.theme)
+
+        def _gpu_toggled(self, on: bool) -> None:
+            if on and _cupy() is None:
+                self._log_message("GPU averaging: CuPy with a CUDA device is not available; "
+                                  "the CPU is used")
+                self.enable_gpu_checkbox.setChecked(False)
+            else:
+                self._log_message("GPU averaging %s" % ("on" if on else "off"))
+
+        def options(self) -> PlotOptions:
+            return PlotOptions(mode=max(0, self.plot_mode_group.checkedId()),
+                               use_gpu=self.enable_gpu_checkbox.isChecked())
+
+        def _browse_files(self) -> None:
+            files, _ = QFileDialog.getOpenFileNames(
+                self, "Select SFT Files", "", "R&S SFT Files (*.sft *.SFT);;All Files (*)")
+            self.add_files(files)
+
+        def add_files(self, files: Sequence[str]) -> None:
+            new = [f for f in files if f not in self.selected_files]
+            self.selected_files.extend(new)
+            self.file_list_widget.clear()
+            self.file_list_widget.addItems([os.path.basename(f) for f in self.selected_files])
+            if new:
+                self._log_message("Added %d file(s)" % len(new))
+
+        def _clear_files(self) -> None:
+            self.selected_files.clear()
+            self.file_list_widget.clear()
+            self._log_message("File list cleared")
+
+        # ----- processing -------------------------------------------------------
+        def _process_and_plot(self) -> None:
+            if not self.selected_files:
+                QMessageBox.warning(self, APP_NAME, "Please select SFT files first.")
+                return
+            if self.thread is not None and self.thread.isRunning():
+                return
+            self.plot_button.setEnabled(False)
+            self.progress_bar.setValue(0)
+            self.progress_bar.setVisible(True)
+            workers = self.cpu_spinbox.value() if self.enable_mp_checkbox.isChecked() else 1
+            self.thread = FileProcessingThread(self.selected_files, workers)
+            self.thread.progress_updated.connect(self.progress_bar.setValue)
+            self.thread.processing_finished.connect(self._on_processing_finished)
+            self.thread.start()
+            self._log_message("Processing %d file(s), mode: %s"
+                              % (len(self.selected_files), MODE_NAMES[self.options().mode]))
+
+        def _on_processing_finished(self, files: List[SFTFile], errors: List[str]) -> None:
+            self.progress_bar.setVisible(False)
+            self.plot_button.setEnabled(True)
+            for error in errors:
+                self._log_message("FAILED " + error)
+            if not files:
+                QMessageBox.warning(self, APP_NAME, "No file could be read. See the log.")
+                return
+            try:
+                self.plotter = build_project(files, self.options())
+            except Exception as exc:
+                QMessageBox.critical(self, APP_NAME, "Plot creation failed:\n%s" % exc)
+                return
+            self.files = files
+            for message in self.plotter.messages:
+                self._log_message(message)
+            self._log_message("Project ready: %d file(s), %d sweep(s), %d page(s)." % (
+                len(files), sum(len(f.traces) for f in files), len(self.plotter.doc.Root.children)))
+            self.save_button.setEnabled(True)
+            if self.plot_panel is not None:
+                try:
+                    pages = self.plot_panel.set_document(self.plotter.doc)
+                    self._log_message("Plots tab: %d page(s)." % pages)
+                    self.tabs.setCurrentIndex(1)
+                except Exception as exc:
+                    self._log_message("Plots tab could not draw the project: %s" % exc)
+            if errors:
+                QMessageBox.warning(self, APP_NAME, "%d file(s) failed. See the log." % len(errors))
+
+        def _save_project(self) -> None:
+            if self.plotter is None:
+                QMessageBox.information(self, APP_NAME, "Process files first.")
+                return
+            if self.split_box.isChecked():
+                folder = QFileDialog.getExistingDirectory(self, "Folder for the split projects")
+                if not folder:
+                    return
+                base = os.path.join(folder, self.base_edit.text().strip() or "RnS_Plots_Batch")
+                try:
+                    written = save_split(self.files, base, self.plots_spin.value(), self.options())
+                except Exception as exc:
+                    QMessageBox.critical(self, APP_NAME, "Save failed:\n%s" % exc)
+                    return
+                for path in written:
+                    self._log_message("Saved %s" % path)
+                self.last_saved = written[0] if written else None
+            else:
+                path, _ = QFileDialog.getSaveFileName(self, "Save Veusz Project", "",
+                                                      "Veusz HDF5 Project (*.vszh5)")
+                if not path:
+                    return
+                try:
+                    self.last_saved = self.plotter.doc.save(path)
+                except Exception as exc:
+                    QMessageBox.critical(self, APP_NAME, "Save failed:\n%s" % exc)
+                    return
+                self._log_message("Project saved: %s" % self.last_saved)
+            self.veusz_button.setEnabled(bool(self.last_saved))
+            if self.last_saved and QMessageBox.question(
+                    self, "Open in Veusz", "Open the saved project in Veusz?") \
+                    == QMessageBox.StandardButton.Yes:
+                self._open_in_veusz()
+
+        def _open_in_veusz(self) -> None:
+            if not self.last_saved:
+                QMessageBox.information(self, APP_NAME, "Save a project first.")
+                return
+            suite.open_in_veusz(self, self.last_saved)
+
+        def _export(self) -> None:
+            if not self.last_saved:
+                QMessageBox.information(self, APP_NAME, "Save a project first.")
+                return
+            suite.export_with_veusz(self, self.last_saved, self._log_message)
+
+        def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+            if self.thread is not None and self.thread.isRunning():
+                self.thread.wait(5000)
+            if self.plot_panel is not None:
+                self.plot_panel.clear()
+            super().closeEvent(event)
+
+    return QApplication, EnhancedMainWindow
 
 
 # %% Main Application
-def main():
-    """Main application entry point."""
-    # monitor = start_monitoring(SECONDS_FROZEN=20, test_interval=100)
-    monitor = start_monitoring()
-    if __name__ == '__main__':
-        mp.set_start_method("spawn", force=True)
-    if getattr(sys, 'frozen', False):
-        setup_qt_plugins()
-    app = QApplication(sys.argv)
-    window = EnhancedMainWindow()
-    window.show()
-    sys.exit(app.exec_())
-    monitor.stop()
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=APP_DESCRIPTION)
+    parser.add_argument("files", nargs="*")
+    parser.add_argument("--output", help="write this .vszh5 without opening the GUI")
+    parser.add_argument("--mode", type=int, choices=(0, 1, 2), default=0,
+                        help="0 all plots, 1 average + overlay, 2 average only")
+    parser.add_argument("--split", type=int, default=0,
+                        help="with --output: projects of at most N section plots")
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--gpu", action="store_true", help="average with CuPy")
+    parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
+    args = parser.parse_args(argv)
+    monitor = None
+    if os.environ.get("AUTOPLOT_HANG_MONITOR") == "1":
+        from Hanging_Threads import start_monitoring
+        monitor = start_monitoring()
+    try:
+        if args.output:
+            files, errors = read_files(args.files, args.workers)
+            for error in errors:
+                print("FAILED", error, file=sys.stderr)
+            if not files:
+                return 1
+            options = PlotOptions(args.mode, args.gpu)
+            if args.split > 0:
+                for path in save_split(files, args.output, args.split, options):
+                    print("Wrote", path)
+            else:
+                plotter = build_project(files, options)
+                print("\n".join(plotter.messages))
+                print("Wrote", plotter.doc.save(args.output))
+            return 0 if not errors else 2
+        QApplication, Window = _build_gui_classes()
+        app = QApplication.instance() or QApplication(sys.argv[:1])
+        window = Window()
+        window.add_files(args.files)
+        window.show()
+        return app.exec()
+    finally:
+        if monitor is not None:
+            monitor.stop()
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    sys.exit(main())

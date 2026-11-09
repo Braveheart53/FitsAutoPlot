@@ -27,6 +27,36 @@ union operators, no parenthesised context managers).
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.0: Suite theme; Veusz date-times in local ISO 8601.
+# Date: 2026-11-09
+#              Date-time axes (dt_labels pages and their overlays):
+#                * build_dtnum_dataset() stores the time stamps as a Veusz
+#                  DATE dataset (seconds since 2009-01-01 UTC; it was a plain
+#                  numeric dataset) and a "<name>_local" date dataset on the
+#                  clock of the computer doing the processing (DST-aware;
+#                  VSZH5_DISPLAY_TZ overrides), via
+#                  NativeDocument.SetDataLocalTime (writer 0.0.25).
+#                * configure_axis_datetime_mode()/style_datetime_x_axis()
+#                  with the default format mark the axis as a local-time
+#                  axis: when the document is saved the traces on it draw
+#                  the local dataset and the ticks read ISO 8601, 24 h, with
+#                  the offset, e.g. 2026-11-09T08:39:00-05:00, and the label
+#                  "Local time (ISO 8601, UTC-05:00)".  Tick labels stay at
+#                  45 degrees.  DEFAULT_DATETIME_TICK_FORMAT is now the ISO
+#                  form with a "T".
+#                * mjd_break_pairs_to_dtsec() returns the broken-axis gaps
+#                  on the same local clock (they were UTC while the axis now
+#                  shows local time).
+#              Theme (2026-11-05):
+#              The window starts in the theme stored by the launcher and the
+#              other tools (_suite_gui: QSettings "NRAO-GBO" / "GBO
+#              Electronics Scientific Plotting Suite", key "theme") instead
+#              of a fixed dark start, and View > Light / Dark stores the
+#              choice for every tool.  apply_theme() uses the suite palette
+#              (the launcher's colours).  The Veusz plugins no longer call it
+#              (it re-themed the whole Veusz program); they style only their
+#              own dialog (_suite_gui.dialog_stylesheet).
+#
 # %%%% 0.2.0: pyqtgraph "Plots" tab, Help > About (NRAO).
 # Date: 2026-11-05
 #              AutoPlotMainWindow now has two tabs: "Processing" (file list,
@@ -715,13 +745,34 @@ def make_light_palette() -> "QPalette":
 
 
 def apply_theme(app: "QApplication", mode: str) -> None:
-    """Apply 'dark' or 'light' palette to the running QApplication."""
-    if mode == "dark":
+    """Apply the suite's 'dark' or 'light' palette to the running QApplication
+    (standalone windows only - plugins style their own dialog instead)."""
+    try:
+        import _suite_gui
         app.setStyle("Fusion")
-        app.setPalette(make_dark_palette())
-    else:
-        app.setStyle("Fusion")
-        app.setPalette(make_light_palette())
+        app.setPalette(_suite_gui.build_palette("dark" if mode == "dark" else "light"))
+        return
+    except Exception:  # pragma: no cover - _suite_gui missing
+        pass
+    app.setStyle("Fusion")
+    app.setPalette(make_dark_palette() if mode == "dark" else make_light_palette())
+
+
+def suite_theme(default: str = "dark") -> str:
+    """Theme stored for the whole suite (launcher and tools)."""
+    try:
+        import _suite_gui
+        return _suite_gui.saved_theme(default)
+    except Exception:  # pragma: no cover
+        return default
+
+
+def store_suite_theme(mode: str) -> None:
+    try:
+        import _suite_gui
+        _suite_gui.save_theme(mode)
+    except Exception:  # pragma: no cover
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -1775,7 +1826,9 @@ MJD_VEUSZ_EPOCH_MJD = 54832.0
 # duplicate-with-datetime-axis page.  %VDx tokens are Veusz's strftime-ish
 # tokens, defined in the manual under "Axis numeric scales".  Result:
 #     2024-03-15 14:30:00
-DEFAULT_DATETIME_TICK_FORMAT = "%VDY-%VDm-%VDd %VDH:%VDM:%VDS"
+DEFAULT_DATETIME_TICK_FORMAT = "%VDY-%VDm-%VDdT%VDH:%VDM:%VDS"   # 0.3.0: ISO 8601
+# 0.3.0: label of a local date-time axis (the offset is appended on save).
+LOCAL_TIME_AXIS_LABEL = "Local time"
 # Default tick label rotation -- 45 degrees keeps a 19-character label
 # readable at typical cadences.  Veusz accepts integer or stringified
 # integer degrees ("45" or 45 both work).
@@ -1835,6 +1888,17 @@ def style_datetime_x_axis(axis,
     """
     if axis is None:
         return axis
+    # 0.3.0: default format -> local ISO-8601 axis resolved on save
+    # (_autoplot_native.mark_local_time_axis); a caller's own format stays.
+    if fmt == DEFAULT_DATETIME_TICK_FORMAT and hasattr(axis, "local_time"):
+        try:
+            from _autoplot_native import mark_local_time_axis
+            # The x data are local date-times now, whatever column (MJD,
+            # DMJD ...) they came from, so the label says so.
+            mark_local_time_axis(axis, LOCAL_TIME_AXIS_LABEL)
+            label = ""                     # set with the offset by finalize()
+        except Exception:
+            pass
     # Date format string for tick labels.
     try:
         axis.TickLabels.format.val = str(fmt)
@@ -2045,7 +2109,7 @@ class AutoPlotMainWindow(QMainWindow):
         self.setWindowTitle(title)
         self.resize(1100, 800)
         self.selected_files: List[str] = []
-        self._theme_mode = default_mode
+        self._theme_mode = suite_theme(default_mode)   # shared with the launcher
         # Path of the most recently saved .vszh5 project (None until
         # mark_project_saved() is called by a subclass _save_project()).
         self._last_saved_path: Optional[str] = None
@@ -2219,6 +2283,7 @@ class AutoPlotMainWindow(QMainWindow):
     def _set_theme(self, mode: str) -> None:
         self._theme_mode = mode
         apply_theme(QApplication.instance(), mode)
+        store_suite_theme(mode)
         self.act_dark.setChecked(mode == "dark")
         self.act_light.setChecked(mode == "light")
         if getattr(self, "plot_panel", None) is not None:
@@ -3511,14 +3576,22 @@ def build_dtnum_dataset(doc, name, mjd_array, log_cb=None):
                    % (name, exc))
         return None
     try:
-        doc.SetData(name, secs)
+        # 0.3.0: a real Veusz date-time dataset (UTC) when the document
+        # supports it, plus its local display copy "<name>_local".
+        if hasattr(doc, "SetDataDateTime"):
+            doc.SetDataDateTime(name, secs)
+        else:
+            doc.SetData(name, secs)
+        local = None
+        if hasattr(doc, "SetDataLocalTime"):
+            local = doc.SetDataLocalTime(name)
     except Exception as exc:
         if log_cb:
             log_cb("    SetData failed for %s: %s" % (name, exc))
         return None
     if log_cb:
-        log_cb("    +dtnum xData %s (%d points, seconds since 2009-01-01 "
-               "UTC)" % (name, n))
+        log_cb("    +date-time %s (%d points, UTC)%s" % (
+            name, n, (" and %s (local display)" % local) if local else ""))
     return name
 
 
@@ -3574,7 +3647,7 @@ def configure_axis_datetime_mode(axis_widget,
     )
 
 
-def mjd_break_pairs_to_dtsec(pairs):
+def mjd_break_pairs_to_dtsec(pairs, local=True):
     """Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
 
     The output is suitable to drive an ``axis-broken`` widget on a
@@ -3609,4 +3682,14 @@ def mjd_break_pairs_to_dtsec(pairs):
                 out.append((s2, e2))
         except Exception:
             continue
+    if out and local:
+        # 0.3.0: the dt_labels axes show local time; shift every gap edge
+        # by its own (DST-aware) offset, as the local datasets are.
+        try:
+            import vszh5_writer
+            flat = np.array(out, dtype=float).ravel()
+            shifted = vszh5_writer.local_time_from_veusz(flat).veusz_seconds
+            out = [(float(a), float(b)) for a, b in shifted.reshape(-1, 2) if b > a]
+        except Exception:
+            pass
     return out

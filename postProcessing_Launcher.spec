@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for postProcessing_Launcher.py 0.2.0
+# 2026-11-05: also bundles the shared modules the tools import (_suite_gui,
+# _autoplot_pyqtgraph, vszh5_writer).
 #
 # The launcher starts each plotting tool as a separate Python process, so the
 # tool scripts are bundled as plain data files (collect_data_files() on a
@@ -20,6 +22,9 @@ datas += [(script, '.') for script in (
     'Touchstone_AutoPlot.py',
     '_autoplot_common.py',
     '_autoplot_native.py',
+    '_autoplot_pyqtgraph.py',
+    '_suite_gui.py',
+    'vszh5_writer.py',
     'fastest_ascii_import.py',
     'Hanging_Threads.py',
 )]

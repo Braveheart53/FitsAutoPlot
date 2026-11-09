@@ -4,7 +4,10 @@
 # %% Header Info
 --------
 
-Created on %(date)s
+Created on 2025-06-23
+
+Template of small console helpers used while building the AutoPlot tools
+(switch statement, file selection, Cartesian to polar conversion).
 
 # %%% Author Information
 @author: William W. Wallace
@@ -17,28 +20,25 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
-# %%%% 0.0.1: Script to run in consol description
-Date: 
+# %%%% 0.0.3: select_file works; history newest-first.
+Date: 2026-11-05
 # %%%%% Function Descriptions
-        main: main script body
-        select_file: utilzing module os, select multiple files for processing
-
-# %%%%% Variable Descriptions
-    Define all utilized variables
-        file_path: path(s) to selected files for processing
-
-# %%%%% More Info
-
+        select_file: used tkinter names (filedialog, file_entry, tk) that
+            were never imported or defined, so any call raised NameError.
+            It now opens a tkinter file dialog (imported when called) and
+            returns the chosen paths; an optional Entry widget is filled
+            with the first path.
+        main: unchanged (commented outline only).
 # %%%% 0.0.2: NaN
-Date: 
+Date:
 # %%%%% Function Descriptions
         main: main script body
         select_file: utilzing module os, select multiple files for processing
-    More Info:
-# %%%%% Variable Descriptions
-    Define all utilized variables
-        file_path: path(s) to selected files for processing
-# %%%%% More Info
+# %%%% 0.0.1: Script to run in consol description
+Date:
+# %%%%% Function Descriptions
+        main: main script body
+        select_file: utilzing module os, select multiple files for processing
 =============================================================================
 """
 
@@ -131,11 +131,44 @@ class switch:
         return self.value in args
 
 
-def select_file():
-    file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
-    if file_path:
-        file_entry.delete(0, tk.END)
-        file_entry.insert(0, file_path)
+def select_file(filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
+                multiple=True, entry=None):
+    """
+    Ask for one or more files with a tkinter dialog.
+
+    Parameters
+    ----------
+    filetypes : sequence of (label, pattern)
+        Dialog filters.
+    multiple : bool
+        Allow several files (default True).
+    entry : tkinter.Entry, optional
+        When given, its text is replaced with the first selected path.
+
+    Returns
+    -------
+    list of str
+        Selected paths (empty when cancelled).
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+    owner = None
+    if tk._default_root is None:          # no Tk window yet: a hidden one
+        owner = tk.Tk()
+        owner.withdraw()
+    try:
+        if multiple:
+            paths = list(filedialog.askopenfilenames(filetypes=list(filetypes)))
+        else:
+            path = filedialog.askopenfilename(filetypes=list(filetypes))
+            paths = [path] if path else []
+    finally:
+        if owner is not None:
+            owner.destroy()
+    if entry is not None and paths:
+        entry.delete(0, tk.END)
+        entry.insert(0, paths[0])
+    return paths
 
 
 # %% Main Execution

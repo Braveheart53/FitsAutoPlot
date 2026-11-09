@@ -8,12 +8,12 @@ as well for various data strucure parsing such as Keysight, Agilent, OrbitFR, an
 
 |               File Description               | Extennsion 1 | Extension 2 |  Extension 3  |                                                                                                                                                    Status                                                                                                                                                    |
 |:--------------------------------------------:|:------------:|:-----------:|:-------------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
-|                  FITS files                  |     .fit     |    .fits    |   .fits.gz    | FITS_AutoPlot 0.2.0: astropy reader, native .vszh5 output (no Veusz needed to write), and an interactive pyqtgraph Plots tab (linked x axes, crosshair with values at the cursor, MJD as UTC dates, CSV/PNG/SVG export). |
-| Rhode & Schwarz Network Analyzer ASCII Files |     .sft     |             |               |                                                                                   Working well with averages also being created during data set creation. May look into extrema data set creation and error bars as well.                                                                                    |
-|            Comma Separated Files             |     .csv     |             |               |                                                                                                                   Fully Implemented through Delimiter separated Files. Needs full testing.                                                                                                                   |
-|         GBO Outdoor Range Data Files         |     .atr     |             |               |                                                                        Working well with polar plots. May want to look at averaging patterns or normalizing during processing. This can be completed by native Veusz plugins as well.                                                                        |
-|               Touchstone Files               |     .s1p     |    .s2p     | .s\*p or .snp | Touchstone_AutoPlot 0.5.0: magnitude / phase (wrapped or unwrapped), scikit-rf time domain and time gating (auto or manual, band-pass or band-stop) shown in time and frequency, Smith charts (PNG/SVG/PDF/HTML, bookmarked combined PDF), native .vszh5 output without Veusz. Checked on the 223 example .s2p files (220 processed; 3 are malformed and are reported as failures); the projects load and render in Veusz 4.2.1. |
-|        Franks timing data (FranksProcessed)  |   .t00new    | time_gbt.dat |               | Franks_AutoPlot 0.2.0: native .vszh5 output and the same pyqtgraph Plots tab as FITS AutoPlot. |
+|                  FITS files                  |     .fit     |    .fits    |   .fits.gz    | FITS_AutoPlot 0.3.0: astropy reader, native .vszh5 output (no Veusz needed to write), interactive pyqtgraph Plots tab. Date-time pages store the time stamps as Veusz date-times (UTC) and show them in local ISO 8601 time (2026-11-09T08:39:00-05:00). |
+| Rhode & Schwarz spectrum analyzer trace files |     .sft     |             |               | RAndS_FSW_ASCII_Plotter 1.1.1: FSP/FSW "Section" files (ASCII and binary) and FSW x;y exports; frequency or zero-span time axis from the header; power averages per file and for all files; pyqtgraph Plots tab; native .vszh5. |
+|            Comma Separated Files             |     .csv     |    .tsv     |  .txt / .dat  | CSV_TSV_AutoPlot 6.1.1: any delimiter, numeric and date/time columns (Veusz date-times shown in local ISO 8601), rows kept aligned, pyqtgraph Plots tab, native .vszh5. |
+|         GBO Outdoor Range Data Files         |     .atr     |             |               | ATR_AutoPlot 0.2.1: Cartesian and polar magnitude / phase pages, multi-frequency files, overlays; pyqtgraph Plots tab with polar plots; native .vszh5. |
+|               Touchstone Files               |     .s1p     |    .s2p     | .s\*p or .snp | Touchstone_AutoPlot 0.7.0 (Smith chart pages in the Veusz project, drawn with Veusz widgets by vszh5_writer 0.0.26; pyqtgraph previews and Plots tab; see RELEASE_suite-2026-11-09.md); 0.5.0: magnitude / phase (wrapped or unwrapped), scikit-rf time domain and time gating (auto or manual, band-pass or band-stop) shown in time and frequency, Smith charts (PNG/SVG/PDF/HTML, bookmarked combined PDF), native .vszh5 output without Veusz. Checked on the 223 example .s2p files (220 processed; 3 are malformed and are reported as failures); the projects load and render in Veusz 4.2.1. |
+|        Franks timing data (FranksProcessed)  |   .t00new    | time_gbt.dat |               | Franks_AutoPlot 0.3.0: native .vszh5 output, the same pyqtgraph Plots tab and local ISO 8601 date-time pages as FITS AutoPlot. |
 |        ORBIT/FR (MVG 959 Spectrum) data      |              |             |               | Not written yet: the vendor COM API is not public. See ORBIT_FR/ORBIT_FR_API_REQUIREMENTS.md and run ORBIT_FR/orbitfr_com_probe.py on the 959 Spectrum PC. |
 
 # postProcessing_Launcher.py
@@ -23,10 +23,29 @@ This should be your starting point if you are just running the scripts for plott
 
 Version 0.2.0 (2026-11-05): one button and one Applications-menu entry (Ctrl+1 ...) per tool, including Franks_AutoPlot; View > Light / Dark mode; Help > About (author, NRAO/GBO, licence) and Veusz plugin instructions; per-launch log files (File > Open Launch Log Folder) with a report if a tool exits with an error at start-up. Run `python postProcessing_Launcher.py --list` to see which tools it found. A frozen (PyInstaller) launcher needs `GBO_POSTPROC_PYTHON` set to the python.exe of the plotting environment. Details: RELEASE_launcher-0.2.0_touchstone-0.5.0.md.
 
+# Common to every tool (2026-11-09)
+
+* **Project files**: every `.vszh5` is written by the shared writer `vszh5_writer.py` 0.0.25 (through
+  `_autoplot_native.py` 0.3.0). Veusz is not needed to write a project, only to open it, or for
+  File > Export PDF / PNG.
+* **Plots tab**: every tool shows the pages of its project with pyqtgraph (`_autoplot_pyqtgraph.py`):
+  values at the cursor, Ctrl+wheel zoom, CSV/PNG/SVG export, polar (ATR) and Smith (Touchstone) plots.
+* **Light / dark**: View > Light Mode / Dark Mode is one setting for the launcher and every tool
+  (`_suite_gui.py`); the Veusz plugins style only their own dialog.
+* **Date-times**: time stamps are stored as Veusz date-time datasets in UTC plus a `<name>_local`
+  copy on the clock of the computer doing the processing (daylight saving included). Date-time
+  axes read `2026-11-09T08:39:00-05:00` (ISO 8601, 24 h, with the UTC offset); when the data cross
+  a daylight-saving change the ticks omit the offset and the axis label lists each offset and when it
+  starts. Set `VSZH5_DISPLAY_TZ` (for example `America/New_York`, `-05:00` or `UTC`) to process for
+  another zone, e.g. on a build server that runs in UTC.
+* **Names and notes**: page and graph names follow the original scripts; traces are named after their
+  y dataset; the source-file header is in each page's notes (Veusz: Properties > notes).
+
+Release notes: RELEASE_suite-2026-11-09.md.
+
 # FITS-AutoPlot.py
 
-Import and autoplot in Veusz (either installed via Python or by system installation method) data within a FITS file.
-This has not been rigorously tested, in fact only the Veusz native import has been tested at all.
+Import FITS tables and images (astropy) and build a native Veusz project; see the table above.
 
 # GBO_antenna_postProcessing.py
 
@@ -39,14 +58,14 @@ This has been replaced by postProcessing_Launcer for the time being.
 
 # RAndS_FSW_ASCII_Plotter.py
 
-This script will import and autoplot all data within a single *.sft file, ASCII format, originating from a Rhode &
-Schwarz spectrum analyzer.
+Imports Rohde & Schwarz spectrum-analyzer trace files (.sft): every sweep, the power average of each file
+(mean of mW, not of dB) and of all files sharing one x axis. Zero-span files (x-Unit s) get a time axis.
+Batch use: `python RAndS_FSW_ASCII_Plotter.py --mode 0 --output out.vszh5 *.sft`.
 
 # fastest_ascii_import.py
 
-This one is ready and works. It is just a single function that can parse any ASCII file with given line numbers and/or
-search strings. It then returns a dict with all extracted information.
-It also chooses the fastest method based on file size for reading in the data.
+A single function that parses any ASCII file for given line numbers and/or search strings and returns a dict
+with all extracted information (0.0.3: strict data-line detection, any byte decodes).
 
 # Revisions
 

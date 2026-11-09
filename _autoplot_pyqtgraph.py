@@ -75,6 +75,26 @@ Compatible with: Python 3.8+ (pyqtgraph 0.13.3) and 3.12+ (pyqtgraph 0.14),
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.0: Smith chart pages of the project drawn as Smith charts.
+# Date: 2026-11-09
+#              * A graph written by vszh5_writer 0.0.26 smith_page() /
+#                _autoplot_native.add_smith_page() (notes "Smith chart (...)")
+#                is drawn with SmithPlot: impedance or admittance grid,
+#                labels and VSWR circles as in the project, Z0 from the graph
+#                notes, f / Gamma / Z / VSWR read-out at the cursor (the
+#                frequency from "<stem>_freq_Hz" when present).  The grid
+#                widgets ("grid_*") are not drawn as traces.
+#              * Polar and Smith traces keep named project colours ("blue",
+#                "darkred" ...); only hex colours were used before.
+# %%%% 0.2.1: Local ISO date-time axes; names from the data.
+# Date: 2026-11-09
+#              * document_pages() finalises a NativeDocument first (local
+#                date-time datasets bound, auto-named widgets named after
+#                their data), so the Plots tab shows what the .vszh5 holds.
+#              * A local date-time axis (Veusz format ending in "-05:00")
+#                reads the cursor as 2026-11-09T08:39:00-05:00; the values
+#                are already local, so the date axis shows the same wall
+#                clock as Veusz.
 # %%%% 0.2.0: Polar graphs, Smith chart, log axes, project axis ranges.
 # Date: 2026-11-05
 #              * Veusz 'polar' graphs with 'nonorthpoint' traces (ATR
@@ -105,6 +125,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 os.environ.setdefault("QT_API", "pyside6")   # qtpy and pyqtgraph pick the same binding
@@ -114,7 +135,7 @@ from qtpy import QtGui, QtWidgets  # noqa: E402
 from qtpy.QtCore import Qt, Signal  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 __version__ = VERSION
 
 # %% Settings
@@ -133,6 +154,10 @@ WHEEL_NEEDS_CTRL = True        # plain wheel scrolls the page, Ctrl+wheel zooms
 VEUSZ_EPOCH_UNIX = 1230768000.0  # 2009-01-01T00:00:00Z: Veusz datetime zero
 MJD_UNIX_EPOCH = 40587.0       # MJD of 1970-01-01T00:00:00Z
 MJD_PLAUSIBLE = (30000.0, 100000.0)   # values outside are not treated as MJD
+#: (0.3.0) How a Smith chart graph of vszh5_writer 0.0.26 is recognised (its
+#: notes) and how its trace datasets are named (same values as the writer).
+SMITH_NOTES_PREFIX = "Smith chart"
+SMITH_IM_SUFFIX, SMITH_FREQUENCY_SUFFIX = "_im", "_freq_Hz"
 
 _LINE_STYLES = {"solid": Qt.PenStyle.SolidLine, "dashed": Qt.PenStyle.DashLine,
                 "dotted": Qt.PenStyle.DotLine, "dash-dot": Qt.PenStyle.DashDotLine}
@@ -149,14 +174,18 @@ def _ctrl_pressed(event: Any) -> bool:
         return False
 
 
-def _utc_text(epoch: Optional[float]) -> str:
-    """UTC wall-clock text of a Unix time ('-' when unknown)."""
+def _utc_text(epoch: Optional[float], tz: str = "") -> str:
+    """Wall-clock text of a Unix time ('-' when unknown).  ``tz`` "" = UTC;
+    "-05:00" or "local" = the values are already local (ISO 8601 with the
+    offset, as the Veusz axis shows it)."""
     if epoch is None or not np.isfinite(epoch):
         return "-"
     try:
         stamp = datetime.datetime.fromtimestamp(float(epoch), tz=datetime.timezone.utc)
     except (OverflowError, OSError, ValueError):
         return "-"
+    if tz:
+        return stamp.strftime("%Y-%m-%dT%H:%M:%S") + ("" if tz == "local" else tz)
     return stamp.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
@@ -331,14 +360,23 @@ def document_pages(doc: Any) -> List[Dict[str, Any]]:
         numeric (text label axes) are left out.
     """
     pages = []
+    if hasattr(doc, "finalize"):          # 0.2.1: local date-time axes, data names
+        doc.finalize()
     root = getattr(doc, "Root", None)
     for page in _children(root, ("page",)):
         graphs = []
+        page_label = next((c for c in _children(page, ("label",)) if c.name == "plotTitle"), None)
+        page_title = str(_setting(page_label, "label", "") or "") if page_label else ""
         for graph in _graphs_of(page):
             if graph.kind == "polar":
-                polar = _polar_graph(doc, graph)
+                polar = _polar_graph(doc, graph, page_title)
                 if polar is not None:
                     graphs.append(polar)
+                continue
+            if str(_setting(graph, "notes", "") or "").startswith(SMITH_NOTES_PREFIX):
+                smith = _smith_graph(doc, graph, page, page_title)       # 0.3.0
+                if smith is not None:
+                    graphs.append(smith)
                 continue
             axes = {a.name: a for a in _children(graph, ("axis", "axis-broken"))}
             x_axis, y_axis = axes.get("x"), axes.get("y")
@@ -383,10 +421,25 @@ def document_pages(doc: Any) -> List[Dict[str, Any]]:
                            "traces": traces, "images": images,
                            "x_log": bool(_setting(x_axis, "log", False)) if x_axis else False,
                            "y_log": bool(_setting(y_axis, "log", False)) if y_axis else False,
-                           "x_range": _axis_range(x_axis), "y_range": _axis_range(y_axis)})
+                           "x_range": _axis_range(x_axis), "y_range": _axis_range(y_axis),
+                           "x_tz": _axis_offset(x_axis)})
         if graphs:
             pages.append({"name": page.name, "graphs": graphs})
     return pages
+
+
+def _axis_offset(axis: Any) -> str:
+    """UTC offset ("-05:00") of a local ISO date-time axis, "local" when the
+    data cross offsets, "" for UTC / not a local axis (0.2.1)."""
+    if axis is None:
+        return ""
+    fmt = str(_setting(axis, "TickLabels/format", "") or "")
+    match = re.search(r"([+-]\d{2}:\d{2})$", fmt)
+    if match:
+        return match.group(1)
+    if "ISO 8601" in str(_setting(axis, "label", "") or ""):
+        return "local"
+    return ""
 
 
 def _axis_range(axis: Any) -> Tuple[Optional[float], Optional[float]]:
@@ -401,7 +454,48 @@ def _axis_range(axis: Any) -> Tuple[Optional[float], Optional[float]]:
     return out[0], out[1]
 
 
-def _polar_graph(doc: Any, graph: Any) -> Optional[Dict[str, Any]]:
+def _smith_graph(doc: Any, graph: Any, page: Any = None,
+                 page_title: str = "") -> Optional[Dict[str, Any]]:
+    """Description of a Smith chart written by vszh5_writer 0.0.26 (0.3.0).
+
+    The graph notes start with "Smith chart (impedance|admittance)" and may
+    give "Z0 = <ohm>"; grid widgets are named "grid_*"; every other xy is a
+    trace of Im(Gamma) (yData "<stem>_im") against Re(Gamma) (xData), with
+    the frequencies in "<stem>_freq_Hz" when that dataset exists.
+    """
+    notes = str(_setting(graph, "notes", "") or "")
+    match = re.search(r"Z0\s*=\s*([0-9.eE+-]+)", notes)
+    names = {c.name for c in _children(graph, ("xy",))}
+    traces = []
+    for xy in _children(graph, ("xy",)):
+        if xy.name.startswith("grid_"):
+            continue
+        x_name, y_name = _setting(xy, "xData"), _setting(xy, "yData")
+        re_part, _k1 = _numeric(doc, x_name)
+        im_part, _k2 = _numeric(doc, y_name)
+        if re_part is None or im_part is None:
+            continue
+        stem = str(y_name)[:-len(SMITH_IM_SUFFIX)] if str(y_name).endswith(SMITH_IM_SUFFIX) \
+            else str(y_name)
+        freq_name = stem + SMITH_FREQUENCY_SUFFIX
+        traces.append({"label": str(_setting(xy, "key", "") or y_name), "x_name": x_name,
+                       "y_name": y_name,
+                       "freq_name": freq_name if freq_name in getattr(doc, "datasets", {}) else "",
+                       "colour": _setting(xy, "PlotLine/color") or _setting(xy, "MarkerFill/color")})
+    if not traces:
+        return None
+    title_widget = next((c for c in _children(page, ("label",)) if c.name == "title"), None) \
+        if page is not None else None
+    title = str(_setting(title_widget, "label", "") or "") if title_widget else ""
+    return {"name": graph.name, "kind": "smith", "traces": traces, "images": [],
+            "title": title or page_title or graph.name,
+            "chart_type": "y" if "admittance" in notes.split("\n", 1)[0] else "z",
+            "z0": float(match.group(1)) if match else 50.0,
+            "labels": "grid_r_labels" in names or "grid_x_labels" in names,
+            "vswr": "grid_vswr" in names}
+
+
+def _polar_graph(doc: Any, graph: Any, page_title: str = "") -> Optional[Dict[str, Any]]:
     """Description of a Veusz polar graph and its nonorthpoint traces."""
     traces = []
     for point in _children(graph, ("nonorthpoint",)):
@@ -410,7 +504,7 @@ def _polar_graph(doc: Any, graph: Any) -> Optional[Dict[str, Any]]:
         t, _k2 = _numeric(doc, t_name)
         if r is None or t is None:
             continue
-        traces.append({"label": str(_setting(point, "key", "") or r_name),
+        traces.append({"label": str(_setting(point, "key", "") or point.name or r_name),
                        "r_name": r_name, "t_name": t_name,
                        "colour": _setting(point, "PlotLine/color") or _setting(point, "MarkerFill/color")})
     if not traces:
@@ -422,8 +516,8 @@ def _polar_graph(doc: Any, graph: Any) -> Optional[Dict[str, Any]]:
         return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
     return {"name": graph.name, "kind": "polar", "traces": traces, "images": [],
-            "title": str(_setting(title_widget, "label", "") or graph.name) if title_widget
-            else graph.name,
+            "title": (str(_setting(title_widget, "label", "") or "") if title_widget else "")
+            or page_title or graph.name,
             "rmin": number("minradius"), "rmax": number("maxradius"),
             "units": str(_setting(graph, "units", "degrees")),
             "direction": str(_setting(graph, "direction", "anticlockwise")),
@@ -540,8 +634,8 @@ class TracePlot(QtWidgets.QWidget):
         symbol = _MARKERS.get(str(marker))
         if symbol is None and (not line or n_finite <= SYMBOL_MAX_POINTS):
             symbol = "o"
-        if n_finite > SYMBOL_MAX_POINTS and line:
-            symbol = None                     # dense trace: the line carries it
+        if (n_finite > SYMBOL_MAX_POINTS and line) or n_finite == 0:
+            symbol = None                     # dense (line carries it) or all-gap trace
         pen = pg.mkPen(colour, width=1.5,
                        style=_LINE_STYLES.get(str(style), Qt.PenStyle.SolidLine)) if line else None
         key = label
@@ -687,7 +781,7 @@ class TracePlot(QtWidgets.QWidget):
         if x is None:
             where = "cursor -"
         elif self.date_axis:
-            where = "cursor <b>%s</b>" % _utc_text(x)
+            where = "cursor <b>%s</b>" % _utc_text(x, getattr(self, "tz_text", ""))
         else:
             where = "cursor <b>%s</b>" % _value_text(x)
         self.header.setText("<b>%s</b><br>%s &nbsp;|&nbsp; %d trace(s)" % (
@@ -789,7 +883,7 @@ class _GridPlot(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(splitter)
         self.widget = _PlotWidget(viewBox=_ViewBox())
-        self.widget.setMinimumHeight(int(1.6 * PLOT_HEIGHT))
+        self.widget.setMinimumHeight(2 * PLOT_HEIGHT)
         self.plot = self.widget.getPlotItem()
         self.view = self.plot.getViewBox()
         self.view.setAspectLocked(True)
@@ -838,13 +932,16 @@ class _GridPlot(QtWidgets.QWidget):
         self.grid_labels.append(label)
 
     def _add_curve(self, label: str, x: np.ndarray, y: np.ndarray, colour: Optional[str]) -> str:
-        colour = colour if isinstance(colour, str) and colour.startswith("#") \
-            else COLOURS[len(self.curves) % len(COLOURS)]
+        # 0.3.0: any colour Qt knows (hex or an SVG name such as "darkblue", as
+        # the Touchstone pages use); otherwise the next suite colour.
+        if not (isinstance(colour, str) and colour and QtGui.QColor(colour).isValid()):
+            colour = COLOURS[len(self.curves) % len(COLOURS)]
         key, suffix = label, 2
         while key in self.curves:
             key = "%s (%d)" % (label, suffix)
             suffix += 1
-        curve = self.plot.plot(x, y, pen=pg.mkPen(colour, width=1.8), connect="finite")
+        curve = self.plot.plot(x, y, pen=pg.mkPen(QtGui.QColor(colour), width=1.8),
+                               connect="finite")
         self.curves[key] = curve
         row = self.table.rowCount()
         self.table.blockSignals(True)
@@ -1050,12 +1147,16 @@ class SmithPlot(_GridPlot):
 
     R_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
     X_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
+    VSWR_VALUES = (1.5, 2.0, 3.0, 5.0)      # scikit-rf's draw_vswr=True circles
 
     def __init__(self, title: str, chart_type: str = "z", z0: float = 50.0,
-                 dark: bool = False, parent: Any = None) -> None:
+                 dark: bool = False, parent: Any = None, draw_labels: bool = True,
+                 draw_vswr: bool = False) -> None:
         super().__init__(title, dark, parent)
         self.chart_type = chart_type
         self.z0 = float(z0)
+        self.draw_labels = bool(draw_labels)
+        self.draw_vswr = bool(draw_vswr)
         self.freqs: Dict[str, np.ndarray] = {}
         self._draw_grid()
         self.header.setText("<b>%s</b>" % html_escape(title))
@@ -1069,7 +1170,8 @@ class SmithPlot(_GridPlot):
         for r in self.R_VALUES:                       # constant resistance circles
             centre, radius = r / (1.0 + r), 1.0 / (1.0 + r)
             self._grid_line(mirror * (centre + radius * np.cos(circle)), radius * np.sin(circle))
-            self._grid_text("%g" % r, mirror * (centre - radius), 0.0, anchor=(0, 0))
+            if self.draw_labels:
+                self._grid_text("%g" % r, mirror * (centre - radius), 0.0, anchor=(0, 0))
         t = np.linspace(-np.pi, np.pi, 1441)
         for x in self.X_VALUES:                       # constant reactance arcs
             for sign in (1.0, -1.0):
@@ -1080,8 +1182,15 @@ class SmithPlot(_GridPlot):
                 gy = np.where(inside, gy, np.nan)
                 self._grid_line(mirror * gx, mirror * gy)
                 angle = 2.0 * np.arctan(1.0 / xs)       # where the arc meets |Gamma| = 1
-                self._grid_text("%+gj" % xs, 1.07 * mirror * np.cos(angle),
-                                1.07 * mirror * np.sin(angle))
+                if self.draw_labels:
+                    self._grid_text("%+gj" % xs, 1.07 * mirror * np.cos(angle),
+                                    1.07 * mirror * np.sin(angle))
+        if self.draw_vswr:                            # |Gamma| = (VSWR - 1) / (VSWR + 1)
+            for vswr in self.VSWR_VALUES:
+                rho = (vswr - 1.0) / (vswr + 1.0)
+                self._grid_line(rho * np.cos(circle), rho * np.sin(circle))
+                if self.draw_labels:
+                    self._grid_text("VSWR %g" % vswr, 0.0, -rho, anchor=(0.5, 0))
 
     def add_trace(self, label: str, gamma: np.ndarray, freq_hz: Optional[np.ndarray] = None,
                   colour: Optional[str] = None) -> None:
@@ -1211,6 +1320,9 @@ class ProjectPlotPanel(QtWidgets.QWidget):
             traces = sum(len(g["traces"]) + len(g["images"]) for g in page["graphs"])
             self.page_box.addItem("%s  (%d graphs, %d traces)" % (
                 page["name"], len(page["graphs"]), traces), page["name"])
+        # the MJD switch only matters when some graph has an MJD x axis
+        self.mjd_box.setVisible(any(g.get("x_kind") == "mjd" for p in self.pages
+                                    for g in p["graphs"]))
         names = [p["name"] for p in self.pages]
         index = names.index(current) if current in names else 0
         self.page_box.setCurrentIndex(index if self.pages else -1)
@@ -1269,11 +1381,28 @@ class ProjectPlotPanel(QtWidgets.QWidget):
                 self.column.insertWidget(len(self.plots), plot)
                 self.plots.append(plot)
                 continue
+            if graph.get("kind") == "smith":                  # 0.3.0
+                plot = SmithPlot(graph["title"], chart_type=graph["chart_type"],
+                                 z0=graph["z0"], dark=self.dark, draw_labels=graph["labels"],
+                                 draw_vswr=graph["vswr"])
+                for trace in graph["traces"]:
+                    re_part, _k1 = _numeric(self.doc, trace["x_name"])
+                    im_part, _k2 = _numeric(self.doc, trace["y_name"])
+                    freq = _numeric(self.doc, trace["freq_name"])[0] if trace["freq_name"] \
+                        else None
+                    plot.add_trace(trace["label"], np.asarray(re_part) + 1j * np.asarray(im_part),
+                                   freq, trace["colour"])
+                plot.hovered.connect(self._hovered)
+                plot.unhovered.connect(self._unhovered)
+                self.column.insertWidget(len(self.plots), plot)
+                self.plots.append(plot)
+                continue
             if graph["traces"]:
                 date_axis = graph["x_kind"] == "veusz_date" or (
                     graph["x_kind"] == "mjd" and mjd_as_date)
                 plot = TracePlot(graph["title"], graph["x_label"], graph["y_label"],
                                  date_axis, dark=self.dark)
+                plot.tz_text = graph.get("x_tz", "") if graph["x_kind"] == "veusz_date" else ""
                 for trace in graph["traces"]:
                     x, y, _is_time = trace_arrays(self.doc, trace, graph["x_kind"],
                                                   mjd_as_date)

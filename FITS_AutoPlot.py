@@ -21,6 +21,32 @@ samplers and any other FITS BinTable / image HDUs) that produces a Veusz
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.0: Date-times as Veusz date-time datasets, local ISO 8601 axes.
+# Date: 2026-11-09
+#              * The time stamps of every dt_labels page (per file, per HDU /
+#                tag and the unit overlays) are stored as Veusz DATE
+#                datasets in UTC (were plain numeric seconds) plus a
+#                "<name>_local" date dataset on the clock of the computer
+#                doing the processing (DST-aware; VSZH5_DISPLAY_TZ
+#                overrides).  The pages draw the local one; the axis ticks
+#                read 2026-11-09T08:39:00-05:00 (ISO 8601, 24 h, with the
+#                UTC offset) and the axis label names the offset.  Broken
+#                axes use the same local clock.
+#              * No per-point date text: the text-x datasets are no longer
+#                written (EMIT_TEXT_X_DATASETS = True restores them) and the
+#                older labelled _dt page is now off by default ("Legacy:
+#                per-point date text labels page"); its label datasets are
+#                only built when that page is requested.
+#              * Page names and notes are unchanged (file headers stay in
+#                the page notes).
+#              * Writer 0.0.25 / _autoplot_native 0.3.0 / _autoplot_common
+#                0.3.0.
+# %%%% 0.2.1: Writer 0.0.24 and the suite-wide theme.
+# Date: 2026-11-05
+#              No code change in this file: the .vszh5 is now written by
+#              vszh5_writer 0.0.24 (through _autoplot_native 0.2.0, atomic
+#              save) and the window opens in the light / dark theme shared
+#              with the launcher (_autoplot_common 0.3.0).
 # %%%% 0.2.0: Interactive pyqtgraph Plots tab (AB monitor style), About.
 # Date: 2026-11-05
 #              After a batch the new "Plots" tab shows every page of the
@@ -461,7 +487,11 @@ from astropy.table import QTable
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
+#: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
+#: longer written; the dt_labels pages use Veusz date-time datasets on a
+#: local ISO-8601 axis.  True writes them again (back-compat only).
+EMIT_TEXT_X_DATASETS = False
 __version__ = APP_VERSION
 
 # ============================================================================
@@ -761,7 +791,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   datetime_duplicate: bool = False,
                   datetime_full_labels=None,
                   datetime_label_density_pct: int = 10,
-                  datetime_emit_numeric_dt: bool = True,
+                  datetime_emit_numeric_dt: bool = False,
                   datetime_emit_text_dt: bool = True,
                   hide_keys: bool = False) -> None:
     """
@@ -1157,7 +1187,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                     safe_dsname(sk_col), tag_suffix,
                                 )
                             )
-                            ok_density = build_density_datestr_dataset(
+                            ok_density = None if not datetime_emit_numeric_dt else build_density_datestr_dataset(
                                 doc, density_name,
                                 np.asarray(sub, dtype=float),
                                 density_pct=datetime_label_density_pct,
@@ -1170,7 +1200,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                             # imports build_textx_dataset still works.
                             ok_textx = None
                             if datetime_emit_text_dt:
-                                ok_textx = build_textx_dataset(
+                                ok_textx = None if not EMIT_TEXT_X_DATASETS else build_textx_dataset(
                                     doc, textx_name,
                                     np.asarray(sub, dtype=float),
                                     log_cb=log_cb,
@@ -1257,14 +1287,14 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                     dtnum_name = "%s__%s__%s__datelabels_dtnum" % (
                         base, safe_dsname(sk_hdu), safe_dsname(sk_col)
                     )
-                    ok_density = build_density_datestr_dataset(
+                    ok_density = None if not datetime_emit_numeric_dt else build_density_datestr_dataset(
                         doc, density_name, arr_mjd,
                         density_pct=datetime_label_density_pct,
                         log_cb=log_cb,
                     )
                     ok_textx = None
                     if datetime_emit_text_dt:
-                        ok_textx = build_textx_dataset(
+                        ok_textx = None if not EMIT_TEXT_X_DATASETS else build_textx_dataset(
                             doc, textx_name, arr_mjd, log_cb=log_cb,
                         )
                     # v0.0.16: numeric Veusz-seconds xData for the
@@ -1311,7 +1341,8 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                         data["_datelabels_full"] = data["_datelabels_density"]
                         # Trigger the dt-page clone in _build_pages.
                         datetime_x_name = (
-                            density_name if ok_density else textx_name
+                            density_name if ok_density else
+                            (textx_name if ok_textx else dtnum_name)
                         )
             elif log_cb:
                 log_cb("  Datetime duplicate skipped: %s epoch unknown"
@@ -1407,7 +1438,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                  datetime_x_name=None,
                  datetime_full_labels=None,
                  datetime_label_density_pct: int = 10,
-                 datetime_emit_numeric_dt: bool = True,
+                 datetime_emit_numeric_dt: bool = False,
                  datetime_emit_text_dt: bool = True,
                  hide_keys: bool = False) -> None:
     """Create one Veusz page per HDU with the appropriate plot widgets.
@@ -2008,7 +2039,7 @@ def build_unit_overlay_pages(doc, file_records,
                               datetime_duplicate=False,
                               datetime_full_labels=None,
                               datetime_label_density_pct: int = 10,
-                              datetime_emit_numeric_dt: bool = True,
+                              datetime_emit_numeric_dt: bool = False,
                               datetime_emit_text_dt: bool = True,
                               hide_keys: bool = False):
     """
@@ -2370,7 +2401,7 @@ def build_unit_overlay_pages(doc, file_records,
                         "OverlayCat__%s__%s__%s__%s__datelabels_dtnum"
                         % (u_safe, h_safe, c_safe, t_safe)
                     )
-                    ok_density = build_density_datestr_dataset(
+                    ok_density = None if not datetime_emit_numeric_dt else build_density_datestr_dataset(
                         doc, density_name, mjds_s,
                         density_pct=datetime_label_density_pct,
                         log_cb=log_cb,
@@ -2378,7 +2409,7 @@ def build_unit_overlay_pages(doc, file_records,
                     ok_textx = False
                     ok_dtnum = False
                     if datetime_emit_text_dt:
-                        ok_textx = build_textx_dataset(
+                        ok_textx = None if not EMIT_TEXT_X_DATASETS else build_textx_dataset(
                             doc, textx_name, mjds_s, log_cb=log_cb,
                         )
                         # v0.0.16: emit numeric dtsec dataset
@@ -2786,27 +2817,26 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
             self.label_density_spin,
         )
         self.emit_numeric_dt_cb = QCheckBox(
-            "Emit numeric-x dt page (v0.0.14 lineage)"
+            "Legacy: per-point date text labels page (_dt)"
         )
-        self.emit_numeric_dt_cb.setChecked(True)
+        self.emit_numeric_dt_cb.setChecked(False)
         self.emit_numeric_dt_cb.setToolTip(
-            "When checked, builds the v0.0.14-style dt page: xData is "
-            "the numeric seconds dataset (same as the seconds page) and "
-            "per-point xy.labels carry density-thinned YYYY-MM-DD "
-            "HH:MM:SS strings.  Sample spacing is proportional to "
-            "elapsed time."
+            "Off by default (0.3.0). When checked, also builds the older _dt page: "
+            "the sort-key x axis with density-thinned date text labels "
+            "on the points (xy.labels).  The dt_labels page below is the "
+            "date-time version and needs no labels."
         )
         form.addRow(self.emit_numeric_dt_cb)
         self.emit_text_dt_cb = QCheckBox(
-            "Emit text-x dt_labels page (v0.0.15 new)"
+            "Date-time dt_labels page (Veusz date-time axis, local ISO 8601)"
         )
         self.emit_text_dt_cb.setChecked(True)
         self.emit_text_dt_cb.setToolTip(
-            "When checked, builds the v0.0.15 dt_labels page: xData is "
-            "a per-point text dataset and the x axis is set to "
-            "mode='labels'.  The axis itself renders the date strings. "
-            "Sample spacing is uniform (one tick per point), NOT "
-            "proportional to elapsed time -- gaps in time disappear."
+            "When checked, builds the dt_labels pages: the time stamps are "
+            "stored as Veusz date-time datasets (UTC) and drawn on a "
+            "date-time axis in the local time of this computer, ticks "
+            "like 2026-11-09T08:39:00-05:00 (24 h, with the UTC offset); "
+            "spacing is proportional to elapsed time and gaps break the axis."
         )
         form.addRow(self.emit_text_dt_cb)
 

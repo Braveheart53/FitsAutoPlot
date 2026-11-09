@@ -16,7 +16,8 @@ Suite (ATR, CSV/TSV, R&S FSW, Touchstone, FITS and Franks AutoPlot):
       e-mail, licence, library versions) menus;
     * a dark style sheet for dialogs that live inside another program (the
       Veusz plugins), so they never re-theme their host;
-    * the pyqtgraph "Plots" tab and "Open in Veusz" helpers.
+    * the pyqtgraph "Plots" tab, "Open in Veusz" and "Export PDF / PNG
+      (Veusz)" helpers.
 
 # %%% Author Information
 @author: William W. Wallace
@@ -293,6 +294,36 @@ def find_veusz() -> str:
     except Exception:
         pass
     return shutil.which("veusz") or ""
+
+
+def export_with_veusz(parent: Any, path: str, log: Optional[Callable[[str], None]] = None
+                      ) -> list:
+    """
+    PDF (one bookmark per page) and per-page PNG files of a saved project,
+    rendered by Veusz through vszh5_writer.render_pages; returns the files.
+
+    Veusz is needed for this step only (not for writing the .vszh5).
+    """
+    from qtpy.QtGui import QCursor
+    try:
+        from vszh5_writer import render_pages
+    except Exception as exc:
+        QMessageBox.warning(parent, "Export", "vszh5_writer is not available (%s)." % exc)
+        return []
+    QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+    try:
+        files = render_pages(path, dpi=150, pdf=True, png_pages="all",
+                             veusz_exe=find_veusz(), png_background="white")
+    except Exception as exc:
+        QApplication.restoreOverrideCursor()
+        QMessageBox.warning(parent, "Export",
+                            "Veusz could not render %s:\n%s\n\nInstall Veusz or set "
+                            "VEUSZ_EXECUTABLE." % (os.path.basename(path), exc))
+        return []
+    QApplication.restoreOverrideCursor()
+    if log is not None:
+        log("Exported %d file(s) next to %s" % (len(files), path))
+    return list(files)
 
 
 def open_in_veusz(parent: Any, path: str) -> bool:

@@ -21,6 +21,17 @@ The current Veusz document is left untouched.
 # %%% Revisions
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.0: Dialog-only theme; local ISO date-time pages by default.
+# Date: 2026-11-09
+#              * The legacy labelled _dt page is off by default
+#                (datetime_emit_numeric_dt field and check box); the
+#                dt_labels pages are Veusz date-time axes in local ISO 8601
+#                time (see the standalone program 0.3.0).
+#              * The Dark / Light choice styles only this dialog (below).
+#              (2026-11-05) The Dark / Light choice styles only this dialog
+#              (_suite_gui.dialog_stylesheet).  It used to set the palette of
+#              the whole application, which re-themed the Veusz window the
+#              plugin runs in.
 # %%%% 0.1.0: Native project export plugin; leave the host document untouched.
 # Date: 2026-10-11
 #              Veusz plugin API is used only for host menu integration.
@@ -290,7 +301,7 @@ from _autoplot_common import (                      # noqa: E402
     QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QFormLayout,
     QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidget,
     QProgressBar, QTextEdit, QLineEdit,
-    apply_theme, MemoryAwareCache, MemoryMonitorConfig, MemoryMonitor,
+    MemoryAwareCache, MemoryMonitorConfig, MemoryMonitor,
     run_in_threadpool, safe_dsname, mjd_to_datestr,
     is_gpu_available, enable_gpu, gpu_backend_name,
     # v0.0.19: string gap parser
@@ -425,25 +436,26 @@ class _PluginBatchDialog(QDialog):
         dens_row.addStretch(1)
         root.addLayout(dens_row)
         self.emit_numeric_dt_cb = QCheckBox(
-            "Emit numeric-x dt page (v0.0.14 lineage)"
+            "Legacy: per-point date text labels page (_dt)"
         )
-        self.emit_numeric_dt_cb.setChecked(True)
+        self.emit_numeric_dt_cb.setChecked(False)
         self.emit_numeric_dt_cb.setToolTip(
-            "When checked, the per-file '<base>_dt' page (and the "
-            "matching 'Overlay_<col>_dt' overlay) is emitted with a "
-            "numeric seconds x axis plus density-controlled text "
-            "labels."
+            "Off by default (0.3.0). When checked, also builds the older _dt page: "
+            "the sort-key x axis with density-thinned date text labels "
+            "on the points (xy.labels).  The dt_labels page below is the "
+            "date-time version and needs no labels."
         )
         root.addWidget(self.emit_numeric_dt_cb)
         self.emit_text_dt_cb = QCheckBox(
-            "Emit text-x dt_labels page (v0.0.15 new)"
+            "Date-time dt_labels page (Veusz date-time axis, local ISO 8601)"
         )
         self.emit_text_dt_cb.setChecked(True)
         self.emit_text_dt_cb.setToolTip(
-            "When checked, the per-file '<base>_dt_labels' page "
-            "(and the matching 'Overlay_<col>_dt_labels' overlay) is "
-            "emitted with a per-point text dataset as xData and the x "
-            "axis set to mode='labels'.  Sample spacing is uniform."
+            "When checked, builds the dt_labels pages: the time stamps are "
+            "stored as Veusz date-time datasets (UTC) and drawn on a "
+            "date-time axis in the local time of this computer, ticks "
+            "like 2026-11-09T08:39:00-05:00 (24 h, with the UTC offset); "
+            "spacing is proportional to elapsed time and gaps break the axis."
         )
         root.addWidget(self.emit_text_dt_cb)
 
@@ -480,12 +492,20 @@ class _PluginBatchDialog(QDialog):
         arow.addWidget(self.cancel_btn)
         root.addLayout(arow)
 
-        apply_theme(QApplication.instance(), default_mode)
+        self._style_dialog(default_mode)
 
     def _theme_changed(self, idx: int) -> None:
         mode = "dark" if idx == 0 else "light"
         self._theme_mode = mode
-        apply_theme(QApplication.instance(), mode)
+        self._style_dialog(mode)
+
+    def _style_dialog(self, mode: str) -> None:
+        """Theme this dialog only (the Veusz host keeps its own look)."""
+        try:
+            from _suite_gui import dialog_stylesheet
+            self.setStyleSheet(dialog_stylesheet(mode))
+        except Exception:  # pragma: no cover - _suite_gui missing
+            pass
 
     def _browse(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
@@ -563,15 +583,10 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                                "10 default approximates v0.0.14 sparse)",
                          default=10, minval=0, maxval=100),
             vzp.FieldBool("datetime_emit_numeric_dt",
-                          descr="Emit numeric-x dt page "
-                                "(<base>_dt, Overlay_<col>_dt) "
-                                "with density-controlled date labels",
-                          default=True),
+                          descr="Legacy _dt page with per-point date text labels (off by default)",
+                          default=False),
             vzp.FieldBool("datetime_emit_text_dt",
-                          descr="Emit text-x dt_labels page "
-                                "(<base>_dt_labels, "
-                                "Overlay_<col>_dt_labels) using a "
-                                "per-point text dataset as xData",
+                          descr="dt_labels page: Veusz date-time axis in local ISO 8601 time",
                           default=True),
             # v0.0.11: pre-seed the datetime-duplicate checkbox
             vzp.FieldBool("datetime_duplicate",
@@ -644,7 +659,7 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
         _pct = max(0, min(100, _pct))
         dlg.label_density_spin.setValue(_pct)
         dlg.emit_numeric_dt_cb.setChecked(
-            bool(fields.get("datetime_emit_numeric_dt", True))
+            bool(fields.get("datetime_emit_numeric_dt", False))
         )
         dlg.emit_text_dt_cb.setChecked(
             bool(fields.get("datetime_emit_text_dt", True))

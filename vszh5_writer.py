@@ -11,12 +11,12 @@
 ===============================================================================
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.24 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.26 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-11
- Modified       : 2026-11-03
+ Modified       : 2026-11-09
  Language       : Python 3.8 through 3.12 (3.12 primary; parses at 3.7)
  Requires       : numpy, h5py   (Veusz only to open or render the result;
                   pypdf only for PDF bookmarks)
@@ -33,7 +33,9 @@
                   0.0.20 date-axis images and reduced spectrograms: see
                   the 0.0.20 history entry; 0.0.23 shape checks and
                   failed-load renders: 3.6.2 and 4.2.1; 0.0.24 MJD and
-                  local ISO-8601 time axes: 3.6.2)
+                  local ISO-8601 time axes: 3.6.2; 0.0.25 names, notes and
+                  local time axes: 4.2.1; 0.0.26 Smith charts: 4.2.1,
+                  settings checked in the 3.6.2 source)
  Lineage        : 0.0.20 joins the two releases that were both numbered
                   0.0.18 - the R&S FSP logger 0.9.0 release (render fixes)
                   and the AB Power Meter Monitor 1.6.0 release (appender) -
@@ -47,7 +49,12 @@
                   makes a document whose data Veusz cannot load a failed
                   render. 0.0.24 (MHM2010 / T4 Maser Timing Workbench
                   0.2.0) adds paired MJD and local ISO-8601 date-time axes;
-                  additions only. One master copy: the RF project document
+                  additions only. 0.0.25 (FitsAutoPlot suite, 2026-11-09)
+                  names plot widgets after their data, writes source-file
+                  headers into page notes and adds local date-time helpers
+                  for Veusz date datasets. 0.0.26 (FitsAutoPlot suite,
+                  Touchstone AutoPlot 0.7.0) adds Smith charts; additions
+                  only. One master copy: the RF project document
                   claude/vszh5_writer.py (see claude/vszh5-writer-registry.md).
 ===============================================================================
 
@@ -214,6 +221,20 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
   ISO-8601 tick format such as 2026-11-03T06:31:15-05:00),
   iso_local_strings, with_x and time_pair_pages (one page against MJD,
   one against local date-time); Panel.datetime_format for grid_page.
+* (0.0.25) Specific widget names and page notes: graphs, traces, images
+  and bars are named after their datasets ("g_<y>", "<y>", "img_<z>")
+  instead of "graph"/"trace0"; widget_name/unique_widget_name make any
+  text a valid Veusz widget name; header_notes builds page notes from a
+  source file header (FITS cards, "Key;Value" lines, a mapping) and every
+  page helper takes notes=; local_time_from_veusz turns stored UTC date
+  datasets into a local display axis; VSZH5_DISPLAY_TZ overrides the
+  computer's zone (e.g. a UTC build server).
+* (0.0.26) Smith charts in Veusz: smith_grid (resistance / reactance or
+  conductance / susceptance grid, labels, VSWR circles as datasets and xy
+  widget settings), smith_trace_datasets / smith_trace (Re, Im Gamma and
+  frequency), smith_page / smith_graph_spec (aspect-locked graph, hidden
+  axes, legend beside the chart), gamma_from_impedance,
+  impedance_from_gamma, vswr_from_gamma; title_settings.
 
 REFERENCES
 ----------
@@ -224,9 +245,101 @@ REFERENCES
 [R2] h5py developers, "h5py 3.16.0." https://pypi.org/project/h5py/
 [R3] W. W. Wallace, isp_speed_monitor.py 1.3.0, Adaptive Electrodynamics
      LLC dba AdaptEd, 2026 (source of the writer design).
+[R4] P. H. Smith, "Transmission line calculator," Electronics, vol. 12,
+     no. 1, pp. 29-31, Jan. 1939 (the Smith chart).
+[R5] A. Arsenovic et al., "scikit-rf: An open source Python package for
+     microwave network creation, analysis, and calibration," IEEE Microw.
+     Mag., vol. 23, no. 1, pp. 98-105, Jan. 2022,
+     doi: 10.1109/MMM.2021.3117139 (Smith grid values, VSWR circles,
+     admittance chart convention).
 
 REVISION HISTORY
 ----------------
+0.0.26 2026-11-09  FitsAutoPlot suite: Touchstone AutoPlot 0.7.0 (Smith
+                   chart pages in the project), built on master 0.0.25
+                   (SHA-256 fb481290...18b9a). Additions only: every 0.0.25
+                   name, parameter, default and output is unchanged (the
+                   scripts of xy/grid/image/bar pages compared byte for
+                   byte; _add_traces and add_title now share their settings
+                   with the new widget-tree builders).
+                   * NEW smith_grid(prefix, kind="z"|"y", resistances=,
+                     reactances=, vswr=, labels=, ...) -> SmithGrid: the
+                     constant-resistance circles (centre r/(1+r), radius
+                     1/(1+r)) and constant-reactance arcs (traced exactly as
+                     Gamma(r) = (r + jx - 1)/(r + jx + 1)), the unit circle,
+                     the real axis, optional VSWR circles (radius
+                     (S-1)/(S+1)) and the grid values, as NaN-joined 1-D
+                     datasets (one xy widget per family) and text datasets
+                     printed as point labels. kind="y" rotates the grid by
+                     180 degrees (admittance chart, as scikit-rf).
+                     SmithGrid.write(target) writes the datasets with a
+                     VeuszWriter or any object with SetData/SetDataText
+                     (_autoplot_native.NativeDocument, veusz.embed).
+                   * NEW smith_trace_datasets(stem, gamma, frequency_hz) ->
+                     "<stem>_re", "<stem>_im", "<stem>_freq_Hz";
+                     smith_trace(stem, label, ...) -> Trace(Im vs Re).
+                   * NEW smith_graph_spec(grid, traces, ...) -> (graph
+                     settings, [(type, name, settings), ...]): aspect ratio
+                     1, hidden axes at +/-SMITH_LIMIT, no border, notes
+                     "Smith chart (impedance|admittance)", the grid widgets
+                     "grid_*", the traces, the legend (beside the chart by
+                     default). smith_has_key(), smith_page_layout() and
+                     smith_page(doc, page, traces, grid, title, ...) build a
+                     whole page in a VszDoc script.
+                   * NEW gamma_from_impedance, impedance_from_gamma,
+                     vswr_from_gamma; SMITH_RESISTANCES, SMITH_REACTANCES,
+                     SMITH_VSWR, SMITH_LIMIT, SMITH_NOTES_PREFIX and the
+                     dataset suffixes; title_settings().
+                   Checked: tests/test_smith_chart.py (grid geometry against
+                   the circle equations, Gamma/Z/VSWR round trips, page
+                   scripts) and renders of impedance and admittance charts
+                   in real Veusz 4.2.1; every setting used exists in the
+                   Veusz 3.6.2 source (graph aspect, axis hide, xy labels
+                   and Label/posnHorz/posnVert, key horzManual).
+0.0.25 2026-11-09  FitsAutoPlot suite (ATR, CSV/TSV, FITS, Franks, R&S,
+                   Touchstone), built on master 0.0.24 (SHA-256
+                   199f30a8...a901). Every 0.0.24 name and parameter is still
+                   accepted; the CHANGED defaults are the widget names.
+                   * CHANGED widget names of the page helpers, from the data
+                     instead of generic names: xy_page graph "g_<y>" for one
+                     trace, "g_<page>" for several (was "graph"); traces are
+                     named after their y dataset (was "trace0", "trace1",
+                     ...); grid_page graphs "g_<first y>" (was "graph0"...);
+                     image_page graph "g_<dataset>", image "img_<dataset>",
+                     colour bar "cbar_<dataset>" (were "graph", "image",
+                     "colorbar"); bar_page graph "g_<page>" and bars
+                     "bars_<first length>". New Trace.name, Panel.name and
+                     graph_name= parameters choose a name explicitly
+                     (graph_name="graph" gives the 0.0.24 layout). The page
+                     helpers return the graph name(s); frequency_time_pages
+                     no longer reaches into "graph/x" by path (it passes
+                     datetime_format to the helpers), so its output is
+                     unchanged apart from the names.
+                   * NEW widget_name(text) (a valid Veusz widget name: no
+                     '/', no surrounding blanks, not '.'/'..') and
+                     unique_widget_name(name, used).
+                   * NEW header_notes(header, source=, title=, extra=): page
+                     notes from a source-file header - a mapping ("KEY =
+                     value", like Veusz shows FITS cards), lines, or text -
+                     and set_notes(doc, notes). xy_page, image_page,
+                     grid_page, bar_page, text_page and time_pair_pages take
+                     notes= and write it to the page's notes (Veusz:
+                     Properties > notes).
+                   * NEW veusz_to_epoch(), display_zone() and
+                     local_time_from_veusz(veusz_utc, zone=None, label=):
+                     the LocalTimeAxis of UTC date values that are already
+                     in Veusz seconds (FITS MJD, CSV dates). zone=None now
+                     means "VSZH5_DISPLAY_TZ if set, else this computer's
+                     zone"; the variable takes "UTC", a fixed offset
+                     ("-05:00") or, on Python >= 3.9, an IANA name. Fixed
+                     offsets also work on Python 3.8 (no zoneinfo).
+                   * NEW LOCAL_DATETIME_ROTATE (45) and
+                     style_datetime_axis(doc, axis, local_axis): mode
+                     datetime, ISO-8601 24-hour tick format with the offset
+                     (%VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00), label naming
+                     the offset, exact range, rotated tick labels.
+                   Checked: tests in FitsAutoPlot (writer names, notes and
+                   local axes) and renders in real Veusz 4.2.1.
 0.0.24 2026-11-03  Released with MHM2010 / T4 Maser Timing Workbench 0.2.0
                    (Maser and timing analysis chat), built on master 0.0.23
                    (SHA-256 90833d76...eaac6). Additions only: every 0.0.23
@@ -603,7 +716,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.24"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.26"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -633,6 +746,16 @@ __all__ = [
     "MJD_UNIX_EPOCH", "ISO_DATETIME_FORMAT", "mjd_to_epoch", "mjd_to_veusz",
     "iso_offset_text", "LocalTimeAxis", "local_time_axis", "iso_local_strings",
     "with_x", "time_pair_pages",
+    # 0.0.25: names, page notes, local display of stored UTC dates
+    "widget_name", "unique_widget_name", "header_notes", "set_notes",
+    "veusz_to_epoch", "DISPLAY_TZ_ENV", "display_zone", "local_time_from_veusz",
+    "LOCAL_DATETIME_ROTATE", "style_datetime_axis",
+    # 0.0.26: Smith charts
+    "SMITH_RESISTANCES", "SMITH_REACTANCES", "SMITH_VSWR", "SMITH_LIMIT",
+    "SMITH_NOTES_PREFIX", "SMITH_RE_SUFFIX", "SMITH_IM_SUFFIX", "SMITH_FREQUENCY_SUFFIX",
+    "gamma_from_impedance", "impedance_from_gamma", "vswr_from_gamma", "SmithGrid",
+    "smith_grid", "smith_trace_datasets", "smith_trace", "smith_has_key",
+    "smith_graph_spec", "smith_page_layout", "smith_page", "title_settings",
 ]
 
 # %% ===========================================================================
@@ -710,6 +833,89 @@ def vz_text(text: Any) -> str:
 def escape_hdf_name(name: str) -> str:
     """Escape a dataset name for use as an HDF5 member name, as Veusz does."""
     return name.replace("`", "`BT").replace("/", "`SL")
+
+
+# %% ===========================================================================
+#    WIDGET NAMES AND PAGE NOTES (0.0.25)
+# =============================================================================
+#: Longest widget name the helpers make (Veusz has no limit; long names make
+#: the widget tree and PDF bookmarks hard to read).
+WIDGET_NAME_MAX = 96
+
+
+def widget_name(text: Any, prefix: str = "", fallback: str = "widget") -> str:
+    """Any text -> a valid Veusz widget name (0.0.25).
+
+    Veusz accepts a widget name without '/' and without surrounding blanks
+    that is not '.' or '..' [R1: utils.validateWidgetName]. '/' becomes '_',
+    runs of blanks become one '_', and the result is cut to WIDGET_NAME_MAX.
+    """
+    name = re.sub(r"\s+", "_", str(text).strip()).replace("/", "_").replace("`", "_")
+    name = (prefix + name)[:WIDGET_NAME_MAX].strip("_ ") if name else ""
+    return name if name and name not in (".", "..") else fallback
+
+
+def unique_widget_name(name: str, used: set) -> str:
+    """``name``, or ``name_2``, ``name_3`` ... when already in ``used`` (added)."""
+    candidate, number = name, 2
+    while candidate in used:
+        candidate = f"{name}_{number}"
+        number += 1
+    used.add(candidate)
+    return candidate
+
+
+def header_notes(header: Any = None, source: str = "", title: str = "",
+                 extra: Sequence[str] = ()) -> str:
+    """Page notes text from a source-file header (0.0.25).
+
+    Parameters
+    ----------
+    header:
+        A mapping (written "KEY = value", one card per line, as Veusz shows
+        FITS headers), a sequence of header lines, a string, or None.
+        Mapping values that are (value, comment) or (value, unit) pairs are
+        written "KEY = value / comment".
+    source:
+        File the header came from (first line "Source: <file>").
+    title:
+        Optional first line (e.g. the plot title of the run).
+    extra:
+        Lines appended after the header (processing notes).
+    """
+    lines: list[str] = []
+    if title:
+        lines.append(str(title))
+    if source:
+        lines.append(f"Source: {source}")
+    if lines and header:
+        lines.append("")
+    if isinstance(header, Mapping):
+        for key, value in header.items():
+            if isinstance(value, (tuple, list)) and len(value) == 2:
+                main, comment = value
+                lines.append(f"{key} = {main}" + (f" / {comment}" if comment else ""))
+            else:
+                lines.append(f"{key} = {value}")
+    elif isinstance(header, str):
+        lines.extend(header.splitlines())
+    elif header:
+        lines.extend(str(line).rstrip("\r\n") for line in header)
+    if extra:
+        lines.append("")
+        lines.extend(str(line) for line in extra)
+    return "\n".join(lines)
+
+
+def set_notes(doc: "VszDoc", notes: Any, path: str = "notes") -> None:
+    """Set the notes of the current widget (a page) when ``notes`` is not empty.
+
+    ``notes`` may be text or a sequence of lines (see header_notes()).
+    """
+    if notes is None or notes == "" or (not isinstance(notes, str) and not list(notes)):
+        return
+    text = notes if isinstance(notes, str) else "\n".join(str(line) for line in notes)
+    doc.set(path, text)
 
 
 # %% ===========================================================================
@@ -1104,6 +1310,9 @@ class Trace:
         (0.0.14) Shading colour; empty = the line colour.
     fill_transparency:
         (0.0.14) Shading transparency in percent (0 opaque, 100 invisible).
+    name:
+        (0.0.25) Veusz widget name; empty = the y dataset name (made a
+        valid, unique widget name).
     """
     x: str
     y: str
@@ -1117,18 +1326,23 @@ class Trace:
     fill: str = ""
     fill_colour: str = ""
     fill_transparency: int = 70
+    name: str = ""
 
 
 def add_title(doc: VszDoc, text: str, name: str = "title", y_position: float = 0.965,
               size: str = "14pt", escape: bool = True) -> None:
     """Centred title label near the top of the current page."""
     doc.add("label", name)
-    doc.set(f"{name}/label", vz_text(text) if escape else text)
-    doc.set(f"{name}/xPos", [0.5])
-    doc.set(f"{name}/yPos", [y_position])
-    doc.set(f"{name}/alignHorz", "centre")
-    doc.set(f"{name}/alignVert", "top")
-    doc.set(f"{name}/Text/size", size)
+    for path, value in title_settings(text, y_position, size, escape).items():
+        doc.set(f"{name}/{path}", value)
+
+
+def title_settings(text: str, y_position: float = 0.965, size: str = "14pt",
+                   escape: bool = True) -> dict[str, Any]:
+    """Settings of add_title()'s page title label (0.0.26: shared with the
+    widget-tree builders, same values and order as before)."""
+    return {"label": vz_text(text) if escape else text, "xPos": [0.5], "yPos": [y_position],
+            "alignHorz": "centre", "alignVert": "top", "Text/size": size}
 
 
 #: Centimetres per unit for the physical Veusz distance units.
@@ -1141,17 +1355,28 @@ def _distance_cm(distance: str) -> float | None:
     return float(match.group(1)) * _CM_PER_UNIT[match.group(2)] if match else None
 
 
+def _graph_name(graph_name: str, page: str, traces: Sequence[Trace] = ()) -> str:
+    """(0.0.25) Explicit name, else "g_<y>" for one trace, else "g_<page>"."""
+    if graph_name:
+        return widget_name(graph_name)
+    if len(traces) == 1:
+        return widget_name(traces[0].y, prefix="g_")
+    return widget_name(page, prefix="g_")
+
+
 def _open_page_and_graph(doc: VszDoc, page: str, title: str, width: str, height: str,
-                         margins: dict[str, str], escape: bool) -> None:
-    """Add a page (sized), its title and a graph; leave the graph current."""
+                         margins: dict[str, str], escape: bool, graph: str = "graph",
+                         notes: Any = "") -> None:
+    """Add a page (sized, with notes), its title and a graph; leave the graph current."""
     doc.add("page", page)
     doc.to(page)
     doc.set("width", width)
     doc.set("height", height)
+    set_notes(doc, notes)
     if title:
         add_title(doc, title, escape=escape)
-    doc.add("graph", "graph")
-    doc.to("graph")
+    doc.add("graph", graph)
+    doc.to(graph)
     for side, value in margins.items():         # leftMargin, rightMargin, ...
         doc.set(side, value)
 
@@ -1187,8 +1412,8 @@ def xy_page(doc: VszDoc, page: str, traces: Sequence[Trace], title: str = "",
             key_position: tuple[str, str] = ("right", "top"),
             width: str = "25cm", height: str = "15cm", left_margin: str = "2.2cm",
             top_margin: str = "1.4cm", escape: bool = True,
-            datetime_format: str = "") -> None:
-    """A page with one graph of line/marker traces.
+            datetime_format: str = "", graph_name: str = "", notes: Any = "") -> str:
+    """A page with one graph of line/marker traces; returns the graph name.
 
     Parameters
     ----------
@@ -1222,9 +1447,16 @@ def xy_page(doc: VszDoc, page: str, traces: Sequence[Trace], title: str = "",
         (0.0.20) Tick-label format of a date x axis, e.g.
         "%VDY-%VDm-%VDd %VDH:%VDM:%VDS"; empty = Veusz's automatic format.
         Used only with xmode="datetime".
+    graph_name:
+        (0.0.25) Graph widget name; empty = "g_<y>" for one trace, else
+        "g_<page>" ("graph" reproduces 0.0.24).
+    notes:
+        (0.0.25) Page notes, e.g. header_notes(source-file header).
     """
+    graph = _graph_name(graph_name, page, traces)
     _open_page_and_graph(doc, page, title, width, height,
-                         {"leftMargin": left_margin, "topMargin": top_margin}, escape)
+                         {"leftMargin": left_margin, "topMargin": top_margin}, escape,
+                         graph=graph, notes=notes)
     _add_axes(doc, xlabel, ylabel, xlog, ylog, xmin, xmax, ymin, ymax, xmode, escape,
               x_autorange, y_autorange)
     if xmode == "datetime" and datetime_format:
@@ -1233,37 +1465,50 @@ def xy_page(doc: VszDoc, page: str, traces: Sequence[Trace], title: str = "",
     _add_key(doc, traces, key, key_position)
     doc.up()                                     # graph -> page
     doc.up()                                     # page -> where we started
+    return graph
 
 
-def _add_traces(doc: VszDoc, traces: Sequence[Trace], escape: bool = True) -> None:
-    """Add the xy widgets of ``traces`` to the current graph."""
+def _add_traces(doc: VszDoc, traces: Sequence[Trace], escape: bool = True) -> list[str]:
+    """Add the xy widgets of ``traces`` to the current graph (0.0.25: named
+    after Trace.name or the y dataset, unique in the graph); returns the names."""
+    used: set = {"x", "y", "key", "title", "panel_title"}
+    names = []
     for index, trace in enumerate(traces):
-        widget = f"trace{index}"
+        widget = unique_widget_name(widget_name(trace.name or trace.y, fallback=f"trace{index}"),
+                                    used)
+        names.append(widget)
         doc.add("xy", widget)
-        doc.set(f"{widget}/xData", trace.x)
-        doc.set(f"{widget}/yData", trace.y)
-        doc.set(f"{widget}/marker", trace.marker)
-        doc.set(f"{widget}/markerSize", trace.marker_size)
-        colour = trace.colour or TRACE_COLOURS[index % len(TRACE_COLOURS)]
-        doc.set(f"{widget}/PlotLine/color", colour)
-        doc.set(f"{widget}/PlotLine/width", trace.width)
-        doc.set(f"{widget}/PlotLine/style", trace.style)
-        doc.set(f"{widget}/PlotLine/hide", not trace.line)
-        doc.set(f"{widget}/MarkerFill/color", colour)
-        doc.set(f"{widget}/MarkerLine/color", colour)
-        if trace.fill in ("below", "above"):
-            # Veusz xy plotters carry two edge fills, FillBelow (default edge
-            # "bottom") and FillAbove (default "top"); both are hidden unless
-            # switched on [R1: veusz/widgets/point.py, setting/collections.py].
-            group = "FillBelow" if trace.fill == "below" else "FillAbove"
-            doc.set(f"{widget}/{group}/hide", False)
-            doc.set(f"{widget}/{group}/fillto", "bottom" if trace.fill == "below" else "top")
-            doc.set(f"{widget}/{group}/color", trace.fill_colour or colour)
-            doc.set(f"{widget}/{group}/transparency", int(trace.fill_transparency))
-        elif trace.fill:
-            raise ValueError(f"Trace.fill must be 'below', 'above' or '', not {trace.fill!r}")
-        if trace.label:
-            doc.set(f"{widget}/key", vz_text(trace.label) if escape else trace.label)
+        for path, value in _trace_settings(trace, index, escape).items():
+            doc.set(f"{widget}/{path}", value)
+    return names
+
+
+def _trace_settings(trace: Trace, index: int, escape: bool = True) -> dict[str, Any]:
+    """Settings of the xy widget that draws ``trace`` (relative paths, in the
+    order Veusz receives them); shared by _add_traces and smith_graph_spec
+    (0.0.26, same settings as 0.0.25 wrote)."""
+    colour = trace.colour or TRACE_COLOURS[index % len(TRACE_COLOURS)]
+    settings: dict[str, Any] = {
+        "xData": trace.x, "yData": trace.y, "marker": trace.marker,
+        "markerSize": trace.marker_size, "PlotLine/color": colour,
+        "PlotLine/width": trace.width, "PlotLine/style": trace.style,
+        "PlotLine/hide": not trace.line, "MarkerFill/color": colour,
+        "MarkerLine/color": colour,
+    }
+    if trace.fill in ("below", "above"):
+        # Veusz xy plotters carry two edge fills, FillBelow (default edge
+        # "bottom") and FillAbove (default "top"); both are hidden unless
+        # switched on [R1: veusz/widgets/point.py, setting/collections.py].
+        group = "FillBelow" if trace.fill == "below" else "FillAbove"
+        settings[f"{group}/hide"] = False
+        settings[f"{group}/fillto"] = "bottom" if trace.fill == "below" else "top"
+        settings[f"{group}/color"] = trace.fill_colour or colour
+        settings[f"{group}/transparency"] = int(trace.fill_transparency)
+    elif trace.fill:
+        raise ValueError(f"Trace.fill must be 'below', 'above' or '', not {trace.fill!r}")
+    if trace.label:
+        settings["key"] = vz_text(trace.label) if escape else trace.label
+    return settings
 
 
 def _add_key(doc: VszDoc, traces: Sequence[Trace], key: bool | str = "auto",
@@ -1283,8 +1528,10 @@ def image_page(doc: VszDoc, page: str, dataset: str, title: str = "", xlabel: st
                width: str = "25cm", height: str = "15cm", right_margin: str = "3.2cm",
                top_margin: str = "1.4cm", bottom_margin: str = "1.7cm",
                escape: bool = True, xmode: str = "numeric", ymode: str = "numeric",
-               datetime_format: str = "", left_margin: str = "") -> None:
-    """A page with a 2-D dataset drawn as an image, and a colour bar.
+               datetime_format: str = "", left_margin: str = "", graph_name: str = "",
+               notes: Any = "") -> str:
+    """A page with a 2-D dataset drawn as an image, and a colour bar;
+    returns the graph name.
 
     Parameters
     ----------
@@ -1319,6 +1566,9 @@ def image_page(doc: VszDoc, page: str, dataset: str, title: str = "", xlabel: st
     left_margin:
         (0.0.20) Graph left margin; empty = Veusz default. A date y axis
         needs about 3.6cm for "%VDY-%VDm-%VDd %VDH:%VDM:%VDS" labels.
+    graph_name, notes:
+        (0.0.25) As xy_page(); the graph defaults to "g_<dataset>", the image
+        widget is "img_<dataset>" and the colour bar "cbar_<dataset>".
     Other parameters as xy_page().
     """
     for mode in (xmode, ymode):
@@ -1328,7 +1578,11 @@ def image_page(doc: VszDoc, page: str, dataset: str, title: str = "", xlabel: st
                "bottomMargin": bottom_margin}
     if left_margin:
         margins["leftMargin"] = left_margin
-    _open_page_and_graph(doc, page, title, width, height, margins, escape)
+    graph = widget_name(graph_name) if graph_name else widget_name(dataset, prefix="g_")
+    image = widget_name(dataset, prefix="img_")
+    bar = widget_name(dataset, prefix="cbar_")
+    _open_page_and_graph(doc, page, title, width, height, margins, escape, graph=graph,
+                         notes=notes)
     # Image axes span the pixel edges exactly (no padding to the next tick).
     _add_axes(doc, xlabel, ylabel, xlog, ylog, "Auto", "Auto", "Auto", "Auto", xmode, escape,
               "exact", "exact")
@@ -1337,32 +1591,33 @@ def image_page(doc: VszDoc, page: str, dataset: str, title: str = "", xlabel: st
     for axis_name, mode in (("x", xmode), ("y", ymode)):
         if mode == "datetime" and datetime_format:
             doc.set(f"{axis_name}/TickLabels/format", datetime_format)
-    doc.add("image", "image")
-    doc.set("image/data", dataset)
-    doc.set("image/colorMap", colormap)
-    doc.set("image/colorScaling", zscaling)
-    doc.set("image/min", zmin if zmin == "Auto" else float(zmin))
-    doc.set("image/max", zmax if zmax == "Auto" else float(zmax))
+    doc.add("image", image)
+    doc.set(f"{image}/data", dataset)
+    doc.set(f"{image}/colorMap", colormap)
+    doc.set(f"{image}/colorScaling", zscaling)
+    doc.set(f"{image}/min", zmin if zmin == "Auto" else float(zmin))
+    doc.set(f"{image}/max", zmax if zmax == "Auto" else float(zmax))
     if colorbar:
-        doc.add("colorbar", "colorbar")
-        doc.set("colorbar/widgetName", "image")
-        doc.set("colorbar/label", vz_text(zlabel) if escape else zlabel)
-        doc.set("colorbar/direction", "vertical")
+        doc.add("colorbar", bar)
+        doc.set(f"{bar}/widgetName", image)
+        doc.set(f"{bar}/label", vz_text(zlabel) if escape else zlabel)
+        doc.set(f"{bar}/direction", "vertical")
         # The bar is an axis: "exact" keeps it on the image's colour range
         # (the default "next-tick" pads it with white beyond zmin/zmax).
-        doc.set("colorbar/autoRange", "exact")
-        doc.set("colorbar/horzPosn", "manual")
-        doc.set("colorbar/vertPosn", "manual")
-        doc.set("colorbar/horzManual", 1.03)
-        doc.set("colorbar/vertManual", 0.0)
-        doc.set("colorbar/width", "0.45cm")
+        doc.set(f"{bar}/autoRange", "exact")
+        doc.set(f"{bar}/horzPosn", "manual")
+        doc.set(f"{bar}/vertPosn", "manual")
+        doc.set(f"{bar}/horzManual", 1.03)
+        doc.set(f"{bar}/vertManual", 0.0)
+        doc.set(f"{bar}/width", "0.45cm")
         sizes_cm = [_distance_cm(d) for d in (height, top_margin, bottom_margin)]
         if None not in sizes_cm and sizes_cm[0] - sizes_cm[1] - sizes_cm[2] > 1.0:
             graph_height_cm = sizes_cm[0] - sizes_cm[1] - sizes_cm[2]
-            doc.set("colorbar/height", f"{graph_height_cm:.3f}cm")
-        doc.set("colorbar/reflect", True)
+            doc.set(f"{bar}/height", f"{graph_height_cm:.3f}cm")
+        doc.set(f"{bar}/reflect", True)
     doc.up()                                     # graph -> page
     doc.up()                                     # page -> where we started
+    return graph
 
 
 @dataclass(frozen=True)
@@ -1385,21 +1640,26 @@ class Panel:
     x_autorange: str = "next-tick"
     key: Any = "auto"
     datetime_format: str = ""                    # 0.0.24: datetime x tick format
+    name: str = ""                               # 0.0.25: graph name ("g_<first y>")
 
 
 def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", columns: int = 2,
-              width: str = "25cm", height: str = "15cm", escape: bool = True) -> None:
+              width: str = "25cm", height: str = "15cm", escape: bool = True,
+              notes: Any = "") -> list[str]:
     """A page with several graphs in a Veusz grid (rows filled left to right).
 
     Each panel gets its own axes, traces, legend and a title above the plot
     area. Use it for overview pages (e.g. time series, spectrum, PSD and zoom
-    of one measurement together).
+    of one measurement together). (0.0.25) Graphs are named Panel.name or
+    "g_<first y dataset>" (unique in the grid); ``notes`` go to the page
+    notes. Returns the graph names.
     """
     rows = max(1, math.ceil(len(panels) / max(columns, 1)))
     doc.add("page", page)
     doc.to(page)
     doc.set("width", width)
     doc.set("height", height)
+    set_notes(doc, notes)
     if title:
         add_title(doc, title, escape=escape)
     doc.add("grid", "grid")
@@ -1409,8 +1669,13 @@ def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", 
     for side, value in (("topMargin", "1.2cm" if title else "0.3cm"), ("bottomMargin", "0.2cm"),
                         ("leftMargin", "0.2cm"), ("rightMargin", "0.3cm"), ("internalMargin", "0cm")):
         doc.set(side, value)
+    used: set = set()
+    names = []
     for index, panel in enumerate(panels):
-        graph = f"graph{index}"
+        default = (widget_name(panel.traces[0].y, prefix="g_") if panel.traces
+                   else f"graph{index}")
+        graph = unique_widget_name(widget_name(panel.name) if panel.name else default, used)
+        names.append(graph)
         doc.add("graph", graph)
         doc.to(graph)
         for side, value in (("leftMargin", "1.8cm"), ("rightMargin", "0.3cm"),
@@ -1433,6 +1698,7 @@ def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", 
         doc.up()                                 # graph -> grid
     doc.up()                                     # grid -> page
     doc.up()                                     # page -> where we started
+    return names
 
 
 # %% LINEAR-POWER AVERAGING (0.0.17) — SHARED BY REPORTS AND FUTURE CALLERS
@@ -1525,11 +1791,8 @@ def frequency_time_pages(doc: VszDoc, frequency_hz: Sequence[float], time_datase
                         marker="circle", marker_size="2pt")
                   for channel_index, (channel_name, names) in enumerate(channels)]
         xy_page(doc, page_name, traces, title=ghz_text + " GHz versus time",
-                xlabel=xlabel, ylabel="Level (dBm)", xmode=xmode, key=True)
-        if xmode == "datetime" and datetime_format:
-            doc.to(page_name)
-            doc.set("graph/x/TickLabels/format", datetime_format)
-            doc.up()
+                xlabel=xlabel, ylabel="Level (dBm)", xmode=xmode, key=True,
+                datetime_format=datetime_format if xmode == "datetime" else "")
         pages.append(page_name)
     panels = []
     styles = ("solid", "dashed", "dotted", "dash-dot")
@@ -1540,21 +1803,18 @@ def frequency_time_pages(doc: VszDoc, frequency_hz: Sequence[float], time_datase
                         marker="circle", marker_size="2pt")
                   for index, dataset_name in enumerate(datasets)]
         panels.append(Panel(traces, title=channel_name, xlabel=xlabel,
-                            ylabel="Level (dBm)", xmode=xmode, key=True))
+                            ylabel="Level (dBm)", xmode=xmode, key=True,
+                            datetime_format=datetime_format if xmode == "datetime" else "",
+                            name="g_" + str(channel_name)))
     page_name = "Combined_Freq_vs_Time"
     if len(panels) == 1:
         xy_page(doc, page_name, panels[0].traces, title="All frequencies versus time — " + channels[0][0],
-                xlabel=xlabel, ylabel="Level (dBm)", xmode=xmode, key=True, width="30cm", height="18cm")
+                xlabel=xlabel, ylabel="Level (dBm)", xmode=xmode, key=True, width="30cm", height="18cm",
+                datetime_format=datetime_format if xmode == "datetime" else "",
+                graph_name="g_" + str(channels[0][0]))
     else:
         grid_page(doc, page_name, panels, columns=1, title="All frequencies versus time",
                   width="30cm", height=str(max(18, 10 * len(panels))) + "cm")
-    if xmode == "datetime" and datetime_format:
-        doc.to(page_name)
-        paths = ["graph/x/TickLabels/format"] if len(panels) == 1 else [
-            "grid/graph%d/x/TickLabels/format" % index for index in range(len(panels))]
-        for path in paths:
-            doc.set(path, datetime_format)
-        doc.up()
     pages.append(page_name)
     return pages
 
@@ -1590,13 +1850,43 @@ def iso_offset_text(offset_s: float) -> str:
     return f"{sign}{hours:02d}:{remainder // 60:02d}"
 
 
+#: (0.0.25) Environment variable that overrides the computer's time zone for
+#: local date-time axes: "UTC", a fixed offset such as "-05:00" or "+0530",
+#: or (Python >= 3.9) an IANA name such as "America/New_York".
+DISPLAY_TZ_ENV = "VSZH5_DISPLAY_TZ"
+_FIXED_OFFSET = re.compile(r"^(?:UTC|GMT)?\s*([+-])(\d{1,2}):?(\d{2})?$", re.IGNORECASE)
+
+
+def _zone_from_text(text: str) -> Any:
+    """"UTC"/"Z", "+HH:MM", "-5", "UTC-05:00" or an IANA name -> tzinfo."""
+    text = text.strip()
+    if text.upper() in ("UTC", "Z", "GMT"):
+        return _dt.timezone.utc
+    match = _FIXED_OFFSET.match(text)
+    if match:
+        sign = -1 if match.group(1) == "-" else 1
+        minutes = int(match.group(2)) * 60 + int(match.group(3) or 0)
+        return _dt.timezone(_dt.timedelta(minutes=sign * minutes))
+    from zoneinfo import ZoneInfo               # Python >= 3.9
+    return ZoneInfo(text)
+
+
+def display_zone(default: Any = None) -> Any:
+    """Zone for local date-time axes (0.0.25): VSZH5_DISPLAY_TZ when set,
+    else ``default`` (None = the time zone of this computer)."""
+    text = os.environ.get(DISPLAY_TZ_ENV, "").strip()
+    return _zone_from_text(text) if text else default
+
+
 def _zone_offsets(epoch_s: np.ndarray, zone: Any) -> np.ndarray:
-    """Per-sample UTC offset (s) in ``zone`` (None = this computer's zone)."""
+    """Per-sample UTC offset (s) in ``zone`` (None = VSZH5_DISPLAY_TZ, else
+    this computer's zone)."""
+    if zone is None:
+        zone = display_zone()
     if zone is None:
         return local_utc_offsets(epoch_s)
     if isinstance(zone, str):
-        from zoneinfo import ZoneInfo           # Python >= 3.9
-        zone = ZoneInfo(zone)
+        zone = _zone_from_text(zone)
     out = np.zeros_like(epoch_s)
     good = np.isfinite(epoch_s)
     hours = np.floor(epoch_s[good] / 3600.0)
@@ -1660,6 +1950,50 @@ def local_time_axis(epoch_s: Any, zone: Any = None, label: str = "Local time") -
     return LocalTimeAxis(epoch_to_veusz(epoch, offsets), offsets, fmt, axis_label, tuple(changes))
 
 
+def veusz_to_epoch(veusz_s: Any) -> np.ndarray:
+    """Veusz date seconds (since 2009-01-01, UTC) -> Unix epoch seconds (0.0.25)."""
+    return np.asarray(veusz_s, dtype=float) - UNIX_TO_VEUSZ_S
+
+
+def local_time_from_veusz(veusz_utc: Any, zone: Any = None,
+                          label: str = "Local time") -> LocalTimeAxis:
+    """local_time_axis() for UTC values already in Veusz date seconds (0.0.25).
+
+    Store the UTC values as the date dataset (VeuszWriter.dataset_date) and
+    plot ``.veusz_seconds`` as a second date dataset on a datetime axis
+    styled with style_datetime_axis(); NaN stays NaN.
+    """
+    return local_time_axis(veusz_to_epoch(_one_dimensional(veusz_utc, "veusz_utc")),
+                           zone=zone, label=label)
+
+
+#: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis; a
+#: 25-character "2026-11-09T08:39:00-05:00" label needs it.
+LOCAL_DATETIME_ROTATE = 45
+
+
+def style_datetime_axis(doc: "VszDoc", axis: str, local_axis: Any = None,
+                        datetime_format: str = "", label: str = "",
+                        rotate: int = LOCAL_DATETIME_ROTATE,
+                        autorange: str = "exact") -> None:
+    """Make ``axis`` (path from the current widget, e.g. "x" or
+    "g_level/x") a datetime axis (0.0.25).
+
+    With a LocalTimeAxis the tick format is its ISO-8601 24-hour format with
+    the UTC offset and the axis label names the offset; ``datetime_format``
+    and ``label`` override them.
+    """
+    fmt = datetime_format or (local_axis.datetime_format if local_axis is not None
+                              else ISO_DATETIME_FORMAT)
+    doc.set(f"{axis}/mode", "datetime")
+    doc.set(f"{axis}/TickLabels/format", fmt)
+    doc.set(f"{axis}/TickLabels/rotate", str(int(rotate)))
+    doc.set(f"{axis}/autoRange", autorange)
+    text = label or (local_axis.label if local_axis is not None else "")
+    if text:
+        doc.set(f"{axis}/label", vz_text(text))
+
+
 def iso_local_strings(epoch_s: Any, zone: Any = None) -> list[str]:
     """ISO-8601 local date-times with offsets, e.g. "2026-11-03T06:31:15-05:00"."""
     epoch = _one_dimensional(epoch_s, "epoch_s")
@@ -1699,13 +2033,381 @@ def time_pair_pages(doc: VszDoc, page: str, traces: Sequence[Trace], mjd_x: str,
     return [page + "_mjd", page + "_local"]
 
 
+# %% ===========================================================================
+#    SMITH CHARTS (0.0.26)
+# =============================================================================
+# Veusz has no Smith-chart widget, so the chart is built from what it does
+# have: a graph whose aspect ratio is fixed at 1 and whose (hidden) axes are
+# Re(Gamma) and Im(Gamma), the grid as xy lines read from datasets (circles
+# and arcs joined with NaN breaks, so one xy widget draws a whole family),
+# the grid values as point labels of marker-less xy widgets, and the data as
+# ordinary xy traces of Re(Gamma) against Im(Gamma). Everything is a normal
+# Veusz widget, so the chart can be edited, restyled and exported in Veusz.
+#
+# Grid geometry. With the normalized impedance z = Z / Z0 = r + jx,
+#     Gamma = (z - 1) / (z + 1).
+# Holding r constant and eliminating x gives the circle
+#     (Re Gamma - r / (1 + r))^2 + (Im Gamma)^2 = (1 / (1 + r))^2,
+# and holding x constant gives the circle
+#     (Re Gamma - 1)^2 + (Im Gamma - 1 / x)^2 = (1 / x)^2,
+# of which only the part inside |Gamma| <= 1 (r >= 0) is drawn; it is traced
+# exactly as Gamma(r) = (r + jx - 1) / (r + jx + 1) for r = tan(theta),
+# 0 <= theta < pi/2, so every arc starts on the unit circle (r = 0) and ends
+# at Gamma = 1 (r -> infinity). An arc meets the unit circle at angle
+# 2 atan(1 / x). For the admittance chart, y = Y / Y0 = g + jb and
+# Gamma = (1 - y) / (1 + y) = -(y - 1) / (y + 1): the same grid rotated by
+# 180 degrees, as scikit-rf draws it. A VSWR circle S has radius
+# |Gamma| = (S - 1) / (S + 1).
+
+#: Normalized resistance (conductance) circles and reactance (susceptance)
+#: arcs drawn by default - the values of scikit-rf's and the Plots tab's chart.
+SMITH_RESISTANCES = (0.2, 0.5, 1.0, 2.0, 5.0)
+SMITH_REACTANCES = (0.2, 0.5, 1.0, 2.0, 5.0)
+#: VSWR circles of scikit-rf's draw_vswr=True.
+SMITH_VSWR = (1.5, 2.0, 3.0, 5.0)
+#: Grid colours: minor lines, the unit circle / real axis, and grid labels.
+SMITH_GRID_COLOUR = "#a6a6a6"
+SMITH_FRAME_COLOUR = "#4d4d4d"
+SMITH_LABEL_COLOUR = "#595959"
+#: Half-width of the Re/Im Gamma axes: room outside |Gamma| = 1 for labels.
+SMITH_LIMIT = 1.14
+#: First words of the notes of every Smith graph (how readers recognise one).
+SMITH_NOTES_PREFIX = "Smith chart"
+#: Suffixes of the datasets of a Smith trace: Re, Im and (optional) frequency.
+SMITH_RE_SUFFIX, SMITH_IM_SUFFIX, SMITH_FREQUENCY_SUFFIX = "_re", "_im", "_freq_Hz"
+
+
+def gamma_from_impedance(impedance: Any, z0: Any = 50.0) -> np.ndarray:
+    """Reflection coefficient Gamma = (Z - Z0) / (Z + Z0) (complex array)."""
+    z = np.asarray(impedance, dtype=complex)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return (z - z0) / (z + z0)
+
+
+def impedance_from_gamma(gamma: Any, z0: Any = 50.0) -> np.ndarray:
+    """Impedance Z = Z0 (1 + Gamma) / (1 - Gamma); Gamma = 1 gives inf."""
+    g = np.asarray(gamma, dtype=complex)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return z0 * (1.0 + g) / (1.0 - g)
+
+
+def vswr_from_gamma(gamma: Any) -> np.ndarray:
+    """VSWR = (1 + |Gamma|) / (1 - |Gamma|); inf for |Gamma| >= 1."""
+    rho = np.abs(np.asarray(gamma, dtype=complex))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(rho < 1.0, (1.0 + rho) / (1.0 - rho), np.inf)
+
+
+def _joined(parts: Sequence[tuple[np.ndarray, np.ndarray]]) -> tuple[np.ndarray, np.ndarray]:
+    """Concatenate (x, y) curves with a NaN point between them (Veusz breaks
+    an xy line at NaN, nanHandling 'break-on', its default)."""
+    xs: list = []
+    ys: list = []
+    for x_values, y_values in parts:
+        if xs:
+            xs.append(np.array([np.nan]))
+            ys.append(np.array([np.nan]))
+        xs.append(np.asarray(x_values, dtype=float))
+        ys.append(np.asarray(y_values, dtype=float))
+    if not xs:
+        return np.array([], dtype=float), np.array([], dtype=float)
+    return np.concatenate(xs), np.concatenate(ys)
+
+
+@dataclass(frozen=True)
+class SmithGrid:
+    """Datasets and widget specifications of a Smith-chart grid (0.0.26).
+
+    Build with smith_grid(); write the datasets with write() (VeuszWriter or
+    an object with SetData/SetDataText, e.g. _autoplot_native.NativeDocument
+    or veusz.embed), then draw the chart with smith_page() or
+    smith_graph_spec().
+    """
+    prefix: str                       # dataset name prefix, e.g. "smith_z"
+    kind: str                         # "z" (impedance) or "y" (admittance)
+    numeric: Mapping[str, np.ndarray]  # 1-D datasets (grid lines, label positions)
+    text: Mapping[str, list]          # text datasets (grid labels)
+    widgets: tuple                    # ((xy widget name, {setting path: value}), ...)
+
+    @property
+    def notes(self) -> str:
+        """Notes text that marks a graph as this Smith chart."""
+        return "%s (%s)" % (SMITH_NOTES_PREFIX, "admittance" if self.kind == "y" else "impedance")
+
+    def dataset_names(self) -> list[str]:
+        """Every dataset the grid needs."""
+        return list(self.numeric) + list(self.text)
+
+    def write(self, target: Any) -> None:
+        """Write the grid datasets with a VeuszWriter (dataset_1d / dataset_text)
+        or a document with SetData / SetDataText (NativeDocument, veusz.embed)."""
+        for name, values in self.numeric.items():
+            if hasattr(target, "dataset_1d"):
+                target.dataset_1d(name, values)
+            else:
+                target.SetData(name, values)
+        for name, values in self.text.items():
+            if hasattr(target, "dataset_text"):
+                target.dataset_text(name, values)
+            else:
+                target.SetDataText(name, values)
+
+
+def _grid_line_settings(x_name: str, y_name: str, colour: str, width: str,
+                        style: str = "solid") -> dict[str, Any]:
+    """xy settings of a grid line family: no markers, no legend entry."""
+    return {"xData": x_name, "yData": y_name, "marker": "none", "PlotLine/color": colour,
+            "PlotLine/width": width, "PlotLine/style": style}
+
+
+def _grid_label_settings(x_name: str, y_name: str, text_name: str, colour: str, size: str,
+                         horizontal: str, vertical: str) -> dict[str, Any]:
+    """xy settings that print a text dataset at points (no line, no marker)."""
+    return {"xData": x_name, "yData": y_name, "labels": text_name, "marker": "none",
+            "PlotLine/hide": True, "Label/size": size, "Label/color": colour,
+            "Label/posnHorz": horizontal, "Label/posnVert": vertical}
+
+
+def smith_grid(prefix: str = "", kind: str = "z", *,
+               resistances: Sequence[float] = SMITH_RESISTANCES,
+               reactances: Sequence[float] = SMITH_REACTANCES,
+               vswr: Sequence[float] = (), labels: bool = True, points: int = 721,
+               colour: str = SMITH_GRID_COLOUR, frame_colour: str = SMITH_FRAME_COLOUR,
+               label_colour: str = SMITH_LABEL_COLOUR, label_size: str = "7pt",
+               escape: bool = True) -> SmithGrid:
+    """The grid of a Smith chart as Veusz datasets and xy widget settings.
+
+    Parameters
+    ----------
+    prefix:
+        Dataset name prefix; empty = "smith_<kind>". One grid can serve every
+        Smith page of a document (write it once).
+    kind:
+        "z" impedance chart (resistance circles, reactance arcs) or "y"
+        admittance chart (the same grid rotated 180 degrees).
+    resistances, reactances:
+        Normalized values of the circles and of the arcs (each arc drawn for
+        +x and -x). All must be positive.
+    vswr:
+        VSWR circles to draw, e.g. SMITH_VSWR; empty = none.
+    labels:
+        Print the circle and arc values (and the VSWR values).
+    points:
+        Points per full circle (arcs get half as many).
+    colour, frame_colour, label_colour, label_size:
+        Grid lines, unit circle and real axis, label text.
+    escape:
+        Escape the label text with vz_text.
+
+    Returns
+    -------
+    SmithGrid
+    """
+    if kind not in ("z", "y"):
+        raise ValueError(f"kind must be 'z' or 'y', not {kind!r}")
+    values = [float(v) for v in tuple(resistances) + tuple(reactances)]
+    if any(not math.isfinite(v) or v <= 0.0 for v in values):
+        raise ValueError("Smith grid resistances and reactances must be finite and > 0")
+    if any(not math.isfinite(float(s)) or float(s) <= 1.0 for s in vswr):
+        raise ValueError("VSWR circles must be finite and > 1")
+    prefix = prefix or f"smith_{kind}"
+    turn = -1.0 if kind == "y" else 1.0                 # admittance: rotate 180 degrees
+    n_points = max(int(points), 16)
+    angle = np.linspace(0.0, 2.0 * np.pi, n_points)
+    numeric: dict[str, np.ndarray] = {}
+    text: dict[str, list] = {}
+    widgets: list = []
+
+    def add_lines(part: str, curves: Sequence[tuple[np.ndarray, np.ndarray]], line_colour: str,
+                  width: str, style: str = "solid") -> None:
+        x_values, y_values = _joined(curves)
+        x_name, y_name = f"{prefix}_{part}_x", f"{prefix}_{part}_y"
+        numeric[x_name], numeric[y_name] = turn * x_values, turn * y_values
+        widgets.append((f"grid_{part}", _grid_line_settings(x_name, y_name, line_colour,
+                                                            width, style)))
+
+    def add_labels(part: str, positions: Sequence[tuple[float, float]], strings: Sequence[str],
+                   horizontal: str, vertical: str) -> None:
+        if not labels or not strings:
+            return
+        x_name, y_name, t_name = (f"{prefix}_{part}_lx", f"{prefix}_{part}_ly",
+                                  f"{prefix}_{part}_text")
+        numeric[x_name] = turn * np.array([p[0] for p in positions], dtype=float)
+        numeric[y_name] = turn * np.array([p[1] for p in positions], dtype=float)
+        text[t_name] = [vz_text(s) if escape else str(s) for s in strings]
+        widgets.append((f"grid_{part}_labels", _grid_label_settings(
+            x_name, y_name, t_name, label_colour, label_size, horizontal, vertical)))
+
+    # Resistance circles: centre r / (1 + r), radius 1 / (1 + r).
+    circles = []
+    for r in resistances:
+        centre, radius = r / (1.0 + r), 1.0 / (1.0 + r)
+        circles.append((centre + radius * np.cos(angle), radius * np.sin(angle)))
+    add_lines("r", circles, colour, "0.5pt")
+    # Reactance arcs, traced exactly: Gamma(r) for r = tan(theta), then Gamma = 1.
+    theta = np.linspace(0.0, 0.5 * np.pi, max(n_points // 2, 8), endpoint=False)
+    resistance = np.tan(theta)
+    arcs = []
+    for x in reactances:
+        for signed in (x, -x):
+            z = resistance + 1j * signed
+            gamma = np.append((z - 1.0) / (z + 1.0), 1.0 + 0.0j)
+            arcs.append((gamma.real, gamma.imag))
+    add_lines("x", arcs, colour, "0.5pt")
+    if vswr:
+        add_lines("vswr", [(rho * np.cos(angle), rho * np.sin(angle))
+                           for rho in ((float(s) - 1.0) / (float(s) + 1.0) for s in vswr)],
+                  colour, "0.5pt", "dashed")
+    # Frame: the unit circle (r = 0, |Gamma| = 1) and the real axis (x = 0).
+    add_lines("unit", [(np.cos(angle), np.sin(angle))], frame_colour, "1pt")
+    add_lines("real", [(np.array([-1.0, 1.0]), np.array([0.0, 0.0]))], frame_colour, "0.75pt")
+    # Labels: r on the real axis at the circle's left edge (r - 1) / (r + 1);
+    # x just outside the unit circle where the arc meets it, 2 atan(1 / x).
+    add_labels("r", [((r - 1.0) / (r + 1.0), 0.0) for r in resistances],
+               ["%g" % r for r in resistances], "right" if kind == "z" else "left", "top")
+    x_positions, x_strings = [], []
+    for x in reactances:
+        for signed in (x, -x):
+            phi = 2.0 * math.atan(1.0 / signed)
+            x_positions.append((1.07 * math.cos(phi), 1.07 * math.sin(phi)))
+            x_strings.append("%+gj" % signed)
+    add_labels("x", x_positions, x_strings, "centre", "centre")
+    if vswr:
+        add_labels("vswr", [(0.0, -(float(s) - 1.0) / (float(s) + 1.0)) for s in vswr],
+                   ["VSWR %g" % float(s) for s in vswr], "centre", "bottom")
+    return SmithGrid(prefix, kind, numeric, text, tuple(widgets))
+
+
+def smith_trace_datasets(stem: str, gamma: Any, frequency_hz: Any = None) -> dict[str, np.ndarray]:
+    """Datasets of one Smith trace: "<stem>_re", "<stem>_im" and, when given,
+    "<stem>_freq_Hz" (read by the suite's interactive Smith plot)."""
+    g = np.asarray(gamma, dtype=complex).ravel()
+    out = {stem + SMITH_RE_SUFFIX: g.real.copy(), stem + SMITH_IM_SUFFIX: g.imag.copy()}
+    if frequency_hz is not None:
+        f = np.asarray(frequency_hz, dtype=float).ravel()
+        if f.shape != g.shape:
+            raise ValueError(f"{stem!r}: {f.size} frequencies for {g.size} Gamma values")
+        out[stem + SMITH_FREQUENCY_SUFFIX] = f
+    return out
+
+
+def smith_trace(stem: str, label: str = "", **trace_fields: Any) -> Trace:
+    """Trace of Im(Gamma) against Re(Gamma) for the datasets of
+    smith_trace_datasets(stem, ...); keyword arguments go to Trace."""
+    trace_fields.setdefault("width", "1.2pt")
+    return Trace(stem + SMITH_RE_SUFFIX, stem + SMITH_IM_SUFFIX, label, **trace_fields)
+
+
+def smith_has_key(traces: Sequence[Trace], key: Any = "auto") -> bool:
+    """True when a Smith graph gets a legend: key=True, or "auto" with more
+    than one labelled trace (as xy_page)."""
+    return key is True or (key == "auto" and sum(bool(t.label) for t in traces) > 1)
+
+
+def smith_graph_spec(grid: SmithGrid, traces: Sequence[Trace], *, key: Any = "auto",
+                     key_position: tuple[str, str] = ("outside", "top"),
+                     limit: float = SMITH_LIMIT, escape: bool = True, notes: str = "",
+                     margins: str = "0.6cm", key_width: str = "6.5cm"
+                     ) -> tuple[dict[str, Any], list[tuple[str, str, dict]]]:
+    """Settings of a Smith graph and its children, for any Veusz builder.
+
+    Returns (graph_settings, children): graph_settings maps setting paths of
+    the graph (aspect ratio 1, margins, notes, no border) to values;
+    children is a list of (widget type, name, {setting path: value}) in
+    drawing order - the two hidden axes, the grid, the traces, the legend.
+    smith_page() applies them to a VszDoc script; _autoplot_native applies
+    them to a NativeDocument widget tree.
+
+    The legend sits right of the chart by default (key_position[0] =
+    "outside": Veusz manual placement at the right edge of the chart area), in a
+    right margin of ``key_width``; ("right", "top") etc. put it inside the
+    graph (it then covers part of the grid).
+    """
+    has_key = smith_has_key(traces, key)
+    outside = has_key and key_position[0] == "outside"
+    graph_settings: dict[str, Any] = {
+        "aspect": 1.0, "leftMargin": margins,
+        "rightMargin": key_width if outside else margins, "topMargin": margins,
+        "bottomMargin": margins, "Border/hide": True,
+        "notes": grid.notes + (("\n" + notes) if notes else ""),
+    }
+    children: list[tuple[str, str, dict]] = []
+    for axis, direction in (("x", "horizontal"), ("y", "vertical")):
+        children.append(("axis", axis, {
+            "direction": direction, "min": -float(limit), "max": float(limit), "hide": True,
+            "label": "Re(Gamma)" if axis == "x" else "Im(Gamma)"}))
+    used: set = {"x", "y", "key"}
+    for name, settings in grid.widgets:
+        used.add(name)
+        children.append(("xy", name, dict(settings)))
+    for index, trace in enumerate(traces):
+        name = unique_widget_name(widget_name(trace.name or trace.y, fallback=f"trace{index}"),
+                                  used)
+        children.append(("xy", name, _trace_settings(trace, index, escape)))
+    if outside:
+        children.append(("key", "key", {"horzPosn": "manual", "horzManual": 1.0,
+                                         "vertPosn": key_position[1], "Text/size": "10pt"}))
+    elif has_key:
+        children.append(("key", "key", {"horzPosn": key_position[0],
+                                         "vertPosn": key_position[1]}))
+    return graph_settings, children
+
+
+def smith_page_layout(traces: Sequence[Trace], title: str = "", *, size: str = "18cm",
+                      key: Any = "auto", key_position: tuple[str, str] = ("outside", "top"),
+                      key_width: str = "6.5cm") -> tuple[str, str, str]:
+    """(page width, page height, graph top margin) of a Smith page: the chart
+    about ``size`` across, 1 cm more height for the title, ``key_width`` more
+    width when the legend is outside the chart."""
+    size_cm = _distance_cm(size)
+    key_cm = _distance_cm(key_width) or 0.0
+    outside = smith_has_key(traces, key) and key_position[0] == "outside"
+    height = f"{size_cm + 1.0:.3f}cm" if size_cm is not None else size
+    width = f"{size_cm + key_cm:.3f}cm" if (size_cm is not None and outside) else size
+    return width, height, ("1.2cm" if title else "0.6cm")
+
+
+def smith_page(doc: VszDoc, page: str, traces: Sequence[Trace], grid: SmithGrid,
+               title: str = "", *, graph_name: str = "", notes: Any = "",
+               size: str = "18cm", key: Any = "auto",
+               key_position: tuple[str, str] = ("outside", "top"), key_width: str = "6.5cm",
+               limit: float = SMITH_LIMIT, escape: bool = True) -> str:
+    """A page with one Smith chart; returns the graph name (0.0.26).
+
+    ``grid`` comes from smith_grid() and its datasets must be written to the
+    same document (grid.write(writer)); ``traces`` from smith_trace().
+    The chart is about ``size`` across; the page is ``size`` + 1 cm high
+    (title) and ``size`` wide, plus ``key_width`` when the legend is outside
+    the chart. The graph keeps an aspect ratio of 1, so circles stay circles
+    at any page size. ``notes`` are the page notes (e.g. header_notes(...));
+    the graph notes say which chart it is (SmithGrid.notes).
+    """
+    graph = widget_name(graph_name) if graph_name else widget_name(page, prefix="g_")
+    width, height, top_margin = smith_page_layout(traces, title, size=size, key=key,
+                                                  key_position=key_position, key_width=key_width)
+    _open_page_and_graph(doc, page, title, width, height, {"topMargin": top_margin}, escape,
+                         graph=graph, notes=notes)
+    graph_settings, children = smith_graph_spec(grid, traces, key=key, key_position=key_position,
+                                                limit=limit, escape=escape, key_width=key_width)
+    for path, value in graph_settings.items():
+        if path != "topMargin":                  # keep room for the page title
+            doc.set(path, value)
+    for kind, name, settings in children:
+        doc.add(kind, name)
+        for path, value in settings.items():
+            doc.set(f"{name}/{path}", value)
+    doc.up()                                     # graph -> page
+    doc.up()                                     # page -> where we started
+    return graph
+
+
 #: Veusz text markup for a line break (two backslashes in the label text).
 VEUSZ_LINE_BREAK = "\\\\"
 
 
 def text_page(doc: VszDoc, page: str, title: str, lines: Sequence[str], font: str = "Courier New",
               size: str = "9pt", lines_per_page: int = 40, width: str = "25cm",
-              height: str = "15cm") -> list[str]:
+              height: str = "15cm", notes: Any = "") -> list[str]:
     """Pages of plain text lines (escaped; monospaced by default) (0.0.12).
 
     Long texts continue on pages "<page>_2", "<page>_3", ...; returns the
@@ -1721,6 +2423,7 @@ def text_page(doc: VszDoc, page: str, title: str, lines: Sequence[str], font: st
         doc.to(name)
         doc.set("width", width)
         doc.set("height", height)
+        set_notes(doc, notes)                    # 0.0.25
         add_title(doc, title if number == 1 else f"{title} (continued, {number})")
         doc.add("label", "body")
         doc.set("body/label", VEUSZ_LINE_BREAK.join(vz_text(line) if line else " " for line in chunk))
@@ -1782,8 +2485,9 @@ def bar_page(doc: VszDoc, page: str, labels: str, lengths: Sequence[str], title:
              colours: Sequence[str] = (), ylog: bool = False, ymin: Any = "Auto",
              ymax: Any = "Auto", width: str = "25cm", height: str = "15cm",
              left_margin: str = "2.4cm", bottom_margin: str = "2.2cm",
-             top_margin: str = "1.4cm", escape: bool = True) -> None:
-    """A page with a vertical category bar chart (0.0.14).
+             top_margin: str = "1.4cm", escape: bool = True, graph_name: str = "",
+             notes: Any = "") -> str:
+    """A page with a vertical category bar chart (0.0.14); returns the graph name.
 
     Parameters
     ----------
@@ -1800,30 +2504,36 @@ def bar_page(doc: VszDoc, page: str, labels: str, lengths: Sequence[str], title:
     ylog, ymin, ymax:
         Value axis scale and limits ("Auto" or a number). Bars on a log axis
         start at the axis minimum.
+    graph_name, notes:
+        (0.0.25) Graph name (default "g_<page>"; the bar widget is
+        "bars_<first length dataset>") and page notes.
     Other parameters as xy_page().
     """
+    graph = widget_name(graph_name) if graph_name else widget_name(page, prefix="g_")
+    bars = widget_name(lengths[0] if lengths else page, prefix="bars_")
     _open_page_and_graph(doc, page, title, width, height,
                          {"leftMargin": left_margin, "bottomMargin": bottom_margin,
-                          "topMargin": top_margin}, escape)
+                          "topMargin": top_margin}, escape, graph=graph, notes=notes)
     _add_axes(doc, xlabel, ylabel, False, ylog, "Auto", "Auto", ymin, ymax, "labels", escape)
-    doc.add("bar", "bars")
-    doc.set("bars/lengths", tuple(lengths))
-    doc.set("bars/labels", labels)
-    doc.set("bars/direction", "vertical")
-    doc.set("bars/mode", "grouped")
+    doc.add("bar", bars)
+    doc.set(f"{bars}/lengths", tuple(lengths))
+    doc.set(f"{bars}/labels", labels)
+    doc.set(f"{bars}/direction", "vertical")
+    doc.set(f"{bars}/mode", "grouped")
     fills = []
     for index, _name in enumerate(lengths):
         colour = colours[index] if index < len(colours) else TRACE_COLOURS[index % len(TRACE_COLOURS)]
         fills.append(("solid", colour, False))
-    doc.set("bars/BarFill/fills", fills)
+    doc.set(f"{bars}/BarFill/fills", fills)
     if keys:
-        doc.set("bars/keys", tuple(vz_text(k) if escape else k for k in keys))
+        doc.set(f"{bars}/keys", tuple(vz_text(k) if escape else k for k in keys))
         if len(keys) > 1:
             doc.add("key", "key")
             doc.set("key/horzPosn", "right")
             doc.set("key/vertPosn", "top")
     doc.up()                                     # graph -> page
     doc.up()                                     # page -> where we started
+    return graph
 
 
 # %% ===========================================================================

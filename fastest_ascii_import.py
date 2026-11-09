@@ -17,17 +17,30 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.3: Robust decoding and data-line detection.
+Date: 2026-11-05
+# %%%%% Function Descriptions
+        fastest_file_parser: same interface and result layout.
+        * Files are decoded as ASCII with replacement characters (a single
+          byte above 127 used to raise UnicodeDecodeError) and read in one
+          pass for every size (the > 10 MB branch read the file twice as
+          large into a list anyway).
+        * Data lines: every comma-separated field must be a number.  The
+          deprecated np.fromstring(sep=',') accepted the leading numbers of
+          a line ("801;" -> [801.0]) and warned on every header line.
+        * Pattern values: the text after the pattern is cut case-
+          insensitively, like the match itself (an upper-case pattern on a
+          mixed-case line raised IndexError).
+        * The ".sft only from line 58" rule also applies to ".SFT".
+        * History is newest-first, as in the rest of the repository.
+        (RAndS_FSW_ASCII_Plotter 1.1.0 has its own .sft reader; this module
+        stays for other scripts.)
+# %%%% 0.0.2: Start .sft data at line 58 to avoid data size mismatches.
+Date: 2025-09-02
 # %%%% 0.0.1: Script to run in consol description
 Date: 2025-06-16
 # %%%%% Function Descriptions
         fastest_file_parser: parse any ASCII file per the commands passed
-
-# %%%% 0.0.2: Script to run in consol description
-Date: 2025-09-02
-# %%%%% Function Descriptions
-        fastest_file_parser: parse any ASCII file per the commands passed
-        added some command to start sft file at line 57 to avoid data size
-        mismatches
 
 
 # %%%%% Variable Descriptions
@@ -73,129 +86,84 @@ Date: 2025-09-02
 # %% Function Definitions
 
 
+import re as _re
+
+_NUMBER = _re.compile(r"^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$")
+SFT_FIRST_DATA_LINE = 58          # .sft header occupies lines 1-57
+
+
+def _data_values(line):
+    """Floats of a comma-separated line of numbers, else [] (strict)."""
+    fields = line.strip().rstrip(",").split(",")
+    if not fields or not all(_NUMBER.match(f) for f in fields):
+        return []
+    return [float(f) for f in fields]
+
+
+def _after(pattern, line):
+    """Text after the first case-insensitive occurrence of ``pattern``."""
+    parts = _re.split(_re.escape(pattern), line, maxsplit=1, flags=_re.IGNORECASE)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
 def fastest_file_parser(filename, line_targets=None, string_patterns=None):
     """
     Comprehensive fast file parser for ASCII text files.
 
     Args:
         filename: Path to ASCII text file
-        line_targets: List of specific line numbers to extract
+        line_targets: List of specific line numbers to extract (1-based)
         string_patterns: Dict of string patterns to search for
+            (case-insensitive; every occurrence is kept, the 2nd as
+            "<name>_2", ...)
 
     Returns:
-        Dictionary containing extracted data
+        Dictionary with 'metadata', 'line_data', 'pattern_matches',
+        'data_matches' ('data', 'data_2', ... : line_number, content,
+        extracted_value list of floats) and 'user_variables'.
     """
     import os
-    import numpy as np
     from collections import defaultdict
 
     extracted_data = {
-        'metadata': {'total_lines': 0, 'file_size': 0},
+        'metadata': {'total_lines': 0, 'file_size': os.path.getsize(filename)},
         'line_data': {},
         'pattern_matches': {},
         'data_matches': {},
         'user_variables': {}
     }
-
-    # import os
-    extracted_data['metadata']['file_size'] = os.path.getsize(filename)
-
-    # Use appropriate method based on file size
-    if extracted_data['metadata']['file_size'] < 10 ** 7:  # < 10MB
-        # Use fast binary reading
-        with open(filename, 'rb') as file:
-            content = file.read().decode('ascii')
-            lines = content.splitlines()
-    else:
-        # Use memory-efficient line iteration
-        with open(filename, 'r', encoding='ascii') as file:
-            lines = file.readlines()
-
-    # Process lines
+    with open(filename, 'rb') as handle:
+        lines = handle.read().decode('ascii', errors='replace').splitlines()
+    targets = set(line_targets or ())
+    is_sft = os.path.splitext(filename)[1].lower() == ".sft"
+    patterns = [(name, pattern, pattern.casefold())
+                for name, pattern in (string_patterns or {}).items()]
     pattern_tracking = defaultdict(int)
     for line_number, line in enumerate(lines, 1):
         clean_line = line.strip()
         extracted_data['metadata']['total_lines'] = line_number
-
-        # Extract specific line numbers
-        if line_targets and line_number in line_targets:
+        if line_number in targets:
             extracted_data['line_data'][line_number] = clean_line
-
-        # Search for string patterns
-        if string_patterns:
-            for pattern_name, pattern in string_patterns.items():
-                # user lower or casefold to make it case insensitive.
-                # casefold is supposedly more robust
-                # print(pattern)
-
-                if pattern.casefold() in clean_line.casefold():
-                    # enumrate the pattern tracker each time is identified
-                    # pattern_tracking.update({pattern:1})
-                    pattern_tracking[pattern_name] += 1
-
-                    if pattern_tracking[pattern_name] == 1:
-                        extracted_data['pattern_matches'][pattern_name] = {
-                            'line_number': line_number,
-                            'content': clean_line,
-                            'extracted_value': clean_line.split(
-                                pattern,
-                                1)[1].strip() if ':' in pattern else clean_line
-                        }
-                    else:
-                        # add the pattern index after an underscore in the
-                        # returned data structure to capture all occurances
-                        pattern_name_now = (pattern_name + '_' +
-                                            str(pattern_tracking[pattern_name])
-                                            )
-                        extracted_data['pattern_matches'][pattern_name_now] = {
-                            'line_number': line_number,
-                            'content': clean_line,
-                            'extracted_value': clean_line.split(
-                                pattern,
-                                1)[1].strip() if ':' in pattern else clean_line
-                        }
-
-        # Search for pure data lines (by starting with a integer or float)
-        dataline = np.fromstring(line, dtype=float, sep=',').tolist()
-
-        # the following if statement only applies to R&S sft files
-        # the dataline only will work if it is just floats
-        # if line_number in range(59, len(lines), 2):
-        #     print('at the place')
-        if dataline:
-            # print('Found Data at Line Number ' + str(line_number))
+        folded = clean_line.casefold()
+        for pattern_name, pattern, folded_pattern in patterns:
+            if folded_pattern in folded:
+                pattern_tracking[pattern_name] += 1
+                count = pattern_tracking[pattern_name]
+                key = pattern_name if count == 1 else '%s_%d' % (pattern_name, count)
+                extracted_data['pattern_matches'][key] = {
+                    'line_number': line_number,
+                    'content': clean_line,
+                    'extracted_value': (_after(pattern, clean_line) if ':' in pattern
+                                        else clean_line),
+                }
+        values = _data_values(clean_line)
+        if values and not (is_sft and line_number < SFT_FIRST_DATA_LINE):
             pattern_tracking['data_located'] += 1
-            if pattern_tracking['data_located'] == 1:
-                pattern_name = 'data'
-                if os.path.splitext(os.path.basename(filename))[1] == ".sft":
-                    # print('at the place')
-                    if line_number > 57:
-                        extracted_data['data_matches'][pattern_name] = {
-                            'line_number': line_number,
-                            'content': clean_line,
-                            'extracted_value': dataline
-                        }
-                else:
-                    extracted_data['data_matches'][pattern_name] = {
-                        'line_number': line_number,
-                        'content': clean_line,
-                        'extracted_value': dataline
-                    }
-            else:
-                pattern_name = 'data_' + str(pattern_tracking['data_located'])
-                if os.path.splitext(os.path.basename(filename))[1] == ".sft":
-                    # print('at the place')
-                    if line_number > 57:
-                        extracted_data['data_matches'][pattern_name] = {
-                            'line_number': line_number,
-                            'content': clean_line,
-                            'extracted_value': dataline
-                        }
-                else:
-                    extracted_data['data_matches'][pattern_name] = {
-                        'line_number': line_number,
-                        'content': clean_line,
-                        'extracted_value': dataline
-                    }
-
+            count = pattern_tracking['data_located']
+            key = 'data' if count == 1 else 'data_%d' % count
+            extracted_data['data_matches'][key] = {
+                'line_number': line_number,
+                'content': clean_line,
+                'extracted_value': values,
+            }
     return extracted_data

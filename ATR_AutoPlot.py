@@ -1,1279 +1,883 @@
-"""Enhanced ATR AutoPlot with Modern Qt GUI Interface.
-
-This version integrates the modern Qt GUI interface from the R&S plotter
-with the ATR processing capabilities, including multiprocessing and GPU acceleration.
-
-Author: William W. Wallace
-Last updated: 2025-06-28
-"""
-
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+=============================================================================
+# %% Header Info
+--------
+ATR_AutoPlot.py
 
+GBO Outdoor Antenna Range (.atr) pattern files -> native Veusz project
+(.vszh5) and interactive pyqtgraph plots:
+
+    * every file: magnitude and phase versus azimuth (Cartesian) and as
+      polar patterns; multi-frequency files give one trace per frequency;
+    * overlay pages of all imported magnitudes and phases;
+    * the .vszh5 is written by the author's shared writer (vszh5_writer.py
+      0.0.24 through _autoplot_native.NativeDocument) - Veusz is NOT needed
+      to create the file, only (optionally) to view it;
+    * the Plots tab draws the same pages with pyqtgraph (polar plots with r
+      at the cursor angle), in the suite's light or dark theme.
+
+Batch use without the GUI:
+    python ATR_AutoPlot.py --output pattern.vszh5 file1.ATR file2.ATR ...
+
+Created on 2025-06-28
+
+# %%% Author Information
+@author: William W. Wallace
+Author Email: wwallace@nrao.edu
+Author Secondary Email: naval.antennas@gmail.com
+Author Business Phone: +1 (304) 456-2216
+Company: NRAO / Green Bank Observatory (GBO)
+Licence: GPL-3.0-or-later (GNU General Public License v3.0 or later)
+Compatible with: Python 3.8+ (qtpy with PySide6 or PyQt5)
+
+# %%% ATR file layout (from the example files in Example_Data_Files/atr)
+Lines 1-12 are "Key: Value" header lines (the first may be quoted and lines
+may end in tabs when the file went through a spreadsheet):
+    Time and Date, Receiver Name, Telescope, Focus, "Sweep by Position CW|CCW"
+    (no colon), Plane, Left Azimuth Limit, Right Azimuth Limit,
+    Upper Frequency, Lower Frequency (MHz), Frequency Increment (MHz),
+    Power level (dBm)
+then one data line per frequency: "phase(deg) magnitude(dB)" pairs, one pair
+per azimuth from the left to the right limit (optionally ending in '#'),
+then a line "*".  The pair order (phase first) and the left-to-right order
+for CW and CCW sweeps are confirmed by the annotated example
+peaking_8_ccw_0p1azaccuracy.ATR ("Deg dBm ... Angle of measurement" table,
+first pair at -135 deg).  Not documented anywhere available here: whether
+the data lines of a multi-frequency file run from the lower to the upper
+frequency; this program assumes lower -> upper (see DATA_GAPS).
+
+# %%% References
+[1] W. W. Wallace, "vszh5_writer.py 0.0.24," shared Veusz HDF5 writer, 2026.
+[2] J. Sanders, "Veusz - a scientific plotting package," Veusz 4.2.
+    https://veusz.github.io/
+[3] pyqtgraph developers, "pyqtgraph documentation."
+    https://pyqtgraph.readthedocs.io/en/latest/
+[4] IEEE Standard Test Procedures for Antennas, IEEE Std 149-2021
+    (Revision of IEEE Std 149-1979), 2022. doi: 10.1109/IEEESTD.2022.9714428
+
+# %%% Revisions
+Utilizing Semantic Schema as External Release.Internal Release.Working version
+
+# %%%% 0.2.1: Measurement time as a Veusz date-time; headers on every page.
+# Date: 2026-11-09
+#              * The header "Time and Date" (e.g. "Tue, Jul 02, 2024 12:19
+#                PM") is stored as a Veusz DATE dataset "<file>_datetime"
+#                (the range computer's wall clock as written; the file does
+#                not say which zone) and as ISO 8601 in the page notes.
+#              * Page notes: "Source: <file>", the header lines and the
+#                frequencies of the file (unchanged layout, source added);
+#                the overlay pages list every file with its header.
+#              * Multi-frequency files: the traces are named after their y
+#                dataset ("<file>_1200MHz_mag", ...) instead of "1200MHz".
+#                Page and graph names are those of the 2025 script.
+#              * Writer 0.0.25 / _autoplot_native 0.3.0.
+# %%%% 0.2.0: Native writer, pyqtgraph Plots tab, suite theme, parser fixes.
+# Date: 2026-11-05
+#              * .vszh5 written by vszh5_writer 0.0.24 through
+#                _autoplot_native.NativeDocument (no veusz.embed, no Veusz
+#                window, no extra legacy .vsz copy in "Beware_oldVersion").
+#              * Plots tab (pyqtgraph): Cartesian and polar pages, r at the
+#                cursor angle, light / dark with the rest of the suite.
+#              * View > Light / Dark Mode (shared suite theme), Help > About
+#                (NRAO / GBO), File menu with shortcuts.
+#              * Parser: header read by key, not by line number; quoted and
+#                tab-padded header lines; all data lines of a file (one per
+#                frequency) instead of the first only; azimuth from the
+#                header limits and the number of points (was a fixed 1 deg
+#                step); the frequency of a single-frequency file is no longer
+#                the "Upper" value by accident; odd value counts, missing
+#                lines and non-numeric values are reported, not crashes;
+#                files are read as ASCII with replacement characters.
+#              * File dialog accepts *.ATR as well as *.atr.
+#              * Check boxes use toggled(bool): the old stateChanged ==
+#                Qt.Checked test was always False under PySide6, so the
+#                multiprocessing switch could not be turned on again.
+#              * Process pool uses the 'spawn' start method and receives only
+#                file paths (the old worker argument carried a GPU context
+#                that cannot be pickled).  GPU code removed: the files hold
+#                a few hundred numbers and no array operation was applied to
+#                them, so the GPU path was never used.
+#              * "Plot Title" now titles the overlay pages; the unused
+#                "Dataset Name" field was removed.  Magnitude range and
+#                "fit azimuth axis to the data" are options.
+#              * Dataset names stay {file}_mag, {file}_phase, {file}_Az,
+#                {file}_freq for single-frequency files (as before);
+#                multi-frequency files add the frequency to the name.
+# %%%% 0.1.0: Un-numbered 2025-06-28 version (veusz.embed, Qt GUI).
+=============================================================================
+"""
 # %% Import Modules
+from __future__ import annotations
 
+import argparse
+import datetime
 import multiprocessing
 import os
-import subprocess
+import re
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
-from typing import Dict, Tuple, Any
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-# %%% Import Math and Plotting Modules
-import numpy as np
-import veusz.embed as vz
+os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
-# %%% Import GUI Modules
-# =============================================================================
-# # Force direct PySide6 usage for compiled builds
-# if getattr(sys, 'frozen', False):
-#     # Running as compiled executable - use PySide6 directly
-#     from PySide6.QtCore import Qt, QSize, QThread, Signal
-#     from PySide6.QtGui import (
-#         QAction, QBrush, QColor, QConicalGradient, QCursor, QFont,
-#         QFontDatabase, QGradient, QIcon, QImage, QKeySequence,
-#         QLinearGradient, QPainter, QPalette, QPixmap, QPolygon,
-#         QPolygonF, QRadialGradient, QTransform, QValidator,
-#         QIntValidator, QDoubleValidator, QRegularExpressionValidator,
-#         QStandardItemModel, QStandardItem, QMovie, QClipboard,
-#         QDrag, QDropEvent, QDragEnterEvent, QDragMoveEvent,
-#         QDragLeaveEvent, QMouseEvent, QKeyEvent, QWheelEvent,
-#         QResizeEvent, QMoveEvent, QCloseEvent, QShowEvent,
-#         QHideEvent, QFocusEvent, QPaintEvent, QContextMenuEvent,
-#         QEnterEvent, QLeaveEvent, QTextCursor, QTextDocument,
-#         QTextFormat, QTextCharFormat, QSyntaxHighlighter
-#     )
-#     from PySide6.QtWidgets import (
-#         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-#         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-#         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-#         QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-#         QComboBox, QSlider, QScrollArea, QScrollBar, QTabWidget,
-#         QTabBar, QTableWidget, QTableWidgetItem, QTreeWidget,
-#         QTreeWidgetItem, QListWidgetItem, QFrame, QGridLayout,
-#         QFormLayout, QStackedWidget, QToolBar, QMenuBar, QMenu,
-#         QStatusBar, QSizePolicy, QSpacerItem, QGraphicsView,
-#         QGraphicsScene, QGraphicsItem, QGraphicsPixmapItem,
-#         QGraphicsTextItem, QGraphicsRectItem, QGraphicsEllipseItem,
-#         QGraphicsLineItem, QGraphicsPolygonItem, QDockWidget,
-#         QMdiArea, QMdiSubWindow, QCalendarWidget, QDateEdit,
-#         QTimeEdit, QDateTimeEdit, QDial, QLCDNumber, QFontComboBox,
-#         QColorDialog, QFontDialog, QInputDialog, QProgressDialog,
-#         QErrorMessage, QWizard, QWizardPage, QUndoView, QCompleter,
-#         QSystemTrayIcon, QSplashScreen, QPrintDialog, QPrintPreviewDialog,
-#         QAbstractItemView, QHeaderView, QAbstractButton, QAbstractSlider,
-#         QAbstractSpinBox, QAbstractScrollArea, QRubberBand, QSizeGrip,
-#         QToolBox, QToolButton, QCommandLinkButton, QPlainTextEdit
-#     )
-# else:
-#     # Development environment - use QtPy
-#     from qtpy.QtCore import Qt, QSize, QThread, Signal
-#     from qtpy.QtGui import *
-#     from qtpy.QtWidgets import (
-#         QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-#         QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-#         QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-#         QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-#         QComboBox, QSlider, QScrollArea, QScrollBar, QTabWidget,
-#         QTabBar, QTableWidget, QTableWidgetItem, QTreeWidget,
-#         QTreeWidgetItem, QListWidgetItem, QFrame, QGridLayout,
-#         QFormLayout, QStackedWidget, QToolBar, QMenuBar, QMenu,
-#         QStatusBar, QSizePolicy, QSpacerItem, QGraphicsView,
-#         QGraphicsScene, QGraphicsItem, QGraphicsPixmapItem,
-#         QGraphicsTextItem, QGraphicsRectItem, QGraphicsEllipseItem,
-#         QGraphicsLineItem, QGraphicsPolygonItem, QDockWidget,
-#         QMdiArea, QMdiSubWindow, QCalendarWidget, QDateEdit,
-#         QTimeEdit, QDateTimeEdit, QDial, QLCDNumber, QFontComboBox,
-#         QColorDialog, QFontDialog, QInputDialog, QProgressDialog,
-#         QErrorMessage, QWizard, QWizardPage, QUndoView, QCompleter,
-#         QSystemTrayIcon, QSplashScreen, QPrintDialog, QPrintPreviewDialog,
-#         QAbstractItemView, QHeaderView, QAbstractButton, QAbstractSlider,
-#         QAbstractSpinBox, QAbstractScrollArea, QRubberBand, QSizeGrip,
-#         QToolBox, QToolButton, QCommandLinkButton, QPlainTextEdit
-#     )
-# =============================================================================
-# from qtpy.QtGui import *
-# from qtpy.QtCore import Qt, QSize, QThread, Signal
-# from qtpy.QtWidgets import (
-#     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-#     QFileDialog, QLabel, QRadioButton, QButtonGroup, QMessageBox,
-#     QMainWindow, QWidget, QTextEdit, QProgressBar, QCheckBox,
-#     QSpinBox, QGroupBox, QListWidget, QSplitter, QLineEdit,
-# )
+import numpy as np  # noqa: E402
+from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
 
-# Force direct PySide6 usage for compiled builds
-if getattr(sys, 'frozen', False):
-    # Running as compiled executable - use PySide6 directly
-    from PySide6.QtCore import Qt, QThread, Signal
-    from PySide6.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QProgressBar, QMessageBox,
-        QFileDialog, QTextEdit,
-        QCheckBox, QSpinBox, QGroupBox, QLineEdit, QListWidget
-    )
-    # from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
-    # from PyQt6.QtGui import QPixmap, QIcon, QFont, QPalette, QBrush
-    # from PyQt6.QtWidgets import (
-    #     QApplication, QDialog, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    #     QPushButton, QLabel, QSplashScreen, QProgressBar, QMessageBox,
-    #     QFrame, QSizePolicy, QSpacerItem, QFileDialog, QTextEdit,
-    #     QCheckBox, QSpinBox, QGroupBox, QSplitter, QLineEdit, QListWidget
-    # )
-else:
-    # Development environment - use QtPy
-    from qtpy.QtCore import Qt, QThread, Signal
-    from qtpy.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QProgressBar, QMessageBox,
-        QFileDialog, QTextEdit,
-        QCheckBox, QSpinBox, QGroupBox, QLineEdit, QListWidget
-    )
-# %%% Debugging Modules
-# from rich import inspect as richinspect
-# import pdir
+APP_NAME = "ATR AutoPlot"
+APP_VERSION = "0.2.1"
+__version__ = APP_VERSION
+APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
+                   ".vszh5 projects, with interactive pyqtgraph plots.")
 
-# %% GPU Computing imports with fallback support
+#: Known gaps in the format description (shown in the log once per run).
+DATA_GAPS = ("Multi-frequency files: the data lines are assumed to run from the "
+             "lower to the upper frequency in steps of the frequency increment.",)
 
-try:
-    import cupy as cp
-
-    GPU_AVAILABLE = "cupy"
-    print("CuPy detected - NVIDIA/AMD GPU acceleration available")
-except ImportError:
-    try:
-        import pyopencl as cl
-        import pyopencl.array as cl_array
-
-        GPU_AVAILABLE = "opencl"
-        print("PyOpenCL detected - Cross-platform GPU acceleration available")
-    except ImportError:
-        try:
-            import taichi as ti
-
-            GPU_AVAILABLE = "taichi"
-            print("Taichi detected - Cross-platform GPU acceleration available")
-        except ImportError:
-            GPU_AVAILABLE = None
-            print("No GPU acceleration libraries available - using CPU only")
-
-# System Interface Modules
-os.environ['QT_API'] = 'pyside6'
+DEFAULT_MAG_RANGE = (-60.0, 20.0)     # dB, as in the 2025 version
+PHASE_RANGE = (-180.0, 180.0)         # deg
+AZIMUTH_RANGE = (-180.0, 180.0)       # deg, full-circle axis (default)
+PARALLEL_MIN_FILES = 8                # fewer files: a process pool costs more than it saves
 
 
-# %% Configuration Classes
+# %% ATR parser (no Qt; runs in worker processes)
+class ATRFormatError(ValueError):
+    """The file is not an ATR pattern file this program can read."""
 
 
 @dataclass
-class ProcessingConfig:
-    """Configuration class for processing settings."""
-    enable_multiprocessing: bool = True
-    enable_gpu_processing: bool = True
-    use_opencl: bool = True
-    num_processes: int = multiprocessing.cpu_count()
-    max_workers: int = multiprocessing.cpu_count()
-    chunk_size: int = 1000
+class ATRPattern:
+    """One parsed .atr file (n_freq traces of n_az points)."""
+    path: str
+    header: Dict[str, str]
+    header_lines: List[str]
+    sweep: str                       # "CW", "CCW" or ""
+    frequencies_mhz: np.ndarray      # (n_freq,)
+    azimuth_deg: np.ndarray          # (n_az,)
+    magnitude_db: np.ndarray         # (n_freq, n_az)
+    phase_deg: np.ndarray            # (n_freq, n_az)
+    warnings: List[str] = field(default_factory=list)
+
+    @property
+    def name(self) -> str:
+        return os.path.basename(self.path)
+
+    @property
+    def measured(self) -> Optional[datetime.datetime]:
+        """Header "Time and Date" (wall clock of the range computer), or None."""
+        return parse_header_time(self.header.get("Time and Date", ""))
 
 
-# %% GPU Acceleration Classes
-
-
-class GPUAccelerator:
-    """Handles GPU-accelerated computations with cross-platform support."""
-
-    def __init__(self, enable_gpu: bool = True):
-        """Initialize GPU accelerator.
-
-        Parameters
-        ----------
-        enable_gpu : bool, optional
-            Whether to enable GPU acceleration. Default is True.
-        """
-        self.gpu_enabled = enable_gpu and GPU_AVAILABLE is not None
-        self.backend = GPU_AVAILABLE if self.gpu_enabled else None
-
-        if self.gpu_enabled:
-            self._initialize_gpu()
-
-    def _initialize_gpu(self):
-        """Initialize the appropriate GPU backend."""
-        if self.backend == "cupy":
-            try:
-                cp.cuda.Device(0).use()
-                print(f"CuPy initialized on device: {cp.cuda.Device()}")
-            except Exception as e:
-                print(f"CuPy initialization failed: {e}")
-                self.gpu_enabled = False
-
-        elif self.backend == "opencl":
-            try:
-                self.cl_context = cl.create_some_context()
-                self.cl_queue = cl.CommandQueue(self.cl_context)
-                print(f"OpenCL initialized: {self.cl_context.devices}")
-            except Exception as e:
-                print(f"OpenCL initialization failed: {e}")
-                self.gpu_enabled = False
-
-        elif self.backend == "taichi":
-            try:
-                ti.init(arch=ti.gpu)
-                print("Taichi GPU backend initialized")
-            except Exception as e:
-                print(f"Taichi GPU initialization failed: {e}")
-                ti.init(arch=ti.cpu)
-                print("Taichi fallback to CPU")
-                self.gpu_enabled = False
-
-    def array_operations(self, data: np.ndarray, apply_db_conversion: bool = False) -> np.ndarray:
-        """Perform array operations with GPU acceleration if available.
-
-        Parameters
-        ----------
-        data : np.ndarray
-            Input data array.
-        apply_db_conversion : bool, optional
-            Whether to apply dB conversion. Default is False for ATR magnitude data.
-
-        Returns
-        -------
-        np.ndarray
-            Processed data array.
-        """
-        if not self.gpu_enabled or not apply_db_conversion:
-            return self._cpu_passthrough(data)
-
+def parse_header_time(text: str) -> Optional[datetime.datetime]:
+    """"Tue, Jul 02, 2024   12:19 PM" (and close variants) -> naive datetime."""
+    text = " ".join(str(text).replace(",", " ").split())
+    for fmt in ("%a %b %d %Y %I:%M %p", "%a %b %d %Y %I:%M:%S %p", "%b %d %Y %I:%M %p",
+                "%a %b %d %Y %H:%M", "%a %b %d %Y %H:%M:%S", "%m/%d/%Y %I:%M:%S %p",
+                "%m/%d/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
         try:
-            if self.backend == "cupy":
-                return self._cupy_operations(data, apply_db_conversion)
-            elif self.backend == "opencl":
-                return self._opencl_operations(data, apply_db_conversion)
-            elif self.backend == "taichi":
-                return self._taichi_operations(data, apply_db_conversion)
-        except Exception as e:
-            print(f"GPU operation failed, falling back to CPU: {e}")
-            return self._cpu_passthrough(data)
-
-        return self._cpu_passthrough(data)
-
-    def _cpu_passthrough(self, data: np.ndarray) -> np.ndarray:
-        """CPU-based passthrough - no transformation for ATR magnitude data."""
-        return np.copy(data)
-
-    def _cupy_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
-        """CuPy-based GPU operations with optional dB conversion."""
-        gpu_data = cp.asarray(data)
-        if apply_db_conversion:
-            gpu_result = cp.where(
-                gpu_data != 0,
-                20 * cp.log10(cp.abs(gpu_data)),
-                -60
-            )
-        else:
-            gpu_result = gpu_data
-        return cp.asnumpy(gpu_result)
-
-    def _opencl_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
-        """OpenCL-based GPU operations with optional dB conversion."""
-        if not apply_db_conversion:
-            return np.copy(data)
-
-        data_gpu = cl_array.to_device(self.cl_queue, data.astype(np.float32))
-        result_gpu = cl_array.empty_like(data_gpu)
-
-        kernel_code = """
-        __kernel void log_transform(__global float* input,
-                                   __global float* output,
-                                   int n) {
-            int i = get_global_id(0);
-            if (i < n) {
-                if (input[i] != 0.0f) {
-                    output[i] = 20.0f * log10(fabs(input[i]));
-                } else {
-                    output[i] = -60.0f;
-                }
-            }
-        }
-        """
-
-        program = cl.Program(self.cl_context, kernel_code).build()
-        program.log_transform(
-            self.cl_queue,
-            (data.size,),
-            None,
-            data_gpu.data,
-            result_gpu.data,
-            np.int32(data.size)
-        )
-
-        return result_gpu.get()
-
-    def _taichi_operations(self, data: np.ndarray, apply_db_conversion: bool = True) -> np.ndarray:
-        """Taichi-based GPU operations with optional dB conversion."""
-        if not apply_db_conversion:
-            return np.copy(data)
-
-        @ti.kernel
-        def log_transform(input_field: ti.template(),
-                          output_field: ti.template()) -> None:
-            for i in input_field:
-                if input_field[i] != 0.0:
-                    output_field[i] = 20.0 * ti.log10(ti.abs(input_field[i]))
-                else:
-                    output_field[i] = -60.0
-
-        input_field = ti.field(dtype=ti.f32, shape=data.shape)
-        output_field = ti.field(dtype=ti.f32, shape=data.shape)
-
-        input_field.from_numpy(data.astype(np.float32))
-        log_transform(input_field, output_field)
-
-        return output_field.to_numpy()
+            return datetime.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
 
 
-# %% Worker Functions
+_NUMBER_LINE = re.compile(r"^\s*[-+]?(\d+\.?\d*|\.\d+|inf|nan)([eE][-+]?\d+)?[\s,;]",
+                          re.IGNORECASE)
 
 
-def process_single_atr_file(file_info: Tuple[str, int, object]) -> Tuple[str, Dict[str, Any]]:
-    """Process a single ATR file with multiprocessing support.
-
-    This function is designed to be used with multiprocessing pools.
-
-    Parameters
-    ----------
-    file_info : Tuple[str, int, object]
-        Tuple containing (file_path, line_number, gpu_accelerator).
-
-    Returns
-    -------
-    Tuple[str, Dict[str, Any]]
-        Tuple containing (filename, processed_data_dict).
-    """
-    file_path, line_number, gpu_accelerator = file_info
-
+def _header_number(header: Dict[str, str], key: str, path: str) -> float:
     try:
-        # Read file with optimized approach based on size
-        filesize = os.path.getsize(file_path)
-        if filesize < 10 ** 7:  # < 10MB
-            with open(file_path, 'rb') as file:
-                content = file.read().decode('ascii')
-                lines = content.splitlines()
+        return float(re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", header[key])[0])
+    except (KeyError, IndexError, ValueError):
+        raise ATRFormatError("%s: header value %r missing or not a number"
+                             % (os.path.basename(path), key))
+
+
+def parse_atr_text(text: str, path: str = "<text>") -> ATRPattern:
+    """
+    Parse the text of one ATR file.
+
+    Raises
+    ------
+    ATRFormatError
+        When the header limits or the data lines are missing.
+    """
+    lines = text.splitlines()
+    header: Dict[str, str] = {}
+    header_lines: List[str] = []
+    sweep = ""
+    index = 0
+    for index, raw in enumerate(lines):           # header until the first numeric line
+        line = raw.strip().strip('"').strip()
+        if _NUMBER_LINE.match(line + " "):
+            break
+        if not line:
+            continue
+        header_lines.append(line)
+        match = re.match(r"sweep by position\s+(\w+)", line, re.IGNORECASE)
+        if match:
+            sweep = match.group(1).upper()
+        elif ":" in line:
+            key, value = line.split(":", 1)
+            header[key.strip()] = value.strip()
+    else:
+        raise ATRFormatError("%s: no data line found" % os.path.basename(path))
+    warnings: List[str] = []
+    rows: List[np.ndarray] = []
+    for number, raw in enumerate(lines[index:], start=index + 1):
+        line = raw.strip().rstrip("#").strip()
+        if not line:
+            continue
+        if line.startswith("*") or not _NUMBER_LINE.match(line + " "):
+            break                                   # end marker or a trailing table
+        tokens = line.replace(",", " ").split()
+        values = np.array([float(t) if _is_float(t) else np.nan for t in tokens])
+        bad = int(np.isnan(values).sum())
+        if bad:
+            warnings.append("line %d: %d value(s) are not numbers (kept as gaps)" % (number, bad))
+        if values.size % 2:
+            warnings.append("line %d: odd number of values (%d); the last one is "
+                            "ignored" % (number, values.size))
+            values = values[:-1]
+        rows.append(values)
+    if not rows:
+        raise ATRFormatError("%s: no data line found" % os.path.basename(path))
+    n_points = {row.size // 2 for row in rows}
+    if len(n_points) != 1:
+        raise ATRFormatError("%s: data lines have different lengths %s"
+                             % (os.path.basename(path), sorted(n_points)))
+    n_az = n_points.pop()
+    if n_az < 1:
+        raise ATRFormatError("%s: empty data line" % os.path.basename(path))
+    data = np.vstack(rows)
+    phase, magnitude = data[:, 0::2], data[:, 1::2]   # pairs: phase (deg), magnitude (dB)
+    for values, what in ((magnitude, "magnitude"), (phase, "phase")):
+        infinite = np.isinf(values)     # "-Inf" dB: the receiver saw no signal
+        if infinite.any():
+            values[infinite] = np.nan
+            warnings.append("%d %s value(s) were +/-Inf (no signal); stored as gaps (NaN)%s"
+                            % (int(infinite.sum()), what,
+                               "; no finite values left" if np.isnan(values).all() else ""))
+
+    left = _header_number(header, "Left Azimuth Limit", path)
+    right = _header_number(header, "Right Azimuth Limit", path)
+    azimuth = np.linspace(left, right, n_az) if n_az > 1 else np.array([left])
+    if n_az > 1:
+        step = (right - left) / (n_az - 1)
+        if abs(step - round(step)) > 1e-9 or abs(step) != 1.0:
+            warnings.append("azimuth step %.6g deg (%d points from %g to %g deg)"
+                            % (step, n_az, left, right))
+
+    upper = _header_number(header, "Upper Frequency", path)
+    lower = _header_number(header, "Lower Frequency", path)
+    try:
+        increment = _header_number(header, "Frequency Increment", path)
+    except ATRFormatError:
+        increment = 0.0
+    n_freq = len(rows)
+    if n_freq == 1:
+        frequencies = np.array([lower])
+        if upper != lower:
+            warnings.append("one data line but the header spans %g-%g MHz; labelled %g MHz"
+                            % (lower, upper, lower))
+    else:
+        expected = int(round((upper - lower) / increment)) + 1 if increment > 0 else 0
+        if expected == n_freq:
+            frequencies = lower + increment * np.arange(n_freq)
+        elif upper == lower:
+            frequencies = np.full(n_freq, lower)
+            warnings.append("%d data lines at one frequency: treated as repeated sweeps"
+                            % n_freq)
         else:
-            with open(file_path, 'r', encoding='ascii') as file:
-                lines = file.readlines()
-
-        # Extract header information
-        header_lines = lines[:line_number]
-        header_info = ''.join(header_lines).strip()
-
-        # Extract numerical data
-        data_line = lines[line_number].strip()
-        if data_line.endswith('#'):
-            data_line = data_line[:-1]
-
-        # Convert to numbers and separate phase/magnitude
-        data_numbers = list(map(float, data_line.split()))
-        selected_phase_data = data_numbers[::2]
-        selected_magnitude_data = data_numbers[1::2]
-
-        # Create numpy array - magnitude data is already in dB format in ATR files
-        selected_data = np.array(
-            [selected_magnitude_data, selected_phase_data])
-        selected_data_transpose = selected_data.transpose()
-
-        # Parse header for frequency and azimuth info
-        freq_max = float(header_lines[8].split(":")[-1].strip())
-        freq_min = float(header_lines[9].split(":")[-1].strip())
-        az_min = float(header_lines[6].split(":")[-1].strip())
-        az_max = float(header_lines[7].split(":")[-1].strip())
-
-        # Create azimuth angles array
-        az_angles = np.arange(az_min, az_max + 1, 1, dtype=float)
-
-        filename = os.path.basename(file_path)
-
-        return filename, {
-            'header_lines': header_lines,
-            'data': selected_data_transpose,
-            'frequency': freq_max,
-            'azimuth_angles': az_angles,
-            'magnitude': selected_data[0],  # Already in dB format
-            'phase': selected_data[1]
-        }
-
-    except Exception as e:
-        print(f"Error processing file {file_path}: {str(e)}")
-        return os.path.basename(file_path), {}
-
-
-# %% Threading Classes
-
-
-class ATRProcessingThread(QThread):
-    """Thread for handling ATR file processing without blocking the GUI."""
-
-    progress_updated = Signal(int)
-    processing_finished = Signal(object)
-    error_occurred = Signal(str)
-
-    def __init__(self, file_list, config):
-        """Initialize ATR processing thread.
-
-        Parameters
-        ----------
-        file_list : list
-            List of ATR files to process.
-        config : ProcessingConfig
-            Processing configuration.
-        """
-        super().__init__()
-        self.file_list = file_list
-        self.config = config
-        self.gpu_accelerator = GPUAccelerator(config.enable_gpu_processing)
-
-    def run(self):
-        """Execute ATR file processing in separate thread."""
-        try:
-            if self.config.enable_multiprocessing and len(self.file_list) > 1:
-                results = self._process_files_parallel()
-            else:
-                results = self._process_files_sequential()
-            self.processing_finished.emit(results)
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-    def _process_files_parallel(self):
-        """Process files using multiprocessing."""
-        line_number = 13  # Zero-indexed line number for data
-
-        file_info_list = [
-            (file_path, line_number, self.gpu_accelerator)
-            for file_path in self.file_list
-        ]
-
-        results = {}
-
-        with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
-            future_to_file = {
-                executor.submit(process_single_atr_file, file_info): file_info[0]
-                for file_info in file_info_list
-            }
-
-            completed = 0
-            for future in as_completed(future_to_file):
-                filename, data = future.result()
-                if data:
-                    results[filename] = data
-
-                completed += 1
-                progress = int((completed / len(self.file_list)) * 100)
-                self.progress_updated.emit(progress)
-
-        return results
-
-    def _process_files_sequential(self):
-        """Process files sequentially."""
-        line_number = 13
-        results = {}
-
-        for i, file_path in enumerate(self.file_list):
-            filename, data = process_single_atr_file(
-                (file_path, line_number, self.gpu_accelerator)
-            )
-
-            if data:
-                results[filename] = data
-
-            progress = int(((i + 1) / len(self.file_list)) * 100)
-            self.progress_updated.emit(progress)
-
-        return results
-
-
-# %% Utility Classes
-
-
-class switch:
-    """Creates a case or switch style statement."""
-
-    def __init__(self, value):
-        """Initialize switch with value."""
-        self.value = value
-
-    def __iter__(self):
-        """Iterate and find the match."""
-        yield self.match
-
-    def match(self, *args):
-        """Return the match."""
-        return self.value in args
-
-
-class Wrap4With:
-    """Used to add context management to a given object."""
-
-    def __init__(self, resource):
-        """Initialize wrapper with resource."""
-        self._resource = resource
-
-    def __enter__(self):
-        """Return the wrapped resource upon entering the context."""
-        return self._resource
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Clean up the resource upon exiting the context."""
-        if hasattr(self._resource, 'close'):
-            self._resource.close()
-        return None
-
-
-# %% Enhanced Main Window Class
-
-
-class EnhancedATRMainWindow(QMainWindow):
-    """Enhanced main window with modern Qt interface for ATR plotting."""
-
-    def __init__(self):
-        """Initialize the enhanced ATR main window."""
-        super().__init__()
-        self.setWindowTitle("Enhanced ATR AutoPlot with Modern GUI")
-        self.setGeometry(100, 100, 900, 700)
-
-        # Initialize configuration
-        self.config = ProcessingConfig()
-
-        # Initialize ATR plotter
-        self.atr_plotter = None
-
-        # Setup UI
-        self._setup_ui()
-
-        # File list
-        self.selected_files = []
-
-        # Processing results
-        self.processed_data = {}
-
-    def _setup_ui(self):
-        """Set up the user interface."""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # Main layout
-        main_layout = QVBoxLayout(central_widget)
-
-        # File selection section
-        file_group = QGroupBox("ATR File Selection")
-        file_layout = QVBoxLayout(file_group)
-
-        # File list widget
-        self.file_list_widget = QListWidget()
-        self.file_list_widget.setMinimumHeight(150)
-        file_layout.addWidget(self.file_list_widget)
-
-        # Browse button
-        browse_layout = QHBoxLayout()
-        self.browse_button = QPushButton("Browse ATR Files")
-        self.browse_button.clicked.connect(self._browse_files)
-        browse_layout.addWidget(self.browse_button)
-
-        self.clear_button = QPushButton("Clear Files")
-        self.clear_button.clicked.connect(self._clear_files)
-        browse_layout.addWidget(self.clear_button)
-
-        file_layout.addLayout(browse_layout)
-        main_layout.addWidget(file_group)
-
-        # Processing options section
-        options_group = QGroupBox("Processing Options")
-        options_layout = QVBoxLayout(options_group)
-
-        # Multiprocessing options
-        self.enable_mp_checkbox = QCheckBox("Enable Multiprocessing")
-        self.enable_mp_checkbox.setChecked(self.config.enable_multiprocessing)
-        self.enable_mp_checkbox.stateChanged.connect(self._update_mp_config)
-        options_layout.addWidget(self.enable_mp_checkbox)
-
-        # CPU cores selection
-        cpu_layout = QHBoxLayout()
-        cpu_layout.addWidget(QLabel("CPU Cores:"))
-        self.cpu_spinbox = QSpinBox()
-        self.cpu_spinbox.setMinimum(1)
-        self.cpu_spinbox.setMaximum(multiprocessing.cpu_count())
-        self.cpu_spinbox.setValue(self.config.num_processes)
-        self.cpu_spinbox.valueChanged.connect(self._update_cpu_config)
-        cpu_layout.addWidget(self.cpu_spinbox)
-        cpu_layout.addStretch()
-        options_layout.addLayout(cpu_layout)
-
-        # GPU options
-        self.enable_gpu_checkbox = QCheckBox("Enable GPU Processing")
-        self.enable_gpu_checkbox.setChecked(self.config.enable_gpu_processing)
-        self.enable_gpu_checkbox.stateChanged.connect(self._update_gpu_config)
-        options_layout.addWidget(self.enable_gpu_checkbox)
-
-        # OpenCL preference
-        self.use_opencl_checkbox = QCheckBox("Prefer OpenCL (Cross-platform)")
-        self.use_opencl_checkbox.setChecked(self.config.use_opencl)
-        self.use_opencl_checkbox.stateChanged.connect(
-            self._update_opencl_config)
-        options_layout.addWidget(self.use_opencl_checkbox)
-
-        main_layout.addWidget(options_group)
-
-        # Plot configuration section
-        plot_group = QGroupBox("Plot Configuration")
-        plot_layout = QVBoxLayout(plot_group)
-
-        # Plot title
-        plot_title_layout = QHBoxLayout()
-        plot_title_layout.addWidget(QLabel("Plot Title:"))
-        self.plot_title_edit = QLineEdit("GBO Outdoor Antenna Range Pattern")
-        plot_title_layout.addWidget(self.plot_title_edit)
-        plot_layout.addLayout(plot_title_layout)
-
-        # Dataset name
-        dataset_layout = QHBoxLayout()
-        dataset_layout.addWidget(QLabel("Dataset Name:"))
-        self.dataset_name_edit = QLineEdit("ATR_Dataset")
-        dataset_layout.addWidget(self.dataset_name_edit)
-        plot_layout.addLayout(dataset_layout)
-
-        main_layout.addWidget(plot_group)
-
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        main_layout.addWidget(self.progress_bar)
-
-        # Status text
-        self.status_text = QTextEdit()
-        self.status_text.setMaximumHeight(120)
-        self.status_text.setReadOnly(True)
-        main_layout.addWidget(self.status_text)
-
-        # Control buttons
-        button_layout = QHBoxLayout()
-
-        self.process_button = QPushButton("Process and Plot ATR Files")
-        self.process_button.clicked.connect(self._process_and_plot)
-        button_layout.addWidget(self.process_button)
-
-        self.save_button = QPushButton("Save Veusz Project")
-        self.save_button.clicked.connect(self._save_project)
-        self.save_button.setEnabled(False)
-        button_layout.addWidget(self.save_button)
-
-        self.close_button = QPushButton("Close")
-        self.close_button.clicked.connect(self.close)
-        button_layout.addWidget(self.close_button)
-
-        main_layout.addLayout(button_layout)
-
-        # Initialize status
-        self._log_message("Enhanced ATR AutoPlot initialized")
-        self._log_message(f"GPU Support: {GPU_AVAILABLE or 'None'}")
-        self._log_message(
-            f"CPU Cores Available: {multiprocessing.cpu_count()}")
-
-    def _browse_files(self):
-        """Open file dialog to select multiple ATR files."""
-        file_dialog = QFileDialog()
-        file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        file_dialog.setNameFilter("GBO ATR Files (*.atr)")
-        file_dialog.setWindowTitle("Select ATR Files")
-
-        if file_dialog.exec_() == QFileDialog.Accepted:
-            selected_files = file_dialog.selectedFiles()
-            self.selected_files.extend(selected_files)
-            self._update_file_list()
-            self._log_message(f"Selected {len(selected_files)} ATR files")
-
-    def _clear_files(self):
-        """Clear the selected files list."""
-        self.selected_files.clear()
-        self._update_file_list()
-        self._log_message("File list cleared")
-
-    def _update_file_list(self):
-        """Update the file list widget."""
-        self.file_list_widget.clear()
-        for file_path in self.selected_files:
-            self.file_list_widget.addItem(os.path.basename(file_path))
-
-    def _update_mp_config(self, state):
-        """Update multiprocessing configuration."""
-        self.config.enable_multiprocessing = state == Qt.Checked
-        self._log_message(
-            f"Multiprocessing: {'Enabled' if self.config.enable_multiprocessing else 'Disabled'}"
-        )
-
-    def _update_cpu_config(self, value):
-        """Update CPU cores configuration."""
-        self.config.num_processes = value
-        self.config.max_workers = value
-        self._log_message(f"CPU cores set to: {value}")
-
-    def _update_gpu_config(self, state):
-        """Update GPU processing configuration."""
-        self.config.enable_gpu_processing = state == Qt.Checked
-        self._log_message(
-            f"GPU processing: {'Enabled' if self.config.enable_gpu_processing else 'Disabled'}"
-        )
-
-    def _update_opencl_config(self, state):
-        """Update OpenCL preference configuration."""
-        self.config.use_opencl = state == Qt.Checked
-        self._log_message(
-            f"OpenCL preference: {'Enabled' if self.config.use_opencl else 'Disabled'}"
-        )
-
-    def _log_message(self, message):
-        """Add message to status text."""
-        self.status_text.append(f"[{self._get_timestamp()}] {message}")
-
-    def _get_timestamp(self):
-        """Get current timestamp string."""
-        import datetime
-        return datetime.datetime.now().strftime("%H:%M:%S")
-
-    def _process_and_plot(self):
-        """Process selected ATR files and create plots."""
-        if not self.selected_files:
-            QMessageBox.warning(
-                self, "Warning", "Please select ATR files first.")
-            return
-
-        self.process_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-
-        # Initialize ATR plotter
-        self.atr_plotter = ATRPlotter(
-            plot_title=self.plot_title_edit.text(),
-            dataset_name=self.dataset_name_edit.text()
-        )
-
-        # Start processing thread
-        self.processing_thread = ATRProcessingThread(
-            self.selected_files,
-            self.config
-        )
-
-        self.processing_thread.progress_updated.connect(
-            self.progress_bar.setValue)
-        self.processing_thread.processing_finished.connect(
-            self._on_processing_finished)
-        self.processing_thread.error_occurred.connect(
-            self._on_processing_error)
-
-        self.processing_thread.start()
-        self._log_message("ATR processing started...")
-
-    def _on_processing_finished(self, results):
-        """Handle processing completion."""
-        self.progress_bar.setVisible(False)
-        self.process_button.setEnabled(True)
-
-        successful_files = len([r for r in results.values() if r])
-        failed_files = len(results) - successful_files
-
-        self._log_message(
-            f"Processing completed: {successful_files} successful, {failed_files} failed"
-        )
-
-        if successful_files > 0:
-            self.processed_data = results
-            self._create_plots(results)
-            self.save_button.setEnabled(True)
-
-        if failed_files > 0:
-            QMessageBox.warning(
-                self, "Processing Warnings",
-                f"{failed_files} files failed to process. Check status log for details."
-            )
-
-    def _on_processing_error(self, error_message):
-        """Handle processing error."""
-        self.progress_bar.setVisible(False)
-        self.process_button.setEnabled(True)
-        self._log_message(f"Processing error: {error_message}")
-        QMessageBox.critical(self, "Processing Error", error_message)
-
-    def _create_plots(self, results):
-        """Create Veusz plots from processed results."""
-        self._log_message("Creating ATR plots...")
-
-        try:
-            for filename, data in results.items():
-                if data:
-                    self.atr_plotter.create_plots_from_data(filename, data)
-
-            self._log_message("ATR plot creation completed")
-
-        except Exception as e:
-            self._log_message(f"Plot creation error: {e}")
-            QMessageBox.critical(self, "Plot Creation Error", str(e))
-
-    def _save_project(self):
-        """Save Veusz project."""
-        file_dialog = QFileDialog()
-        save_path, _ = file_dialog.getSaveFileName(
-            self, "Save ATR Veusz Project", "",
-            "Veusz High Precision Files (*.vszh5)"
-        )
-
-        if save_path and self.atr_plotter:
-            try:
-                self.atr_plotter.save(save_path)
-                self._log_message(f"Project saved: {save_path}")
-
-                # Ask to open in Veusz
-                reply = QMessageBox.question(
-                    self, "Open in Veusz",
-                    "Would you like to open the file in Veusz?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-
-                if reply == QMessageBox.Yes:
-                    self._open_veusz_gui(save_path)
-
-            except Exception as e:
-                QMessageBox.critical(self, "Save Error",
-                                     f"Failed to save project: {e}")
-
-    def _open_veusz_gui(self, filename: str):
-        """Launch Veusz GUI with generated project file."""
-        if sys.platform.startswith('win'):
-            veusz_exe = os.path.join(sys.prefix, 'Scripts', 'veusz.exe')
+            frequencies = np.linspace(lower, upper, n_freq)
+            warnings.append("%d data lines do not match %g-%g MHz in %g MHz steps; "
+                            "frequencies spread evenly" % (n_freq, lower, upper, increment))
+    return ATRPattern(path=path, header=header, header_lines=header_lines, sweep=sweep,
+                      frequencies_mhz=frequencies, azimuth_deg=azimuth,
+                      magnitude_db=magnitude, phase_deg=phase, warnings=warnings)
+
+
+def _is_float(token: str) -> bool:
+    try:
+        float(token)
+        return True
+    except ValueError:
+        return False
+
+
+def read_atr_file(path: str) -> ATRPattern:
+    """Read and parse one file (ASCII; undecodable bytes are replaced)."""
+    with open(path, "rb") as handle:
+        text = handle.read().decode("ascii", errors="replace")
+    return parse_atr_text(text, path)
+
+
+def _read_worker(path: str) -> Tuple[str, Optional[ATRPattern], str]:
+    """Process-pool worker: (path, pattern or None, error text)."""
+    try:
+        return path, read_atr_file(path), ""
+    except Exception as exc:  # reported per file, the batch goes on
+        return path, None, "%s: %s" % (type(exc).__name__, exc)
+
+
+def read_files(paths: Sequence[str], workers: int = 1,
+               progress: Optional[Any] = None) -> Tuple[List[ATRPattern], List[str]]:
+    """
+    Read files in input order, in a 'spawn' process pool when it pays off.
+
+    Returns (patterns, errors); ``progress(done, total)`` after each file.
+    """
+    paths = list(dict.fromkeys(paths))                 # drop duplicates, keep order
+    results: Dict[str, Tuple[Optional[ATRPattern], str]] = {}
+    if workers > 1 and len(paths) >= PARALLEL_MIN_FILES:
+        context = multiprocessing.get_context("spawn")  # fork can deadlock with Qt threads
+        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
+            futures = [pool.submit(_read_worker, p) for p in paths]
+            for done, future in enumerate(as_completed(futures), start=1):
+                path, pattern, error = future.result()
+                results[path] = (pattern, error)
+                if progress:
+                    progress(done, len(paths))
+    else:
+        for done, path in enumerate(paths, start=1):
+            _p, pattern, error = _read_worker(path)
+            results[path] = (pattern, error)
+            if progress:
+                progress(done, len(paths))
+    patterns, errors = [], []
+    for path in paths:
+        pattern, error = results[path]
+        if pattern is None:
+            errors.append("%s: %s" % (os.path.basename(path), error))
         else:
-            veusz_exe = os.path.join(sys.prefix, 'bin', 'veusz')
-
-        if not os.path.exists(veusz_exe):
-            QMessageBox.critical(
-                self, "Veusz Not Found",
-                "Veusz not found in Python environment.\n"
-                "Install with: [pip OR conda OR mamba] install veusz"
-            )
-            return
-
-        try:
-            subprocess.Popen([veusz_exe, filename])
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Launch Error", f"Failed to start Veusz: {str(e)}"
-            )
+            patterns.append(pattern)
+    return patterns, errors
 
 
-# %% ATR Plotter Class
+# %% Veusz project (NativeDocument; written by vszh5_writer)
+@dataclass
+class PlotOptions:
+    """Plot settings chosen in the GUI (or on the command line)."""
+    title: str = "GBO Outdoor Antenna Range Pattern"
+    mag_range: Tuple[float, float] = DEFAULT_MAG_RANGE
+    fit_azimuth: bool = False
 
 
 class ATRPlotter:
-    """Enhanced ATR plotting class with Veusz integration."""
+    """Builds the Veusz project of a batch of patterns."""
 
-    def __init__(self, plot_title: str = "GBO Outdoor Antenna Range Pattern",
-                 dataset_name: str = "ATR_Dataset"):
-        """Initialize ATR plotter.
+    AZ_LABEL = "Azimuth (degrees)"
+    MAG_LABEL = "Magnitude (dB)"
+    PHASE_LABEL = "Phase (degrees)"
 
-        Parameters
-        ----------
-        plot_title : str
-            Title for plots.
-        dataset_name : str
-            Base name for datasets.
-        """
-        self.plot_title = plot_title
-        self.dataset_name = dataset_name
+    def __init__(self, options: Optional[PlotOptions] = None) -> None:
+        from _autoplot_native import NativeDocument
+        self.options = options or PlotOptions()
+        self.doc = NativeDocument("ATR AutoPlot")
+        self.doc.Root.colorTheme.val = "max128"
+        self._stems: Dict[str, int] = {}
+        self._overlays: Optional[Tuple[Any, Any]] = None
+        self._az_span: List[float] = []
+        self._overlay_notes: List[str] = []
 
-        # Initialize Veusz
-        self.doc = vz.Embedded('Enhanced ATR AutoPlotter', hidden=False)
-        self.doc.EnableToolbar()
+    # ----- names ----------------------------------------------------------------
+    def _unique_stem(self, pattern: ATRPattern) -> str:
+        stem = os.path.splitext(pattern.name)[0]
+        count = self._stems.get(stem, 0) + 1
+        self._stems[stem] = count
+        return stem if count == 1 else "%s_%d" % (stem, count)
 
-        # Labels for plots
-        self.freq_label = 'Frequency (MHz)'
-        self.az_label = 'Azimuth (degrees)'
-        self.phase_label = 'Phase (degrees)'
-        self.mag_label = 'Magnitude (dB)'
+    @staticmethod
+    def _freq_tag(mhz: float) -> str:
+        return ("%g" % mhz).replace(".", "p") + "MHz"
 
-        # Track whether overlay pages exist
-        self.overlay_created = False
+    # ----- public ---------------------------------------------------------------
+    def add_pattern(self, pattern: ATRPattern) -> str:
+        """Datasets and pages of one file; returns its dataset stem."""
+        if self._overlays is None:
+            self._overlays = self._create_overlay_pages()
+        stem = self._unique_stem(pattern)
+        doc = self.doc
+        az_name, freq_name = "%s_Az" % stem, "%s_freq" % stem
+        doc.SetData(az_name, pattern.azimuth_deg)
+        doc.SetData(freq_name, pattern.frequencies_mhz)
+        single = pattern.frequencies_mhz.size == 1
+        traces = []
+        for k, mhz in enumerate(pattern.frequencies_mhz):
+            suffix = "" if single else "_" + self._freq_tag(mhz) + ("" if np.sum(
+                pattern.frequencies_mhz == mhz) == 1 else "_%d" % (k + 1))
+            mag_name, phase_name = "%s%s_mag" % (stem, suffix), "%s%s_phase" % (stem, suffix)
+            doc.SetData(mag_name, pattern.magnitude_db[k])
+            doc.SetData(phase_name, pattern.phase_deg[k])
+            key = "%g MHz" % mhz
+            traces.append((mag_name, phase_name, key))
+        names = [az_name, freq_name] + [n for t in traces for n in t[:2]]
+        measured = pattern.measured
+        if measured is not None:            # range computer's clock (zone not recorded)
+            time_name = "%s_datetime" % stem
+            doc.SetDataDateTime(time_name, [(measured - VEUSZ_EPOCH).total_seconds()])
+            names.append(time_name)
+        doc.TagDatasets(stem, names)
+        self._az_span.extend([float(np.nanmin(pattern.azimuth_deg)),
+                              float(np.nanmax(pattern.azimuth_deg))])
+        notes = header_notes(pattern.header_lines, source=pattern.path, extra=[
+            "Frequencies (MHz): %s" % ", ".join("%g" % f for f in pattern.frequencies_mhz),
+            "Measured (range computer clock, zone not recorded): %s" % (
+                measured.isoformat(timespec="minutes") if measured else "not readable")])
+        self._overlay_notes.append(notes)
+        title = stem.replace("_", " ")
+        colour = "red" if single else "auto"
+        x_range = self._x_range([pattern])
+        for kind, label, y_range in (("mag", self.MAG_LABEL, self.options.mag_range),
+                                     ("phase", self.PHASE_LABEL, PHASE_RANGE)):
+            page = doc.Root.Add("page", name="%s_%s" % (stem, kind))
+            page.notes.val = notes
+            graph = page.Add("grid", columns=2).Add(
+                "graph", name="%s_%s" % (stem, "Mag" if kind == "mag" else "Phase"))
+            self._configure_graph(graph, title, label, y_range, x_range)
+            for mag_name, phase_name, key in traces:
+                y_name = mag_name if kind == "mag" else phase_name
+                xy = graph.Add("xy", name=stem if single else y_name)
+                self._configure_xy(xy, az_name, mag_name if kind == "mag" else phase_name,
+                                   colour, key, fill=single)
+        for kind, r_range in (("mag", self.options.mag_range), ("phase", PHASE_RANGE)):
+            page = doc.Root.Add("page", name="%s_polar_%s" % (stem, kind))
+            self._add_page_title(page, title)
+            page.notes.val = notes
+            polar = page.Add("grid", columns=2).Add(
+                "polar", name="%s_Polar_%s" % (stem, "mag" if kind == "mag" else "Phase"))
+            self._configure_polar_graph(polar, *r_range)
+            for mag_name, phase_name, key in traces:
+                r_name = mag_name if kind == "mag" else phase_name
+                point = polar.Add("nonorthpoint", name=stem if single else r_name)
+                self._configure_polar_plot(point, mag_name if kind == "mag" else phase_name,
+                                           az_name, colour, fill=single)
+        mag_graph, phase_graph = self._overlays
+        for mag_name, phase_name, key in traces:
+            label = stem if single else "%s %s" % (stem, key)
+            self._configure_overlay_xy(mag_graph.Add("xy", name=mag_name), az_name, mag_name, label)
+            self._configure_overlay_xy(phase_graph.Add("xy", name=phase_name), az_name,
+                                       phase_name, label)
+        return stem
 
-    def create_plots_from_data(self, filename: str, data: Dict[str, Any]):
-        """Create Veusz plots from processed ATR data.
+    def finish(self) -> None:
+        """Overlay x ranges once all files are in (fit-to-data option)."""
+        if self._overlays is not None:
+            text = "\n\n".join(["Overlay of %d file(s)" % len(self._overlay_notes)]
+                                + self._overlay_notes)
+            for graph in self._overlays:
+                graph.parent.parent.notes.val = text          # page notes
+        if self._overlays is not None and self.options.fit_azimuth and self._az_span:
+            for graph in self._overlays:
+                graph.x.min.val = float(min(self._az_span))
+                graph.x.max.val = float(max(self._az_span))
 
-        Parameters
-        ----------
-        filename : str
-            Name of the processed file.
-        data : Dict[str, Any]
-            Processed ATR data dictionary.
-        """
-        if not data:
-            return
+    def save(self, filename: str) -> str:
+        """Write the .vszh5 (atomic, vszh5_writer); returns the path written."""
+        return self.doc.save(filename)
 
-        # Create overlay pages if they don't exist
-        if not self.overlay_created:
-            self._create_overlay_pages()
-            self.overlay_created = True
+    # ----- pages ----------------------------------------------------------------
+    def _x_range(self, patterns: Sequence[ATRPattern]) -> Tuple[float, float]:
+        if not self.options.fit_azimuth:
+            return AZIMUTH_RANGE
+        lows = [float(np.nanmin(p.azimuth_deg)) for p in patterns]
+        highs = [float(np.nanmax(p.azimuth_deg)) for p in patterns]
+        low, high = min(lows), max(highs)
+        return (low, high) if high > low else (low - 1.0, high + 1.0)
 
-        dataset_name = os.path.splitext(filename)[0]
+    def _create_overlay_pages(self) -> Tuple[Any, Any]:
+        graphs = []
+        for kind, label, y_range in (("mag", self.MAG_LABEL, self.options.mag_range),
+                                     ("phase", self.PHASE_LABEL, PHASE_RANGE)):
+            page = self.doc.Root.Add("page", name="Overlay_All_%s" % kind)
+            graph = page.Add("grid", columns=2).Add("graph", name="Overlay_All_%s" % kind)
+            title = "%s: overlay of imported %s" % (
+                self.options.title or "ATR", "magnitude" if kind == "mag" else "phase")
+            self._configure_graph(graph, title, label, y_range, AZIMUTH_RANGE)
+            graphs.append(graph)
+        return graphs[0], graphs[1]
 
-        # Create individual plots
-        self._create_individual_plots(dataset_name, data)
+    def _configure_graph(self, graph: Any, title: str, y_label: str,
+                         y_range: Tuple[float, float], x_range: Tuple[float, float]) -> None:
+        graph.Add("label", name="plotTitle")
+        graph.topMargin.val = "1cm"
+        graph.plotTitle.Text.size.val = "10pt"
+        graph.plotTitle.label.val = title
+        graph.plotTitle.alignHorz.val = "centre"
+        graph.plotTitle.yPos.val = 1.05
+        graph.plotTitle.xPos.val = 0.5
+        graph.x.label.val = self.AZ_LABEL
+        graph.y.label.val = y_label
+        for axis in (graph.x, graph.y):
+            axis.GridLines.hide.val = False
+            axis.MinorGridLines.hide.val = False
+        graph.y.min.val, graph.y.max.val = float(y_range[0]), float(y_range[1])
+        graph.x.min.val, graph.x.max.val = float(x_range[0]), float(x_range[1])
 
-        # Add to overlay plots
-        self._add_to_overlay_plots(dataset_name, data)
+    @staticmethod
+    def _configure_xy(xy: Any, x_data: str, y_data: str, colour: str, key: str,
+                      fill: bool) -> None:
+        xy.xData.val = x_data
+        xy.yData.val = y_data
+        xy.key.val = key
+        xy.marker.val = "circle"
+        xy.markerSize.val = "2pt"
+        xy.MarkerLine.color.val = "transparent"
+        xy.MarkerFill.color.val = "auto"
+        xy.MarkerFill.transparency.val = 80
+        xy.MarkerFill.style.val = "solid"
+        xy.FillBelow.transparency.val = 90
+        xy.FillBelow.style.val = "solid"
+        xy.FillBelow.fillto.val = "bottom"
+        xy.FillBelow.color.val = "darkgreen"
+        xy.FillBelow.hide.val = not fill
+        xy.PlotLine.color.val = colour
 
-    def _create_overlay_pages(self):
-        """Create overlay pages for magnitude and phase plots."""
-        # Create Pages and Graphs for Overlays
-        page_all_mag = self.doc.Root.Add('page', name='Overlay_All_mag')
-        grid_all_mag = page_all_mag.Add('grid', columns=2)
-        graph_all_mag = grid_all_mag.Add('graph', name='Overlay_All_mag')
+    @staticmethod
+    def _configure_overlay_xy(xy: Any, x_data: str, y_data: str, key: str) -> None:
+        ATRPlotter._configure_xy(xy, x_data, y_data, "auto", key, fill=False)
 
-        page_all_phase = self.doc.Root.Add('page', name='Overlay_All_phase')
-        grid_all_phase = page_all_phase.Add('grid', columns=2)
-        graph_all_phase = grid_all_phase.Add('graph', name='Overlay_All_phase')
+    @staticmethod
+    def _configure_polar_graph(graph: Any, min_radius: float, max_radius: float) -> None:
+        graph.topMargin.val = "1cm"
+        graph.units.val = "degrees"
+        graph.direction.val = "clockwise"
+        graph.position0.val = "top"
+        graph.minradius.val = float(min_radius)
+        graph.maxradius.val = float(max_radius)
 
-        # Configure magnitude overlay graph
-        self._configure_overlay_graph(
-            graph_all_mag, 'Overlay of Imported Magnitude',
-            self.az_label, self.mag_label, -60, 20, -180, 180
-        )
+    @staticmethod
+    def _configure_polar_plot(point: Any, data1: str, data2: str, colour: str,
+                              fill: bool) -> None:
+        point.data1.val = data1          # nonorthpoint has no 'key' setting in Veusz;
+        point.data2.val = data2          # the widget name carries the trace name
+        point.PlotLine.color.val = colour
+        point.PlotLine.width.val = "2pt"
+        point.MarkerLine.transparency.val = 75
+        point.MarkerFill.transparency.val = 75
+        point.Fill1.transparency.val = 65
+        point.Fill1.color.val = "green"
+        point.Fill1.filltype.val = "center"
+        point.Fill1.hide.val = not fill
 
-        # Configure phase overlay graph
-        self._configure_overlay_graph(
-            graph_all_phase, 'Overlay of Imported Phase',
-            self.az_label, self.phase_label, -180, 180, -180, 180
-        )
-
-        # Set auto color theme
-        self.doc.Root.colorTheme.val = 'max128'
-
-    def _configure_overlay_graph(self, graph, title: str, x_label: str,
-                                 y_label: str, y_min: float, y_max: float,
-                                 x_min: float, x_max: float):
-        """Configure an overlay graph with standard settings."""
-        with Wrap4With(graph) as g:
-            g.Add('label', name='plotTitle')
-            g.topMargin.val = '1cm'
-            g.plotTitle.Text.size.val = '10pt'
-            g.plotTitle.label.val = title
-            g.plotTitle.alignHorz.val = 'centre'
-            g.plotTitle.yPos.val = 1.05
-            g.plotTitle.xPos.val = 0.5
-
-            # Set axis labels
-            g.x.label.val = x_label
-            g.y.label.val = y_label
-
-            # Grid lines
-            g.x.GridLines.hide.val = False
-            g.y.GridLines.hide.val = False
-            g.x.MinorGridLines.hide.val = False
-            g.y.MinorGridLines.hide.val = False
-
-            # Set extents
-            g.y.min.val = y_min
-            g.y.max.val = y_max
-            g.x.min.val = x_min
-            g.x.max.val = x_max
-
-    def _create_individual_plots(self, dataset_name: str, data: Dict[str, Any]):
-        """Create individual plots for a dataset."""
-        # Create dataset names
-        freq_name = f"{dataset_name}_freq"
-        mag_name = f"{dataset_name}_mag"
-        phase_name = f"{dataset_name}_phase"
-        az_name = f"{dataset_name}_Az"
-
-        # Set data in Veusz
-        self.doc.SetData(freq_name, [data['frequency']])
-        self.doc.SetData(mag_name, data['magnitude'])
-        self.doc.SetData(phase_name, data['phase'])
-        self.doc.SetData(az_name, data['azimuth_angles'])
-
-        # Tag datasets
-        self.doc.TagDatasets(
-            dataset_name,
-            [freq_name, mag_name, phase_name, az_name]
-        )
-
-        # Create individual pages and plots
-        self._create_magnitude_page(dataset_name, data)
-        self._create_phase_page(dataset_name, data)
-        self._create_polar_pages(dataset_name, data)
-
-    def _create_magnitude_page(self, dataset_name: str, data: Dict[str, Any]):
-        """Create magnitude plot page."""
-        mag_name = f"{dataset_name}_mag"
-        az_name = f"{dataset_name}_Az"
-
-        page_mag = self.doc.Root.Add('page', name=mag_name)
-        grid_mag = page_mag.Add('grid', columns=2)
-        graph_mag = grid_mag.Add('graph', name=f"{dataset_name}_Mag")
-        page_mag.notes.val = '\n'.join(data['header_lines'])
-
-        # Configure graph
-        self._configure_standard_graph(
-            graph_mag, dataset_name.replace('_', ' '),
-            self.az_label, self.mag_label, -60, 20, -180, 180
-        )
-
-        # Create XY plot
-        xy_mag = graph_mag.Add('xy', name=dataset_name)
-        self._configure_xy_plot(xy_mag, az_name, mag_name, 'red')
-
-    def _create_phase_page(self, dataset_name: str, data: Dict[str, Any]):
-        """Create phase plot page."""
-        phase_name = f"{dataset_name}_phase"
-        az_name = f"{dataset_name}_Az"
-
-        page_phase = self.doc.Root.Add('page', name=phase_name)
-        grid_phase = page_phase.Add('grid', columns=2)
-        graph_phase = grid_phase.Add('graph', name=f"{dataset_name}_Phase")
-        page_phase.notes.val = '\n'.join(data['header_lines'])
-
-        # Configure graph
-        self._configure_standard_graph(
-            graph_phase, dataset_name.replace('_', ' '),
-            self.az_label, self.phase_label, -180, 180, -180, 180
-        )
-
-        # Create XY plot
-        xy_phase = graph_phase.Add('xy', name=dataset_name)
-        self._configure_xy_plot(xy_phase, az_name, phase_name, 'red')
-
-    def _create_polar_pages(self, dataset_name: str, data: Dict[str, Any]):
-        """Create polar plot pages for magnitude and phase."""
-        mag_name = f"{dataset_name}_mag"
-        phase_name = f"{dataset_name}_phase"
-        az_name = f"{dataset_name}_Az"
-
-        # Magnitude polar plot
-        polar_mag_name = f"{dataset_name}_polar_mag"
-        page_polar_mag = self.doc.Root.Add('page', name=polar_mag_name)
-        self._add_page_title(page_polar_mag, dataset_name.replace('_', ' '))
-        grid_polar_mag = page_polar_mag.Add('grid', columns=2)
-        graph_polar_mag = grid_polar_mag.Add(
-            'polar', name=f"{dataset_name}_Polar_mag")
-        page_polar_mag.notes.val = '\n'.join(data['header_lines'])
-
-        # Configure polar graph for magnitude
-        self._configure_polar_graph(graph_polar_mag, -60, 20)
-        rtheta_mag = graph_polar_mag.Add('nonorthpoint', name=dataset_name)
-        self._configure_polar_plot(rtheta_mag, mag_name, az_name)
-
-        # Phase polar plot
-        polar_phase_name = f"{dataset_name}_polar_phase"
-        page_polar_phase = self.doc.Root.Add('page', name=polar_phase_name)
-        self._add_page_title(page_polar_phase, dataset_name.replace('_', ' '))
-        grid_polar_phase = page_polar_phase.Add('grid', columns=2)
-        graph_polar_phase = grid_polar_phase.Add(
-            'polar', name=f"{dataset_name}_Polar_Phase")
-        page_polar_phase.notes.val = '\n'.join(data['header_lines'])
-
-        # Configure polar graph for phase
-        self._configure_polar_graph(graph_polar_phase, -180, 180)
-        rtheta_phase = graph_polar_phase.Add('nonorthpoint', name=dataset_name)
-        self._configure_polar_plot(rtheta_phase, phase_name, az_name)
-
-    def _configure_standard_graph(self, graph, title: str, x_label: str,
-                                  y_label: str, y_min: float, y_max: float,
-                                  x_min: float, x_max: float):
-        """Configure a standard XY graph."""
-        with Wrap4With(graph) as g:
-            g.Add('label', name='plotTitle')
-            g.topMargin.val = '1cm'
-            g.plotTitle.Text.size.val = '10pt'
-            g.plotTitle.label.val = title
-            g.plotTitle.alignHorz.val = 'centre'
-            g.plotTitle.yPos.val = 1.05
-            g.plotTitle.xPos.val = 0.5
-
-            # Set axis labels
-            g.x.label.val = x_label
-            g.y.label.val = y_label
-
-            # Grid lines
-            g.x.GridLines.hide.val = False
-            g.y.GridLines.hide.val = False
-            g.x.MinorGridLines.hide.val = False
-            g.y.MinorGridLines.hide.val = False
-
-            # Set extents
-            g.y.min.val = y_min
-            g.y.max.val = y_max
-            g.x.min.val = x_min
-            g.x.max.val = x_max
-
-    def _configure_xy_plot(self, xy, x_data: str, y_data: str, color: str):
-        """Configure an XY plot."""
-        with Wrap4With(xy) as plot:
-            plot.xData.val = x_data
-            plot.yData.val = y_data
-            plot.nanHandling = 'break-on'
-            plot.marker.val = 'circle'
-            plot.markerSize.val = '2pt'
-            plot.MarkerLine.color.val = 'transparent'
-            plot.MarkerFill.color.val = 'auto'
-            plot.MarkerFill.transparency.val = 80
-            plot.MarkerFill.style.val = 'solid'
-            plot.FillBelow.transparency.val = 90
-            plot.FillBelow.style.val = 'solid'
-            plot.FillBelow.fillto.val = 'bottom'
-            plot.FillBelow.color.val = 'darkgreen'
-            plot.FillBelow.hide.val = False
-            plot.PlotLine.color.val = color
-
-    def _configure_polar_graph(self, graph, min_radius: float, max_radius: float):
-        """Configure a polar graph."""
-        with Wrap4With(graph) as g:
-            g.topMargin.val = '1cm'
-            g.units.val = 'degrees'
-            g.direction.val = 'clockwise'
-            g.position0.val = 'top'
-            g.minradius.val = min_radius
-            g.maxradius.val = max_radius
-
-    def _configure_polar_plot(self, plot, data1: str, data2: str):
-        """Configure a polar plot."""
-        with Wrap4With(plot) as p:
-            p.data1.val = data1
-            p.data2.val = data2
-            p.PlotLine.color.val = 'red'
-            p.PlotLine.width.val = '2pt'
-            p.MarkerLine.transparency.val = 75
-            p.MarkerFill.transparency.val = 75
-            p.Fill1.transparency.val = 65
-            p.Fill1.color.val = 'green'
-            p.Fill1.filltype.val = 'center'
-            p.Fill1.hide.val = False
-
-    def _add_page_title(self, page, title: str):
-        """Add a title to a page."""
-        with Wrap4With(page) as p:
-            p.Add('label', name='plotTitle')
-            p.plotTitle.Text.size.val = '10pt'
-            p.plotTitle.label.val = title
-            p.plotTitle.alignHorz.val = 'centre'
-            p.plotTitle.yPos.val = 0.95
-            p.plotTitle.xPos.val = 0.5
-
-    def _add_to_overlay_plots(self, dataset_name: str, data: Dict[str, Any]):
-        """Add dataset to overlay plots."""
-        mag_name = f"{dataset_name}_mag"
-        phase_name = f"{dataset_name}_phase"
-        az_name = f"{dataset_name}_Az"
-
-        # Get overlay graphs
-        page_all_mag = self.doc.Root.Overlay_All_mag
-        graph_all_mag = page_all_mag.grid1.Overlay_All_mag
-
-        page_all_phase = self.doc.Root.Overlay_All_phase
-        graph_all_phase = page_all_phase.grid1.Overlay_All_phase
-
-        # Add to magnitude overlay
-        xy_all_mag = graph_all_mag.Add('xy', name=mag_name)
-        self._configure_overlay_xy_plot(xy_all_mag, az_name, mag_name)
-
-        # Add to phase overlay
-        xy_all_phase = graph_all_phase.Add('xy', name=phase_name)
-        self._configure_overlay_xy_plot(xy_all_phase, az_name, phase_name)
-
-    def _configure_overlay_xy_plot(self, xy, x_data: str, y_data: str):
-        """Configure an overlay XY plot."""
-        with Wrap4With(xy) as plot:
-            plot.xData.val = x_data
-            plot.yData.val = y_data
-            plot.nanHandling = 'break-on'
-            plot.marker.val = 'circle'
-            plot.markerSize.val = '2pt'
-            plot.MarkerLine.color.val = 'transparent'
-            plot.MarkerFill.color.val = 'auto'
-            plot.MarkerFill.transparency.val = 80
-            plot.MarkerFill.style.val = 'solid'
-            plot.FillBelow.transparency.val = 90
-            plot.FillBelow.style.val = 'solid'
-            plot.FillBelow.fillto.val = 'bottom'
-            plot.FillBelow.color.val = 'darkgreen'
-            plot.FillBelow.hide.val = True
-            plot.PlotLine.color.val = 'auto'
-
-    def save(self, filename: str):
-        """Save Veusz document to specified file."""
-        filename_root = os.path.splitext(filename)[0]
-        filename_hp = filename_root + '.vszh5'
-        file_split = os.path.split(filename)
-        filename_vsz = (
-                file_split[0] + '/Beware_oldVersion/' +
-                os.path.splitext(file_split[1])[0] + '_BEWARE.vsz'
-        )
-
-        # Save high precision version
-        self.doc.Save(filename_hp, mode='hdf5')
-
-        # Save legacy version
-        os.makedirs(file_split[0] + '/Beware_oldVersion/', exist_ok=True)
-        self.doc.Save(filename_vsz, mode='vsz')
+    @staticmethod
+    def _add_page_title(page: Any, title: str) -> None:
+        page.Add("label", name="plotTitle")
+        page.plotTitle.Text.size.val = "10pt"
+        page.plotTitle.label.val = title
+        page.plotTitle.alignHorz.val = "centre"
+        page.plotTitle.yPos.val = 0.95
+        page.plotTitle.xPos.val = 0.5
 
 
-# %% Utility Functions
+def build_project(patterns: Sequence[ATRPattern],
+                  options: Optional[PlotOptions] = None) -> ATRPlotter:
+    """ATRPlotter with every pattern added (input order)."""
+    plotter = ATRPlotter(options)
+    for pattern in patterns:
+        plotter.add_pattern(pattern)
+    plotter.finish()
+    return plotter
 
 
-def setup_qt_plugins():
-    """
-    Setup Qt platform plugin paths for compiled applications.
-    """
-    try:
-        import PySide6
-        dirname = os.path.dirname(PySide6.__file__)
-        plugin_path = os.path.join(dirname, 'plugins', 'platforms')
-        if os.path.exists(plugin_path):
-            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
-    except ImportError:
-        pass
+# %% GUI (imported lazily so the parser and --output work without Qt)
+def _build_gui_classes():
+    from qtpy.QtCore import QThread, Signal
+    from qtpy.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFileDialog,
+                                QFormLayout, QGroupBox, QHBoxLayout, QLineEdit,
+                                QListWidget, QMainWindow, QMessageBox, QProgressBar,
+                                QPushButton, QSpinBox, QTabWidget, QTextEdit,
+                                QVBoxLayout, QWidget)
+    import _suite_gui as suite
 
+    class ATRProcessingThread(QThread):
+        """Reads the files off the GUI thread (pool inside when it pays off)."""
+        progress_updated = Signal(int)
+        processing_finished = Signal(object, object)
 
-def cartesian_to_polar(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Convert Cartesian coordinates to polar coordinates.
+        def __init__(self, paths: Sequence[str], workers: int) -> None:
+            super().__init__()
+            self.paths, self.workers = list(paths), int(workers)
 
-    Parameters
-    ----------
-    x : np.ndarray
-        x-coordinate(s).
-    y : np.ndarray
-        y-coordinate(s).
+        def run(self) -> None:
+            try:
+                patterns, errors = read_files(
+                    self.paths, self.workers,
+                    lambda done, total: self.progress_updated.emit(int(100 * done / total)))
+            except Exception as exc:  # pool failure: report, never hang the GUI
+                patterns, errors = [], ["batch failed: %s: %s" % (type(exc).__name__, exc)]
+            self.processing_finished.emit(patterns, errors)
 
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        Tuple containing (r, theta) where r is radial coordinate(s)
-        and theta is angular coordinate(s) in radians.
-    """
-    r = np.hypot(x, y)
-    theta = np.arctan2(y, x)
-    return r, theta
+    class ATRMainWindow(QMainWindow):
+        """Processing and Plots tabs; File / View / Help menus."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
+            self.resize(1150, 820)
+            self.selected_files: List[str] = []
+            self.plotter: Optional[ATRPlotter] = None
+            self.last_saved: Optional[str] = None
+            self.thread: Optional[ATRProcessingThread] = None
+            self.theme = suite.apply_theme(suite.saved_theme(), persist=False)
+            suite.add_file_menu(self, [
+                ("&Add ATR Files...", self._browse_files, "Ctrl+O"),
+                ("&Clear File List", self._clear_files, ""),
+                ("&Process Files", self._process, "F5"),
+                ("&Save Veusz Project (.vszh5)...", self._save_project, "Ctrl+S"),
+                ("Open Last Project in &Veusz", self._open_in_veusz, ""),
+            ])
+            self.act_light, self.act_dark = suite.add_view_menu(self, self._set_theme, self.theme)
+            suite.add_help_menu(self, APP_NAME, APP_VERSION, APP_DESCRIPTION)
+            self._build_ui()
+            self._log("%s %s ready; theme %s." % (APP_NAME, APP_VERSION, self.theme))
+            for gap in DATA_GAPS:
+                self._log("Note: " + gap)
+
+        # ----- layout -------------------------------------------------------------
+        def _build_ui(self) -> None:
+            central = QWidget()
+            self.setCentralWidget(central)
+            outer = QVBoxLayout(central)
+            self.tabs = QTabWidget()
+            outer.addWidget(self.tabs, 1)
+            processing = QWidget()
+            self.tabs.addTab(processing, "Processing")
+            layout = QVBoxLayout(processing)
+
+            files = QGroupBox("ATR File Selection")
+            file_layout = QVBoxLayout(files)
+            self.file_list = QListWidget()
+            self.file_list.setMinimumHeight(150)
+            file_layout.addWidget(self.file_list)
+            row = QHBoxLayout()
+            for text, slot in (("Browse ATR Files...", self._browse_files),
+                               ("Clear Files", self._clear_files)):
+                button = QPushButton(text)
+                button.clicked.connect(slot)
+                row.addWidget(button)
+            file_layout.addLayout(row)
+            layout.addWidget(files)
+
+            options = QGroupBox("Processing and Plot Options")
+            form = QFormLayout(options)
+            self.mp_box = QCheckBox("Read files in parallel processes (%d or more files)"
+                                    % PARALLEL_MIN_FILES)
+            self.mp_box.setChecked(True)
+            self.mp_box.toggled.connect(lambda on: self._log(
+                "Parallel reading %s" % ("on" if on else "off")))
+            form.addRow(self.mp_box)
+            self.cpu_spin = QSpinBox()
+            self.cpu_spin.setRange(1, max(1, multiprocessing.cpu_count()))
+            self.cpu_spin.setValue(max(1, multiprocessing.cpu_count()))
+            form.addRow("CPU processes:", self.cpu_spin)
+            self.title_edit = QLineEdit(PlotOptions.title)
+            form.addRow("Plot title:", self.title_edit)
+            mag_row = QHBoxLayout()
+            self.mag_min = QDoubleSpinBox()
+            self.mag_max = QDoubleSpinBox()
+            for spin, value in ((self.mag_min, DEFAULT_MAG_RANGE[0]),
+                                (self.mag_max, DEFAULT_MAG_RANGE[1])):
+                spin.setRange(-300.0, 300.0)
+                spin.setDecimals(1)
+                spin.setSuffix(" dB")
+                spin.setValue(value)
+                mag_row.addWidget(spin)
+            mag_row.addStretch(1)
+            form.addRow("Magnitude axis / polar radius:", mag_row)
+            self.fit_box = QCheckBox("Fit the azimuth axis to the data (otherwise -180 to 180 deg)")
+            form.addRow(self.fit_box)
+            layout.addWidget(options)
+
+            self.status_text = QTextEdit()
+            self.status_text.setReadOnly(True)
+            self.status_text.setMinimumHeight(140)
+            layout.addWidget(self.status_text, 1)
+
+            widget, self.plot_panel = suite.make_plot_panel(self.theme == "dark")
+            self.tabs.addTab(widget, "Plots")
+
+            self.progress = QProgressBar()
+            self.progress.setVisible(False)
+            outer.addWidget(self.progress)
+            buttons = QHBoxLayout()
+            self.process_button = QPushButton("Process and Plot ATR Files")
+            self.process_button.clicked.connect(self._process)
+            self.save_button = QPushButton("Save Veusz Project (.vszh5)")
+            self.save_button.clicked.connect(self._save_project)
+            self.save_button.setEnabled(False)
+            self.veusz_button = QPushButton("Open in Veusz...")
+            self.veusz_button.clicked.connect(self._open_in_veusz)
+            self.veusz_button.setEnabled(False)
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(self.close)
+            for button in (self.process_button, self.save_button, self.veusz_button,
+                           close_button):
+                buttons.addWidget(button)
+            outer.addLayout(buttons)
+
+        # ----- helpers ------------------------------------------------------------
+        def _log(self, message: str) -> None:
+            stamp = datetime.datetime.now().strftime("%H:%M:%S")
+            self.status_text.append("[%s] %s" % (stamp, message))
+
+        def _set_theme(self, mode: str) -> None:
+            self.theme = suite.apply_theme(mode)
+            if self.plot_panel is not None:
+                self.plot_panel.apply_theme(self.theme == "dark")
+            self._log("Theme set to %s mode" % self.theme)
+
+        def _browse_files(self) -> None:
+            files, _ = QFileDialog.getOpenFileNames(
+                self, "Select ATR Files", "", "GBO ATR Files (*.atr *.ATR);;All Files (*)")
+            self.add_files(files)
+
+        def add_files(self, files: Sequence[str]) -> None:
+            new = [f for f in files if f not in self.selected_files]
+            self.selected_files.extend(new)
+            self.file_list.clear()
+            self.file_list.addItems([os.path.basename(f) for f in self.selected_files])
+            if new:
+                self._log("Added %d file(s); %d in the list" % (len(new), len(self.selected_files)))
+
+        def _clear_files(self) -> None:
+            self.selected_files.clear()
+            self.file_list.clear()
+            self._log("File list cleared")
+
+        def options(self) -> PlotOptions:
+            low, high = self.mag_min.value(), self.mag_max.value()
+            if high <= low:
+                high = low + 1.0
+            return PlotOptions(title=self.title_edit.text().strip(),
+                               mag_range=(low, high), fit_azimuth=self.fit_box.isChecked())
+
+        # ----- processing ---------------------------------------------------------
+        def _process(self) -> None:
+            if not self.selected_files:
+                QMessageBox.warning(self, APP_NAME, "Please select ATR files first.")
+                return
+            if self.thread is not None and self.thread.isRunning():
+                return
+            self.process_button.setEnabled(False)
+            self.progress.setValue(0)
+            self.progress.setVisible(True)
+            workers = self.cpu_spin.value() if self.mp_box.isChecked() else 1
+            self.thread = ATRProcessingThread(self.selected_files, workers)
+            self.thread.progress_updated.connect(self.progress.setValue)
+            self.thread.processing_finished.connect(self._finished)
+            self.thread.start()
+            self._log("Reading %d file(s)..." % len(self.selected_files))
+
+        def _finished(self, patterns: List[ATRPattern], errors: List[str]) -> None:
+            self.progress.setVisible(False)
+            self.process_button.setEnabled(True)
+            for error in errors:
+                self._log("FAILED " + error)
+            for pattern in patterns:
+                for warning in pattern.warnings:
+                    self._log("%s: %s" % (pattern.name, warning))
+            if not patterns:
+                QMessageBox.warning(self, APP_NAME, "No file could be read. See the log.")
+                return
+            try:
+                self.plotter = build_project(patterns, self.options())
+            except Exception as exc:
+                self._log("Project build failed: %s" % exc)
+                QMessageBox.critical(self, APP_NAME, "Project build failed:\n%s" % exc)
+                return
+            n_traces = sum(p.frequencies_mhz.size for p in patterns)
+            self._log("Project ready: %d file(s), %d trace(s), %d page(s)." % (
+                len(patterns), n_traces, len(self.plotter.doc.Root.children)))
+            self.save_button.setEnabled(True)
+            if self.plot_panel is not None:
+                try:
+                    pages = self.plot_panel.set_document(self.plotter.doc)
+                    self._log("Plots tab: %d page(s)." % pages)
+                    self.tabs.setCurrentIndex(1)
+                except Exception as exc:
+                    self._log("Plots tab could not draw the project: %s" % exc)
+            if errors:
+                QMessageBox.warning(self, APP_NAME, "%d file(s) failed. See the log."
+                                    % len(errors))
+
+        def _save_project(self) -> None:
+            if self.plotter is None:
+                QMessageBox.information(self, APP_NAME, "Process files first.")
+                return
+            path, _ = QFileDialog.getSaveFileName(self, "Save ATR Veusz Project", "",
+                                                  "Veusz HDF5 Project (*.vszh5)")
+            if not path:
+                return
+            try:
+                self.last_saved = self.plotter.save(path)
+            except Exception as exc:
+                QMessageBox.critical(self, APP_NAME, "Failed to save the project:\n%s" % exc)
+                return
+            self._log("Project saved: %s" % self.last_saved)
+            self.veusz_button.setEnabled(True)
+            answer = QMessageBox.question(self, "Open in Veusz",
+                                          "Open the saved project in Veusz?")
+            if answer == QMessageBox.StandardButton.Yes:
+                self._open_in_veusz()
+
+        def _open_in_veusz(self) -> None:
+            if not self.last_saved:
+                QMessageBox.information(self, APP_NAME, "Save a project first.")
+                return
+            if suite.open_in_veusz(self, self.last_saved):
+                self._log("Opening in Veusz: %s" % self.last_saved)
+
+        def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+            if self.thread is not None and self.thread.isRunning():
+                self.thread.wait(5000)
+            if self.plot_panel is not None:
+                self.plot_panel.clear()
+            super().closeEvent(event)
+
+    return QApplication, ATRMainWindow
 
 
 # %% Main Execution
+def batch(paths: Sequence[str], output: str, options: PlotOptions, workers: int) -> int:
+    """Command-line conversion; returns the process exit code."""
+    patterns, errors = read_files(paths, workers)
+    for error in errors:
+        print("FAILED", error, file=sys.stderr)
+    for pattern in patterns:
+        for warning in pattern.warnings:
+            print("%s: %s" % (pattern.name, warning))
+    if not patterns:
+        return 1
+    written = build_project(patterns, options).save(output)
+    print("Wrote %s (%d file(s))" % (written, len(patterns)))
+    return 0 if not errors else 2
 
 
-def main():
-    """Execute main function."""
-    # Set multiprocessing start method for cross-platform compatibility
-    if __name__ == '__main__':
-        multiprocessing.set_start_method('spawn', force=True)
-        # Call this before any Qt imports
-    if getattr(sys, 'frozen', False):  # Check if running as compiled executable
-        setup_qt_plugins()
-    app = QApplication(sys.argv)
-
-    # Create and show main window
-    window = EnhancedATRMainWindow()
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=APP_DESCRIPTION)
+    parser.add_argument("files", nargs="*", help=".atr files (GUI: added to the list)")
+    parser.add_argument("--output", help="write this .vszh5 without opening the GUI")
+    parser.add_argument("--title", default=PlotOptions.title)
+    parser.add_argument("--mag-range", nargs=2, type=float, default=DEFAULT_MAG_RANGE)
+    parser.add_argument("--fit-azimuth", action="store_true")
+    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
+    args = parser.parse_args(argv)
+    if args.output:
+        return batch(args.files, args.output,
+                     PlotOptions(args.title, tuple(args.mag_range), args.fit_azimuth),
+                     args.workers)
+    QApplication, ATRMainWindow = _build_gui_classes()
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    window = ATRMainWindow()
+    window.add_files(args.files)
     window.show()
-
-    # Run application
-    sys.exit(app.exec_())
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    multiprocessing.freeze_support()           # frozen Windows builds
+    sys.exit(main())

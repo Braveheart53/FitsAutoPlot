@@ -66,6 +66,15 @@ extra_args =
 	--include-data-files=FITS_AutoPlot.py=./
 	--include-data-files=RAndS_FSW_ASCII_Plotter.py=./
 	--include-data-files=fastest_ascii_import.py=./
+	--include-data-files=Franks_AutoPlot.py=./
+	--include-data-files=CSV_TSV_AutoPlot.py=./
+	--include-data-files=Touchstone_AutoPlot.py=./
+	--include-data-files=Hanging_Threads.py=./
+	--include-data-files=_autoplot_common.py=./
+	--include-data-files=_autoplot_native.py=./
+	--include-data-files=_autoplot_pyqtgraph.py=./
+	--include-data-files=_suite_gui.py=./
+	--include-data-files=vszh5_writer.py=./
 	--include-package=veusz
 	--include-package-data=veusz
 	--include-data-dir=assets=assets

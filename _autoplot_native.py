@@ -2,6 +2,43 @@
 """Native AutoPlot project model; files are written by vszh5_writer. No Qt or Veusz imports.
 
 # %% Revision history
+# %%%% 0.4.0: Smith charts in the project, writer 0.0.26.
+# Date: 2026-11-09
+#              * add_smith_page(root, page, grid, traces, ...) and
+#                add_smith_graph(parent, grid, traces, ...): a Veusz Smith
+#                chart (vszh5_writer.smith_graph_spec: aspect-locked graph,
+#                hidden Re/Im Gamma axes, grid circles and arcs as xy lines,
+#                grid values as point labels, traces of Im against Re Gamma,
+#                legend beside the chart) on a NativeDocument - or on a
+#                veusz.embed document, through apply_settings().
+#              * apply_settings(widget, {path: value}): one specification for
+#                both widget trees.
+#              * Writer 0.0.26.
+# %%%% 0.3.0: Local ISO date-time axes, names from the data, writer 0.0.25.
+# Date: 2026-11-09
+#              * SetDataLocalTime(utc_name): from a stored UTC date dataset,
+#                a second date dataset "<name>_local" on the clock of the
+#                computer doing the processing (VSZH5_DISPLAY_TZ overrides),
+#                DST-aware (vszh5_writer.local_time_from_veusz).  The UTC
+#                values stay the stored Veusz date-time; plots bind the local
+#                one.
+#              * mark_local_time_axis(axis): the axis is a datetime axis whose
+#                tick format and label are resolved from the local datasets
+#                drawn on it when the document is finalised: ISO 8601,
+#                24-hour, with the UTC offset, e.g.
+#                %VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00 and the label "Local
+#                time (ISO 8601, UTC-05:00)"; across a DST change the label
+#                lists every offset (writer 0.0.24 rules).  Tick labels are
+#                rotated 45 degrees.  Traces on a marked axis that bind a
+#                UTC date dataset with a local copy draw the local copy.
+#              * Widgets added without a name (Add("xy")) are named after
+#                their data when the document is finalised: xy -> the y
+#                dataset, nonorthpoint -> the r dataset, graph/polar -> "g_"
+#                + the first trace's dataset (unique among siblings) instead
+#                of "xy", "xy_1", "graph" ...  Named widgets are unchanged.
+#              * finalize() runs both; save() and SaveToString() call it,
+#                and the pyqtgraph Plots tab reads the finalised tree.
+#              * Writer 0.0.25 (names, notes and local-time helpers).
 # %%%% 0.2.0: Files written through vszh5_writer 0.0.24 (the shared master).
 # Date: 2026-11-05
 #              The widget tree and dataset API are unchanged (SetData,
@@ -36,7 +73,7 @@ import numpy as np
 import vszh5_writer
 from vszh5_writer import VeuszWriter, VszDoc, vz_text
 
-VERSION = "0.2.0"
+VERSION = "0.4.0"
 WRITER_VERSION = vszh5_writer.__version__
 DATASET_SETTINGS = frozenset((
     "xData", "yData", "labels", "scalePoints", "yDataLow", "yDataHigh",
@@ -102,6 +139,8 @@ class NativeWidget:
         self.parent = parent
         self.children = []
         self.settings = OrderedDict()
+        self.auto_named = False       # 0.3.0: named from its data by finalize()
+        self.local_time = None        # 0.3.0: label prefix of a local date-time axis
 
     @property
     def typename(self):
@@ -140,6 +179,7 @@ class NativeWidget:
         if not candidate or "/" in candidate or candidate in (".", ".."):
             raise ValueError("Invalid widget name: %r" % candidate)
         widget = NativeWidget(self.document, kind, candidate, self)
+        widget.auto_named = name is None          # renamed from its data by finalize()
         for key, value in settings.items():
             widget.settings[key] = _plain(value)
         self.children.append(widget)
@@ -190,6 +230,122 @@ class NativeWidget:
             doc.up()
 
 
+def mark_local_time_axis(axis, label="Local time"):
+    """
+    Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis
+    (0.3.0): its tick format and label are set from the local datasets drawn
+    on it by NativeDocument.finalize() (ISO 8601, 24 h, with the offset).
+    """
+    axis.local_time = label
+    axis.settings["mode"] = "datetime"
+    axis.settings["autoRange"] = axis.settings.get("autoRange", "exact")
+    return axis
+
+
+# %% Smith charts (0.4.0)
+def apply_settings(widget, settings):
+    """
+    Set ``{setting path: value}`` on a widget (0.4.0).
+
+    A NativeWidget stores the values directly; any other widget (a
+    veusz.embed node) is reached by walking the path as attributes
+    (``"PlotLine/color"`` -> ``widget.PlotLine.color.val``), so the same
+    specification builds a Veusz-embedded document too.
+    """
+    if isinstance(widget, NativeWidget):
+        for path, value in settings.items():
+            widget.settings[path] = _plain(value)
+        return widget
+    for path, value in settings.items():
+        node = widget
+        for part in path.split("/"):
+            node = getattr(node, part)
+        node.val = value
+    return widget
+
+
+def add_smith_graph(parent, grid, traces, name=None, notes="", key="auto",
+                    key_position=("outside", "top"), key_width="6.5cm",
+                    limit=vszh5_writer.SMITH_LIMIT):
+    """
+    Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent``
+    (a page or grid widget); returns the graph widget (0.4.0).
+
+    ``grid`` is a vszh5_writer.SmithGrid whose datasets are written to the
+    same document (``grid.write(doc)``); ``traces`` are
+    vszh5_writer.smith_trace() traces.  Captions are passed unescaped:
+    NativeWidget escapes "label" and "key" text when it writes the file.
+    """
+    graph_settings, children = vszh5_writer.smith_graph_spec(
+        grid, traces, key=key, key_position=key_position, limit=limit, escape=False,
+        notes=notes, key_width=key_width)
+    graph = parent.Add("graph", name=name or "smith", autoadd=False)
+    apply_settings(graph, graph_settings)
+    for kind, child_name, settings in children:
+        apply_settings(graph.Add(kind, name=child_name), settings)
+    return graph
+
+
+def add_smith_page(root, page_name, grid, traces, title="", notes="", graph_name="",
+                   graph_notes="", size="18cm", key="auto", key_position=("outside", "top"),
+                   key_width="6.5cm"):
+    """
+    A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a
+    NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+
+    ``notes`` are the page notes (source header); ``graph_notes`` are added
+    below the chart type in the graph notes (e.g. "Z0 = 50 ohm").
+    """
+    width, height, top_margin = vszh5_writer.smith_page_layout(
+        traces, title, size=size, key=key, key_position=key_position, key_width=key_width)
+    page = root.Add("page", name=page_name)
+    apply_settings(page, {"width": width, "height": height})
+    if notes:
+        apply_settings(page, {"notes": notes})
+    if title:
+        apply_settings(page.Add("label", name="title"),
+                       vszh5_writer.title_settings(title, escape=False))
+    graph = add_smith_graph(page, grid, traces,
+                            name=graph_name or vszh5_writer.widget_name(page_name, prefix="g_"),
+                            notes=graph_notes, key=key, key_position=key_position,
+                            key_width=key_width)
+    apply_settings(graph, {"topMargin": top_margin})
+    return graph
+
+
+_DATA_SETTING_OF = {"xy": "yData", "nonorthpoint": "data1", "image": "data",
+                    "bar": "lengths", "function": "function"}
+
+
+def _data_name(widget):
+    """The dataset a plotting widget draws (y for xy), or ''."""
+    value = widget.settings.get(_DATA_SETTING_OF.get(widget.kind, ""), "")
+    if isinstance(value, (tuple, list)):
+        value = value[0] if value else ""
+    return value if isinstance(value, str) else ""
+
+
+def _rename_from_data(widget):
+    """Name an auto-named widget after its data (unique among siblings)."""
+    parent = widget.parent
+    if parent is None:
+        return
+    if widget.kind in _DATA_SETTING_OF:
+        data = _data_name(widget)
+        base = vszh5_writer.widget_name(data) if data else ""
+    elif widget.kind in ("graph", "polar"):
+        first = next((_data_name(c) for c in widget.WalkWidgets()
+                      if c is not widget and _data_name(c)), "")
+        base = vszh5_writer.widget_name(first, prefix="g_") if first else ""
+    else:
+        base = ""
+    widget.auto_named = False
+    if not base or base == widget.name:
+        return
+    used = {c.name for c in parent.children if c is not widget}
+    widget.name = vszh5_writer.unique_widget_name(base, used)
+
+
 # %% Dataset model and file output
 class NativeDocument:
     """Build and atomically save a self-contained Veusz format-1 document."""
@@ -199,6 +355,8 @@ class NativeDocument:
         self.Root = NativeWidget(self, "document", "")
         self.datasets = OrderedDict()
         self.tags = {}
+        self.local_axes = {}          # local dataset name -> vszh5_writer.LocalTimeAxis
+        self.local_of = {}            # UTC date dataset name -> its local copy
 
     def _put(self, name, kind, parts):
         if not isinstance(name, str) or not name or "\x00" in name:
@@ -246,8 +404,79 @@ class NativeDocument:
         self._put(name, "2d", parts)
 
     def SetDataDateTime(self, name, seconds):
+        """Date dataset: seconds since 2009-01-01 00:00:00 UTC (Veusz date-time)."""
         self.SetData(name, seconds)
         self.datasets[name] = ("date", self.datasets[name][1])
+
+    def SetDataLocalTime(self, utc_name, local_name=None, zone=None, label="Local time"):
+        """
+        Local display copy of the UTC date dataset ``utc_name`` (0.3.0).
+
+        Writes ``local_name`` (default "<utc_name>_local") as a date dataset
+        on the processing computer's clock (or ``zone``; VSZH5_DISPLAY_TZ
+        overrides), DST-aware, and remembers its offsets so a marked axis
+        gets an ISO-8601 tick format with the offset.  Returns the name.
+        """
+        kind, parts = self.datasets[utc_name]
+        if kind not in ("date", "1d"):
+            raise ValueError("%s is not a date dataset" % utc_name)
+        axis = vszh5_writer.local_time_from_veusz(parts["data"], zone=zone, label=label)
+        local_name = local_name or "%s_local" % utc_name
+        self.SetDataDateTime(local_name, axis.veusz_seconds)
+        self.local_axes[local_name] = axis
+        self.local_of[utc_name] = local_name
+        return local_name
+
+    def local_axis_text(self, dataset_names, label="Local time"):
+        """(tick format, axis label) of an axis showing these local datasets."""
+        axes = [self.local_axes[n] for n in dataset_names if n in self.local_axes]
+        if not axes:
+            return vszh5_writer.ISO_DATETIME_FORMAT, label
+        offsets = []
+        for axis in axes:
+            finite = axis.offsets_s[np.isfinite(axis.offsets_s)]
+            for value in finite.tolist():
+                if value not in offsets:
+                    offsets.append(value)
+        offsets = offsets or [0.0]
+        if len(offsets) == 1:
+            text = vszh5_writer.iso_offset_text(offsets[0])
+            return (vszh5_writer.ISO_DATETIME_FORMAT + text,
+                    "%s (ISO 8601, UTC%s)" % (label, text))
+        changes = []
+        for axis in axes:
+            for instant, offset in axis.changes:
+                if (instant, offset) not in changes:
+                    changes.append((instant, offset))
+        changes.sort()
+        return (vszh5_writer.ISO_DATETIME_FORMAT,
+                "%s (ISO 8601; %s)" % (label, "; ".join(
+                    "UTC%s from %s" % (offset, instant) for instant, offset in changes)))
+
+    def finalize(self):
+        """Resolve marked local-time axes and name unnamed widgets (0.3.0)."""
+        for widget in list(self.Root.WalkWidgets()):
+            if widget.auto_named:
+                _rename_from_data(widget)
+        for widget in self.Root.WalkWidgets():
+            label = widget.local_time
+            if label is None or widget.kind not in ("axis", "axis-broken"):
+                continue
+            graph = widget.parent
+            names = []
+            for child in graph.WalkWidgets() if graph is not None else ():
+                if child.kind == "xy":
+                    x_name = child.settings.get("xData")
+                    if x_name in self.local_of:          # UTC date -> local copy
+                        x_name = self.local_of[x_name]
+                        child.settings["xData"] = x_name
+                    if isinstance(x_name, str) and x_name not in names:
+                        names.append(x_name)
+            fmt, text = self.local_axis_text(names, label)
+            widget.settings["mode"] = "datetime"
+            widget.settings["TickLabels/format"] = fmt
+            widget.settings.setdefault("TickLabels/rotate", str(vszh5_writer.LOCAL_DATETIME_ROTATE))
+            widget.settings["label"] = text
 
     def TagDatasets(self, tag, names):
         if not tag or "/" in tag or "\x00" in tag or tag in (".", ".."):
@@ -299,6 +528,7 @@ class NativeDocument:
                      % (VERSION, WRITER_VERSION))
         # Compatibility level of the settings baseline (Veusz 3.4 / 4.1).
         doc.lines.append("SetCompatLevel(0)")
+        self.finalize()
         self.Root._write(doc)
         return doc.text()
 
@@ -315,6 +545,7 @@ class NativeDocument:
         filename = os.fspath(filename)
         if not filename.lower().endswith(".vszh5"):
             filename = os.path.splitext(filename)[0] + ".vszh5"
+        self.finalize()
         used = self.referenced_datasets()  # validate even a full save
         names = used if minimized else set(self.datasets)
         script = self.SaveToString()
