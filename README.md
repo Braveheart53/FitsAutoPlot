@@ -8,12 +8,12 @@ as well for various data strucure parsing such as Keysight, Agilent, OrbitFR, an
 
 |               File Description               | Extennsion 1 | Extension 2 |  Extension 3  |                                                                                                                                                    Status                                                                                                                                                    |
 |:--------------------------------------------:|:------------:|:-----------:|:-------------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
-|                  FITS files                  |     .fit     |    .fits    |   .fits.gz    | FITS_AutoPlot 0.4.0: astropy reader, native .vszh5 output (no Veusz needed to write), interactive pyqtgraph Plots tab. Every page draws DMJD as a Veusz date-time axis in local ISO 8601 (2026-11-09T08:39:00-05:00); small gaps break the line, large gaps break the x axis (both set in the GUI); padding rows (DMJD = 0) are left out; the full FITS header is in each page's notes. Checked with GBT sampler2log files (azServo1Hz, Rcvr_2500 Temperature/Vacuum, SiteTime OnePpsDeltas). |
-| Rhode & Schwarz spectrum analyzer trace files |     .sft     |             |               | RAndS_FSW_ASCII_Plotter 1.1.2: FSP/FSW "Section" files (ASCII and binary) and FSW x;y exports; frequency or zero-span time axis from the header; power averages per file and for all files; pyqtgraph Plots tab; native .vszh5. |
+|                  FITS files                  |     .fit     |    .fits    |   .fits.gz    | FITS_AutoPlot 0.4.1: astropy reader (files read in parallel processes when that is faster), native .vszh5 output (no Veusz needed to write), interactive pyqtgraph Plots tab. Every page draws DMJD as a Veusz date-time axis in local ISO 8601 (2026-11-09T08:39:00-05:00); small gaps break the line, large gaps break the x axis (both set in the GUI); padding rows (DMJD = 0) are left out; the full FITS header is in each page's notes. Checked with GBT sampler2log files (azServo1Hz, Rcvr_2500 Temperature/Vacuum, SiteTime OnePpsDeltas). |
+| Rhode & Schwarz spectrum analyzer trace files |     .sft     |             |               | RAndS_FSW_ASCII_Plotter 1.1.3: FSP/FSW "Section" files (ASCII and binary) and FSW x;y exports; frequency or zero-span time axis from the header; power averages per file and for all files, taken in the linear domain (optionally on an NVIDIA or AMD GPU for large stacks); pyqtgraph Plots tab; native .vszh5. |
 |            Comma Separated Files             |     .csv     |    .tsv     |  .txt / .dat  | CSV_TSV_AutoPlot 6.1.2: any delimiter, numeric and date/time columns (Veusz date-times shown in local ISO 8601), rows kept aligned, pyqtgraph Plots tab, native .vszh5. |
-|         GBO Outdoor Range Data Files         |     .atr     |             |               | ATR_AutoPlot 0.2.2: Cartesian and polar magnitude / phase pages, multi-frequency files, overlays; pyqtgraph Plots tab with polar plots; native .vszh5. |
-|               Touchstone Files               |     .s1p     |    .s2p     | .s\*p or .snp | Touchstone_AutoPlot 0.7.1 (Smith chart pages in the Veusz project, drawn with Veusz widgets by vszh5_writer 0.0.26; pyqtgraph previews and Plots tab; see RELEASE_suite-2026-11-09.md); 0.5.0: magnitude / phase (wrapped or unwrapped), scikit-rf time domain and time gating (auto or manual, band-pass or band-stop) shown in time and frequency, Smith charts (PNG/SVG/PDF/HTML, bookmarked combined PDF), native .vszh5 output without Veusz. Checked on the 223 example .s2p files (220 processed; 3 are malformed and are reported as failures); the projects load and render in Veusz 4.2.1. |
-|        Franks timing data (FranksProcessed)  |   .t00new    | time_gbt.dat |               | Franks_AutoPlot 0.4.0: native .vszh5 output, the same pyqtgraph Plots tab, local ISO 8601 time axes and small/large gap controls as FITS AutoPlot. |
+|         GBO Outdoor Range Data Files         |     .atr     |             |               | ATR_AutoPlot 0.2.3: Cartesian and polar magnitude / phase pages, multi-frequency files, overlays; pyqtgraph Plots tab with polar plots; native .vszh5. |
+|               Touchstone Files               |     .s1p     |    .s2p     | .s\*p or .snp | Touchstone_AutoPlot 0.7.2 (process pool and GPU only when they pay off); 0.7.1 (Smith chart pages in the Veusz project, drawn with Veusz widgets by vszh5_writer 0.0.26; pyqtgraph previews and Plots tab; see RELEASE_suite-2026-11-09.md); 0.5.0: magnitude / phase (wrapped or unwrapped), scikit-rf time domain and time gating (auto or manual, band-pass or band-stop) shown in time and frequency, Smith charts (PNG/SVG/PDF/HTML, bookmarked combined PDF), native .vszh5 output without Veusz. Checked on the 223 example .s2p files (220 processed; 3 are malformed and are reported as failures); the projects load and render in Veusz 4.2.1. |
+|        Franks timing data (FranksProcessed)  |   .t00new    | time_gbt.dat |               | Franks_AutoPlot 0.4.1: native .vszh5 output, files parsed in parallel processes when that is faster, the same pyqtgraph Plots tab, local ISO 8601 time axes and small/large gap controls as FITS AutoPlot. |
 |        ORBIT/FR (MVG 959 Spectrum) data      |              |             |               | Not written yet: the vendor COM API is not public. See ORBIT_FR/ORBIT_FR_API_REQUIREMENTS.md and run ORBIT_FR/orbitfr_com_probe.py on the 959 Spectrum PC. |
 
 # postProcessing_Launcher.py
@@ -25,8 +25,8 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
 
 # Common to every tool (2026-11-09)
 
-* **Project files**: every `.vszh5` is written by the shared writer `vszh5_writer.py` 0.0.27 (through
-  `_autoplot_native.py` 0.5.0). Veusz is not needed to write a project, only to open it, or for
+* **Project files**: every `.vszh5` is written by the shared writer `vszh5_writer.py` 0.0.28 (through
+  `_autoplot_native.py` 0.5.1; 0.0.28 saves the 30-day 1PPS project in 14 s instead of 34 s, same file contents). Veusz is not needed to write a project, only to open it, or for
   File > Export PDF / PNG.
 * **Plots tab**: every tool shows the pages of its project with pyqtgraph (`_autoplot_pyqtgraph.py`):
   values at the cursor, Ctrl+wheel zoom, CSV/PNG/SVG export, polar (ATR) and Smith (Touchstone) plots.
@@ -44,8 +44,24 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
   (default K = 10), or a fixed time - breaks the line; a *large gap* - longer than n x the small gap
   (default n = 100), or a fixed time such as `3d` - also breaks the x axis. n = 0 keeps one continuous
   axis. Gap texts take `s`, `min`, `h`, `d` and `m` (months).
+* **Parallel processing** (`_autoplot_parallel.py`): FITS, Franks, ATR, R&S and Touchstone read
+  (and Touchstone transforms) files in a `spawn` process pool only when it finishes sooner: the first
+  two files are timed and the pool's start-up (about 0.3 s on Linux, 1 s on Windows, plus the program's
+  import) is weighed against the saving. Small batches stay in one process; the 30-day FITS batch
+  (319 files) now builds in 8.4 s instead of 17.9 s on 2 CPUs. CSV/TSV reads in threads (pandas
+  releases the GIL). The Veusz plugins keep threads.
+* **GPU, NVIDIA or AMD** (`_autoplot_gpu.py`, optional): CuPy on CUDA (NVIDIA), CuPy on ROCm (AMD,
+  Linux) or PyOpenCL (any OpenCL GPU - AMD, NVIDIA or Intel - also on Windows). Used for large sorts
+  (FITS / Franks, 200 000+ values), large dB averages (R&S, 1 000 000+ values) and large time-domain
+  transforms (Touchstone, 1 000 000+ values). Sorts are identical to NumPy's and averages agree to
+  rounding (1.4e-14 dB in the OpenCL test); NumPy is used for everything smaller. GBT and example files are below these sizes, so they stay on the CPU (the log
+  says how many operations ran on the GPU). `AUTOPLOT_GPU` = auto, cuda, rocm, opencl or off.
+* **dB values are averaged in the linear domain**: P = 10 log10( mean of 10^(P_k/10) )
+  (`_autoplot_gpu.power_mean_db`). The R&S averages are the only averages of dB values in the suite;
+  everything else plots dB values or computes them from linear quantities (checked 2026-11-09).
 
-Release notes: RELEASE_suite-2026-11-09.md (sections 1-9) and its FITS addendum (section 10).
+Release notes: RELEASE_suite-2026-11-09.md (sections 1-9), its FITS addendum (section 10) and the
+speed / GPU / dB-averaging round (section 11).
 Every option has a tooltip (hover over it for help).
 
 # FITS-AutoPlot.py
@@ -95,6 +111,7 @@ python postProcessing_Launcher.py
 ````
 
 `requirements-py38.txt` / `requirements-py312.txt` list the exact tested wheels (pip/uv). Veusz
-(viewer), CuPy (GPU) and pywin32 (ORBIT/FR probe) are optional.
+(viewer), CuPy or PyOpenCL (GPU, NVIDIA or AMD; REQUIREMENTS.md section 2.4) and pywin32
+(ORBIT/FR probe) are optional.
 
 A [detailed google doc is available for Python Environment Creation Direction](<https://docs.google.com/document/d/1roQzx02ZDnD8I1MvyUEJWbL53ArOPD9zG1YbmjY1jFs/view?usp=sharing>)

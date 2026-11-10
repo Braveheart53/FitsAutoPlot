@@ -272,6 +272,162 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.28: FitsAutoPlot suite speed round (FITS / Franks AutoPlot 0.4.1):
+Date: 2026-11-09
+#              faster saving, the same file contents. Built on master 0.0.27.
+#              * VeuszWriter keeps a set beside the ordered name list: the
+#                "written twice" check was a list search per dataset
+#                (O(n^2); 9 s of a 40 000-dataset save).
+#              * dataset_1d / dataset_date: create_dataset() returns the
+#                dataset (one HDF5 lookup less per dataset); text datasets
+#                are made in one call with the variable-length bytes type.
+#              * local_utc_offsets / _zone_offsets: UTC offsets cached per
+#                (zone, UTC hour) between calls (_hour_offsets); the
+#                30-day OnePpsDeltas set asked the zone database 183 000
+#                times.  The computer's zone is keyed with time.tzname /
+#                timezone / altzone, so a TZ change is seen.
+#              * block_reduce(): docstring says "mean" is for linear values
+#                and "power_mean_db" for dB values (no behaviour change).
+#              Checked: every dataset, attribute and the document script of
+#              the tack (776 datasets), UWBR Temps (384) and 30-day 1PPS
+#              (40 195) projects are identical to 0.0.27's (object-by-object
+#              comparison; only the version comment of the script differs);
+#              the 30-day save took 14.2 s (was 34.2 s, 2 CPUs).
+# %%%%% Function Descriptions
+        epoch_to_veusz: Unix epoch seconds -> Veusz date value (seconds since 2009-01-01).
+        local_utc_offsets: Local UTC offset in seconds for every timestamp, DST-aware.
+        _hour_offsets: UTC offset (s) at the middle of each UTC hour number in ``hours``.
+        vz_text: Escape Veusz text-markup characters so a string prints literally.
+        escape_hdf_name: Escape a dataset name for use as an HDF5 member name, as Veusz does.
+        widget_name: Any text -> a valid Veusz widget name (0.0.25).
+        unique_widget_name: ``name``, or ``name_2``, ``name_3`` ...
+        header_notes: Page notes text from a source-file header (0.0.25).
+        set_notes: Set the notes of the current widget (a page) when ``notes`` is not empty.
+        VszDoc (class): Builder for the Veusz command script stored in the document.
+        VeuszWriter (class): Write Veusz datasets and a document script to a .vszh5 file.
+        _default_file_mode: Mode a new file would get from open(): 0o666 minus the process umask.
+        _one_dimensional: ``values`` as a contiguous float64 1-D array, or ValueError (0.0.23).
+        _create_resizable_1d: Create ``group[key]``: a chunked, resizable, uncompressed float64 array.
+        _is_regular: True when the spacing of ``values`` is constant (relative 1e-6).
+        _image_axis: Choose and check the stored form of one image axis (see dataset_2d).
+        Trace (class): One line or marker series (Veusz 'xy' widget) for xy_page().
+        add_title: Centred title label near the top of the current page.
+        title_settings: Settings of add_title()'s page title label (0.0.26: shared with the widget-tree builders, same values and order as before).
+        _distance_cm: A physical Veusz distance ("15cm", "6in", "20pt") in cm; None otherwise.
+        _graph_name: (0.0.25) Explicit name, else "g_<y>" for one trace, else "g_<page>".
+        _open_page_and_graph: Add a page (sized, with notes), its title and a graph; leave the graph current.
+        _add_axes: The x and y axes of the current graph, with labels, scales and limits.
+        xy_page: A page with one graph of line/marker traces; returns the graph name.
+        _add_traces: Add the xy widgets of ``traces`` to the current graph (0.0.25: named after Trace.name or the y dataset, unique in the graph); returns the names.
+        _trace_settings: Settings of the xy widget that draws ``trace`` (relative paths, in the order Veusz receives them); shared by _add_traces and smith_graph_spec (0.0....
+        _add_key: Legend in the current graph: True, False or "auto" (more than one label).
+        image_page: A page with a 2-D dataset drawn as an image, and a colour bar; returns the graph name.
+        Panel (class): One graph of grid_page(): traces, axes and a small title (0.0.12).
+        grid_page: A page with several graphs in a Veusz grid (rows filled left to right).
+        linear_power_mean_dbm: Equal-weight power mean of finite dBm samples, returned in dBm.
+        frequency_ghz_text: Scale decimal Hz to GHz without coarse rounding/name collisions.
+        frequency_time_pages: Append one page per frequency and a combined page; preserve all raw data.
+        mjd_to_epoch: UTC Modified Julian Date (days) -> Unix epoch seconds.
+        mjd_to_veusz: UTC MJD -> Veusz date seconds; ``offset_s`` shifts to a local clock.
+        iso_offset_text: UTC offset in seconds -> ISO-8601 "+HH:MM" / "-HH:MM" (e.g.
+        _zone_from_text: "UTC"/"Z", "+HH:MM", "-5", "UTC-05:00" or an IANA name -> tzinfo.
+        iana_zone: An IANA zone ("America/New_York") as a tzinfo on every Python (0.0.27).
+        display_zone: Zone for local date-time axes (0.0.25): VSZH5_DISPLAY_TZ when set, else ``default`` (None = the time zone of this computer).
+        _zone_offsets: Per-sample UTC offset (s) in ``zone`` (None = VSZH5_DISPLAY_TZ, else this computer's zone).
+        LocalTimeAxis (class): A local wall-clock date axis for Veusz (0.0.24), see local_time_axis().
+        _offset_change_instant: First whole UTC minute in (before, after] whose offset is ``offset_after`` (bisection; the zone changes offset once between two samples) (0.0.27).
+        local_time_axis: Veusz date values and an ISO-8601 tick format on a local clock.
+        veusz_to_epoch: Veusz date seconds (since 2009-01-01, UTC) -> Unix epoch seconds (0.0.25).
+        local_time_from_veusz: local_time_axis() for UTC values already in Veusz date seconds (0.0.25).
+        style_datetime_axis: Make ``axis`` (path from the current widget, e.g.
+        iso_local_strings: ISO-8601 local date-times with offsets, e.g.
+        with_x: The same traces drawn against another x dataset (0.0.24).
+        time_pair_pages: Two xy pages from one set of traces: against MJD and against local time.
+        median_step: Median of the positive, finite steps of ``t`` (0.0 when there is none).
+        gap_threshold: Line-break threshold in the units of ``t``: ``manual`` when > 0, else ``k * median_step(t)`` (0.0 = no threshold, e.g.
+        gap_positions: Insertion indices of the gap rows: ``i + 1`` for every step ``t[i+1] - t[i] > threshold``.
+        insert_gaps: ``values`` (float) with a NaN inserted before each of ``positions`` (from gap_positions); the input is not changed.
+        axis_break_pairs: (start, end) intervals to leave out of a broken axis.
+        gamma_from_impedance: Reflection coefficient Gamma = (Z - Z0) / (Z + Z0) (complex array).
+        impedance_from_gamma: Impedance Z = Z0 (1 + Gamma) / (1 - Gamma); Gamma = 1 gives inf.
+        vswr_from_gamma: VSWR = (1 + |Gamma|) / (1 - |Gamma|); inf for |Gamma| >= 1.
+        _joined: Concatenate (x, y) curves with a NaN point between them (Veusz breaks an xy line at NaN, nanHandling 'break-on', its default).
+        SmithGrid (class): Datasets and widget specifications of a Smith-chart grid (0.0.26).
+        _grid_line_settings: xy settings of a grid line family: no markers, no legend entry.
+        _grid_label_settings: xy settings that print a text dataset at points (no line, no marker).
+        smith_grid: The grid of a Smith chart as Veusz datasets and xy widget settings.
+        smith_trace_datasets: Datasets of one Smith trace: "<stem>_re", "<stem>_im" and, when given, "<stem>_freq_Hz" (read by the suite's interactive Smith plot).
+        smith_trace: Trace of Im(Gamma) against Re(Gamma) for the datasets of smith_trace_datasets(stem, ...); keyword arguments go to Trace.
+        smith_has_key: True when a Smith graph gets a legend: key=True, or "auto" with more than one labelled trace (as xy_page).
+        smith_graph_spec: Settings of a Smith graph and its children, for any Veusz builder.
+        smith_page_layout: (page width, page height, graph top margin) of a Smith page: the chart about ``size`` across, 1 cm more height for the title, ``key_width`` more wi...
+        smith_page: A page with one Smith chart; returns the graph name (0.0.26).
+        text_page: Pages of plain text lines (escaped; monospaced by default) (0.0.12).
+        step_mask: (x, y) arrays of a stepped mask: one flat segment per band.
+        reference_line: (x, y) arrays of a straight threshold or marker line.
+        bar_page: A page with a vertical category bar chart (0.0.14); returns the graph name.
+        _reduce_axis: Reduce ``values`` along ``axis`` in groups of ``factor`` (see block_reduce).
+        _reduce_groups: Collapse ``axis`` of a grouped array with ``method``.
+        block_reduce: Decimate a 2-D array in blocks of ``row_factor`` x ``column_factor``.
+        regularize_rows: Image rows with (possibly uneven) centres -> an even grid for drawing.
+        dataset_names: Names of the datasets stored in a .vszh5 document (unescaped, sorted).
+        read_text_dataset: The strings of a text dataset written by dataset_text(), or None if absent.
+        page_names: Names of the pages of a written document, in page order (0.0.13).
+        AppendLockedError (class): The document is locked by another process (HDF5 file locking).
+        _is_lock_error: True for HDF5's "unable to lock file" open failure (any platform).
+        VeuszAppender (class): Grow an existing .vszh5 document in place, a few rows at a time.
+        _decode: bytes or numpy bytes -> str (UTF-8); anything else -> str().
+        find_veusz_exe: Locate the Veusz program: explicit path, env var, PATH, usual folders.
+        _popen_kwargs: Hide the console window of child processes on Windows.
+        _render_script: The script piped into `veusz --listen`.
+        _outline_parts: Split an outline entry into (title, page, children).
+        add_pdf_bookmarks: Write a bookmark (outline) hierarchy into an existing PDF, in place.
+        render_pages: Render a .vszh5 to one multipage PDF and per-page PNG files.
+        _page_names_from_log: Veusz page names from the VSZH5_PAGES line the render script prints.
+        _run_listen: Pipe a script into `veusz --listen --quiet` and wait for the marker.
+        _render_in_process: Fallback: render with the veusz Python package in this process.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VSZH5_FORMAT: Highest document format the Veusz 3.6 and 4.2 loaders accept.
+        VSZH5_LAYOUT_VERSION: Veusz release whose HDF5 layout this writer follows (written as vsz_version).
+        COMPRESS_MIN_ELEMENTS: Arrays at least this long are gzip+shuffle compressed when compress=True.
+        _VLEN_BYTES: text datasets
+        APPEND_CHUNK_ELEMENTS: (0.0.18) Rows per chunk of a resizable (appendable) 1-D or date dataset: : 1024 float64 = 8 KiB, at the low end of the 10 KiB - 1 MiB range h5py :...
+        PDF_DPI: Resolution passed to Veusz's Export() for PDF. Veusz 4.x lays a PDF page : out at the nearest resolution the Qt PDF engine supports (72) but sets t...
+        VEUSZ_EPOCH: Veusz date origin, and the offset that maps Unix seconds onto it.
+        UNIX_TO_VEUSZ_S: -1230768000
+        _HOUR_OFFSET_CACHE: 0.0.28: UTC offset of each whole UTC hour, per zone, kept between calls. A project with thousands of time traces asked the zone database for the sa...
+        _HOUR_OFFSET_CACHE_MAX: entries (about 114 years of hours)
+        WIDGET_NAME_MAX: Longest widget name the helpers make (Veusz has no limit; long names make : the widget tree and PDF bookmarks hard to read).
+        TRACE_COLOURS: 1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+        _CM_PER_UNIT: Centimetres per unit for the physical Veusz distance units.
+        MJD_UNIX_EPOCH: Modified Julian Date of the Unix epoch, 1970-01-01T00:00:00 UTC.
+        ISO_DATETIME_FORMAT: Veusz tick format of an ISO-8601 date-time without offset (Veusz %VD codes).
+        DISPLAY_TZ_ENV: (0.0.25) Environment variable that overrides the computer's time zone for : local date-time axes: "UTC", a fixed offset such as "-05:00" or "+0530"...
+        _FIXED_OFFSET: fixed UTC offset text (-05:00, UTC-05:00, GMT+0100) for VSZH5_DISPLAY_TZ
+        LOCAL_DATETIME_ROTATE: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis; a : 25-character "2026-11-09T08:39:00-05:00" label needs it.
+        GAP_K: Default line-break multiplier K (gap when dt > K * median(dt)).
+        GAP_AXIS_N: Default axis-break multiple n (axis cut when dt > n * K * median(dt)); 0 = never.
+        GAP_AXIS_MARGIN: Fraction of a gap kept visible at each side of an axis break.
+        SMITH_RESISTANCES: Normalized resistance (conductance) circles and reactance (susceptance) : arcs drawn by default - the values of scikit-rf's and the Plots tab's chart.
+        SMITH_REACTANCES: normalised reactances of the Smith grid arcs
+        SMITH_VSWR: VSWR circles of scikit-rf's draw_vswr=True.
+        SMITH_GRID_COLOUR: a6a6a6"
+        SMITH_FRAME_COLOUR: 4d4d4d"
+        SMITH_LABEL_COLOUR: 595959"
+        SMITH_LIMIT: Half-width of the Re/Im Gamma axes: room outside |Gamma| = 1 for labels.
+        SMITH_NOTES_PREFIX: First words of the notes of every Smith graph (how readers recognise one).
+        VEUSZ_LINE_BREAK: Veusz text markup for a line break (two backslashes in the label text).
+        REDUCE_METHODS: Methods of block_reduce().
+        APPEND_META_GROUP: Top-level HDF5 group for the appender's private bookkeeping (e.g. a logger's : column index). Veusz reads only /Veusz [R1: loader.loadHDF5Doc], so...
+# %%%%% More Info
+    Master copy: RF project document claude/vszh5_writer.py (registry
+    claude/vszh5-writer-registry.md).  Needs numpy and h5py; Veusz only to open
+    or render; pypdf only for PDF bookmarks; on Python 3.8 backports.zoneinfo
+    or python-dateutil for IANA zone names (VSZH5_DISPLAY_TZ=America/New_York).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.27: FitsAutoPlot suite: FITS / Franks AutoPlot 0.4.0 (gap rule
 Date: 2026-11-09
 #              chosen by the user; real GBT sampler2log files), built on
@@ -926,7 +1082,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.27"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.28"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -980,6 +1136,7 @@ VSZH5_FORMAT = 1
 VSZH5_LAYOUT_VERSION = "4.2.1"
 #: Arrays at least this long are gzip+shuffle compressed when compress=True.
 COMPRESS_MIN_ELEMENTS = 4096
+_VLEN_BYTES = h5py.special_dtype(vlen=bytes) if h5py is not None else None   # text datasets
 #: (0.0.18) Rows per chunk of a resizable (appendable) 1-D or date dataset:
 #: 1024 float64 = 8 KiB, at the low end of the 10 KiB - 1 MiB range h5py
 #: recommends, because each append rewrites the partly filled last chunk.
@@ -1019,12 +1176,47 @@ def local_utc_offsets(epoch_s: Any) -> np.ndarray:
         return out
     hours = np.floor(t[good] / 3600.0)
     uniq, inverse = np.unique(hours, return_inverse=True)
-    table = np.array([
-        _dt.datetime.fromtimestamp(h * 3600.0 + 1800.0, _dt.timezone.utc)
-        .astimezone().utcoffset().total_seconds()
-        for h in uniq
-    ])
-    out[good] = table[inverse]
+    out[good] = _hour_offsets(uniq, None)[inverse]
+    return out
+
+
+# 0.0.28: UTC offset of each whole UTC hour, per zone, kept between calls.
+# A project with thousands of time traces asked the zone database for the
+# same hours again for every trace (about 183 000 astimezone() calls for the
+# 30-day GBT 1PPS set).  Offsets only change on whole hours.
+_HOUR_OFFSET_CACHE: dict = {}
+_HOUR_OFFSET_CACHE_MAX = 1_000_000          # entries (about 114 years of hours)
+
+
+def _hour_offsets(hours: np.ndarray, zone: Any) -> np.ndarray:
+    """UTC offset (s) at the middle of each UTC hour number in ``hours``.
+
+    ``zone`` None means this computer's zone.  Results are cached per
+    (zone, hour); the cache is cleared when it grows past
+    _HOUR_OFFSET_CACHE_MAX entries.  The computer's zone is keyed with its
+    current names and offsets, so a change of TZ (time.tzset) is seen.
+    """
+    if zone is None:
+        key_zone = ("local", tuple(time.tzname), time.timezone, time.altzone)
+    else:
+        key_zone = zone
+    try:
+        hash(key_zone)
+    except TypeError:                         # an unhashable tzinfo: no cache
+        key_zone = None
+    out = np.empty(len(hours), dtype=float)
+    if len(_HOUR_OFFSET_CACHE) > _HOUR_OFFSET_CACHE_MAX:
+        _HOUR_OFFSET_CACHE.clear()
+    for i, h in enumerate(hours.tolist()):
+        key = (key_zone, h) if key_zone is not None else None
+        value = _HOUR_OFFSET_CACHE.get(key) if key is not None else None
+        if value is None:
+            when = _dt.datetime.fromtimestamp(h * 3600.0 + 1800.0, _dt.timezone.utc)
+            local = when.astimezone() if zone is None else when.astimezone(zone)
+            value = local.utcoffset().total_seconds()
+            if key is not None:
+                _HOUR_OFFSET_CACHE[key] = value
+        out[i] = value
     return out
 
 
@@ -1255,6 +1447,9 @@ class VeuszWriter:
         self.docgrp = self.root.create_group("Document")
         self.tags: dict[str, list[str]] = {}
         self.names: list[str] = []
+        # 0.0.28: set beside the ordered list - "name in list" was O(n) per
+        # dataset (O(n^2) per file: 9 s of a 40 000-dataset save).
+        self._name_set: set = set()
         self._finished = False
 
     # --- context manager ------------------------------------------------------
@@ -1274,9 +1469,10 @@ class VeuszWriter:
         """Create the HDF5 group of dataset ``name`` (escaped) with its Veusz
         datatype; a name written twice raises ValueError.
         """
-        if name in self.names:
+        if name in self._name_set:
             raise ValueError(f"dataset {name!r} written twice")
         self.names.append(name)
+        self._name_set.add(name)
         g = self.data.create_group(escape_hdf_name(name))
         g.attrs["vsz_datatype"] = datatype
         return g
@@ -1294,8 +1490,10 @@ class VeuszWriter:
             ds = group.create_dataset(key, data=values, compression="gzip",
                                       compression_opts=4, shuffle=True)
         else:
-            group[key] = values
-            ds = group[key]
+            # 0.0.28: create_dataset returns the dataset; "group[key] = values;
+            # group[key]" made the same contiguous dataset with one more HDF5
+            # lookup per dataset (about 25 % of the object-creation time).
+            ds = group.create_dataset(key, data=values)
         ds.attrs["vsz_name"] = vsz_name.encode("utf-8")
         return ds
 
@@ -1343,8 +1541,15 @@ class VeuszWriter:
         # raises before the group exists (no half-made dataset, name free).
         encoded = [str(s).encode("utf-8") for s in strings]
         g = self._group(name, "text")
-        g["data"] = encoded
-        g["data"].attrs["vsz_name"] = name.encode("utf-8")
+        # 0.0.28: the same variable-length bytes dataset as "g['data'] =
+        # encoded", without h5py guessing the type element by element (and
+        # without the second lookup).
+        if encoded:
+            ds = g.create_dataset("data", data=np.array(encoded, dtype=object),
+                                  dtype=_VLEN_BYTES)
+        else:                                  # empty: exactly as before
+            ds = g.create_dataset("data", data=encoded)
+        ds.attrs["vsz_name"] = name.encode("utf-8")
         self._tag(name, tags)
 
     def dataset_2d(self, name: str, data: Any, xrange: Any = None, yrange: Any = None,
@@ -2162,9 +2367,8 @@ def _zone_offsets(epoch_s: np.ndarray, zone: Any) -> np.ndarray:
     good = np.isfinite(epoch_s)
     hours = np.floor(epoch_s[good] / 3600.0)
     unique, inverse = np.unique(hours, return_inverse=True)
-    table = np.array([_dt.datetime.fromtimestamp(h * 3600.0 + 1800.0, _dt.timezone.utc)
-                      .astimezone(zone).utcoffset().total_seconds() for h in unique])
-    out[good] = table[inverse] if unique.size else out[good]
+    if unique.size:
+        out[good] = _hour_offsets(unique, zone)[inverse]     # 0.0.28: cached
     return out
 
 
@@ -2999,7 +3203,11 @@ def block_reduce(values: Any, row_factor: int = 1, column_factor: int = 1,
                              survives the reduction (the usual choice for
                              RFI spectrograms);
         "min"                minimum hold (noise floor);
-        "mean"               arithmetic mean of the values;
+        "mean"               arithmetic mean of the values - for linear
+                             quantities only: averaging dB numbers directly
+                             understates the power (0 and -10 dB give -5 dB,
+                             the power mean is -2.6 dB); use "power_mean_db"
+                             for dB, dBm, dBuV ... values;
         "power_mean_db"      values in dB averaged as power:
                              10 log10( (1/N) sum 10^(x_i/10) );
         "power_mean_linear"  linear amplitudes averaged as power (RMS):

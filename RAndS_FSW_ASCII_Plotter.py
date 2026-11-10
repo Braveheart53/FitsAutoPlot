@@ -33,7 +33,8 @@ Author Secondary Email: naval.antennas@gmail.com
 Author Business Phone: +1 (304) 456-2216
 Company: NRAO / Green Bank Observatory (GBO)
 Licence: GPL-3.0-or-later (GNU General Public License v3.0 or later)
-Compatible with: Python 3.8+ (qtpy with PySide6 or PyQt5; CuPy optional)
+Compatible with: Python 3.8+ (qtpy with PySide6 or PyQt5; GPU optional: CuPy on
+                 CUDA or ROCm, or PyOpenCL - NVIDIA or AMD)
 
 # %%% File layout (from the examples in Example_Data_Files/sft)
 Header lines "Key;Value;Unit;" (Type, Version, Mode, Center Freq, Span,
@@ -54,13 +55,73 @@ as one trace per y column.
     "ASCII file export format (TRACE ... ASCII FILE EXPORT)," Munich, Germany.
 [3] W. W. Wallace, "vszh5_writer.py 0.0.24," shared Veusz HDF5 writer,
     2026 (linear_power_mean_dbm: average of mW, not of dB).
-[4] IEEE Standard for Spectrum Analyzers, IEEE Std 748-1979 (R2007) -
-    power (not log) averaging of traces.
+[4] Keysight Technologies, "Noise Measurements," 89600 VSA software help,
+    Power Spectrum: "the log of the average is not equal to the average of
+    the log"; averaging noise in dB can be off by as much as -2.51 dB, so
+    average on a power (RMS) scale.
+    https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/powerspectrum/content/ps_noisemeasurements.htm
+    (1.1.3: replaces a citation of IEEE Std 748-1979, which was withdrawn
+    in 1990 and whose record does not mention averaging.)
 
 # %%% Revisions
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 1.1.3: Adaptive process pool; GPU averages for NVIDIA or AMD.
+Date: 2026-11-09
+#              * read_files(): adaptive 'spawn' pool (_autoplot_parallel),
+#                as ATR AutoPlot 0.2.3; PARALLEL_MIN_FILES removed.
+#              * power_mean(): dB values are averaged in the linear domain,
+#                P = 10 log10(mean 10^(P_k/10)), by the suite's one function
+#                _autoplot_gpu.power_mean_db (NaN left out, max-referenced;
+#                the same values as linear_power_mean_dbm for finite data).
+#                The GPU (CuPy CUDA/ROCm or PyOpenCL) is used for stacks of
+#                1 000 000+ values; smaller ones on NumPy.  Checked: the
+#                project of the 40 example files in R&S_DataFiles/All (35
+#                read, 5 header-only) is identical to 1.1.2's (every
+#                dataset), with and without --gpu.
+#              * GPU checkbox "Average large stacks on the GPU (NVIDIA or
+#                AMD)" with device and threshold in its tooltip; --gpu help;
+#                Help > About lists CuPy and PyOpenCL.
+# %%%%% Function Descriptions
+        SFTFormatError (class): The file holds no trace this program can read.
+        SFTTrace (class): One sweep (section) of an R&S SFT file: its number, the instrument time stamp text and the trace values.
+        SFTFile (class): A parsed R&S FSP/FSW ASCII trace file (.sft).
+        _header: Parse the 'key;value;unit' header lines of an SFT file.
+        parse_sweep_time: FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime.
+        _float: float(text), or ``default`` (NaN) when text is not a number.
+        _ascii_values: Values of an ASCII section, or None when the block is not ASCII numbers.
+        parse_sft_bytes: Parse one .sft file (see the file layout in the module header).
+        read_sft: Read and parse one SFT file (bytes, any encoding the parser accepts).
+        _read_worker: Process-pool worker: (path, SFTFile or None, error text).
+        read_files: Read in input order (a 'spawn' process pool when it pays off); (files, errors).
+        power_mean: Average of traces (rows) in their unit.
+        PlotOptions (class): Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and overlay, 2 = average only; ``use_gpu`` allows the GPU (NVIDIA or AMD) for...
+        RnSPlotter (class): Builds the project of a batch of .sft files.
+        build_project: RnSPlotter with every file of ``files`` added and finished.
+        batches: Split whole files into groups of at most ``plots_per_file`` sections (a file with more sections than that is a group of its own).
+        save_split: Write {base}_001.vszh5, {base}_002.vszh5 ...
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "R&S FSW / FSP Trace Plotter"
+        APP_VERSION = "1.1.3"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        MODE_NAMES: plot mode names (0 all, 1 average + overlay, 2 average only)
+        _SECTION: the 'Section<n>;<time stamp>' line that starts each sweep (bytes)
+        _NUMBER: one numeric token
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python RAndS_FSW_ASCII_Plotter.py [files]   (GUI; View menu)
+          python RAndS_FSW_ASCII_Plotter.py *.sft --output rns.vszh5 [--split N]
+    Sweep averages are taken in the linear domain (10 log10 of the mean of
+    10^(P/10)); --gpu allows the GPU (NVIDIA or AMD, _autoplot_gpu) for
+    large stacks.  Files are read in a 'spawn' process pool when it pays off.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 1.1.2: Header template, docstrings and tooltips.
 Date: 2026-11-09
 #              * Header in the author's template: author contact lines and,
@@ -166,13 +227,15 @@ Date: 2026-01-26
 # %% Import Modules
 from __future__ import annotations
 
+import time as _import_clock
+_IMPORT_T0 = _import_clock.perf_counter()   # pool start-up estimate: 'spawn' workers import this file again
+
 import argparse
 import datetime
 import multiprocessing
 import os
 import re
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -180,24 +243,15 @@ os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
 import numpy as np  # noqa: E402
 from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
+from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (1.1.3 adaptive pool)
+import _autoplot_gpu  # noqa: E402  (1.1.3: NVIDIA or AMD GPU, NumPy fallback)
 
 APP_NAME = "R&S FSW / FSP Trace Plotter"
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Rohde & Schwarz .sft trace files to native Veusz .vszh5 projects, "
                    "with averages and interactive pyqtgraph plots.")
-PARALLEL_MIN_FILES = 4
 MODE_NAMES = ("All plots", "Average + Overlay", "Average only")
-
-
-def _cupy():
-    """CuPy module when a CUDA device works, else None (checked on demand)."""
-    try:
-        import cupy
-        cupy.cuda.Device(0).use()
-        return cupy
-    except Exception:
-        return None
 
 
 # %% SFT reader (no Qt; runs in worker processes)
@@ -407,24 +461,13 @@ def _read_worker(path: str) -> Tuple[str, Optional[SFTFile], str]:
 
 def read_files(paths: Sequence[str], workers: int = 1,
                progress: Optional[Any] = None) -> Tuple[List[SFTFile], List[str]]:
-    """Read in input order ('spawn' process pool for 4+ files); (files, errors)."""
-    paths = list(dict.fromkeys(paths))
-    results: Dict[str, Tuple[Optional[SFTFile], str]] = {}
-    if workers > 1 and len(paths) >= PARALLEL_MIN_FILES:
-        context = multiprocessing.get_context("spawn")
-        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
-            futures = [pool.submit(_read_worker, p) for p in paths]
-            for done, future in enumerate(as_completed(futures), start=1):
-                path, parsed, error = future.result()
-                results[path] = (parsed, error)
-                if progress:
-                    progress(done, len(paths))
-    else:
-        for done, path in enumerate(paths, start=1):
-            _p, parsed, error = _read_worker(path)
-            results[path] = (parsed, error)
-            if progress:
-                progress(done, len(paths))
+    """Read in input order (a 'spawn' process pool when it pays off); (files, errors)."""
+    paths = list(dict.fromkeys(paths))                 # drop duplicates, keep order
+    # 1.1.3: adaptive pool (_autoplot_parallel): the first files are read here
+    # and timed; a 'spawn' pool is started only when it will finish sooner.
+    outcome = adaptive_map(_read_worker, paths, workers, progress=progress,
+                           start_s=POOL_START_S)
+    results = {path: (parsed, error) for path, parsed, error in outcome}
     files, errors = [], []
     for path in paths:
         parsed, error = results[path]
@@ -443,28 +486,26 @@ def power_mean(stack: np.ndarray, unit: str, use_gpu: bool = False) -> np.ndarra
     Log units (dBm, dB, dBuV ...): mean of the linear powers, back in dB:
         P_avg = 10 log10( (1/K) sum_k 10^(P_k / 10) )
     Linear units: arithmetic mean.  NaN samples are left out.
+
+    1.1.3: the dB average is _autoplot_gpu.power_mean_db (one function for
+    the suite, max-referenced so nothing overflows; the same values as
+    vszh5_writer.linear_power_mean_dbm for finite data).  ``use_gpu`` allows
+    the GPU (NVIDIA or AMD) for stacks of at least
+    _autoplot_gpu.threshold("power_mean_db") values; smaller ones use NumPy.
     """
     stack = np.asarray(stack, dtype=float)
     if not unit.lower().startswith("db"):
-        return np.nanmean(stack, axis=0)
-    if np.all(np.isfinite(stack)) and not use_gpu:
-        from vszh5_writer import linear_power_mean_dbm
-        return linear_power_mean_dbm(stack, axis=0)
-    xp = _cupy() if use_gpu else None
-    xp = xp or np
-    data = xp.asarray(stack)
-    peak = xp.nanmax(data, axis=0)                      # overflow-safe reference
-    with np.errstate(invalid="ignore", divide="ignore"):
-        mean = xp.nanmean(xp.power(10.0, (data - peak) / 10.0), axis=0)
-        result = peak + 10.0 * xp.log10(mean)
-    return xp.asnumpy(result) if xp is not np else result
+        with np.errstate(invalid="ignore"):
+            return np.nanmean(stack, axis=0)
+    return _autoplot_gpu.power_mean_db(stack, axis=0, use_gpu=bool(use_gpu))
 
 
 # %% Veusz project (NativeDocument; written by vszh5_writer)
 @dataclass
 class PlotOptions:
     """Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and
-    overlay, 2 = average only; ``use_gpu`` averages with CuPy when available.
+    overlay, 2 = average only; ``use_gpu`` allows the GPU (NVIDIA or AMD) for
+    large averages.
     """
     mode: int = 0                    # 0 all plots, 1 average + overlay, 2 average only
     use_gpu: bool = False
@@ -774,7 +815,8 @@ def _build_gui_classes():
                 ("&Export Last Project to PDF / PNG (Veusz)", self._export, ""),
             ])
             self.act_light, self.act_dark = suite.add_view_menu(self, self._set_theme, self.theme)
-            suite.add_help_menu(self, APP_NAME, APP_VERSION, APP_DESCRIPTION, ("cupy",))
+            suite.add_help_menu(self, APP_NAME, APP_VERSION, APP_DESCRIPTION,
+                                ("cupy", "pyopencl"))
             self._setup_ui()
             self._log_message("%s %s ready; theme %s." % (APP_NAME, APP_VERSION, self.theme))
 
@@ -810,11 +852,11 @@ def _build_gui_classes():
 
             options = QGroupBox("Processing Options")
             form = QFormLayout(options)
-            self.enable_mp_checkbox = QCheckBox("Read files in parallel processes (%d or more files)"
-                                                % PARALLEL_MIN_FILES)
+            self.enable_mp_checkbox = QCheckBox("Read files in parallel processes (when it pays off)")
             self.enable_mp_checkbox.setToolTip(
-                "Read the files in separate processes when there are enough of "
-                "them (faster for big batches).")
+                "Allow separate worker processes. The first files are read and timed "
+                "here; a process pool is started only when it will finish sooner "
+                "(large batches use every core, small ones skip the start-up cost).")
             self.enable_mp_checkbox.setChecked(True)
             self.enable_mp_checkbox.toggled.connect(
                 lambda on: self._log_message("Multiprocessing %s" % ("on" if on else "off")))
@@ -824,10 +866,16 @@ def _build_gui_classes():
             self.cpu_spinbox.setRange(1, max(1, multiprocessing.cpu_count()))
             self.cpu_spinbox.setValue(max(1, multiprocessing.cpu_count()))
             form.addRow("CPU processes:", self.cpu_spinbox)
-            self.enable_gpu_checkbox = QCheckBox("Average on the GPU (CuPy / CUDA)")
+            self.enable_gpu_checkbox = QCheckBox("Average large stacks on the GPU (NVIDIA or AMD)")
             self.enable_gpu_checkbox.setToolTip(
-                "Compute the power averages with CuPy on an NVIDIA GPU; unticks"
-                " itself when no GPU is found.")
+                "%s\n\nThe power averages (taken in the linear domain) run on the GPU "
+                "only for stacks of at least %d values (sweeps x points); smaller ones "
+                "are faster with NumPy. The results are the same to rounding (about "
+                "1e-14 dB). Unticks itself when "
+                "no GPU is found.\nNVIDIA: CuPy (cupy-cuda12x). AMD: CuPy for ROCm "
+                "(Linux) or PyOpenCL. Environment variable AUTOPLOT_GPU = auto, cuda, "
+                "rocm, opencl or off." % (_autoplot_gpu.describe(),
+                                         _autoplot_gpu.threshold("power_mean_db")))
             self.enable_gpu_checkbox.toggled.connect(self._gpu_toggled)
             form.addRow(self.enable_gpu_checkbox)
             layout.addWidget(options)
@@ -917,15 +965,18 @@ def _build_gui_classes():
             self._log_message("Theme set to %s mode" % self.theme)
 
         def _gpu_toggled(self, on: bool) -> None:
-            """Untick GPU averaging (with a log line) when CuPy or a CUDA device is
-            missing.
+            """Untick GPU averaging (with a log line) when no GPU back end (CuPy on
+            CUDA or ROCm, or PyOpenCL) found a device.
             """
-            if on and _cupy() is None:
-                self._log_message("GPU averaging: CuPy with a CUDA device is not available; "
-                                  "the CPU is used")
+            if on and not _autoplot_gpu.available():
+                self._log_message("GPU averaging: %s" % _autoplot_gpu.describe())
                 self.enable_gpu_checkbox.setChecked(False)
             else:
-                self._log_message("GPU averaging %s" % ("on" if on else "off"))
+                self._log_message("GPU averaging %s%s" % (
+                    "on" if on else "off",
+                    " (%s; stacks of %d+ values)" % (_autoplot_gpu.describe(),
+                                                    _autoplot_gpu.threshold("power_mean_db"))
+                    if on else ""))
 
         def options(self) -> PlotOptions:
             """PlotOptions from the GUI (plot mode, GPU)."""
@@ -1086,7 +1137,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--split", type=int, default=0,
                         help="with --output: projects of at most N section plots")
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--gpu", action="store_true", help="average with CuPy")
+    parser.add_argument("--gpu", action="store_true",
+                        help="allow the GPU (NVIDIA or AMD) for large averages")
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
     args = parser.parse_args(argv)
     monitor = None
@@ -1119,6 +1171,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if monitor is not None:
             monitor.stop()
 
+
+# Pool start-up estimate for adaptive_map(): platform cost + this file's import time.
+POOL_START_S = module_import_seconds(_IMPORT_T0)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()

@@ -32,6 +32,123 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.1: GPU for NVIDIA or AMD through _autoplot_gpu; progress throttle.
+Date: 2026-11-09
+#              * GPU helpers (is_gpu_available, gpu_backend_name, enable_gpu,
+#                gpu_argsort ...) now use _autoplot_gpu: CuPy on CUDA
+#                (NVIDIA), CuPy on ROCm (AMD, Linux) or PyOpenCL (any
+#                OpenCL GPU, AMD on Windows), NumPy otherwise.  Same API,
+#                same results (the GPU order equals np.argsort(kind=
+#                "stable")).  CuPy is no longer imported with this module,
+#                so programs and their spawn workers start faster.
+#              * NEW gpu_tooltip(), gpu_usage_text(), reset_gpu_usage():
+#                the GPU checkbox tooltips say which device was found and
+#                from which size it is used; the log says how many sorts
+#                ran on the GPU.
+#              * NEW ProgressThrottle: progress bars and per-column log
+#                lines at most every 50 ms (the 30-day batch spent seconds
+#                repainting the bars for 40 000 columns).
+# %%%%% Function Descriptions
+        make_dark_palette: Return a Fusion-style dark palette.
+        make_light_palette: Return a default light palette (style standard).
+        apply_theme: Apply the suite's 'dark' or 'light' palette to the running QApplication (standalone windows only - plugins style their own dialog instead).
+        suite_theme: Theme stored for the whole suite (launcher and tools).
+        store_suite_theme: Save ``mode`` ('dark' or 'light') as the suite-wide theme.
+        MemoryMonitorConfig (class): Configuration knobs for the memory monitor.
+        MemoryAwareCache (class): Memory-aware data cache that spills large numpy arrays to disk via ``numpy.memmap``.
+        MemoryMonitor (class): Background thread that publishes a callback whenever process RSS crosses the high-water mark.
+        run_in_threadpool: Submit ``work_items`` -- ``(key, fn, args)`` triplets -- to a ``ThreadPoolExecutor`` and collect results keyed by ``key``.
+        open_embedded: Legacy function name; return a native model, never launch Veusz.
+        begin_native_plugin_export: Pick an output file before parsing; never modify the host document.
+        finish_native_plugin_export: Same HDF5 writer for both plugin entry points and standalone GUIs.
+        save_vszh5: Atomically write the native model with h5py; no Veusz runtime needed.
+        _walk_widget_tree: Recursive sibling of ``Root.WalkWidgets``.
+        _collect_referenced_dataset_names_via_walk: Original (v0.0.17) WalkWidgets-based traversal.
+        _collect_referenced_dataset_names_via_text: v0.0.19 authoritative collector: dump the document via Veusz's own text serialization and regex out every ``Set('xData', 'name')``-style binding.
+        _collect_referenced_dataset_names: v0.0.19: combine WalkWidgets-based traversal AND a document-text scan, returning the UNION of both whitelists.
+        save_vszh5_minimized: Save exactly the referenced native datasets without deleting anything.
+        _norm_tag_token: Lower-cased, stripped string form of a tag-tuple element.
+        is_sentinel_tag_tuple: Return True iff ``tup`` is a placeholder/catch-all channel-tag tuple that should be EXCLUDED from dt-overlay datetime emission.
+        is_delta_column: Deprecated stub kept for v0.0.17 back-compat.
+        open_in_veusz_app: Launch an optional external Veusz GUI and load ``filename`` (typically a .vszh5 project just written by save_vszh5).
+        detect_time_breaks: Detect large gaps in a 1-D monotonic-ish array of time samples and return a list of (start, end) pairs suitable for Veusz's ``axis-broken`` widget.
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        column_unit_factor_from_day: Return the multiplier that converts a day-scale threshold into the units of the column named ``col_name``.
+        detect_time_breaks_unit_aware: Unit-aware wrapper around ``detect_time_breaks``.
+        break_pairs_to_breakpoints: Flatten a list of (start, end) tuples to Veusz's flat-list format [s1, e1, s2, e2, ...] as expected by the ``breakPoints`` setting of the ``axis-br...
+        make_broken_x_axis: Add an ``axis-broken`` widget named ``x`` to ``graph`` with the given list of (start, end) break pairs, after removing the default ``x`` axis that...
+        mjd_to_veusz_seconds: Convert an array of Modified Julian Dates (UTC) to the float-seconds units Veusz uses internally for date-time datasets.
+        _coerce_axis_setting_to_str: Some Veusz axis settings (rotate, in particular) are documented as accepting either an int or its string form.
+        style_datetime_x_axis: Apply the standard datetime tick-label format and angled rotation to an axis widget.
+        is_gpu_available: True when a GPU back end (CuPy CUDA/ROCm or PyOpenCL) found a device.
+        gpu_backend_name: Short string describing the GPU back end (or why there is none) for the GUI/log.
+        enable_gpu: Toggle the process-wide GPU acceleration flag.
+        gpu_enabled: Return the current global GPU-enabled state.
+        set_gpu_argsort_threshold: Set the minimum array size (samples) at which the GPU sort is used.
+        get_gpu_argsort_threshold: Minimum array size (samples) for the GPU argsort path.
+        gpu_tooltip: Tooltip of a GPU checkbox: the device found (or why none), the size threshold of ``operation`` and the install hints for NVIDIA and AMD.
+        gpu_usage_text: GPU and CPU calls of each GPU-capable operation since reset_gpu_usage().
+        reset_gpu_usage: Start counting GPU and CPU calls again (at the start of a batch).
+        gpu_argsort: Return ``np.argsort(arr, kind="stable")`` (ascending, int64) with optional GPU acceleration (NVIDIA or AMD; see _autoplot_gpu).
+        ProgressThrottle (class): Rate limit for progress-bar updates (0.4.1).
+        AutoPlotMainWindow (class): Base main window mirroring the layout used by Touchstone_AutoPlot.py:
+        open_maybe_gzipped: Return a binary file handle for ``path``; transparently gunzip *.gz.
+        mjd_to_datestr: Convert an array of Modified Julian Dates (UTC, double precision) into an array of formatted timestamp strings.
+        register_nrao_fits_units: Register the non-standard NRAO FITS unit aliases with astropy.units so that ``QTable.read`` / ``Table.read`` no longer emit a UnitsWarning.
+        suppress_fits_unit_warnings: Context manager that filters the harmless FITS unit-related warnings emitted by ``astropy.io.fits`` and ``astropy.table`` when reading NRAO 1PPS-de...
+        set_datetime_dataset: Push a Veusz datetime dataset, coercing values to plain floats.
+        safe_dsname: Sanitize an arbitrary string for use as a Veusz dataset name.
+        _stable_index: Deterministic non-negative index in ``[0, modulus)``.
+        trace_style_for: Return ``(color_hex, line_style_str)`` for an identity key.
+        apply_trace_style: Apply identity-stable color + line style + markers to a Veusz xy.
+        build_sparse_datestr_dataset: Push a same-length sparse date-string text dataset to Veusz.
+        build_full_datestr_dataset: Push a same-length per-point date-string text dataset to Veusz.
+        style_xy_datetime_labels: Apply rotated, compact text formatting to an xy widget's labels.
+        build_density_datestr_dataset: Push a same-length date-string text dataset with continuous density.
+        build_textx_dataset: Push a same-length per-point date-string text dataset for use as xData.
+        configure_axis_labels_mode: Switch a Veusz axis to ``mode='labels'`` with sensible defaults.
+        build_dtnum_dataset: Push a numeric Veusz-datetime-seconds dataset for use as xData.
+        configure_axis_datetime_mode: Switch a Veusz x axis to ``mode='datetime'`` and style its ticks.
+        mjd_break_pairs_to_dtsec: Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _DATASET_REF_SETTINGS: v0.0.19: trimmed the tuple to entries that *actually* hold dataset names.  ``posn`` is a position rectangle, ``key`` is a legend-label STRING -- ne...
+        _DOC_DATASET_REF_REGEX: v0.0.19: regex used to extract dataset references from the document's own saved-text representation.  This is the AUTHORITATIVE source of truth --...
+        SENTINEL_TAG_TOKENS: The user can extend the sentinel set in place; the predicate is case-insensitive and trims whitespace before matching.
+        DELTA_COLUMN_NAME_PATTERNS: Deprecated column-name predicate -- retained as a no-op for any external script that may have imported it.  v0.0.17 superseded this with the tuple-...
+        DAY_SCALE_COLUMN_NAMES: Unknown column names default to 1.0 (i.e. assume MJD-day units), which is the safe choice when the column appears to be a generic time axis: a too-...
+        SECOND_SCALE_COLUMN_NAMES: column names whose values are seconds (time axes)
+        _GAP_TOKEN_REGEX: Accepts strings like ``"5m3d2h"`` (5 months, 3 days, 2 hours), with or without whitespace between tokens, case-insensitive.  A bare number (no unit...
+        GAP_STRING_HELP: (0.4.0) Tool tip of the gap text boxes.
+        _DAYS_PER_MONTH: Average Gregorian month length (365.25 / 12) -- intentionally the same value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 0.4.0
+        _DAYS_PER_SECOND: 0.4.0
+        MJD_VEUSZ_EPOCH_MJD: MJD that corresponds to Veusz's internal date-time zero (2009-01-01 UTC).
+        DEFAULT_DATETIME_TICK_FORMAT: 0.3.0: ISO 8601
+        LOCAL_TIME_AXIS_LABEL: 0.3.0: label of a local date-time axis (the offset is appended on save).
+        DEFAULT_DATETIME_TICK_ROTATE_DEG: Default tick label rotation -- 45 degrees keeps a 19-character label readable at typical cadences.  Veusz accepts integer or stringified integer de...
+        DEFAULT_DATETIME_MAJOR_TICKS_TARGET: Target number of major ticks along the x axis.  Veusz auto-picks the spacing to satisfy roughly this many major ticks; we keep it modest so the rot...
+        QUEUED_CONNECTION: queued signal connection, valid for PySide6, PyQt5 and PyQt6
+        MJD_EPOCH_JD_OFFSET: Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC. JD = MJD + 2400000.5  -- we implement the conversion directly without astropy.time...
+        _NRAO_UNITS_REGISTERED: NRAO 1PPS-delta FITS files use non-standard FITS unit strings: * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit) * DELTAT  carr...
+        TRACE_COLOR_PALETTE: trace colours, cycled
+        TRACE_LINE_STYLES: line styles cycled after the colours
+        TRACE_STYLE_VARY_THRESHOLD: 16
+        DEFAULT_DATETIME_LABEL_ANCHORS: legacy date-label pages: labels per trace
+        DEFAULT_DATETIME_LABEL_ANGLE: legacy date-label pages: label angle (degrees)
+        DEFAULT_DATETIME_LABEL_SIZE: legacy date-label pages: label font size
+        DEFAULT_DATETIME_LABEL_FMT: legacy date-label pages: strftime format
+        PYQTGRAPH_ERROR = None
+        _PSUTIL_AVAILABLE = True
+# %%%%% More Info
+    Shared by FITS and Franks AutoPlot and their plugins.  numpy.memmap is
+    the RAM -> disk transport of MemoryAwareCache (no pickling, the kernel page
+    cache does the writing).  The memory monitor runs in its own thread: its
+    callback must not touch Qt widgets (log() is safe).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.0: Gap controls shared by FITS and Franks AutoPlot.
 Date: 2026-11-09
 #              * AutoPlotMainWindow.add_gap_controls(form): "Small gap K"
@@ -731,7 +848,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.4.0"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.4.1"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -2107,106 +2224,96 @@ def style_datetime_x_axis(axis,
 
 
 # ---------------------------------------------------------------------------
-# %% GPU ACCELERATION HELPERS (CuPy, optional)
+# %% GPU ACCELERATION HELPERS (NVIDIA or AMD, optional)
 # ============================================================================
 #
-# Design notes:
-#   * CuPy is a SOFT dependency.  We try to import it once at module load,
-#     and every public helper degrades to NumPy when the import fails or
-#     when the user toggles the global flag off.
+# Design notes (0.4.1):
+#   * The work is done by _autoplot_gpu: CuPy on CUDA (NVIDIA), CuPy on ROCm
+#     (AMD, Linux) or PyOpenCL (any OpenCL GPU: AMD, NVIDIA, Intel; also AMD
+#     on Windows), with NumPy as the fallback.  These wrappers keep the
+#     0.0.10 API (is_gpu_available, enable_gpu, gpu_argsort ...) for the
+#     FITS / Franks programs and their Veusz plugins.
+#   * The GPU libraries are imported on first use, not when this module is
+#     imported (0.4.0 imported CuPy here, which slowed the start of every
+#     program and of every 'spawn' worker process).
 #   * The GPU is only used when the input array is big enough to amortise
-#     the host<->device transfer.  The default 200 000 element threshold
-#     was picked from public benchmarks where CuPy first overtakes NumPy
-#     sort/argsort on a mid-range consumer GPU (see the 0.0.10 revision
-#     note above).  The threshold is settable from the GUI.
+#     the host<->device transfer: 200 000 elements by default (public
+#     CuPy/NumPy sort benchmarks), settable from the GUI.  Measured
+#     2026-11-09: the largest sort of a 319-file OnePpsDeltas batch had
+#     28 212 elements, so real GBT batches stay on the CPU.
 #   * Only the argsort step is GPU-accelerated.  detect_time_breaks does
 #     a tiny sort + diff that is overwhelmed by H2D transfer; we leave
 #     it on the CPU.  Image-HDU dataset transfers are dominated by the
-#     embedded-Veusz round-trip and gain nothing from GPU.
+#     project write and gain nothing from GPU.
 
-try:                       # CuPy is OPTIONAL.
-    import cupy as _cp     # type: ignore
-    _HAS_CUPY = True
-except Exception:          # pragma: no cover -- depends on host
-    _cp = None
-    _HAS_CUPY = False
-
-# Process-wide enable flag (driven by the GUI checkbox).  Off by default.
-_GPU_ENABLED = False
-# Minimum array size at which we attempt the GPU sort.  Tuneable.
-_GPU_ARGSORT_THRESHOLD = 200_000
+import _autoplot_gpu
 
 
 def is_gpu_available() -> bool:
-    """True iff CuPy imported successfully AND at least one CUDA device is
-    visible to it.  Cheap: we cache the runtime-device check after the
-    first call so the GUI can poll this on every refresh."""
-    if not _HAS_CUPY:
-        return False
-    cached = getattr(is_gpu_available, "_cache", None)
-    if cached is not None:
-        return bool(cached)
-    try:
-        n = int(_cp.cuda.runtime.getDeviceCount())
-        ok = n > 0
-    except Exception:
-        ok = False
-    setattr(is_gpu_available, "_cache", ok)
-    return ok
+    """True when a GPU back end (CuPy CUDA/ROCm or PyOpenCL) found a device.
+
+    The first call imports the GPU libraries; the answer is cached, so the
+    GUI can poll this on every refresh."""
+    return _autoplot_gpu.available()
 
 
 def gpu_backend_name() -> str:
-    """Short string describing the GPU backend status for the GUI/log."""
-    if not _HAS_CUPY:
-        return "CuPy not installed -- CPU only"
-    if not is_gpu_available():
-        return "CuPy installed but no CUDA device -- CPU only"
-    try:
-        dev = _cp.cuda.Device(0)
-        try:
-            # CuPy 11+/12+
-            props = _cp.cuda.runtime.getDeviceProperties(0)
-            name = props.get("name", b"GPU")
-            if isinstance(name, bytes):
-                name = name.decode("ascii", "replace")
-        except Exception:
-            name = "CUDA device 0"
-        return "CuPy ready: %s" % name
-    except Exception:
-        return "CuPy ready"
+    """Short string describing the GPU back end (or why there is none) for the GUI/log."""
+    return _autoplot_gpu.describe()
 
 
 def enable_gpu(flag: bool) -> None:
     """Toggle the process-wide GPU acceleration flag.  Safe to call even
-    when CuPy is not installed (it will simply have no effect)."""
-    global _GPU_ENABLED
-    _GPU_ENABLED = bool(flag) and is_gpu_available()
+    when no GPU library is installed (it will simply have no effect)."""
+    _autoplot_gpu.enable(flag)
 
 
 def gpu_enabled() -> bool:
     """Return the current global GPU-enabled state."""
-    return bool(_GPU_ENABLED)
+    return _autoplot_gpu.enabled()
 
 
 def set_gpu_argsort_threshold(n: int) -> None:
-    """Set the minimum array size (samples) at which the optional CuPy
-    path is used.  Smaller arrays fall through to NumPy."""
-    global _GPU_ARGSORT_THRESHOLD
+    """Set the minimum array size (samples) at which the GPU sort is used.
+    Smaller arrays fall through to NumPy."""
     try:
-        _GPU_ARGSORT_THRESHOLD = max(0, int(n))
+        _autoplot_gpu.set_threshold("argsort", int(n))
     except Exception:
         pass
 
 
 def get_gpu_argsort_threshold() -> int:
-    """Minimum array size (samples) for the optional CuPy argsort path."""
-    return int(_GPU_ARGSORT_THRESHOLD)
+    """Minimum array size (samples) for the GPU argsort path."""
+    return _autoplot_gpu.threshold("argsort")
+
+
+def gpu_tooltip(task: str = "sorts", operation: str = "argsort") -> str:
+    """Tooltip of a GPU checkbox: the device found (or why none), the size
+    threshold of ``operation`` and the install hints for NVIDIA and AMD."""
+    return ("%s\n\nThe GPU is used only for %s of at least %d values; smaller ones "
+            "are faster with NumPy on the CPU (the largest sort of a 319-file "
+            "OnePpsDeltas batch had 28 212 values, so GBT files stay on the CPU). "
+            "The results are identical.\nNVIDIA: CuPy (pip install cupy-cuda12x). "
+            "AMD: CuPy for ROCm (Linux, cupy-rocm-7-0) or PyOpenCL (Windows and "
+            "Linux, pip install pyopencl).\nEnvironment variable AUTOPLOT_GPU = "
+            "auto, cuda, rocm, opencl or off." % (
+                _autoplot_gpu.describe(), task, _autoplot_gpu.threshold(operation)))
+
+
+def gpu_usage_text() -> str:
+    """GPU and CPU calls of each GPU-capable operation since reset_gpu_usage()."""
+    return _autoplot_gpu.usage_text()
+
+
+def reset_gpu_usage() -> None:
+    """Start counting GPU and CPU calls again (at the start of a batch)."""
+    _autoplot_gpu.reset_usage()
 
 
 def gpu_argsort(arr, force=None):
     """
-    Return ``np.argsort(arr)`` (ascending, int64) with optional CuPy
-    acceleration.
+    Return ``np.argsort(arr, kind="stable")`` (ascending, int64) with
+    optional GPU acceleration (NVIDIA or AMD; see _autoplot_gpu).
 
     Parameters
     ----------
@@ -2214,59 +2321,56 @@ def gpu_argsort(arr, force=None):
         1-D numeric array.
     force : None or bool
         * None (default) -- use GPU iff ``gpu_enabled()`` is True AND the
-          array is large enough AND CuPy is available.
+          array is large enough AND a GPU is available.
         * True -- attempt GPU regardless of size (still falls back to
           NumPy if anything fails).
         * False -- always use NumPy (useful for inner loops where the
           caller already decided).
 
     The function is type-stable: it always returns a NumPy ``int64``
-    array, so callers using ``arr[idx]`` work unchanged whether CuPy was
-    used or not.
+    array, and the GPU order is identical to NumPy's (NaN last, ties in
+    input order), so callers using ``arr[idx]`` work unchanged whether the
+    GPU was used or not.  A GPU failure is recorded once (see
+    gpu_backend_name()) and NumPy is used from then on.
     """
-    a = np.asarray(arr)
-    n = a.size
-    use_gpu = False
     if force is True:
-        use_gpu = _HAS_CUPY and is_gpu_available()
-    elif force is False:
-        use_gpu = False
-    else:
-        use_gpu = (gpu_enabled()
-                   and n >= _GPU_ARGSORT_THRESHOLD
-                   and _HAS_CUPY
-                   and is_gpu_available())
-    if not use_gpu:
-        return np.argsort(a, kind="stable")
-    try:
-        # Transfer -> sort -> bring index array back.
-        g = _cp.asarray(a)
-        gi = _cp.argsort(g)
-        idx = _cp.asnumpy(gi).astype(np.int64, copy=False)
-        # Free GPU memory promptly so subsequent files do not OOM the
-        # device.
-        del g
-        del gi
-        try:
-            _cp.get_default_memory_pool().free_all_blocks()
-        except Exception:
-            pass
-        return idx
-    except Exception:
-        # Any failure -- fall back to NumPy silently.  The GUI logs a
-        # one-time warning on first failure.
-        if not getattr(gpu_argsort, "_warned", False):
-            setattr(gpu_argsort, "_warned", True)
-            import warnings
-            warnings.warn("gpu_argsort: CuPy path failed -- using NumPy. "
-                          "Future calls will continue silently.",
-                          RuntimeWarning, stacklevel=2)
-        return np.argsort(a, kind="stable")
+        return _autoplot_gpu.argsort(arr, use_gpu=True, min_elements=0)
+    if force is False:
+        return _autoplot_gpu.argsort(arr, use_gpu=False)
+    return _autoplot_gpu.argsort(arr, use_gpu=None)
 
 
 # ============================================================================
 # %% COMMON GUI BUILDING BLOCKS
 # ---------------------------------------------------------------------------
+class ProgressThrottle(object):
+    """Rate limit for progress-bar updates (0.4.1).
+
+    ``due(done, total)`` is True at most once every ``interval`` seconds, and
+    always for the last step.  The page builders report every dataset; a
+    progress bar repaint plus processEvents() per dataset cost 3 s of a
+    15 s page build for the 319-file 1PPS set.
+    """
+
+    def __init__(self, interval: float = 0.05) -> None:
+        """Updates no closer together than ``interval`` seconds."""
+        self.interval = float(interval)
+        self._last = 0.0
+
+    def due(self, done: int, total: int, force_end: bool = True) -> bool:
+        """True when the bar should be updated for ``done`` of ``total``.
+
+        With ``force_end`` the last step (done >= total) is always due; the
+        per-file column bars pass False, so a batch of short files does not
+        repaint twice per file.
+        """
+        now = time.monotonic()
+        if (force_end and done >= total) or now - self._last >= self.interval:
+            self._last = now
+            return True
+        return False
+
+
 # 0.4.0: queued signal connection, spelled so that PySide6, PyQt5 and PyQt6
 # (through qtpy) all accept it.
 QUEUED_CONNECTION = getattr(Qt, "QueuedConnection", None) or Qt.ConnectionType.QueuedConnection

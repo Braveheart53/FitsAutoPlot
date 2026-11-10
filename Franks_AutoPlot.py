@@ -31,6 +31,52 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.1: Files parsed in parallel processes; GPU for NVIDIA or AMD.
+Date: 2026-11-09
+#              * NEW "Read files in parallel processes (when it pays off)"
+#                (on by default): the same adaptive 'spawn' pool as FITS
+#                AutoPlot 0.4.1 (_parse_franks_isolated, store_parse_result).
+#              * _to_float_vec converts a whole column with one astype()
+#                before the per-value fallback.
+#              * Column progress throttled (ProgressThrottle); GPU checkbox
+#                and log as FITS AutoPlot 0.4.1.
+#              * multiprocessing.freeze_support() for frozen builds.
+#              Not measured on a large Franks batch (none available here).
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model.
+        build_unit_overlay_pages_franks: Build one overlay page per **shared column name** across the loaded batch.
+        _parse_franks_isolated: Process-pool entry point (0.4.1): parse one Franks file on its own.
+        store_parse_result: Put the arrays of a _parse_franks_isolated() result into ``cache`` under the keys parse_franks_file() uses (numeric "<base>.<col>", text "<base>.<c...
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.1"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        _OVERLAY_COLORS: overlay trace colours
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept and tagged.  Time axes
+    and gaps as in FITS AutoPlot.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.0: Small/large gap controls; local ISO 8601 on every page.
 Date: 2026-11-09
 #              * Gaps (GUI, shared with FITS AutoPlot 0.4.0): small gap - the
@@ -396,11 +442,15 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
+import time as _import_clock
+_IMPORT_T0 = _import_clock.perf_counter()   # pool start-up estimate: 'spawn' workers import this file again
+
 # ============================================================================
 # %%% IMPORTS - Standard library
 # ============================================================================
 import os
 import re
+import shutil
 import sys
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
@@ -416,7 +466,7 @@ import numpy as np
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'Franks AutoPlot'
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -430,16 +480,18 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
+from _autoplot_parallel import adaptive_map, default_workers, module_import_seconds   # noqa: E402  (0.4.1)
 from _autoplot_common import (   # noqa: E402
     Qt, QThread, Signal,
     QApplication, QFileDialog, QFormLayout, QLabel, QMessageBox,
     QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QLineEdit,
     AutoPlotMainWindow,
-    MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
+    MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig, ProgressThrottle,
     open_embedded, save_vszh5, run_in_threadpool, safe_dsname,
     mjd_to_datestr,
     detect_time_breaks, detect_time_breaks_unit_aware, make_broken_x_axis,
     gpu_argsort, is_gpu_available, enable_gpu, gpu_backend_name,
+    gpu_enabled, gpu_tooltip, gpu_usage_text, reset_gpu_usage,
     # v0.0.11: datetime-duplicate helpers (legacy SetDataDateTime path,
     # retained only for backward-compatibility -- v0.0.14 no longer calls
     # them on dt-pages).
@@ -616,6 +668,13 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
         numpy.frompyfunc round-trip instead of a Python for-loop."""
         if col_strs.size == 0:
             return np.empty(0, dtype=float)
+        # 0.4.1: numpy's own C conversion first - for a clean numeric column
+        # it is about 30x faster than a Python float() per element; only a
+        # column with a bad token falls back to the per-element path below.
+        try:
+            return col_strs.astype(float)
+        except (ValueError, TypeError):
+            pass
         def _f(x):
             """float(x), or NaN when x is not a number."""
             try:
@@ -729,8 +788,9 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
 
     # Compute sort permutation once
     if sort_key is not None and sort_key in cols:
-        # v0.0.10: optional GPU-accelerated argsort (CuPy) -- falls through
-        # to NumPy when disabled, when CuPy is absent, or when the array
+        # v0.0.10: optional GPU-accelerated argsort (0.4.1: NVIDIA or AMD,
+        # _autoplot_gpu) -- falls through to NumPy when disabled, when no
+        # GPU library is installed, or when the array
         # is too small to amortise the host<->device transfer.
         sort_idx = gpu_argsort(np.asarray(cols[sort_key]))
     else:
@@ -1521,15 +1581,51 @@ def build_unit_overlay_pages_franks(doc, file_records,
 # ============================================================================
 # %% WORKER THREAD
 # ============================================================================
+def _parse_franks_isolated(path: str) -> Tuple[str, Any]:
+    """Process-pool entry point (0.4.1): parse one Franks file on its own.
+
+    A private cache that never spills keeps the arrays in the result; the
+    caller stores them in its own cache (store_parse_result).  Returns
+    (path, parse_franks_file() dict) or (path, exception).
+    """
+    cache = MemoryAwareCache(MemoryMonitorConfig(rss_high_water_mb=1 << 30))
+    try:
+        return path, parse_franks_file(path, cache)
+    except Exception as exc:
+        return path, exc
+    finally:
+        shutil.rmtree(cache.cache_dir, ignore_errors=True)   # never spilled; no gc here
+
+
+def store_parse_result(cache: MemoryAwareCache, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Put the arrays of a _parse_franks_isolated() result into ``cache``
+    under the keys parse_franks_file() uses (numeric "<base>.<col>", text
+    "<base>.<col>.txt"), so the spill-to-disk rule applies.  Returns ``data``.
+    """
+    base = data.get("base_name") or ""
+    for name, arr in list(data.get("columns", {}).items()):
+        text = getattr(arr, "dtype", np.dtype(float)).kind in "US"
+        data["columns"][name] = cache.store("%s.%s%s" % (base, name, ".txt" if text else ""), arr)
+    return data
+
+
 class FranksBatchWorker(QThread):
-    """Background QThread that parses Franks files in parallel."""
+    """Background QThread that parses Franks files in parallel.
+
+    0.4.1: with ``use_processes`` the files go through adaptive_map() (a
+    'spawn' process pool only when it finishes sooner); the parsing is
+    Python/numpy work that holds the GIL, so threads do not scale.
+    """
 
     progress = Signal(int, int, str)
     finished_ok = Signal(dict)
     failed = Signal(str)
 
+    progress_log = Signal(str)          # 0.4.1: how the batch was run
+
     def __init__(self, files: List[str], max_threads: int,
-                 cache: MemoryAwareCache, parent=None) -> None:
+                 cache: MemoryAwareCache, parent=None,
+                 use_processes: bool = False, max_processes: int = 1) -> None:
         """Worker thread for one batch: ``files`` parsed on ``max_threads`` threads
         into ``cache``.
         """
@@ -1537,6 +1633,8 @@ class FranksBatchWorker(QThread):
         self.files = files
         self.max_threads = max_threads
         self.cache = cache
+        self.use_processes = bool(use_processes)
+        self.max_processes = max(1, int(max_processes))
 
     def run(self) -> None:
         """Parse every file in a thread pool; emit ``progress(done, total, path)``
@@ -1544,11 +1642,28 @@ class FranksBatchWorker(QThread):
         exception}) or ``failed(message with traceback)``.
         """
         try:
-            work = [(p, parse_franks_file, (p, self.cache)) for p in self.files]
-            results = run_in_threadpool(
-                work, max_workers=self.max_threads,
-                progress_cb=lambda d, t, k: self.progress.emit(d, t, k),
-            )
+            if self.use_processes:
+                total = len(self.files)
+                state = {"done": 0}
+
+                def _one_done(_index: int, outcome: Tuple[str, Any]) -> None:
+                    """Store the arrays in the main cache and report the file."""
+                    path, data = outcome
+                    if isinstance(data, dict):
+                        store_parse_result(self.cache, data)
+                    state["done"] += 1
+                    self.progress.emit(state["done"], total, path)
+
+                outcome = adaptive_map(_parse_franks_isolated, list(self.files),
+                                       self.max_processes, log=self.progress_log.emit,
+                                       on_result=_one_done, start_s=POOL_START_S)
+                results = dict(outcome)
+            else:
+                work = [(p, parse_franks_file, (p, self.cache)) for p in self.files]
+                results = run_in_threadpool(
+                    work, max_workers=self.max_threads,
+                    progress_cb=lambda d, t, k: self.progress.emit(d, t, k),
+                )
             self.finished_ok.emit(results)
         except Exception as exc:
             self.failed.emit("%s\n%s" % (exc, traceback.format_exc()))
@@ -1591,13 +1706,23 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         threshold, Open-in-Veusz, MJD date strings, the small/large gap controls
         (add_gap_controls), hidden legend keys, combined (overlay) plots only, the
         legacy duplicate date-time pages, minimized/full project output and GPU
-        (CuPy) sorting.
+        (NVIDIA or AMD) sorting.
         """
         self.thread_spin = QSpinBox()
         self.thread_spin.setToolTip("Number of files read at the same time (threads).")
         self.thread_spin.setRange(1, max(1, (os.cpu_count() or 4) * 2))
         self.thread_spin.setValue(MAX_THREADS)
         form.addRow(QLabel("Worker threads:"), self.thread_spin)
+
+        # 0.4.1: process pool (adaptive) - the parsing holds the GIL.
+        self.process_reader_cb = QCheckBox(
+            "Read files in parallel processes (when it pays off)")
+        self.process_reader_cb.setChecked(True)
+        self.process_reader_cb.setToolTip(
+            "Parse the files in separate processes (one per CPU core). The first "
+            "files are parsed and timed here; the pool starts only when it will "
+            "finish sooner. Off: the worker threads above are used.")
+        form.addRow(self.process_reader_cb)
 
         self.rss_spin = QSpinBox()
         self.rss_spin.setToolTip(
@@ -1738,12 +1863,12 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
             lambda on: self.full_vesz_cb.setChecked(False) if not on else None
         )
 
-        # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
-        self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
+        # --- GPU acceleration (NVIDIA or AMD, optional) (v0.0.10; 0.4.1) ---
+        self.gpu_cb = QCheckBox("Sort large arrays on the GPU (NVIDIA or AMD)")
         self.gpu_cb.setChecked(False)
         _gpu_ok = is_gpu_available()
         self.gpu_cb.setEnabled(_gpu_ok)
-        self.gpu_cb.setToolTip(gpu_backend_name())
+        self.gpu_cb.setToolTip(gpu_tooltip())
         form.addRow(self.gpu_cb)
         self.log("GPU backend: %s" % gpu_backend_name())
 
@@ -1767,9 +1892,12 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
 
         self.worker = FranksBatchWorker(
             self.selected_files, int(self.thread_spin.value()),
-            self.cache, parent=self
+            self.cache, parent=self,
+            use_processes=bool(self.process_reader_cb.isChecked()),
+            max_processes=default_workers(),
         )
         self.worker.progress.connect(self._on_progress)
+        self.worker.progress_log.connect(self.log)
         self.worker.finished_ok.connect(self._on_done)
         self.worker.failed.connect(self._on_failed)
         self.log("Starting batch: %d file(s), threads=%d" %
@@ -1819,15 +1947,19 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         datetime_emit_text_dt = bool(self.emit_text_dt_cb.isChecked())
         # v0.0.10: drive the process-wide GPU flag from the checkbox
         enable_gpu(self.gpu_cb.isChecked() and self.gpu_cb.isEnabled())
+        reset_gpu_usage()                     # 0.4.1: count this batch's GPU / CPU calls
         # Keep the GUI responsive across many files: pump the Qt event
         # loop between every push so the log pane scrolls live and the
         # window doesn't appear "stuck" during a long batch insert.
         app = QApplication.instance()
         total = len(results)
+        col_throttle = ProgressThrottle()
         def _col_cb(done: int, total_ops: int) -> None:
             """Per-file column progress: resize the bar to ``total_ops`` when it
             changes, set it to ``done`` and keep the GUI responsive.
             """
+            if not col_throttle.due(done, total_ops, force_end=False):    # 0.4.1: <= 20 updates/s
+                return
             if self.column_progress_bar.maximum() != max(1, total_ops):
                 self.column_progress_bar.setRange(0, max(1, total_ops))
             self.column_progress_bar.setValue(done)
@@ -1887,6 +2019,8 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
             except Exception as exc:
                 self.log("  build_unit_overlay_pages_franks failed: %s"
                          % exc)
+        if gpu_enabled():
+            self.log("GPU use: %s" % gpu_usage_text())
         self.log("Batch complete.")
         self.hide_progress_bars()
         self.process_button.setEnabled(True)
@@ -1973,5 +2107,10 @@ def main() -> int:
     return app.exec_() if hasattr(app, "exec_") else app.exec()
 
 
+# Pool start-up estimate for adaptive_map(): platform cost + this file's import time.
+POOL_START_S = module_import_seconds(_IMPORT_T0)
+
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()            # 0.4.1: frozen builds with process pools
     sys.exit(main())

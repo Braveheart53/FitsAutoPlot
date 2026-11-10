@@ -26,6 +26,27 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.1: Progress throttle; GPU checkbox for NVIDIA or AMD.
+Date: 2026-11-09
+#              * Column progress at most every 50 ms (ProgressThrottle).
+#              * GPU checkbox and tooltip as FITS AutoPlot 0.4.1; the log
+#                reports GPU / CPU sorts per batch.
+#              * Reading stays in threads: a process pool would re-run
+#                Veusz's own main module in every 'spawn' worker.
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal version of the AutoPlot main window for in-plugin use.
+        FITSAutoPlotPlugin (class): Veusz menu entry for native FITS project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Make sibling files importable when Veusz loads the plugin from a path Veusz 3.x executes plugin text inside Document.loadPlugins(), where __file__...
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> FITS AutoPlot (Batch).  The dialog
+    has the standalone program's options; the result is written as a separate
+    native .vszh5 project and the host Veusz document is not changed.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.0: Gap rule and local ISO 8601 on every page (standalone 0.4.0).
 Date: 2026-11-09
 #              * Small gap: a trace breaks where its step dt > K x median(dt)
@@ -302,7 +323,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.3.0"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.3.1"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -357,9 +378,10 @@ from _autoplot_common import (                    # noqa: E402
     QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QListWidget,
     QProgressBar, QTextEdit, QLineEdit,
     MemoryAwareCache, MemoryMonitorConfig, MemoryMonitor,
-    Signal, QUEUED_CONNECTION,
+    Signal, QUEUED_CONNECTION, ProgressThrottle,
     run_in_threadpool, safe_dsname,
     is_gpu_available, enable_gpu, gpu_backend_name,
+    gpu_enabled, gpu_tooltip, gpu_usage_text, reset_gpu_usage,
     register_nrao_fits_units, suppress_fits_unit_warnings,
     # v0.0.19: string gap parser
     parse_gap_string, GAP_STRING_HELP,
@@ -593,11 +615,11 @@ class _PluginBatchDialog(QDialog):
         )
         root.addWidget(self.emit_text_dt_cb)
 
-        # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
-        self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
+        # --- GPU acceleration (NVIDIA or AMD, optional) (v0.0.10; 0.3.1) ---
+        self.gpu_cb = QCheckBox("Sort large arrays on the GPU (NVIDIA or AMD)")
         self.gpu_cb.setChecked(False)
         self.gpu_cb.setEnabled(is_gpu_available())
-        self.gpu_cb.setToolTip(gpu_backend_name())
+        self.gpu_cb.setToolTip(gpu_tooltip())
         root.addWidget(self.gpu_cb)
 
         self.log = QTextEdit()
@@ -911,10 +933,13 @@ class FITSAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
             dlg.append_log("read [%d/%d] %s" % (done, total, os.path.basename(key)))
             app.processEvents()
 
+        col_throttle = ProgressThrottle()
         def _col_cb(done, total_ops):
             """Per-file column progress: resize the bar to ``total_ops`` when it
             changes and set it to ``done``.
             """
+            if not col_throttle.due(done, total_ops, force_end=False):    # 0.3.1: <= 20 updates/s
+                return
             if dlg.column_progress.maximum() != max(1, total_ops):
                 dlg.column_progress.setRange(0, max(1, total_ops))
             dlg.column_progress.setValue(done)
@@ -951,6 +976,7 @@ class FITSAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
         # v0.0.10: drive the process-wide GPU flag from the checkbox
         enable_gpu(dlg.gpu_cb.isChecked() and dlg.gpu_cb.isEnabled())
         dlg.append_log("GPU backend: %s" % gpu_backend_name())
+        reset_gpu_usage()                     # 0.3.1: count this batch's GPU / CPU calls
         file_records = []  # accumulator for the unit-overlay post-pass
         with suppress_fits_unit_warnings():
             results = run_in_threadpool(work,
@@ -1041,6 +1067,8 @@ class FITSAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                            if _axis_text else 0.0))
         dlg.append_log(interface.time_layout.describe())
         finish_native_plugin_export(interface, output_file, fields, dlg.append_log)
+        if gpu_enabled():
+            dlg.append_log("GPU use: %s" % gpu_usage_text())
         dlg.append_log("Done.")
 
 

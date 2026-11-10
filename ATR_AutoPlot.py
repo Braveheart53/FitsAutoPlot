@@ -61,6 +61,49 @@ frequency; this program assumes lower -> upper (see DATA_GAPS).
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.3: Process pool only when it pays off (_autoplot_parallel).
+Date: 2026-11-09
+#              * read_files(): the first files are read here and timed; a
+#                'spawn' pool starts only when it will finish sooner.  The
+#                fixed rule (pool for 4+ files, PARALLEL_MIN_FILES) made
+#                the 25 example files take 0.19 s instead of 0.01 s.
+#              * Checkbox "Read files in parallel processes (when it pays
+#                off)" with a tooltip that explains the rule.
+#              * No dB averaging in this program (checked 2026-11-09).
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.2.3"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.2: Header template, docstrings and tooltips.
 Date: 2026-11-09
 #              * Header in the author's template: author contact lines and,
@@ -156,13 +199,15 @@ Date: 2025-06-28
 # %% Import Modules
 from __future__ import annotations
 
+import time as _import_clock
+_IMPORT_T0 = _import_clock.perf_counter()   # pool start-up estimate: 'spawn' workers import this file again
+
 import argparse
 import datetime
 import multiprocessing
 import os
 import re
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -170,9 +215,10 @@ os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
 import numpy as np  # noqa: E402
 from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
+from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (0.x adaptive pool)
 
 APP_NAME = "ATR AutoPlot"
-APP_VERSION = "0.2.2"
+APP_VERSION = "0.2.3"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
                    ".vszh5 projects, with interactive pyqtgraph plots.")
@@ -184,7 +230,6 @@ DATA_GAPS = ("Multi-frequency files: the data lines are assumed to run from the 
 DEFAULT_MAG_RANGE = (-60.0, 20.0)     # dB, as in the 2025 version
 PHASE_RANGE = (-180.0, 180.0)         # deg
 AZIMUTH_RANGE = (-180.0, 180.0)       # deg, full-circle axis (default)
-PARALLEL_MIN_FILES = 8                # fewer files: a process pool costs more than it saves
 
 
 # %% ATR parser (no Qt; runs in worker processes)
@@ -382,22 +427,11 @@ def read_files(paths: Sequence[str], workers: int = 1,
     Returns (patterns, errors); ``progress(done, total)`` after each file.
     """
     paths = list(dict.fromkeys(paths))                 # drop duplicates, keep order
-    results: Dict[str, Tuple[Optional[ATRPattern], str]] = {}
-    if workers > 1 and len(paths) >= PARALLEL_MIN_FILES:
-        context = multiprocessing.get_context("spawn")  # fork can deadlock with Qt threads
-        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
-            futures = [pool.submit(_read_worker, p) for p in paths]
-            for done, future in enumerate(as_completed(futures), start=1):
-                path, pattern, error = future.result()
-                results[path] = (pattern, error)
-                if progress:
-                    progress(done, len(paths))
-    else:
-        for done, path in enumerate(paths, start=1):
-            _p, pattern, error = _read_worker(path)
-            results[path] = (pattern, error)
-            if progress:
-                progress(done, len(paths))
+    # 0.x: adaptive pool (_autoplot_parallel): the first files are read here
+    # and timed; a 'spawn' pool is started only when it will finish sooner.
+    outcome = adaptive_map(_read_worker, paths, workers, progress=progress,
+                           start_s=POOL_START_S)
+    results = {path: (parsed, error) for path, parsed, error in outcome}
     patterns, errors = [], []
     for path in paths:
         pattern, error = results[path]
@@ -765,11 +799,11 @@ def _build_gui_classes():
 
             options = QGroupBox("Processing and Plot Options")
             form = QFormLayout(options)
-            self.mp_box = QCheckBox("Read files in parallel processes (%d or more files)"
-                                    % PARALLEL_MIN_FILES)
+            self.mp_box = QCheckBox("Read files in parallel processes (when it pays off)")
             self.mp_box.setToolTip(
-                "Read the files in separate processes when there are enough of "
-                "them (faster for big batches).")
+                "Allow separate worker processes. The first files are read and timed "
+                "here; a process pool is started only when it will finish sooner "
+                "(large batches use every core, small ones skip the start-up cost).")
             self.mp_box.setChecked(True)
             self.mp_box.toggled.connect(lambda on: self._log(
                 "Parallel reading %s" % ("on" if on else "off")))
@@ -1024,6 +1058,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     window.show()
     return app.exec()
 
+
+# Pool start-up estimate for adaptive_map(): platform cost + this file's import time.
+POOL_START_S = module_import_seconds(_IMPORT_T0)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()           # frozen Windows builds

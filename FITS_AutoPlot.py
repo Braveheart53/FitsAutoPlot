@@ -26,6 +26,68 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.1: Files read in parallel processes; GPU for NVIDIA or AMD.
+Date: 2026-11-09
+#              * NEW "Read files in parallel processes (when it pays off)"
+#                (on by default): astropy's FITS parser holds the GIL, so
+#                reader threads ran one at a time.  _autoplot_parallel
+#                times the first two files and starts a 'spawn' process
+#                pool only when it will finish sooner (_read_fits_isolated,
+#                store_read_result); the arrays are put into this window's
+#                memory-aware cache as before.
+#              * Column progress throttled (ProgressThrottle).
+#              * GPU checkbox: "Sort large arrays on the GPU (NVIDIA or
+#                AMD)", tooltip with the device and the 200 000-value
+#                threshold; the log reports GPU / CPU sorts per batch.
+#                Measured: the largest sort of the 30-day batch had 28 212
+#                values (all 13 119 sorts: 0.04 s), so GBT files stay on
+#                the CPU.
+#              * multiprocessing.freeze_support() for frozen builds.
+#              Measured (2 CPUs): 30-day OnePpsDeltas, 319 files: 17.9 s ->
+#              8.4 s to build the pages, save 34.2 s -> 14.2 s; tack, UWBR
+#              Temps and 30-day projects identical to 0.4.0.
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.1"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.0: Real GBT files: padding rows, full headers, gaps, local time axes.
 Date: 2026-11-09
 #              Checked with the GBT sampler2log files of 2026-11-09:
@@ -512,6 +574,9 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
+import time as _import_clock
+_IMPORT_T0 = _import_clock.perf_counter()   # pool start-up estimate: 'spawn' workers import this file again
+
 # ============================================================================
 # %%% IMPORTS - Standard library
 # ============================================================================
@@ -536,7 +601,7 @@ from astropy.table import QTable
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -552,15 +617,17 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
+from _autoplot_parallel import adaptive_map, default_workers, module_import_seconds   # noqa: E402  (0.4.1)
 from _autoplot_common import (   # noqa: E402
     Qt, QThread, Signal,
     QApplication, QFileDialog, QFormLayout, QLabel, QMessageBox,
     QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox, QLineEdit,
     AutoPlotMainWindow,
-    MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig,
+    MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig, ProgressThrottle,
     apply_theme, open_embedded, save_vszh5,
     run_in_threadpool, open_maybe_gzipped, safe_dsname,
     gpu_argsort, is_gpu_available, enable_gpu, gpu_backend_name,
+    gpu_enabled, gpu_tooltip, gpu_usage_text, reset_gpu_usage,
     set_gpu_argsort_threshold,
     mjd_to_datestr,
     register_nrao_fits_units, suppress_fits_unit_warnings,
@@ -1055,8 +1122,8 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         sort_idx_by_hdu: Dict[str, np.ndarray] = {}
         if sort_key is not None:
             hkey, ckey = sort_key
-            # v0.0.10: gpu_argsort uses CuPy on large arrays when enabled
-            # by the GUI; otherwise falls through to NumPy.  Result is a
+            # v0.0.10: gpu_argsort uses the GPU (0.4.1: NVIDIA or AMD) on
+            # large arrays when enabled by the GUI; otherwise falls through to NumPy.  Result is a
             # NumPy int64 index array either way.  v0.0.12: kept for the
             # un-tagged fallback path only; per-tag splits re-sort their
             # own subarrays below.
@@ -2798,8 +2865,51 @@ def _result_order(item):
     return (first, os.path.basename(str(path)), str(path))
 
 
+def _read_fits_isolated(job: Tuple[str, str, bool]) -> Tuple[str, Any]:
+    """Process-pool entry point (0.4.1): read one FITS file on its own.
+
+    ``job`` is (path, backend, skip_images).  The file is read with a private
+    cache that never spills to disk, so the arrays come back in the result;
+    the caller stores them in its own MemoryAwareCache (store_read_result).
+    Returns (path, read() dict) or (path, exception) - errors are returned,
+    not raised, like run_in_threadpool().
+    """
+    path, backend, skip_images = job
+    cache = MemoryAwareCache(MemoryMonitorConfig(rss_high_water_mb=1 << 30))
+    try:
+        with suppress_fits_unit_warnings():
+            return path, FITSProcessor(backend, cache, skip_images=skip_images).read(path)
+    except Exception as exc:
+        return path, exc
+    finally:
+        # Never spilled, so only the empty folder is left; no gc.collect()
+        # here (MemoryAwareCache.cleanup) - this may run in a worker thread.
+        shutil.rmtree(cache.cache_dir, ignore_errors=True)
+
+
+def store_read_result(cache: MemoryAwareCache, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+
+    Same keys as FITSProcessor.read() uses, so the spill-to-disk rule applies
+    exactly as for files read in this process.  Returns ``data``.
+    """
+    base = data.get("base_name") or ""
+    for (hname, col), arr in list(data.get("columns", {}).items()):
+        data["columns"][(hname, col)] = cache.store("%s.%s.%s" % (base, hname, col), arr)
+    for hname, arr in list(data.get("images", {}).items()):
+        data["images"][hname] = cache.store("%s.%s.IMAGE" % (base, hname), arr)
+    return data
+
+
 class FITSBatchWorker(QThread):
-    """Background QThread that reads a batch of FITS files concurrently."""
+    """Background QThread that reads a batch of FITS files concurrently.
+
+    0.4.1: with ``use_processes`` the files go through adaptive_map(): the
+    first files are read and timed, and a 'spawn' process pool of
+    ``max_processes`` is started for the rest only when it finishes sooner.
+    astropy's FITS parsing holds the GIL, so threads do not scale: the 319
+    OnePpsDeltas files took 4.0 s in one thread and 5.3 s in two.
+    """
 
     progress = Signal(int, int, str)   # done, total, last_key
     log = Signal(str)
@@ -2808,7 +2918,8 @@ class FITSBatchWorker(QThread):
 
     def __init__(self, files: List[str], backend: str, max_threads: int,
                  cache: MemoryAwareCache, parent=None,
-                 skip_images: bool = False) -> None:
+                 skip_images: bool = False, use_processes: bool = False,
+                 max_processes: int = 1) -> None:
         """Worker thread for one batch: ``files`` read with ``backend`` on
         ``max_threads`` threads into ``cache``.
         """
@@ -2818,6 +2929,8 @@ class FITSBatchWorker(QThread):
         self.max_threads = max_threads
         self.cache = cache
         self.skip_images = bool(skip_images)
+        self.use_processes = bool(use_processes)
+        self.max_processes = max(1, int(max_processes))
 
     def run(self) -> None:
         """Read every file in a thread pool; emit ``progress(done, total, path)``
@@ -2829,15 +2942,33 @@ class FITSBatchWorker(QThread):
             # Outer suppressor: in addition to the inner wraps inside
             # FITSProcessor.read(), this keeps the worker thread free of
             # the noisy NRAO FITS UnitsWarnings during the whole batch.
-            with suppress_fits_unit_warnings():
-                proc = FITSProcessor(self.backend, self.cache,
-                                     skip_images=self.skip_images)
-                work = [(p, proc.read, (p,)) for p in self.files]
-                results = run_in_threadpool(
-                    work,
-                    max_workers=self.max_threads,
-                    progress_cb=lambda d, t, k: self.progress.emit(d, t, k),
-                )
+            if self.use_processes:
+                total = len(self.files)
+                state = {"done": 0}
+
+                def _one_done(_index: int, outcome: Tuple[str, Any]) -> None:
+                    """Store the arrays in the main cache and report the file."""
+                    path, data = outcome
+                    if isinstance(data, dict):
+                        store_read_result(self.cache, data)
+                    state["done"] += 1
+                    self.progress.emit(state["done"], total, path)
+
+                jobs = [(p, self.backend, self.skip_images) for p in self.files]
+                outcome = adaptive_map(_read_fits_isolated, jobs, self.max_processes,
+                                       log=self.log.emit, on_result=_one_done,
+                                       start_s=POOL_START_S)
+                results = dict(outcome)
+            else:
+                with suppress_fits_unit_warnings():
+                    proc = FITSProcessor(self.backend, self.cache,
+                                         skip_images=self.skip_images)
+                    work = [(p, proc.read, (p,)) for p in self.files]
+                    results = run_in_threadpool(
+                        work,
+                        max_workers=self.max_threads,
+                        progress_cb=lambda d, t, k: self.progress.emit(d, t, k),
+                    )
             self.finished_ok.emit(results)
         except Exception as exc:
             self.failed.emit("%s\n%s" % (exc, traceback.format_exc()))
@@ -2880,7 +3011,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         threshold, Open-in-Veusz, MJD date strings, skip image HDUs, the
         small/large gap controls (add_gap_controls), hidden legend keys, combined
         (overlay) plots only, the legacy duplicate date-time pages and their
-        label density, minimized/full project output and GPU (CuPy) sorting.
+        label density, minimized/full project output and GPU (NVIDIA or AMD) sorting.
         """
         self.backend_combo = QComboBox()
         self.backend_combo.setToolTip(
@@ -2894,6 +3025,17 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.thread_spin.setRange(1, max(1, (os.cpu_count() or 4) * 2))
         self.thread_spin.setValue(MAX_THREADS)
         form.addRow(QLabel("Worker threads:"), self.thread_spin)
+
+        # 0.4.1: process pool (adaptive) - astropy parsing holds the GIL.
+        self.process_reader_cb = QCheckBox(
+            "Read files in parallel processes (when it pays off)")
+        self.process_reader_cb.setChecked(True)
+        self.process_reader_cb.setToolTip(
+            "Read the FITS files in separate processes (one per CPU core). The "
+            "first files are read and timed here; the pool starts only when it "
+            "will finish sooner. Off: the worker threads above are used "
+            "(astropy's parsing holds the GIL, so threads do not scale).")
+        form.addRow(self.process_reader_cb)
 
         self.rss_spin = QSpinBox()
         self.rss_spin.setToolTip(
@@ -3051,12 +3193,12 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
             lambda on: self.full_vesz_cb.setChecked(False) if not on else None
         )
 
-        # --- GPU acceleration (CuPy, optional) (v0.0.10) ------------------
-        self.gpu_cb = QCheckBox("Use GPU acceleration (CuPy) for large sorts")
+        # --- GPU acceleration (NVIDIA or AMD, optional) (v0.0.10; 0.4.1) ---
+        self.gpu_cb = QCheckBox("Sort large arrays on the GPU (NVIDIA or AMD)")
         self.gpu_cb.setChecked(False)
         _gpu_ok = is_gpu_available()
         self.gpu_cb.setEnabled(_gpu_ok)
-        self.gpu_cb.setToolTip(gpu_backend_name())
+        self.gpu_cb.setToolTip(gpu_tooltip())
         form.addRow(self.gpu_cb)
         self.log("GPU backend: %s" % gpu_backend_name())
 
@@ -3082,8 +3224,11 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
             self.selected_files, backend, int(self.thread_spin.value()),
             self.cache, parent=self,
             skip_images=bool(self.skip_images_cb.isChecked()),
+            use_processes=bool(self.process_reader_cb.isChecked()),
+            max_processes=default_workers(),
         )
         self.worker.progress.connect(self._on_worker_progress)
+        self.worker.log.connect(self.log)
         self.worker.finished_ok.connect(self._on_worker_done)
         self.worker.failed.connect(self._on_worker_failed)
         self.log("Starting batch: %d file(s), backend=%s, threads=%d" %
@@ -3136,6 +3281,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         datetime_emit_text_dt = bool(self.emit_text_dt_cb.isChecked())
         # v0.0.10: drive the process-wide GPU flag from the checkbox
         enable_gpu(self.gpu_cb.isChecked() and self.gpu_cb.isEnabled())
+        reset_gpu_usage()                     # 0.4.1: count this batch's GPU / CPU calls
         # Keep the GUI responsive across hundreds of files: pump the Qt
         # event loop between every push so the log pane scrolls live and
         # the window doesn't appear "stuck" during a long batch insert.
@@ -3144,10 +3290,13 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         # Build a column-progress callback that updates the per-file bar.
         # Defined here so it captures the GUI handles, then passed into
         # push_to_veusz() which counts column-level operations.
+        col_throttle = ProgressThrottle()
         def _col_cb(done: int, total_ops: int) -> None:
             """Per-file column progress: resize the bar to ``total_ops`` when it
             changes, set it to ``done`` and keep the GUI responsive.
             """
+            if not col_throttle.due(done, total_ops, force_end=False):    # 0.4.1: <= 20 updates/s
+                return
             if self.column_progress_bar.maximum() != max(1, total_ops):
                 self.column_progress_bar.setRange(0, max(1, total_ops))
             self.column_progress_bar.setValue(done)
@@ -3222,6 +3371,8 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                 )
             except Exception as exc:
                 self.log("  build_unit_overlay_pages failed: %s" % exc)
+        if gpu_enabled():
+            self.log("GPU use: %s" % gpu_usage_text())
         self.log("Batch complete.")
         self.hide_progress_bars()
         self.process_button.setEnabled(True)
@@ -3310,5 +3461,10 @@ def main() -> int:
     return app.exec_() if hasattr(app, "exec_") else app.exec()
 
 
+# Pool start-up estimate for adaptive_map(): platform cost + this file's import time.
+POOL_START_S = module_import_seconds(_IMPORT_T0)
+
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()            # 0.4.1: frozen builds with process pools
     sys.exit(main())

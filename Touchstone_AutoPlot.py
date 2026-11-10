@@ -31,13 +31,110 @@ Company: NRAO / Green Bank Observatory (GBO)
 Licence: GPL-3.0-or-later (GNU General Public License v3.0 or later, see LICENSE)
 Compatible with: Python 3.8+, qtpy 2.x (PySide6 preferred), scikit-rf,
                  numpy, scipy, matplotlib, h5py
-Optional: cupy (GPU time-domain transform), pypdf or PyPDF2 (bookmarked PDF),
+Optional: cupy (NVIDIA CUDA or AMD ROCm) or pyopencl + pyvkfft (any OpenCL
+          GPU) for the time-domain transform of large networks (_autoplot_gpu),
+          pypdf or PyPDF2 (bookmarked PDF),
           mpld3 (interactive HTML Smith charts), Veusz (viewer only)
 
 # %%% Revisions
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.7.2: Adaptive process pool; GPU transform for NVIDIA or AMD.
+Date: 2026-11-09
+#              * Reading, time domain and Smith export use the adaptive
+#                'spawn' pool (_autoplot_parallel): all 220 example files
+#                took 0.7 s in one process but 2.1 s in a 2-process pool,
+#                so batches now stay in one process unless a pool is faster.
+#              * time_domain_vectorized(): windowing on the host; only the
+#                inverse FFT may go to the GPU (_autoplot_gpu: cuFFT on
+#                NVIDIA, hipFFT on AMD via CuPy, or pyvkfft on OpenCL), and
+#                only for networks of 1 000 000+ values.  0.7.1 moved every
+#                network to CuPy, which made small files slower.  Results
+#                are identical (all 1 760 transforms of the 220 readable
+#                example files compared with 0.7.1).
+#              * CuPy is no longer imported at start-up (it was imported and
+#                CUDA initialised in every worker process); GPU_AVAILABLE
+#                and the unused make_process_pool() removed.
+#              * GPU checkbox "Use the GPU (NVIDIA or AMD) for large
+#                time-domain transforms" with device and threshold in its
+#                tooltip; the log and About show the GPU found.
+#              * No dB averaging in this program: dB values are only
+#                computed (20 log10 |S|); re-gridding interpolates the
+#                complex S-parameters (checked 2026-11-09).
+# %%%%% Function Descriptions
+        is_windows: True on Windows.
+        get_extended_path: Convert a path to Windows extended-length form (\\\\?\\) if needed.
+        normalize_path: Resolved path; extended-length form on Windows.
+        validate_path_length: Check a path against the classic Windows MAX_PATH limit.
+        truncate_filename: Shorten a file name to ``max_length`` keeping the extension.
+        ProcessingConfig (class): File processing options.
+        TimeDomainConfig (class): Time-domain transform and gate settings.
+        SmithChartConfig (class): Smith chart options.
+        get_sparam_color: Consistent colour for an S-parameter across every plot.
+        sanitize_name: Veusz-safe dataset / widget / tag stem (letters, digits, '_').
+        s_param_names: [(i, j, 'S<i+1><j+1>'), ...] in row-major order.
+        to_db: 20*log10|x| with a floor so silence never becomes -inf; inf/NaN -> NaN.
+        td_axis_floor: Lower y limit (dB) for time-domain plots: peak minus TD_DISPLAY_RANGE_DB, rounded down to 10 dB.
+        read_touchstone_header: Comment ('!') and option ('#') lines, plus any keyword lines, up to the first numeric data line.
+        ensure_uniform_network: Return a network on an exactly uniform frequency grid.
+        resolve_window: scipy.signal.get_window specification for a GUI window choice.
+        time_domain_vectorized: Windowed band-pass time-domain response of every S-parameter at once.
+        one_port: S_ij of ``network`` as a one-port (scikit-rf gates one-ports only).
+        call_time_gate: ``skrf.time.time_gate`` with only the arguments this scikit-rf supports.
+        compute_time_domain: Time-domain response and time gating of every (or selected) S-parameter.
+        _td_worker: Process-pool entry point: (key, network, config, gpu) -> (key, result).
+        run_time_domain_batch: Time domain + gating for many files.
+        TimeDomainProcessor (class): Thin object wrapper over ``compute_time_domain`` (kept for 0.4.0 users).
+        make_smith_figure: Smith chart of a one-port with scikit-rf.
+        export_smith_worker: Process-pool entry point that writes one Smith chart file.
+        SmithChartPlottermpld3 (class): Smith chart export helpers (name kept from 0.4.0).
+        TouchstonePlotter (class): Builds the Veusz project for the processed Touchstone files.
+        _matplotlib_canvas: Fallback matplotlib Qt canvas (imported only when needed).
+        TouchstonePlotCanvas (class): Time-domain and Smith chart previews.
+        process_single_touchstone_file: Read one Touchstone file (process-pool entry point).
+        unique_keys: Map each path to a unique display key (file name, then ' (2)', ...).
+        TouchstoneProcessingThread (class): Reads the selected files (process pool for several files).
+        FunctionWorker (class): Run ``func(progress_callback)`` off the GUI thread.
+        _module_version: Installed version of a module, or 'not installed'.
+        build_about_content: Rich text and runtime details for Help > About.
+        TouchstoneMainWindow (class): Main window: processing, time domain and Smith chart tabs.
+        main: Start the GUI.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "Touchstone AutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        DB_FLOOR: |x| floor before 20*log10 (-240 dB)
+        TD_DISPLAY_RANGE_DB: time-domain y axis spans peak - 120 dB .. Auto
+        UNIFORM_RTOL: steps within this are taken as exactly uniform
+        NONUNIFORM_NOTE_RTOL: above this the re-gridding is reported
+        CPU_COUNT: logical CPUs of this computer
+        MAX_PATH_WINDOWS: classic Windows MAX_PATH (260 characters)
+        PATH_WARNING_THRESHOLD: warn when a path is longer than this
+        EXTENDED_PATH_PREFIX: Windows extended-length path prefix
+        GATING_MODES: gating combo box text -> gating mode
+        WINDOW_TYPES: transform / gate window choices
+        _NUMERIC_START: line starting with a number (Touchstone data line)
+        _TIME_GATE_PARAMS: parameters accepted by skrf.time.time_gate (they differ between scikit-rf versions)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+        QT_BINDING = "PySide6"
+        PYQTGRAPH_ERROR = ""
+        MPLD3_AVAILABLE = True
+        PDF_LIBRARY = "pypdf"
+        VEUSZ_BACKEND = "native"
+# %%%%% More Info
+    Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
+    scikit-rf reads the .sNp files; time domain and gating, Smith charts
+    (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
+    'spawn' start method on every platform and is used only when it pays off
+    (_autoplot_parallel); GPU optional for large transforms (NVIDIA or AMD,
+    _autoplot_gpu).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.7.1: Header template, docstrings and tooltips.
 Date: 2026-11-09
 #              * Header in the author's template: author contact lines and,
@@ -114,7 +211,7 @@ Date: 2026-11-09
     Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
     scikit-rf reads the .sNp files; time domain and gating, Smith charts
     (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
-    'spawn' start method on every platform; CuPy optional.
+    'spawn' start method on every platform; GPU optional (NVIDIA or AMD, _autoplot_gpu).
     Requirements, optional packages and the tested Python 3.8 / 3.12
     environments: REQUIREMENTS.md (mamba: environment-py38.yml,
     environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
@@ -230,6 +327,9 @@ Date: 2026-02-03
 # %% Import Modules
 from __future__ import annotations
 
+import time as _import_clock
+_IMPORT_T0 = _import_clock.perf_counter()   # pool start-up estimate: 'spawn' workers import this file again
+
 import datetime
 import gc
 import html
@@ -242,7 +342,6 @@ import shutil
 import sys
 import tempfile
 import warnings
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -290,6 +389,7 @@ from matplotlib.figure import Figure
 
 # %%% Interactive previews and the Plots tab (pyqtgraph); suite theme / About
 import _suite_gui as suite
+from _autoplot_parallel import adaptive_map, module_import_seconds   # 0.7.2: process pool only when it pays off
 try:
     import _autoplot_pyqtgraph as autoplot_pg
     autoplot_pg.configure(antialias=True, wheel_needs_ctrl=True)
@@ -317,13 +417,11 @@ except ImportError:
         PdfReader = PdfWriter = None
         PDF_LIBRARY = None
 
-try:
-    import cupy as cp
-    cp.cuda.runtime.getDeviceCount()      # raises when no usable GPU
-    GPU_AVAILABLE = "cupy"
-except Exception:
-    cp = None
-    GPU_AVAILABLE = None
+# 0.7.2: the GPU (NVIDIA: CuPy on CUDA; AMD: CuPy on ROCm or PyOpenCL; any
+# OpenCL GPU) is reached through _autoplot_gpu.  It is detected on first use,
+# not here, so the program and its 'spawn' workers start without importing
+# CuPy (0.7.1 imported it, and initialised CUDA, in every worker process).
+import _autoplot_gpu
 
 # %%% Veusz document: native h5py writer (preferred) or embedded Veusz
 try:
@@ -341,7 +439,7 @@ except ImportError:  # pragma: no cover - script copied without the module
 
 # %% Application identity
 APP_NAME = "Touchstone AutoPlot"
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO / Green Bank Observatory (GBO)"
@@ -367,18 +465,6 @@ TD_DISPLAY_RANGE_DB = 120.0  # time-domain y axis spans peak - 120 dB .. Auto
 UNIFORM_RTOL = 1e-9         # steps within this are taken as exactly uniform
 NONUNIFORM_NOTE_RTOL = 1e-3  # above this the re-gridding is reported
 CPU_COUNT = multiprocessing.cpu_count()
-
-
-def make_process_pool(max_workers: int) -> ProcessPoolExecutor:
-    """
-    Process pool with the 'spawn' start method on every platform.
-
-    'fork' (the Linux default before Python 3.14) can deadlock when the
-    parent has Qt / matplotlib threads running; 'spawn' is what Windows uses
-    anyway, so behaviour is identical everywhere.
-    """
-    return ProcessPoolExecutor(max_workers=max(1, int(max_workers)),
-                               mp_context=multiprocessing.get_context("spawn"))
 
 
 # %% Windows long-path support (from 0.4.0)
@@ -463,7 +549,9 @@ class ProcessingConfig:
     """File processing options."""
 
     enable_multiprocessing: bool = True
-    enable_gpu_processing: bool = GPU_AVAILABLE is not None
+    # GPU for transforms of at least _autoplot_gpu.threshold("ifft_centered")
+    # elements, when a GPU is found; smaller networks always use NumPy.
+    enable_gpu_processing: bool = True
     num_processes: int = CPU_COUNT
     max_workers: int = CPU_COUNT
     unwrap_phase: bool = False
@@ -671,7 +759,10 @@ def time_domain_vectorized(s: np.ndarray, f: np.ndarray, window: Any,
     window : str or tuple
         scipy window specification.
     use_gpu : bool
-        Use CuPy for the transform when available.
+        Allow the GPU (NVIDIA or AMD, see _autoplot_gpu) for the inverse
+        FFT.  It is used only when one is found and ``s`` has at least
+        ``_autoplot_gpu.threshold("ifft_centered")`` elements; otherwise
+        NumPy.  The result is the same either way.
 
     Returns
     -------
@@ -682,16 +773,16 @@ def time_domain_vectorized(s: np.ndarray, f: np.ndarray, window: Any,
         win = get_window(window, 2 * n)[n:]
     else:
         win = get_window(window, n)
-    xp = cp if (use_gpu and cp is not None) else np
-    s_dev = xp.asarray(s)
-    windowed = s_dev * xp.asarray(win)[:, None, None]
+    # 0.7.2: windowing on the host (O(N), cheap); only the transform may go
+    # to the GPU, and only for large arrays.  0.7.1 moved every network to
+    # CuPy, which made the usual 1 001-point files slower than NumPy.
+    s_arr = np.asarray(s)
+    windowed = s_arr * np.asarray(win)[:, None, None]
     with np.errstate(divide="ignore", invalid="ignore"):
-        norm = xp.sum(xp.abs(s_dev), axis=0) / xp.sum(xp.abs(windowed), axis=0)
-    norm = xp.where(xp.isfinite(norm), norm, 1.0)
+        norm = np.sum(np.abs(s_arr), axis=0) / np.sum(np.abs(windowed), axis=0)
+    norm = np.where(np.isfinite(norm), norm, 1.0)
     windowed = windowed * norm
-    td = xp.fft.fftshift(xp.fft.ifft(xp.fft.ifftshift(windowed, axes=0),
-                                     axis=0), axes=0)
-    return cp.asnumpy(td) if xp is not np else td
+    return _autoplot_gpu.ifft_centered(windowed, axis=0, use_gpu=bool(use_gpu))
 
 
 def one_port(network: Network, i: int, j: int) -> Network:
@@ -739,7 +830,7 @@ def compute_time_domain(network: Network, td_config: Dict[str, Any],
     td_config : dict
         ``asdict(TimeDomainConfig)``.
     use_gpu : bool
-        CuPy for the un-gated transform.
+        Allow the GPU for large transforms (see time_domain_vectorized).
     params : sequence of str, optional
         Only these parameters (e.g. ["S11"]); default all.
 
@@ -821,24 +912,26 @@ def run_time_domain_batch(items: List[Tuple[str, Network]],
 
     Files run in a process pool (one file per task) unless the GPU is used
     (the GPU already vectorizes over parameters; several processes would
-    only contend for it) or there is a single file.
+    only contend for it) or there is a single file.  The GPU is used only
+    when a network is large enough for it (_autoplot_gpu thresholds); for
+    the usual small files the GPU is not used and the pool may run.
     """
-    results: Dict[str, Dict[str, Any]] = {}
+    # 0.7.2: decide the GPU here, from the sizes: worker processes never
+    # import a GPU library, and a GPU computer keeps the process pool for
+    # small networks.
+    limit = _autoplot_gpu.threshold("ifft_centered")
+    use_gpu = bool(use_gpu) and _autoplot_gpu.available() and any(
+        np.asarray(net.s).size >= limit for _key, net in items)
     jobs = [(key, net, td_config, use_gpu) for key, net in items]
-    total = max(len(jobs), 1)
-    if use_processes and not use_gpu and len(jobs) > 1 and max_workers > 1:
-        with make_process_pool(min(max_workers, len(jobs))) as pool:
-            futures = [pool.submit(_td_worker, job) for job in jobs]
-            for done, future in enumerate(as_completed(futures), start=1):
-                key, res = future.result()
-                results[key] = res
-                progress(int(100 * done / total))
-    else:
-        for done, job in enumerate(jobs, start=1):
-            key, res = _td_worker(job)
-            results[key] = res
-            progress(int(100 * done / total))
-    return results
+    # 0.7.2: adaptive pool (_autoplot_parallel): the first files run here and
+    # are timed; a process pool starts only when it finishes sooner.  All
+    # 220 example files take 0.7 s in one process but 2.1 s in a 2-process
+    # pool, so a fixed "pool for 2+ files" rule made batches slower.
+    workers = max_workers if (use_processes and not use_gpu) else 1
+    outcome = adaptive_map(_td_worker, jobs, workers,
+                           progress=lambda d, t: progress(int(100 * d / max(t, 1))),
+                           start_s=POOL_START_S)
+    return dict(outcome)
 
 
 class TimeDomainProcessor:
@@ -1479,22 +1572,14 @@ class TouchstoneProcessingThread(QThread):
     def run(self):
         """Read every file; emit {key: data or {'error': ...}} in list order."""
         try:
-            raw: Dict[str, dict] = {}
-            total = max(len(self.file_list), 1)
-            if self.config.enable_multiprocessing and len(self.file_list) > 1:
-                workers = max(1, min(self.config.max_workers, len(self.file_list)))
-                with make_process_pool(workers) as pool:
-                    futures = [pool.submit(process_single_touchstone_file, (f, None))
-                               for f in self.file_list]
-                    for done, future in enumerate(as_completed(futures), start=1):
-                        path, data = future.result()
-                        raw[path] = data
-                        self.progress_updated.emit(int(100 * done / total))
-            else:
-                for done, path in enumerate(self.file_list, start=1):
-                    _p, data = process_single_touchstone_file((path, None))
-                    raw[path] = data
-                    self.progress_updated.emit(int(100 * done / total))
+            # 0.7.2: adaptive pool - timed first files decide (see
+            # run_time_domain_batch); 220 files read in 0.9 s in one process.
+            workers = self.config.max_workers if self.config.enable_multiprocessing else 1
+            outcome = adaptive_map(
+                process_single_touchstone_file, [(f, None) for f in self.file_list], workers,
+                progress=lambda d, t: self.progress_updated.emit(int(100 * d / max(t, 1))),
+                start_s=POOL_START_S)
+            raw: Dict[str, dict] = dict(outcome)
             keys = unique_keys(self.file_list)
             self.processing_finished.emit({keys[p]: raw[p] for p in self.file_list})
         except Exception as exc:
@@ -1561,7 +1646,7 @@ def build_about_content() -> Dict[str, str]:
         "matplotlib : %s" % matplotlib.__version__,
         "h5py       : %s" % _module_version("h5py"),
         "Veusz out  : %s" % (VEUSZ_BACKEND or "unavailable"),
-        "GPU        : %s" % (GPU_AVAILABLE or "none (CPU)"),
+        "GPU        : %s" % _autoplot_gpu.describe(),
         "PDF merge  : %s" % (PDF_LIBRARY or "not installed"),
         "mpld3      : %s" % ("available" if MPLD3_AVAILABLE else "not installed"),
         "CPU cores  : %d" % CPU_COUNT,
@@ -1598,7 +1683,7 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message("Veusz output: %s | GPU: %s | CPU cores: %d | PDF: %s"
                           " | mpld3: %s" % (
                               VEUSZ_BACKEND or "unavailable",
-                              GPU_AVAILABLE or "none", CPU_COUNT,
+                              _autoplot_gpu.describe(), CPU_COUNT,
                               PDF_LIBRARY or "not installed",
                               "yes" if MPLD3_AVAILABLE else "no"))
 
@@ -1733,10 +1818,11 @@ class TouchstoneMainWindow(QMainWindow):
         side = QHBoxLayout()
         options_group = QGroupBox("Processing Options")
         options = QFormLayout(options_group)
-        self.enable_mp_checkbox = QCheckBox("Enable multiprocessing")
+        self.enable_mp_checkbox = QCheckBox("Enable multiprocessing (when it pays off)")
         self.enable_mp_checkbox.setToolTip(
-            "Process the files in separate processes (spawn) - faster for "
-            "many files.")
+            "Allow separate worker processes (spawn) for reading, time domain "
+            "and Smith export. The first files are timed here; a pool starts "
+            "only when it will finish sooner.")
         self.enable_mp_checkbox.setChecked(self.config.enable_multiprocessing)
         self.enable_mp_checkbox.toggled.connect(self._update_mp_config)
         options.addRow(self.enable_mp_checkbox)
@@ -1747,11 +1833,18 @@ class TouchstoneMainWindow(QMainWindow):
         self.cpu_spinbox.valueChanged.connect(self._update_cpu_config)
         options.addRow("CPU cores:", self.cpu_spinbox)
         self.enable_gpu_checkbox = QCheckBox(
-            "Enable GPU (CuPy) for the time-domain transform")
-        self.enable_gpu_checkbox.setChecked(self.config.enable_gpu_processing)
-        self.enable_gpu_checkbox.setEnabled(GPU_AVAILABLE is not None)
-        if GPU_AVAILABLE is None:
-            self.enable_gpu_checkbox.setToolTip("CuPy with a usable GPU was not found.")
+            "Use the GPU (NVIDIA or AMD) for large time-domain transforms")
+        gpu_found = _autoplot_gpu.available()
+        self.enable_gpu_checkbox.setChecked(self.config.enable_gpu_processing and gpu_found)
+        self.enable_gpu_checkbox.setEnabled(gpu_found)
+        self.enable_gpu_checkbox.setToolTip(
+            "%s\n\nThe inverse FFT runs on the GPU only for networks of at least "
+            "%d values (points x parameters); smaller ones, such as the usual "
+            "1 001-point .s2p files, are faster with NumPy. The results are the "
+            "same.\nNVIDIA: CuPy (cupy-cuda12x). AMD: CuPy for ROCm (Linux) or "
+            "PyOpenCL with pyvkfft. Environment variable AUTOPLOT_GPU = auto, "
+            "cuda, rocm, opencl or off." % (_autoplot_gpu.describe(),
+                                           _autoplot_gpu.threshold("ifft_centered")))
         self.enable_gpu_checkbox.toggled.connect(self._update_gpu_config)
         options.addRow(self.enable_gpu_checkbox)
         side.addWidget(options_group)
@@ -2016,7 +2109,7 @@ class TouchstoneMainWindow(QMainWindow):
         self._log_message("CPU cores set to %d" % value)
 
     def _update_gpu_config(self, checked: bool):
-        """Turn the GPU (CuPy) time-domain transform on or off."""
+        """Allow or forbid the GPU for large time-domain transforms."""
         self.config.enable_gpu_processing = bool(checked)
         self._log_message("GPU transform: %s" % ("on" if checked else "off"))
 
@@ -2334,7 +2427,7 @@ class TouchstoneMainWindow(QMainWindow):
             return
         cfg = asdict(self.td_config)
         items = [(k, d['network']) for k, d in self.processed_data.items()]
-        use_gpu = self.config.enable_gpu_processing and GPU_AVAILABLE is not None
+        use_gpu = self.config.enable_gpu_processing and _autoplot_gpu.available()
         workers = self.config.max_workers
         use_proc = self.config.enable_multiprocessing
 
@@ -2466,25 +2559,17 @@ class TouchstoneMainWindow(QMainWindow):
         workers = self.config.max_workers if self.config.enable_multiprocessing else 1
 
         def job(progress):
-            """Worker body: export each Smith chart (in a process pool when there are
-            several and workers > 1), then merge them into one bookmarked PDF when
+            """Worker body: export each Smith chart (in a process pool when that is
+            faster, see adaptive_map), then merge them into one bookmarked PDF when
             asked; returns {"done": {path: (ok, message)}, "merged": pdf or "",
             "out_dir": folder}.
             """
-            done: Dict[str, Tuple[bool, str]] = {}
-            total = max(len(jobs), 1)
-            if workers > 1 and len(jobs) > 1:
-                with make_process_pool(min(workers, len(jobs))) as pool:
-                    futures = [pool.submit(export_smith_worker, j) for j in jobs]
-                    for n, fut in enumerate(as_completed(futures), start=1):
-                        path, ok, msg = fut.result()
-                        done[path] = (ok, msg)
-                        progress(int(90 * n / total))
-            else:
-                for n, j in enumerate(jobs, start=1):
-                    path, ok, msg = export_smith_worker(j)
-                    done[path] = (ok, msg)
-                    progress(int(90 * n / total))
+            # 0.7.2: adaptive pool - the first charts are drawn here and timed;
+            # a pool starts only when it finishes sooner.
+            outcome = adaptive_map(export_smith_worker, jobs, workers,
+                                   progress=lambda d, t: progress(int(90 * d / max(t, 1))),
+                                   start_s=POOL_START_S)
+            done: Dict[str, Tuple[bool, str]] = {path: (ok, msg) for path, ok, msg in outcome}
             merged = ""
             if combined:
                 entries = [(p, f, s) for p, f, s in order if done.get(p, (False,))[0]]
@@ -2616,6 +2701,9 @@ def main() -> int:
     run = getattr(app, "exec", None) or getattr(app, "exec_")
     return run()
 
+
+# Pool start-up estimate for adaptive_map(): platform cost + this file's import time.
+POOL_START_S = module_import_seconds(_IMPORT_T0)
 
 if __name__ == "__main__":
     sys.exit(main())
