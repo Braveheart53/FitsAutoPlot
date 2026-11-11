@@ -593,3 +593,141 @@ values, NaN / ±inf, ±400 dB without overflow, and bit-identical results to the
 | [31] | P. Jääskeläinen, C. Sánchez de La Lama, E. Schnetter, K. Raiskila, J. Takala, and H. Berg, "pocl: A performance-portable OpenCL implementation," *Int. J. Parallel Program.*, vol. 43, no. 5, pp. 752–785, 2015, doi: 10.1007/s10766-014-0320-y. |
 | [32] | *IEEE Standard for Floating-Point Arithmetic*, IEEE Std 754-2019, 2019, doi: 10.1109/IEEESTD.2019.8766229 (bit patterns used for the sort keys). |
 | [33] | h5py developers, "Thread safety" (one global lock serialises all h5py calls), *h5py documentation*. [Online]. Available: https://docs.h5py.org/en/stable/threads.html |
+
+## 12. Trace names, source/type tags, nothing cut (2026-11-10)
+
+Request: *"update the touchstone plot order fix, also ensure traces are given meaningful names
+based on the source data and trace type and ensure tags are used to tag all data based on both
+type and data source. Ensure there is absolutely not truncation in any data when exporting to any
+file type. ... See the maser analysis chat and compare the vszh5 writer for any updates. Before
+changing the vszh5 writer, check all other chats and ensure a global update is utilized here."*
+Archive: `FitsAutoPlot_suite_0.4.2_2026-11-10.7z` (every tracked file).
+
+### 12.1 Versions
+
+| File | Before | Now | What changed |
+|---|---|---|---|
+| `vszh5_writer.py` | 0.0.28 | **0.0.29** | The registry master from the maser workbench chat (exact ISO 8601 / MJD text; additions only). SHA-256 `50631331470ebd50162030f971529044076a6c813a264393067522a504f9d701` = the RF project master. No chat has a newer writer, and this round needs no writer change, so there is no 0.0.30. |
+| `_autoplot_native.py` | 0.5.1 | **0.5.2** | `tag_data`, `source_tag`, `type_tag`, `trace_widget_name`, `exact_number_text`, `float_loses_text`; tags inherited by local / gap copies and a safety net for any untagged dataset; `%.12Vg` numeric ticks; `GetDataType`; local-time copies as one exact sum |
+| `_autoplot_common.py` | 0.4.1 | **0.4.2** | Exact `mjd_to_datestr`; `dataset_kinds` / `tag_named_datasets` for FITS and Franks |
+| `FITS_AutoPlot.py` / `Franks_AutoPlot.py` | 0.4.1 | **0.4.2** | Names, tags, nothing cut (12.2-12.4) |
+| `FITS_AutoPlot_plugin.py` / `Franks_AutoPlot_plugin.py` | 0.3.1 | **0.3.2** | Overlay records carry the source |
+| `ATR_AutoPlot.py` | 0.2.3 | **0.2.4** | Exact frequencies, kept text and trailing lines, tags |
+| `CSV_TSV_AutoPlot.py` | 6.1.2 | **6.1.3** | Exact parsing with every pandas, kept text, exact seconds, mixed ISO 8601, tags |
+| `RAndS_FSW_ASCII_Plotter.py` | 1.1.3 | **1.1.4** | Every sweep in the notes, inf/nan, kept sections, tags |
+| `Touchstone_AutoPlot.py` | 0.7.2 | **0.7.3** | Tags, data-named traces, exact notes, mpld3 fallback, order fix documented |
+| `_autoplot_pyqtgraph.py` | 0.3.1 | **0.3.2** | CSV export with every digit |
+| `tests/test_names_tags_precision.py` | — | **0.0.1** (new) | 21 tests (12.5, 12.6) |
+| `requirements-py38.txt` / `REQUIREMENTS.md` | 0.3.0 / 0.2.0 | **0.3.1 / 0.2.1** | mpld3 0.5.10 on Python 3.8; pandas parser note |
+
+### 12.2 Trace names
+
+Every trace (xy / polar point) widget is named after the dataset it draws:
+`trace_widget_name(y_dataset[, variant])` keeps letters, digits and `_` (a leading digit stays).
+The legend text is unchanged.
+
+| Program | 0.4.1-era name | Now (example) |
+|---|---|---|
+| FITS AutoPlot | `xy_Tach1_azServo1Hz` | `ds_2026_04_20_01_39_03__azServo1Hz__Tach1__sorted` (+ `_date_labels`, `_local_time`) |
+| Franks AutoPlot | `xy_CNS2018`, `xy_CNS2018_dtL` | `ds_2026_01__CNS2018__sorted`, `..._local_time` |
+| ATR AutoPlot | `<stem>` (single frequency) | `<stem>_mag`, `<stem>_phase`, `<stem>_2700MHz_mag` |
+| CSV/TSV | `Overlay_<file>_<col>` | `<file>_<col>` |
+| R&S, Touchstone | data names already | unchanged, made widget-safe |
+
+### 12.3 Tags: data source and data type
+
+Every dataset carries at least one `source_` and one `type_` tag (Veusz `TagDatasets`). The old
+bare tags (`<file>`, `raw`, `sorted`, `datestr`, `Avg_dB`, `Avg_Linear`, the run name) are
+replaced.
+
+| Program | `source_` | `type_` (examples) |
+|---|---|---|
+| FITS / Franks | file stem; every contributing file on overlays | `raw`, `sorted`, `time_MJD`, `time_local`, `time_labels`, `time_text`, `gap_rows`, `overlay`, `exact_text`, `complex_real` / `complex_imaginary`, `text` |
+| ATR | file stem | `azimuth_deg`, `frequency_MHz`, `magnitude_dB`, `phase_deg`, `time_measured`, `exact_text` |
+| CSV/TSV | file stem | `<column>`, `x_data`, `y_data`, `time_utc`, `time_local`, `time_text`, `exact_text` |
+| R&S | file stem (all files for the all-file average) | `frequency_Hz` / `time_s` / `index`, `time_sweep`, `sweep`, `dBm`, `average_dB`, `average_linear`, `power_linear`, `all_files`, `sweep_unaligned`, `sweep_text` |
+| Touchstone | file stem and `source_<run>`; grid: `source_Touchstone_AutoPlot` | `frequency_GHz`, `magnitude_dB`, `phase_deg`, `unwrapped`, `S11` ... `S22`, `time_ns`, `time_domain_dB`, `gated` / `ungated` / `measured`, `smith_gamma_real` / `_imaginary`, `frequency_Hz`, `Z0_50_ohm`, `smith_grid` |
+| any other (safety net in `finalize()`) | `source_<program>` | by kind of dataset |
+
+### 12.4 Truncation found and removed
+
+| Where | What was cut | Now |
+|---|---|---|
+| Franks `time_gbt.dat` | the COMMENTS column (`names[:5]`, `toks[:ncols]`) | `COMMENTS` text column (rest of the line as written); extra tokens `EXTRA_TEXT`; `#` lines in the notes |
+| FITS / Franks MJD date text | whole seconds (`02:29:07` for 02:29:06.72) | every digit (writer 0.0.29 `mjd_iso_local_strings`, Decimal) |
+| FITS complex columns | imaginary part dropped | `__re` and `__im` datasets |
+| FITS / CSV / Franks integers beyond 2^53 | digits lost in float64 | `*_exact_text` beside the numbers |
+| Franks / CSV words among numbers | the word (a NaN) | `*_exact_text` keeps the cell text |
+| CSV, pandas 2.0.3 (Python 3.8) and 3.0.5 | default C parser wrong by up to 7 375 ulp (relative 1e-12) for numbers with more than 15 digits or a power of ten beyond ±22: 212 971 of 400 000 17-digit values | `float_precision="round_trip"` for files that have such numbers, decided by a byte scan and a parser probe; pandas 3.1.1 deprecates the option ("All float precision modes now use the same converter") [34] |
+| CSV date-times | pandas 2.0 `total_seconds()` 1 ulp off; offsets and nanoseconds lost in float seconds; mixed ISO 8601 files skipped | seconds from integer nanoseconds (correctly rounded); stamps kept as `<col>_text`; `format="ISO8601"` retry |
+| Local-time copies (all programs) | round trip through Unix seconds (step 2.4e-7 s) | UTC + offset in one addition; tack / Temps / Franks: at most 1.19e-7 s different, whole seconds identical |
+| ATR | `%g` (6 digits) frequency names: 1420.4051 and 1420.4052 MHz both `1420p41MHz`, one overwrote the other; -Inf, words and an odd last value dropped; lines after `*` dropped | exact names (`_mhz_text`); `*_exact_text`; notes keep the trailing lines and the reading notes |
+| R&S | notes stopped at 2 000 sweeps; `inf` / `nan` sections dropped or read as binary; short sections and text sections dropped; rows with a word dropped; files with ragged rows refused | all sweeps listed; `inf`/`nan` are numbers; printable text never read as binary; `_Section<n>_unaligned` / `_Section<n>_text` kept; ragged rows padded |
+| Touchstone notes and titles | `%g`, `%.4g`, `%.6g` | `repr` (`_num`) |
+| Touchstone HTML Smith export on Python 3.8 | mpld3 0.5.11 / 0.5.12 call `Axis.get_converter`, absent in matplotlib 3.7.5, so no HTML was written | mpld3 0.5.10 pinned for 3.8 (works; every digit kept); PNG fallback with the reason |
+| Plots tab CSV export (pyqtgraph 0.13.3 and 0.14.0) | `numpy.format_float_positional(precision=10)`: 1.234e-12 → `0.0000000000`, 0.12345678901234568 → `0.1234567890` | "CSV of original plot data (every digit)" writes `repr` [38], [39] |
+| Veusz numeric ticks | default `%Vg` showed MJD 61234.1 as 6.1×10⁴ | `%.12Vg` |
+
+Checked and found exact: the `.vszh5` writer (float64, HDF5), the pyqtgraph HDF5 exporter, mpld3
+0.5.12 (Python 3.12) and 0.5.10 (Python 3.8) HTML (full `repr` digits in the page). PNG / SVG / PDF
+are pictures, not data exports.
+
+### 12.5 Touchstone time-gated page order (fixed in 0.7.2, documented now)
+
+0.7.1 collected the time-domain results with `as_completed`, so the time-gated pages followed the
+order in which the pool finished: 53 of the 220 example files were out of file order. Since 0.7.2,
+`adaptive_map` stores each result at its input index and `run_time_domain_batch` builds its dict in
+input order. Two new tests force a process pool in which a later item finishes first (a 2 s job, and
+a 200 001-point network) and check that the results and pages stay in input order.
+
+### 12.6 Verification
+
+| Check | Python 3.8.20 | Python 3.12 | Python 3.13 |
+|---|---|---|---|
+| Unit tests (`python -m unittest discover -s tests`) | 81 OK (2 skipped: OpenCL not installed) | 81 OK (2 skipped) | 81 OK (OpenCL on PoCL) |
+| Headless GUI runs (`run_env_checks.sh`) | 6 of 6 pass | 6 of 6 pass | 6 of 6 pass |
+| Format check (header, revision = version, Date lines, docstrings, 3.8 grammar) | 13 changed files OK | | |
+| Tooltip audit | 0 missing | | |
+
+Projects compared with the 0.4.1-era output, dataset by dataset (Python 3.12):
+
+| Project | Datasets before → now | Lost | Changed | Added | Untagged | Old `xy_` names |
+|---|---|---|---|---|---|---|
+| FITS tack | 776 → 776 | 0 | 42 (local copies, ≤ 1.19e-7 s) | 0 | 0 | 0 |
+| FITS UWBR Temps | 384 → 384 | 0 | 24 (local copies) | 0 | 0 | 0 |
+| Franks, 7 `.t00new` + `time_gbt.dat` | 377 → 383 | 0 | 34 local copies, 16 date strings (fractions kept) | 6 (COMMENTS, exact text) | 0 | 0 |
+| ATR, 25 files | 129 → 133 | 0 | 0 | 4 (exact text) | 0 | 0 |
+| R&S, 42 files | 826 → 826 | 0 | 0 | 0 | 0 | 0 |
+| CSV/TSV `temps.tsv` | 4 → 5 | 0 | 0 | 1 (time text) | 0 | 0 |
+| Touchstone, 223 files | 7 279 → 7 279 | 0 | 0 | 0 | 0 | 0 |
+
+All eight projects (the seven above plus a CSV test of nanosecond stamps, 2^53 + 1 integers,
+20-digit decimals and words) load in Veusz 4.2.1 with every dataset tagged `source_` and `type_`,
+and their first, middle and last pages render. CSV loading, 60 files of 50 000 × 5: 2.1 s on
+Python 3.8 (1.1 s before; the byte scan), 0.6 s on 3.12.
+
+### 12.7 Data gaps and limits
+
+* The suite's Touchstone values come from scikit-rf; a Touchstone file with more digits than
+  float64 holds is not checked for exact text (skrf parses the numbers).
+* Veusz's own Data editor shows 6 digits; that is Qt display only, the file holds float64.
+* The CSV byte scan is conservative: any exponent or 16-character run of digits switches pandas
+  2.x / 3.0 to the slower exact parser, even when the fast one would have been right.
+* `zoneinfo` names on Python 3.8 come through `iana_zone()` (dateutil / backports), as before.
+* Still no GPU here (section 11.7).
+* The suite's copy in `C:\Users\wwallace\Claude\Projects\GBO_PostProcessing\FitsAutoPlot` could
+  not be updated: the computer was not connected to this session.
+
+### 12.8 References (round 12)
+
+| # | Reference (IEEE) |
+|---|---|
+| [34] | pandas developers, "pandas.read_csv" (float_precision; "Deprecated since version 3.1.0: All float precision modes now use the same converter"), *pandas documentation*. [Online]. Available: https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html |
+| [35] | W. D. Clinger, "How to read floating point numbers accurately," in *Proc. ACM SIGPLAN Conf. Programming Language Design and Implementation (PLDI)*, 1990, pp. 92–101, doi: 10.1145/93542.93557. |
+| [36] | D. Goldberg, "What every computer scientist should know about floating-point arithmetic," *ACM Comput. Surv.*, vol. 23, no. 1, pp. 5–48, 1991, doi: 10.1145/103162.103163. |
+| [37] | Veusz developers, "Veusz command line and embedding interface (API)" (TagDatasets), *Veusz documentation*. [Online]. Available: https://veusz.readthedocs.io/en/latest/api.html |
+| [38] | pyqtgraph developers, `pyqtgraph/exporters/CSVExporter.py`, GitHub. [Online]. Available: https://github.com/pyqtgraph/pyqtgraph/blob/master/pyqtgraph/exporters/CSVExporter.py |
+| [39] | NumPy developers, "numpy.format_float_positional," *NumPy documentation*. [Online]. Available: https://numpy.org/doc/stable/reference/generated/numpy.format_float_positional.html |
+| [40] | pandas developers, "pandas.to_datetime" (format="ISO8601"), *pandas documentation*. [Online]. Available: https://pandas.pydata.org/docs/reference/api/pandas.to_datetime.html |
+| [41] | W. W. Wallace, "vszh5_writer 0.0.29 release notes" and "vszh5_writer registry," RF project documents, Nov. 10, 2026. |
+| [42] | mpld3 developers, "mpld3," PyPI. [Online]. Available: https://pypi.org/project/mpld3/ |

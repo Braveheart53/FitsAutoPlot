@@ -40,6 +40,108 @@ Optional: cupy (NVIDIA CUDA or AMD ROCm) or pyopencl + pyvkfft (any OpenCL
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.7.3: source_/type_ tags, data-named traces, exact numbers; order fix noted.
+Date: 2026-11-10
+#              * Tags source_<file stem>, source_<run> ("Dataset name") and
+#                type_<kind>: frequency_GHz, magnitude_dB, phase_deg
+#                (unwrapped), time_ns, time_domain_dB (gated / ungated),
+#                smith_gamma_real / imaginary, frequency_Hz, the
+#                S-parameter (S21 ...); the shared Smith grid is
+#                source_Touchstone_AutoPlot, type_smith_grid.  0.7.2 used
+#                the bare file and run names.
+#              * Traces named after their data (trace_widget_name).
+#              * Page notes and titles with every digit (_num, repr):
+#                frequencies in Hz and GHz, z0, gate centre and span, Z0
+#                (were %g / %.4g / %.6g).
+#              * HTML Smith export: mpld3 0.5.11 / 0.5.12 fail with
+#                matplotlib 3.7.5 (Python 3.8: no Axis.get_converter); a PNG is
+#                written with the reason, and requirements-py38.txt pins
+#                mpld3 0.5.10, which works and keeps every digit (tested).
+#              * Documented: 0.7.2 fixed the order of the time-gated pages.
+#                0.7.1 built them in the order the pool finished
+#                (as_completed), so 53 of the 220 example files came out of
+#                file order; since 0.7.2 adaptive_map returns results in
+#                input order (tests/test_names_tags_precision.py forces a
+#                pool in which a later file finishes first).
+#              Checked (223 example files, 7 279 datasets): data identical
+#              to 0.7.2; no dataset untagged.
+# %%%%% Function Descriptions
+        is_windows: True on Windows.
+        get_extended_path: Convert a path to Windows extended-length form (\\\\?\\) if needed.
+        normalize_path: Resolved path; extended-length form on Windows.
+        validate_path_length: Check a path against the classic Windows MAX_PATH limit.
+        truncate_filename: Shorten a file name to ``max_length`` keeping the extension.
+        ProcessingConfig (class): File processing options.
+        TimeDomainConfig (class): Time-domain transform and gate settings.
+        SmithChartConfig (class): Smith chart options.
+        get_sparam_color: Consistent colour for an S-parameter across every plot.
+        _num: A number for page notes and titles with every digit (0.7.3): the shortest text that gives back the same float64 (repr), an integer as is; 0.7.2 use...
+        sanitize_name: Veusz-safe dataset / widget / tag stem (letters, digits, '_').
+        s_param_names: [(i, j, 'S<i+1><j+1>'), ...] in row-major order.
+        to_db: 20*log10|x| with a floor so silence never becomes -inf; inf/NaN -> NaN.
+        td_axis_floor: Lower y limit (dB) for time-domain plots: peak minus TD_DISPLAY_RANGE_DB, rounded down to 10 dB.
+        read_touchstone_header: Comment ('!') and option ('#') lines, plus any keyword lines, up to the first numeric data line.
+        ensure_uniform_network: Return a network on an exactly uniform frequency grid.
+        resolve_window: scipy.signal.get_window specification for a GUI window choice.
+        time_domain_vectorized: Windowed band-pass time-domain response of every S-parameter at once.
+        one_port: S_ij of ``network`` as a one-port (scikit-rf gates one-ports only).
+        call_time_gate: ``skrf.time.time_gate`` with only the arguments this scikit-rf supports.
+        compute_time_domain: Time-domain response and time gating of every (or selected) S-parameter.
+        _td_worker: Process-pool entry point: (key, network, config, gpu) -> (key, result).
+        run_time_domain_batch: Time domain + gating for many files.
+        TimeDomainProcessor (class): Thin object wrapper over ``compute_time_domain`` (kept for 0.4.0 users).
+        make_smith_figure: Smith chart of a one-port with scikit-rf.
+        export_smith_worker: Process-pool entry point that writes one Smith chart file.
+        SmithChartPlottermpld3 (class): Smith chart export helpers (name kept from 0.4.0).
+        TouchstonePlotter (class): Builds the Veusz project for the processed Touchstone files.
+        _matplotlib_canvas: Fallback matplotlib Qt canvas (imported only when needed).
+        TouchstonePlotCanvas (class): Time-domain and Smith chart previews.
+        process_single_touchstone_file: Read one Touchstone file (process-pool entry point).
+        unique_keys: Map each path to a unique display key (file name, then ' (2)', ...).
+        TouchstoneProcessingThread (class): Reads the selected files (process pool for several files).
+        FunctionWorker (class): Run ``func(progress_callback)`` off the GUI thread.
+        _module_version: Installed version of a module, or 'not installed'.
+        build_about_content: Rich text and runtime details for Help > About.
+        TouchstoneMainWindow (class): Main window: processing, time domain and Smith chart tabs.
+        main: Start the GUI.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "Touchstone AutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        DB_FLOOR: |x| floor before 20*log10 (-240 dB)
+        TD_DISPLAY_RANGE_DB: time-domain y axis spans peak - 120 dB .. Auto
+        UNIFORM_RTOL: steps within this are taken as exactly uniform
+        NONUNIFORM_NOTE_RTOL: above this the re-gridding is reported
+        CPU_COUNT: logical CPUs of this computer
+        MAX_PATH_WINDOWS: classic Windows MAX_PATH (260 characters)
+        PATH_WARNING_THRESHOLD: warn when a path is longer than this
+        EXTENDED_PATH_PREFIX: Windows extended-length path prefix
+        GATING_MODES: gating combo box text -> gating mode
+        WINDOW_TYPES: transform / gate window choices
+        _NUMERIC_START: line starting with a number (Touchstone data line)
+        _TIME_GATE_PARAMS: parameters accepted by skrf.time.time_gate (they differ between scikit-rf versions)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+        QT_BINDING = "PySide6"
+        PYQTGRAPH_ERROR = ""
+        MPLD3_AVAILABLE = True
+        PDF_LIBRARY = "pypdf"
+        VEUSZ_BACKEND = "native"
+# %%%%% More Info
+    Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
+    scikit-rf reads the .sNp files; time domain and gating, Smith charts
+    (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
+    'spawn' start method on every platform and is used only when it pays off
+    (_autoplot_parallel); GPU optional for large transforms (NVIDIA or AMD,
+    _autoplot_gpu).
+    Every dataset carries the Veusz tags source_<file>, source_<run> and
+    type_<kind>; traces are named after their data; notes and titles give
+    every digit.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.7.2: Adaptive process pool; GPU transform for NVIDIA or AMD.
 Date: 2026-11-09
 #              * Reading, time domain and Smith export use the adaptive
@@ -426,9 +528,29 @@ import _autoplot_gpu
 # %%% Veusz document: native h5py writer (preferred) or embedded Veusz
 try:
     from _autoplot_native import NativeDocument
+    # 0.7.3: tags source_ / type_, trace names and exact number text
+    from _autoplot_native import exact_number_text, tag_data, trace_widget_name
     VEUSZ_BACKEND = "native"
 except ImportError:  # pragma: no cover - script copied without the module
     NativeDocument = None
+
+    def exact_number_text(value):
+        """repr() of a float, str() of an integer (as _autoplot_native)."""
+        if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+            return str(int(value))
+        return repr(float(value))
+
+    def tag_data(doc, names, sources=(), kinds=()):
+        """source_<word> / type_<word> tags (as _autoplot_native)."""
+        sources = (sources,) if isinstance(sources, str) else sources
+        kinds = (kinds,) if isinstance(kinds, str) else kinds
+        for tag in (["source_" + sanitize_name(s) for s in sources]
+                    + ["type_" + sanitize_name(k) for k in kinds]):
+            doc.TagDatasets(tag, list(names))
+
+    def trace_widget_name(y_dataset, variant=""):
+        """Widget name after its dataset (as _autoplot_native)."""
+        return sanitize_name(y_dataset) + ("_" + sanitize_name(variant) if variant else "")
     try:
         import veusz.embed as vz
         VEUSZ_BACKEND = "embedded"
@@ -439,7 +561,7 @@ except ImportError:  # pragma: no cover - script copied without the module
 
 # %% Application identity
 APP_NAME = "Touchstone AutoPlot"
-__version__ = "0.7.2"
+__version__ = "0.7.3"
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO / Green Bank Observatory (GBO)"
@@ -645,6 +767,14 @@ def get_sparam_color(param_name: str) -> str:
 
 
 # %% Small helpers
+def _num(value: Any) -> str:
+    """A number for page notes and titles with every digit (0.7.3): the
+    shortest text that gives back the same float64 (repr), an integer as is;
+    0.7.2 used %g / %.4g / %.6g, which cut 1.23456789 GHz to 1.23457."""
+    text = exact_number_text(value)
+    return text[:-2] if text.endswith(".0") else text
+
+
 def sanitize_name(text: str) -> str:
     """Veusz-safe dataset / widget / tag stem (letters, digits, '_')."""
     stem = re.sub(r"[^0-9A-Za-z_]+", "_", text).strip("_")
@@ -727,9 +857,9 @@ def ensure_uniform_network(network: Network) -> Tuple[Network, str]:
     regridded = network.interpolate(uniform, kind="linear")
     note = ""
     if deviation > NONUNIFORM_NOTE_RTOL:
-        note = ("non-uniform frequency steps (max deviation %.2g of the "
+        note = ("non-uniform frequency steps (max deviation %s of the "
                 "step); re-gridded linearly to %d uniform points"
-                % (deviation, len(f)))
+                % (_num(deviation), len(f)))
     return regridded, note
 
 
@@ -881,7 +1011,7 @@ def compute_time_domain(network: Network, td_config: Dict[str, Any],
                         span = float(skrf_time.detect_span(op, t_unit="ns"))
                     except Exception as exc:  # e.g. "Couldnt find 2 peaks"
                         entry_note = ("auto span not found (%s); used the set "
-                                      "span %.4g ns" % (exc, span))
+                                      "span %s ns" % (exc, _num(span)))
             gated = call_time_gate(op, center, span, td_config["mode"],
                                    gate_window, gate_fft_window)
             td_gated = time_domain_vectorized(gated.s, f, fft_window,
@@ -1006,8 +1136,20 @@ def export_smith_worker(job: Tuple[Network, str, str, str, str, bool, bool]) -> 
                 output_path = os.path.splitext(output_path)[0] + ".png"
                 fig.savefig(output_path, format="png", dpi=150, bbox_inches="tight")
                 return output_path, True, "mpld3 missing: wrote PNG instead"
+            try:
+                page = mpld3.fig_to_html(fig)
+            except AttributeError as exc:
+                # 0.7.3: mpld3 0.5.11 / 0.5.12 call Axis.get_converter(),
+                # which matplotlib 3.7.5 (the newest for Python 3.8) does not
+                # have; mpld3 0.5.10 works there.  Write a PNG, say why.
+                output_path = os.path.splitext(output_path)[0] + ".png"
+                fig.savefig(output_path, format="png", dpi=150, bbox_inches="tight")
+                return output_path, True, ("mpld3 %s does not work with matplotlib %s (%s); "
+                                           "wrote PNG instead - use mpld3 0.5.10"
+                                           % (getattr(mpld3, "__version__", "?"),
+                                              matplotlib.__version__, exc))
             with open(output_path, "w", encoding="utf-8") as fh:
-                fh.write(mpld3.fig_to_html(fig))
+                fh.write(page)
         elif fmt in ("png", "svg", "pdf"):
             kwargs = {"dpi": 150} if fmt == "png" else {}
             fig.savefig(output_path, format=fmt, bbox_inches="tight", **kwargs)
@@ -1112,11 +1254,16 @@ class TouchstonePlotter:
                                "this script.")
 
     # ----- widget helpers ---------------------------------------------------
-    def _tag(self, file_tag: str, names: Sequence[str]):
-        """Tag datasets with the file tag and the run tag."""
-        self.doc.TagDatasets(file_tag, list(names))
-        if self.run_tag and self.run_tag != file_tag:
-            self.doc.TagDatasets(self.run_tag, list(names))
+    def _tag(self, data: Dict[str, Any], key: str, names: Sequence[str],
+             kinds: Sequence[str]):
+        """Veusz tags of datasets (0.7.3): ``source_<file>`` (the Touchstone
+        file stem), ``source_<run>`` (the "Dataset name" of this run) and
+        ``type_<kind>`` for each of ``kinds`` (what the values are, e.g.
+        magnitude_dB, S21).  0.7.2 used the bare file and run names."""
+        path = data.get('file_path') or key
+        source = os.path.splitext(os.path.basename(str(path)))[0] or key
+        sources = [source] + ([self.dataset_name] if self.dataset_name else [])
+        tag_data(self.doc, list(names), sources, list(kinds))
 
     def _remove_page(self, name: str):
         """Remove an existing page so regenerating does not duplicate it."""
@@ -1177,6 +1324,7 @@ class TouchstonePlotter:
         base = sanitize_name(key)
         freq_name = "%s_freq_GHz" % base
         self.doc.SetData(freq_name, network.frequency.f / 1e9)
+        self._tag(data, key, [freq_name], ("frequency_GHz",))
         page_name = "SParam_%s" % base
         self._remove_page(page_name)
         page = self.doc.Root.Add('page', name=page_name)
@@ -1193,7 +1341,6 @@ class TouchstonePlotter:
             graph_phase, "%s - Phase%s" % (key, " (unwrapped)" if unwrap else ""),
             'Frequency (GHz)', 'Phase (deg)',
             "Auto" if unwrap else -180.0, "Auto" if unwrap else 180.0)
-        names = [freq_name]
         for i, j, param in s_param_names(network.nports):
             s = network.s[:, i, j]
             mag_name = "%s_%s_mag_dB" % (base, param)
@@ -1204,13 +1351,15 @@ class TouchstonePlotter:
                 phase = np.unwrap(phase)          # O(N), cheapest exact method
             self.doc.SetData(mag_name, to_db(s))
             self.doc.SetData(phase_name, np.degrees(phase))
-            names += [mag_name, phase_name]
+            self._tag(data, key, [mag_name], ("magnitude_dB", param))
+            self._tag(data, key, [phase_name], ("phase_deg", param)
+                      + (("unwrapped",) if unwrap else ()))
             color = get_sparam_color(param)
-            self._configure_xy_plot(graph_mag.Add('xy', name=mag_name),
+            # 0.7.3: trace widgets named after their data (trace_widget_name)
+            self._configure_xy_plot(graph_mag.Add('xy', name=trace_widget_name(mag_name)),
                                     freq_name, mag_name, color, key=param)
-            self._configure_xy_plot(graph_phase.Add('xy', name=phase_name),
+            self._configure_xy_plot(graph_phase.Add('xy', name=trace_widget_name(phase_name)),
                                     freq_name, phase_name, color, key=param)
-        self._tag(base, names)
 
     def create_time_gated_plots(self, key: str, data: Dict[str, Any],
                                 td_result: Dict[str, Any],
@@ -1224,14 +1373,15 @@ class TouchstonePlotter:
         freq_name = "%s_tg_freq_GHz" % base
         self.doc.SetData(time_name, td_result['time_ns'])
         self.doc.SetData(freq_name, td_result['frequency_hz'] / 1e9)
-        names = [time_name, freq_name]
+        self._tag(data, key, [time_name], ("time_ns", "time_domain"))
+        self._tag(data, key, [freq_name], ("frequency_GHz", "time_gating"))
         for param, entry in td_result['params'].items():
             page_name = "%s_%s_TimeGated" % (base, param)
             self._remove_page(page_name)
             page = self.doc.Root.Add('page', name=page_name)
-            page.notes.val = "%s\nGate: %s, centre %.6g ns, span %.6g ns%s" % (
+            page.notes.val = "%s\nGate: %s, centre %s ns, span %s ns%s" % (
                 self._notes(data), td_result.get('mode', ''),
-                entry['gate_center_ns'], entry['gate_span_ns'],
+                _num(entry['gate_center_ns']), _num(entry['gate_span_ns']),
                 ("\n" + entry['note']) if entry['note'] else "")
             columns = 2 if (plot_time_domain and plot_frequency_domain) else 1
             page.width.val = '30cm' if columns == 2 else '20cm'
@@ -1243,19 +1393,20 @@ class TouchstonePlotter:
                 tdg_name = "%s_%s_td_gated_dB" % (base, param)
                 self.doc.SetData(td_name, to_db(entry['td']))
                 self.doc.SetData(tdg_name, to_db(entry['td_gated']))
-                names += [td_name, tdg_name]
+                self._tag(data, key, [td_name], ("time_domain_dB", param, "ungated"))
+                self._tag(data, key, [tdg_name], ("time_domain_dB", param, "gated"))
                 graph = grid.Add('graph', name="%s_%s_TG_Graph" % (base, param))
                 self._configure_standard_graph(
-                    graph, "%s - %s time domain (gate %.4g +/- %.4g ns)" % (
-                        key, param, entry['gate_center_ns'],
-                        entry['gate_span_ns'] / 2.0),
+                    graph, "%s - %s time domain (gate %s +/- %s ns)" % (
+                        key, param, _num(entry['gate_center_ns']),
+                        _num(entry['gate_span_ns'] / 2.0)),
                     'Time (ns)', 'Magnitude (dB)',
                     td_axis_floor(entry['td'], entry['td_gated']), "Auto")
-                self._configure_xy_plot(graph.Add('xy', name=td_name),
+                self._configure_xy_plot(graph.Add('xy', name=trace_widget_name(td_name)),
                                         time_name, td_name, 'grey',
                                         key="%s ungated" % param,
                                         style="dotted", marker="none")
-                self._configure_xy_plot(graph.Add('xy', name=tdg_name),
+                self._configure_xy_plot(graph.Add('xy', name=trace_widget_name(tdg_name)),
                                         time_name, tdg_name, color,
                                         key="%s gated" % param, transparency=30)
             if plot_frequency_domain:
@@ -1263,19 +1414,19 @@ class TouchstonePlotter:
                 fdg_name = "%s_%s_fd_gated_dB" % (base, param)
                 self.doc.SetData(fd_name, to_db(entry['s']))
                 self.doc.SetData(fdg_name, to_db(entry['s_gated']))
-                names += [fd_name, fdg_name]
+                self._tag(data, key, [fd_name], ("magnitude_dB", param, "measured"))
+                self._tag(data, key, [fdg_name], ("magnitude_dB", param, "gated"))
                 graph = grid.Add('graph', name="%s_%s_TG_Freq_Graph" % (base, param))
                 self._configure_standard_graph(
                     graph, "%s - %s gated frequency response" % (key, param),
                     'Frequency (GHz)', 'Magnitude (dB)')
-                self._configure_xy_plot(graph.Add('xy', name=fd_name),
+                self._configure_xy_plot(graph.Add('xy', name=trace_widget_name(fd_name)),
                                         freq_name, fd_name, 'grey',
                                         key="%s measured" % param,
                                         style="dotted", marker="none")
-                self._configure_xy_plot(graph.Add('xy', name=fdg_name),
+                self._configure_xy_plot(graph.Add('xy', name=trace_widget_name(fdg_name)),
                                         freq_name, fdg_name, color,
                                         key="%s gated" % param, transparency=30)
-        self._tag(base, names)
 
     def create_smith_page(self, key: str, data: Dict[str, Any], networks: Dict[str, Network],
                           chart: "SmithChartConfig") -> str:
@@ -1314,12 +1465,20 @@ class TouchstonePlotter:
                                  vswr=vw.SMITH_VSWR if chart.draw_vswr else ())
             grid.write(self.doc)
             self._smith_grids[prefix] = grid
-        traces, names = [], list(grid.dataset_names())
+            # 0.7.3: the chart grid is drawn by this program, shared by every
+            # Smith page: source_Touchstone_AutoPlot, type_smith_grid
+            tag_data(self.doc, grid.dataset_names(), "Touchstone_AutoPlot",
+                     ("smith_grid", chart.chart_type + "_chart"))
+        traces = []
         for param, op in networks.items():
             stem = "%s_%s_gamma" % (base, param)
             for name, values in vw.smith_trace_datasets(stem, op.s[:, 0, 0], op.f).items():
                 self.doc.SetData(name, values)
-                names.append(name)
+                part = ("smith_gamma_real" if name.endswith(vw.SMITH_RE_SUFFIX) else
+                        "smith_gamma_imaginary" if name.endswith(vw.SMITH_IM_SUFFIX)
+                        else "frequency_Hz")
+                self._tag(data, key, [name], (part, param, "Z0_%s_ohm" % _num(
+                    chart.reference_impedance)))
             colour = get_sparam_color(param)
             traces.append(vw.smith_trace(stem, param, colour="" if colour == "auto" else colour,
                                          width="1.5pt"))
@@ -1327,14 +1486,14 @@ class TouchstonePlotter:
         self._remove_page(page_name)
         kind = "admittance" if chart.chart_type == "y" else "impedance"
         add_smith_page(self.doc.Root, page_name, grid, traces,
-                       title="%s - Smith chart (%s, Z0 = %g ohm)" % (key, kind,
-                                                                    chart.reference_impedance),
-                       notes="%s\nSmith chart: %s, renormalized to Z0 = %g ohm" % (
-                           self._notes(data), ", ".join(networks), chart.reference_impedance),
+                       title="%s - Smith chart (%s, Z0 = %s ohm)" % (
+                           key, kind, _num(chart.reference_impedance)),
+                       notes="%s\nSmith chart: %s, renormalized to Z0 = %s ohm" % (
+                           self._notes(data), ", ".join(networks),
+                           _num(chart.reference_impedance)),
                        graph_name="%s_Smith_Graph" % base,
-                       graph_notes="Z0 = %g ohm" % chart.reference_impedance,
+                       graph_notes="Z0 = %s ohm" % _num(chart.reference_impedance),
                        key=True)
-        self._tag(base, names)
         return page_name
 
     def _notes(self, data: Dict[str, Any]) -> str:
@@ -1344,9 +1503,12 @@ class TouchstonePlotter:
         network = data.get('network')
         extra = []
         if network is not None:
-            extra.append("%d-port, %d points, %.6g - %.6g GHz, z0 %s ohm" % (
-                network.nports, len(network.f), network.f[0] / 1e9, network.f[-1] / 1e9,
-                ", ".join("%g" % z for z in np.unique(np.real(network.z0)))))
+            # 0.7.3: every digit (was %.6g / %g); the frequencies in Hz as
+            # read, the GHz values as stored in the "_freq_GHz" datasets
+            extra.append("%d-port, %d points, %s - %s Hz (%s - %s GHz), z0 %s ohm" % (
+                network.nports, len(network.f), _num(network.f[0]), _num(network.f[-1]),
+                _num(network.f[0] / 1e9), _num(network.f[-1] / 1e9),
+                ", ".join(_num(z) for z in np.unique(np.real(network.z0)))))
         return header_notes(list(data.get('header_info', [])), source=data.get('file_path', ''),
                             title="Plot title: %s" % self.plot_title, extra=extra)
 

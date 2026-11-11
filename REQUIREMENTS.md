@@ -1,8 +1,15 @@
 # FitsAutoPlot suite — requirements and tested environments
 
-Revision 0.2.0 (2026-11-09, evening). Applies to the 2026-11-09 suite (FITS / Franks AutoPlot 0.4.1,
-R&S 1.1.3, ATR 0.2.3, Touchstone 0.7.2, writer 0.0.28). 0.2.0 adds the GPU options for NVIDIA and AMD
-(section 2.4) and the process-pool rule (section 2.3). Author: William W. Wallace (wwallace@nrao.edu).
+Revision 0.2.1 (2026-11-10). Applies to the 2026-11-10 suite (FITS / Franks AutoPlot 0.4.2,
+R&S 1.1.4, ATR 0.2.4, CSV/TSV 6.1.3, Touchstone 0.7.3, writer 0.0.29). 0.2.1: mpld3 0.5.10 on
+Python 3.8 (0.5.11 and 0.5.12 call `Axis.get_converter`, which matplotlib 3.7.5 lacks), and the pandas parser note below. 0.2.0 added
+the GPU options for NVIDIA and AMD (section 2.4) and the process-pool rule (section 2.3).
+
+pandas and exact numbers (0.2.1): the default C float parser of pandas 2.0.3 (the newest for
+Python 3.8) and 3.0.5 is not exact for numbers with more than 15 significant digits or a power of
+ten beyond +/-22 (measured: up to 7 375 ulp, relative 1e-12); pandas 3.1.1 is exact. CSV/TSV
+AutoPlot 6.1.3 checks the installed pandas once and reads such files with
+`float_precision="round_trip"`, so any of these versions gives the same, exact values. Author: William W. Wallace (wwallace@nrao.edu).
 
 The suite runs on **Python 3.8** (the RHEL 8 / NRAO set-up) and **Python 3.12**. Both were tested
 on 2026-11-09 with the exact package versions below: the unit tests, every program run without a
@@ -43,7 +50,7 @@ Update an environment after a new release:
 | pandas | 2.0.3 | 3.1.1 | CSV/TSV AutoPlot | delimited-file reader |
 | scikit-rf | 1.9.0 | 2.2.0 | Touchstone AutoPlot | Touchstone reader, time domain, gating |
 | matplotlib | 3.7.5 | 3.11.2 | Touchstone; tools/make_suite_icons.py | PDF/PNG Smith-chart export; icons |
-| mpld3 | 0.5.12 | 0.5.12 | Touchstone | HTML Smith charts |
+| mpld3 | 0.5.10 | 0.5.12 | Touchstone | HTML Smith charts. On 3.8 use 0.5.10: 0.5.11 and 0.5.12 call `Axis.get_converter`, which matplotlib 3.7.5 (the newest for 3.8) does not have (tested 2026-11-10) |
 | pypdf | 5.9.0 | 7.0.0 | vszh5_writer, Touchstone | PDF bookmarks (outline) |
 | pillow | 10.4.0 | 13.0.0 | matplotlib; icons | images |
 | tzdata | 2026.6 | 2026.6 | vszh5_writer | IANA time-zone database. Windows has none, and `zoneinfo` needs this package there |

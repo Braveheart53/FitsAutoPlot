@@ -1,6 +1,12 @@
 # =============================================================================
 # requirements-py38.txt - FitsAutoPlot suite, Python 3.8
 # -----------------------------------------------------------------------------
+# %%%% 0.3.1: mpld3 0.5.10 (0.5.11 and 0.5.12 fail with matplotlib 3.7.5).
+# Date: 2026-11-10
+#             mpld3 0.5.11 / 0.5.12 call matplotlib Axis.get_converter(),
+#             which matplotlib 3.7.5 (the last release for Python 3.8) does
+#             not have, so the Touchstone HTML Smith charts failed on 3.8;
+#             0.5.10 works and keeps every digit of the data (tested).
 # %%%% 0.3.0: Tested set of the 2026-11-09 suite (Python 3.8.20, PySide6).
 # Date: 2026-11-09
 #             Every program, the unit tests and the real GBT FITS files were
@@ -32,7 +38,7 @@ scipy==1.10.1           # Touchstone (scikit-rf), CSV statistics
 pandas==2.0.3           # CSV/TSV AutoPlot
 scikit-rf==1.9.0        # Touchstone AutoPlot (last release for Python 3.8)
 matplotlib==3.7.5       # Touchstone PDF/PNG Smith-chart export, icons
-mpld3==0.5.12           # Touchstone HTML Smith charts
+mpld3==0.5.10           # Touchstone HTML Smith charts (0.5.11 / 0.5.12 fail on matplotlib 3.7.5)
 pypdf==5.9.0            # PDF bookmarks (vszh5_writer, Touchstone)
 pillow==10.4.0          # images (matplotlib, tools/make_suite_icons.py)
 # --- time zones: IANA names on Python 3.8 -------------------------------------

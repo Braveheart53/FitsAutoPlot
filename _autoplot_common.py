@@ -32,6 +32,127 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.2: Names and tags from the data; MJD text with every digit.
+Date: 2026-11-10
+#              * mjd_to_datestr(): every digit of the time (vszh5_writer
+#                0.0.29 mjd_iso_local_strings, Decimal arithmetic): MJD
+#                61234.10355 -> 2026-07-13_02:29:06.72; 0.4.1 rounded to
+#                whole seconds.
+#              * NEW dataset_kinds(), tag_named_datasets(),
+#                document_dataset_names(): FITS / Franks datasets get
+#                source_<file> and type_<kind> tags read from their names
+#                (raw, sorted, time_MJD, time_local, time_text, time_labels,
+#                gap_rows, overlay, exact_text, complex parts, image, text).
+#              * tag_word, source_tag, type_tag, tag_data, trace_widget_name,
+#                exact_number_text and float_loses_text come from
+#                _autoplot_native 0.5.2 (re-exported here).
+#              * Local break edges of the dt_labels axes: exact UTC + offset,
+#                as the datasets (local_veusz_seconds).
+# %%%%% Function Descriptions
+        make_dark_palette: Return a Fusion-style dark palette.
+        make_light_palette: Return a default light palette (style standard).
+        apply_theme: Apply the suite's 'dark' or 'light' palette to the running QApplication (standalone windows only - plugins style their own dialog instead).
+        suite_theme: Theme stored for the whole suite (launcher and tools).
+        store_suite_theme: Save ``mode`` ('dark' or 'light') as the suite-wide theme.
+        MemoryMonitorConfig (class): Configuration knobs for the memory monitor.
+        MemoryAwareCache (class): Memory-aware data cache that spills large numpy arrays to disk via ``numpy.memmap``.
+        MemoryMonitor (class): Background thread that publishes a callback whenever process RSS crosses the high-water mark.
+        run_in_threadpool: Submit ``work_items`` -- ``(key, fn, args)`` triplets -- to a ``ThreadPoolExecutor`` and collect results keyed by ``key``.
+        open_embedded: Legacy function name; return a native model, never launch Veusz.
+        begin_native_plugin_export: Pick an output file before parsing; never modify the host document.
+        finish_native_plugin_export: Same HDF5 writer for both plugin entry points and standalone GUIs.
+        save_vszh5: Atomically write the native model with h5py; no Veusz runtime needed.
+        _walk_widget_tree: Recursive sibling of ``Root.WalkWidgets``.
+        _collect_referenced_dataset_names_via_walk: Original (v0.0.17) WalkWidgets-based traversal.
+        _collect_referenced_dataset_names_via_text: v0.0.19 authoritative collector: dump the document via Veusz's own text serialization and regex out every ``Set('xData', 'name')``-style binding.
+        _collect_referenced_dataset_names: v0.0.19: combine WalkWidgets-based traversal AND a document-text scan, returning the UNION of both whitelists.
+        save_vszh5_minimized: Save exactly the referenced native datasets without deleting anything.
+        _norm_tag_token: Lower-cased, stripped string form of a tag-tuple element.
+        is_sentinel_tag_tuple: Return True iff ``tup`` is a placeholder/catch-all channel-tag tuple that should be EXCLUDED from dt-overlay datetime emission.
+        is_delta_column: Deprecated stub kept for v0.0.17 back-compat.
+        open_in_veusz_app: Launch an optional external Veusz GUI and load ``filename`` (typically a .vszh5 project just written by save_vszh5).
+        detect_time_breaks: Detect large gaps in a 1-D monotonic-ish array of time samples and return a list of (start, end) pairs suitable for Veusz's ``axis-broken`` widget.
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        column_unit_factor_from_day: Return the multiplier that converts a day-scale threshold into the units of the column named ``col_name``.
+        detect_time_breaks_unit_aware: Unit-aware wrapper around ``detect_time_breaks``.
+        break_pairs_to_breakpoints: Flatten a list of (start, end) tuples to Veusz's flat-list format [s1, e1, s2, e2, ...] as expected by the ``breakPoints`` setting of the ``axis-br...
+        make_broken_x_axis: Add an ``axis-broken`` widget named ``x`` to ``graph`` with the given list of (start, end) break pairs, after removing the default ``x`` axis that...
+        mjd_to_veusz_seconds: Convert an array of Modified Julian Dates (UTC) to the float-seconds units Veusz uses internally for date-time datasets.
+        _coerce_axis_setting_to_str: Some Veusz axis settings (rotate, in particular) are documented as accepting either an int or its string form.
+        style_datetime_x_axis: Apply the standard datetime tick-label format and angled rotation to an axis widget.
+        is_gpu_available: True when a GPU back end (CuPy CUDA/ROCm or PyOpenCL) found a device.
+        gpu_backend_name: Short string describing the GPU back end (or why there is none) for the GUI/log.
+        enable_gpu: Toggle the process-wide GPU acceleration flag.
+        gpu_enabled: Return the current global GPU-enabled state.
+        set_gpu_argsort_threshold: Set the minimum array size (samples) at which the GPU sort is used.
+        get_gpu_argsort_threshold: Minimum array size (samples) for the GPU argsort path.
+        gpu_tooltip: Tooltip of a GPU checkbox: the device found (or why none), the size threshold of ``operation`` and the install hints for NVIDIA and AMD.
+        gpu_usage_text: GPU and CPU calls of each GPU-capable operation since reset_gpu_usage().
+        reset_gpu_usage: Start counting GPU and CPU calls again (at the start of a batch).
+        gpu_argsort: Return ``np.argsort(arr, kind="stable")`` (ascending, int64) with optional GPU acceleration (NVIDIA or AMD; see _autoplot_gpu).
+        ProgressThrottle (class): Rate limit for progress-bar updates (0.4.1).
+        AutoPlotMainWindow (class): Base main window mirroring the layout used by Touchstone_AutoPlot.py:
+        open_maybe_gzipped: Return a binary file handle for ``path``; transparently gunzip *.gz.
+        mjd_to_datestr: Convert an array of Modified Julian Dates (UTC, double precision) into an array of formatted timestamp strings, with every digit of the time.
+        dataset_kinds: Type kinds of a FITS / Franks AutoPlot dataset, read from its name.
+        document_dataset_names: Every dataset name of a NativeDocument or a Veusz document.
+        tag_named_datasets: Tag FITS / Franks datasets: ``sources`` plus the kinds of each name (dataset_kinds); text datasets also get ``type_text``.
+        register_nrao_fits_units: Register the non-standard NRAO FITS unit aliases with astropy.units so that ``QTable.read`` / ``Table.read`` no longer emit a UnitsWarning.
+        suppress_fits_unit_warnings: Context manager that filters the harmless FITS unit-related warnings emitted by ``astropy.io.fits`` and ``astropy.table`` when reading NRAO 1PPS-de...
+        set_datetime_dataset: Push a Veusz datetime dataset, coercing values to plain floats.
+        safe_dsname: Sanitize an arbitrary string for use as a Veusz dataset name.
+        _stable_index: Deterministic non-negative index in ``[0, modulus)``.
+        trace_style_for: Return ``(color_hex, line_style_str)`` for an identity key.
+        apply_trace_style: Apply identity-stable color + line style + markers to a Veusz xy.
+        build_sparse_datestr_dataset: Push a same-length sparse date-string text dataset to Veusz.
+        build_full_datestr_dataset: Push a same-length per-point date-string text dataset to Veusz.
+        style_xy_datetime_labels: Apply rotated, compact text formatting to an xy widget's labels.
+        build_density_datestr_dataset: Push a same-length date-string text dataset with continuous density.
+        build_textx_dataset: Push a same-length per-point date-string text dataset for use as xData.
+        configure_axis_labels_mode: Switch a Veusz axis to ``mode='labels'`` with sensible defaults.
+        build_dtnum_dataset: Push a numeric Veusz-datetime-seconds dataset for use as xData.
+        configure_axis_datetime_mode: Switch a Veusz x axis to ``mode='datetime'`` and style its ticks.
+        mjd_break_pairs_to_dtsec: Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _DATASET_REF_SETTINGS: v0.0.19: trimmed the tuple to entries that *actually* hold dataset names.  ``posn`` is a position rectangle, ``key`` is a legend-label STRING -- ne...
+        _DOC_DATASET_REF_REGEX: v0.0.19: regex used to extract dataset references from the document's own saved-text representation.  This is the AUTHORITATIVE source of truth --...
+        SENTINEL_TAG_TOKENS: The user can extend the sentinel set in place; the predicate is case-insensitive and trims whitespace before matching.
+        DELTA_COLUMN_NAME_PATTERNS: Deprecated column-name predicate -- retained as a no-op for any external script that may have imported it.  v0.0.17 superseded this with the tuple-...
+        DAY_SCALE_COLUMN_NAMES: Unknown column names default to 1.0 (i.e. assume MJD-day units), which is the safe choice when the column appears to be a generic time axis: a too-...
+        SECOND_SCALE_COLUMN_NAMES: column names whose values are seconds (time axes)
+        _GAP_TOKEN_REGEX: Accepts strings like ``"5m3d2h"`` (5 months, 3 days, 2 hours), with or without whitespace between tokens, case-insensitive.  A bare number (no unit...
+        GAP_STRING_HELP: (0.4.0) Tool tip of the gap text boxes.
+        _DAYS_PER_MONTH: Average Gregorian month length (365.25 / 12) -- intentionally the same value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 0.4.0
+        _DAYS_PER_SECOND: 0.4.0
+        MJD_VEUSZ_EPOCH_MJD: MJD that corresponds to Veusz's internal date-time zero (2009-01-01 UTC).
+        DEFAULT_DATETIME_TICK_FORMAT: 0.3.0: ISO 8601
+        LOCAL_TIME_AXIS_LABEL: 0.3.0: label of a local date-time axis (the offset is appended on save).
+        DEFAULT_DATETIME_TICK_ROTATE_DEG: Default tick label rotation -- 45 degrees keeps a 19-character label readable at typical cadences.  Veusz accepts integer or stringified integer de...
+        DEFAULT_DATETIME_MAJOR_TICKS_TARGET: Target number of major ticks along the x axis.  Veusz auto-picks the spacing to satisfy roughly this many major ticks; we keep it modest so the rot...
+        QUEUED_CONNECTION: queued signal connection, valid for PySide6, PyQt5 and PyQt6
+        MJD_EPOCH_JD_OFFSET: Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC. JD = MJD + 2400000.5  -- we implement the conversion directly without astropy.time...
+        _NAME_KINDS: (name suffix, type kinds) of FITS / Franks dataset names, longest first
+        _NRAO_UNITS_REGISTERED: NRAO 1PPS-delta FITS files use non-standard FITS unit strings: * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit) * DELTAT  carr...
+        TRACE_COLOR_PALETTE: trace colours, cycled
+        TRACE_LINE_STYLES: line styles cycled after the colours
+        TRACE_STYLE_VARY_THRESHOLD: 16
+        DEFAULT_DATETIME_LABEL_ANCHORS: legacy date-label pages: labels per trace
+        DEFAULT_DATETIME_LABEL_ANGLE: legacy date-label pages: label angle (degrees)
+        DEFAULT_DATETIME_LABEL_SIZE: legacy date-label pages: label font size
+        DEFAULT_DATETIME_LABEL_FMT: legacy date-label pages: strftime format
+        PYQTGRAPH_ERROR = None
+        _PSUTIL_AVAILABLE = True
+# %%%%% More Info
+    Shared by FITS and Franks AutoPlot and their plugins.  numpy.memmap is
+    the RAM -> disk transport of MemoryAwareCache (no pickling, the kernel page
+    cache does the writing).  The memory monitor runs in its own thread: its
+    callback must not touch Qt widgets (log() is safe).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.1: GPU for NVIDIA or AMD through _autoplot_gpu; progress throttle.
 Date: 2026-11-09
 #              * GPU helpers (is_gpu_available, gpu_backend_name, enable_gpu,
@@ -848,11 +969,13 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.4.1"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.4.2"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
+import datetime as _dt
 import gc
+import math
 import os
 import re
 import sys
@@ -873,6 +996,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # %%% IMPORTS - Scientific
 import numpy as np
 from _autoplot_native import NativeDocument
+# 0.4.2: dataset tags and names shared by every AutoPlot program (Qt-free)
+from _autoplot_native import (tag_word, source_tag, type_tag, tag_data,   # noqa: E402,F401
+                              trace_widget_name, exact_number_text, float_loses_text)
 
 # ---------------------------------------------------------------------------
 # %%% Qt imports via qtpy (with frozen-bundle fallback to PySide6, matching the
@@ -2944,7 +3070,7 @@ def mjd_to_datestr(mjd_arr: "np.ndarray",
                    fmt: str = "%Y-%m-%d_%H:%M:%S") -> "np.ndarray":
     """
     Convert an array of Modified Julian Dates (UTC, double precision) into
-    an array of formatted timestamp strings.
+    an array of formatted timestamp strings, with every digit of the time.
 
     Parameters
     ----------
@@ -2955,7 +3081,9 @@ def mjd_to_datestr(mjd_arr: "np.ndarray",
         the sentinel string ``"NaN"`` (rather than "") to make the missing
         sample explicit and visually distinguishable.
     fmt : str, optional
-        ``strftime`` format string; defaults to ``YYYY-MM-DD_HH:MM:SS``.
+        ``strftime`` format of the whole-second part; defaults to
+        ``YYYY-MM-DD_HH:MM:SS``.  When it ends with ``%S`` the fraction of
+        the second follows, with every digit (0.4.2).
 
     Returns
     -------
@@ -2963,141 +3091,136 @@ def mjd_to_datestr(mjd_arr: "np.ndarray",
 
     Notes
     -----
-    Implementation uses Fliegel & Van Flandern's integer Julian-day-number
-    algorithm so it is vectorisable, deterministic and tz-free (UTC).
+    0.4.2: exact.  The time of day comes from the decimal the MJD states
+    (its shortest round-trip text, repr), converted in decimal arithmetic by
+    vszh5_writer.mjd_iso_local_strings (writer 0.0.29, the same rule as the
+    MHM2010 / T4 workbench), so MJD 61234.10355 gives 22:29:06.72 - not
+    22:29:07 (0.4.1 rounded to whole seconds, which moved a time by up to
+    0.5 s) and not 22:29:06.7199999 (the binary float).  Whole seconds go
+    through ``strftime(fmt)``; a format that does not end with ``%S`` gets
+    no fraction.
     """
+    import vszh5_writer
     a = np.asarray(mjd_arr, dtype=float)
-    out = np.empty(a.shape, dtype=object)
-    finite = np.isfinite(a)
-    # Replace non-finite slots with 0 for the vectorised math; we mask them
-    # back to the sentinel "NaN" string at the end.  This avoids
-    # RuntimeWarnings from the int64 cast when NaN/Inf values are present,
-    # and crucially preserves array length so callers never "drop" rows.
-    a_safe = np.where(finite, a, 0.0)
-    # integer part of JD (Julian Day Number) + fractional day
-    jd = a_safe + MJD_EPOCH_JD_OFFSET
-    # Split into integer JDN and fractional day-of-day
-    jdn = np.floor(jd + 0.5).astype(np.int64)
-    frac = (jd + 0.5) - jdn   # in [0, 1)
-    # Fliegel & Van Flandern algorithm
-    L = jdn + 68569
-    N = (4 * L) // 146097
-    L = L - (146097 * N + 3) // 4
-    I = (4000 * (L + 1)) // 1461001
-    L = L - (1461 * I) // 4 + 31
-    J = (80 * L) // 2447
-    day = L - (2447 * J) // 80
-    L = J // 11
-    month = J + 2 - 12 * L
-    year = 100 * (N - 49) + I + L
-    # time of day
-    seconds_of_day = frac * 86400.0
-    hh = np.floor(seconds_of_day / 3600.0).astype(np.int64)
-    mm = np.floor((seconds_of_day - hh * 3600.0) / 60.0).astype(np.int64)
-    ss = seconds_of_day - hh * 3600.0 - mm * 60.0
-    # Compose strings.
-    #
-    # v0.0.14 perf path: for the most common format string
-    # "%Y-%m-%d_%H:%M:%S" (used by the new full-labels rendering on
-    # 10k+ point traces), build the output array with vectorised NumPy
-    # string operations and skip the per-element datetime/strftime
-    # allocation entirely.  For any other ``fmt`` we fall back to the
-    # general per-element path so callers retain full strftime support.
-    import datetime as _dt
-    n = a.size
-    a_f = a.reshape(-1)
-    fin_f = finite.reshape(-1)
-    yr = year.reshape(-1)
-    mo = month.reshape(-1)
-    dy = day.reshape(-1)
-    hr = hh.reshape(-1)
-    mi = mm.reshape(-1)
-    se = ss.reshape(-1)
-
-    # ---- normalise seconds wrap-around (vectorised) --------------------
-    # ``ss`` can round up to 60 after int-rounding, which then propagates
-    # to minutes/hours/days.  Do this in one shot so both the fast and
-    # slow paths see consistent calendar values.
-    sec_int_v = np.rint(se).astype(np.int64)
-    extra_min_v = sec_int_v // 60
-    sec_int_v = sec_int_v % 60
-    mi_eff_v = mi.astype(np.int64) + extra_min_v
-    extra_hr_v = mi_eff_v // 60
-    mi_eff_v = mi_eff_v % 60
-    hr_eff_v = hr.astype(np.int64) + extra_hr_v
-    extra_day_v = hr_eff_v // 24
-    hr_eff_v = hr_eff_v % 24
-    # Apply any whole-day carry to the calendar date.  np.datetime64
-    # arithmetic handles month/year roll-over correctly, which is rare
-    # but possible right at midnight UTC after seconds round-up.
-    if np.any(extra_day_v != 0):
-        try:
-            base_dates = (np.asarray(yr, dtype="datetime64[Y]")
-                          + (mo.astype(np.int64) - 1).astype("timedelta64[M]")
-                          + (dy.astype(np.int64) - 1).astype("timedelta64[D]")
-                          + extra_day_v.astype("timedelta64[D]"))
-            yr_eff = base_dates.astype("datetime64[Y]").astype(np.int64) + 1970
-            mo_eff = (base_dates.astype("datetime64[M]").astype(np.int64) % 12) + 1
-            dy_eff = ((base_dates - base_dates.astype("datetime64[M]"))
-                      .astype("timedelta64[D]").astype(np.int64) + 1)
-        except Exception:
-            # If the datetime64 path fails for any pathological calendar
-            # value, fall back to the per-element loop below.
-            yr_eff = yr.astype(np.int64)
-            mo_eff = mo.astype(np.int64)
-            dy_eff = dy.astype(np.int64)
-    else:
-        yr_eff = yr.astype(np.int64)
-        mo_eff = mo.astype(np.int64)
-        dy_eff = dy.astype(np.int64)
-
-    flat_out = np.empty(n, dtype=object)
-
-    if fmt == "%Y-%m-%d_%H:%M:%S":
-        # ---- vectorised fast path -------------------------------------
-        # np.char.zfill expects a string array, so cast once and pad.
-        def _z(arr, w):
-            """Integers of ``arr`` as text, zero-padded to ``w`` digits."""
-            return np.char.zfill(
-                np.asarray(arr, dtype=np.int64).astype("U%d" % (w + 1)),
-                w,
-            )
-        y4 = _z(yr_eff, 4)
-        m2 = _z(mo_eff, 2)
-        d2 = _z(dy_eff, 2)
-        h2 = _z(hr_eff_v, 2)
-        n2 = _z(mi_eff_v, 2)
-        s2 = _z(sec_int_v, 2)
-        # Compose "YYYY-MM-DD_HH:MM:SS" without any Python-level loop.
-        joined = np.char.add(np.char.add(np.char.add(y4, "-"), m2), "-")
-        joined = np.char.add(np.char.add(joined, d2), "_")
-        joined = np.char.add(np.char.add(np.char.add(joined, h2), ":"), n2)
-        joined = np.char.add(np.char.add(joined, ":"), s2)
-        # NaN-preserving sentinel for non-finite MJDs.
-        joined = np.where(fin_f, joined, "NaN")
-        flat_out[:] = joined.tolist()
-    else:
-        # ---- general per-element fallback (any strftime fmt) ----------
-        for k in range(n):
-            if not fin_f[k]:
-                # NaN-preserving sentinel: Veusz text datasets have no
-                # native NaN, but we must keep array length consistent
-                # with the numeric companion so downstream sorts/joins
-                # line up.
-                flat_out[k] = "NaN"
-                continue
+    flat = a.reshape(-1)
+    texts = vszh5_writer.mjd_iso_local_strings(flat, zone="UTC") if flat.size else []
+    out = []
+    default = fmt in ("%Y-%m-%d_%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S")
+    separator = fmt[8] if default else ""
+    for value, text in zip(flat.tolist(), texts):
+        if not math.isfinite(value) or not text:
+            out.append("NaN")
+            continue
+        # "YYYY-MM-DDTHH:MM:SS[.fff...]+00:00"
+        stamp = text[:-6] if text.endswith("+00:00") else text
+        whole, _dot, fraction = stamp.partition(".")
+        if default:
+            body = whole[:10] + separator + whole[11:]
+        else:
             try:
-                dt = _dt.datetime(int(yr_eff[k]), int(mo_eff[k]),
-                                  int(dy_eff[k]),
-                                  int(hr_eff_v[k]), int(mi_eff_v[k]),
-                                  int(sec_int_v[k]))
-                flat_out[k] = dt.strftime(fmt)
+                body = _dt.datetime.strptime(whole, "%Y-%m-%dT%H:%M:%S").strftime(fmt)
             except Exception:
-                # Defensive: bad calendar values from a corrupt MJD also
-                # map to the NaN sentinel (still length-preserving).
-                flat_out[k] = "NaN"
-    out = flat_out.reshape(a.shape)
-    return np.asarray(out.tolist())
+                out.append("NaN")
+                continue
+        if fraction and fmt.endswith("%S"):
+            body += "." + fraction
+        out.append(body)
+    if not out:
+        return np.asarray([], dtype=str).reshape(a.shape)
+    return np.asarray(out, dtype=str).reshape(a.shape)
+
+
+# ---------------------------------------------------------------------------
+# %% NAMES AND TAGS OF DATASETS AND TRACES (0.4.2)
+# ---------------------------------------------------------------------------
+# Every dataset carries two kinds of Veusz tag (Veusz Data panel: Group by
+# Tags), the same rule as the MHM2010 / T4 workbench 0.2.3:
+#
+#     source_<origin>   the file (stem) or program the values come from
+#     type_<kind>       what the values are: raw, sorted, time_MJD,
+#                       time_local, time_text, gap_rows, overlay, image,
+#                       text, frequency, magnitude_dB, smith, average_dB ...
+#
+# A dataset may carry several of each (an overlay of 319 files carries the
+# source tag of every file).  Trace (xy) widgets are named after the data
+# they draw: the y dataset name, which holds the source, the item and the
+# processing type, plus a variant suffix for a second drawing of the same
+# data (local time axis, date labels).
+
+# 0.4.2: tag_word, source_tag, type_tag, tag_data, trace_widget_name,
+# exact_number_text and float_loses_text live in _autoplot_native (no Qt)
+# and are imported above.
+
+
+#: (suffix, type kinds) of the dataset names written by FITS and Franks
+#: AutoPlot, longest suffix first.  A name ends with one of these.
+_NAME_KINDS = (
+    ("__x__sorted_local", ("sorted", "time_local")),
+    ("__sorted_local", ("sorted", "time_local")),
+    ("_dtnum_local", ("time_labels", "time_local")),
+    ("__x__sorted", ("sorted", "time_MJD")),
+    ("__exact_text", ("raw", "exact_text")),
+    ("__sorted", ("sorted",)),
+    ("__raw", ("raw",)),
+    ("__utc", ("raw", "time_utc")),
+    ("__re", ("raw", "complex_real")),
+    ("__im", ("raw", "complex_imaginary")),
+    ("__IMAGE", ("image",)),
+    ("_dtnum", ("time_labels", "time_MJD")),
+)
+
+
+def dataset_kinds(name: str) -> Tuple[str, ...]:
+    """Type kinds of a FITS / Franks AutoPlot dataset, read from its name.
+
+    The names end with the processing step (``__raw``, ``__sorted``,
+    ``__x__sorted`` ...); ``_gaps`` (line-break NaN rows), ``datestr``
+    (exact date text), ``datelabels`` (sparse date labels) and the
+    ``OverlayCat`` prefix add kinds.  Returns at least one kind.
+    """
+    kinds: List[str] = []
+    base = re.sub(r"_gaps(_[0-9]+)?$", "", name)
+    if base != name:
+        kinds.append("gap_rows")
+    for suffix, found in _NAME_KINDS:
+        if base.endswith(suffix):
+            kinds.extend(found)
+            break
+    if "_exact_text" in base:
+        kinds.append("exact_text")
+    if "datestr" in name:
+        kinds.append("time_text")
+    if "datelabels" in name:
+        kinds.append("time_labels")
+    if name.startswith("OverlayCat__"):
+        kinds.append("overlay")
+    return tuple(dict.fromkeys(kinds or ["derived"]))
+
+
+def document_dataset_names(doc: Any) -> List[str]:
+    """Every dataset name of a NativeDocument or a Veusz document."""
+    if isinstance(getattr(doc, "datasets", None), dict):
+        return list(doc.datasets)
+    try:
+        return list(doc.GetDatasets())
+    except Exception:
+        return []
+
+
+def tag_named_datasets(doc: Any, names: Any, sources: Any) -> None:
+    """Tag FITS / Franks datasets: ``sources`` plus the kinds of each name
+    (dataset_kinds); text datasets also get ``type_text``."""
+    by_kinds: Dict[Tuple[str, ...], List[str]] = {}
+    for name in dict.fromkeys(names):
+        kinds = dataset_kinds(name)
+        try:
+            if doc.GetDataType(name) == "text" and "time_text" not in kinds:
+                kinds = kinds + ("text",)
+        except Exception:
+            pass
+        by_kinds.setdefault(kinds, []).append(name)
+    for kinds, members in by_kinds.items():
+        tag_data(doc, members, sources, kinds)
 
 
 # ---------------------------------------------------------------------------
@@ -4099,8 +4222,10 @@ def mjd_break_pairs_to_dtsec(pairs, local=True):
         # by its own (DST-aware) offset, as the local datasets are.
         try:
             import vszh5_writer
+            from _autoplot_native import local_veusz_seconds
             flat = np.array(out, dtype=float).ravel()
-            shifted = vszh5_writer.local_time_from_veusz(flat).veusz_seconds
+            # 0.4.2: UTC + offset, as the local datasets (local_veusz_seconds)
+            shifted = local_veusz_seconds(flat, vszh5_writer.local_time_from_veusz(flat))
             out = [(float(a), float(b)) for a, b in shifted.reshape(-1, 2) if b > a]
         except Exception:
             pass

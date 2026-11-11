@@ -31,6 +31,66 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.2: COMMENTS kept, exact text, traces named after their data, tags.
+Date: 2026-11-10
+#              * time_gbt.dat: the comment after the 5th column is kept as
+#                the COMMENTS text column (the rest of the line as written);
+#                0.4.1 dropped it.  Tokens beyond the named columns of a
+#                .t00new row are kept as EXTRA_TEXT; '#' comment lines go to
+#                the page notes.
+#              * A numeric column whose text float64 cannot hold exactly (a
+#                word among the numbers, more than 15 digits) also keeps
+#                "<col>_exact_text" (float_loses_text).
+#              * Every dataset is tagged source_<file stem> and type_<kind>;
+#                overlay datasets carry the source of every contributing
+#                file.  Replaces the "<file>", "raw", "sorted", "datestr"
+#                tags.
+#              * Trace widgets are named after their y dataset, e.g.
+#                ds_2026_01__CNS2018__sorted (was xy_<col>, xy_<col>_dtL).
+#              * MJD date strings carry every digit of the time.
+#              Checked (seven 2026 .t00new files and a time_gbt.dat with
+#              comments): nothing lost or changed except the date strings;
+#              no dataset untagged.
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model (_push_franks_body), then tag every new dataset (0.4.2) with ``source_<file>`` and th...
+        _push_franks_body: Add parsed Franks columns to a native in-memory project model.
+        build_unit_overlay_pages_franks: Cross-file column overlay pages (_build_overlay_pages_franks_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_overlay_pages_franks_body: Build one overlay page per **shared column name** across the loaded batch.
+        _parse_franks_isolated: Process-pool entry point (0.4.1): parse one Franks file on its own.
+        store_parse_result: Put the arrays of a _parse_franks_isolated() result into ``cache`` under the keys parse_franks_file() uses (numeric "<base>.<col>", text "<base>.<c...
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.2"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        _OVERLAY_COLORS: overlay trace colours
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept.  Time axes and gaps
+    as in FITS AutoPlot; the time_gbt.dat comment text is the COMMENTS column.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.1: Files parsed in parallel processes; GPU for NVIDIA or AMD.
 Date: 2026-11-09
 #              * NEW "Read files in parallel processes (when it pays off)"
@@ -466,7 +526,7 @@ import numpy as np
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'Franks AutoPlot'
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.4.2"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -489,6 +549,8 @@ from _autoplot_common import (   # noqa: E402
     MemoryAwareCache, MemoryMonitor, MemoryMonitorConfig, ProgressThrottle,
     open_embedded, save_vszh5, run_in_threadpool, safe_dsname,
     mjd_to_datestr,
+    # 0.4.2: names and tags from the data
+    trace_widget_name, tag_named_datasets, document_dataset_names, float_loses_text,
     detect_time_breaks, detect_time_breaks_unit_aware, make_broken_x_axis,
     gpu_argsort, is_gpu_available, enable_gpu, gpu_backend_name,
     gpu_enabled, gpu_tooltip, gpu_usage_text, reset_gpu_usage,
@@ -589,13 +651,19 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
       'flavour'      : 't00new' or 'time_gbt'
       'columns'      : OrderedDict-like {colname: np.ndarray}
       'sort_key'     : 'MJD'
-      'header_lines' : list[str]
-      'base_name'    : str
+      'header_lines' : list[str]   (0.4.2: plus the '#' comment lines)
+      'base_name'    : str         (Veusz-safe file stem, dataset prefix)
+      'source_name'  : str         (0.4.2: file stem as written, source_ tag)
     }
+    0.4.2: nothing is cut - time_gbt comment text becomes the COMMENTS
+    text column, tokens beyond the named columns are kept as text, and a
+    numeric column whose text float64 cannot hold exactly also keeps an
+    "<col>_exact_text" text column (float_loses_text, _autoplot_native).
     """
     flavour = _detect_flavour(path)
     base = os.path.basename(path)
     base = re.sub(r"\.(t00new|dat)(\..*)?$", "", base)
+    source_name = base            # 0.4.2: file stem as written, for the source_ tag
     base = safe_dsname(base)
 
     header_lines: List[str] = []
@@ -612,15 +680,21 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
         names = _safe_columns(colnames_line.split())
         if len(names) < 13:
             names = T00_COLUMNS[:]
+        # 0.4.2: tokens beyond the 13 named columns (never seen so far)
+        # are kept as text, not cut off.
+        extra_name = "EXTRA_TEXT"
         data_lines = lines[2:]
     else:  # time_gbt
         # line[0]=column names, line[1]=separator '====', line[2+]=data
         header_lines = [lines[0].rstrip()] if lines else []
         colnames_line = lines[0] if lines else ""
         names = _safe_columns(colnames_line.split())
-        # Drop the COMMENTS column from the parsing target since most rows
-        # have no comment text and the header has 6 names with often only
-        # 5 numeric tokens per row.
+        # The header has 6 names (MJD EECO-REF NIST-REF NS DATE COMMENTS)
+        # but most rows only the first 5 tokens; the comment is free text
+        # with spaces.  0.4.2: the first 5 columns are split on white
+        # space and the rest of the line, as written, becomes the COMMENTS
+        # text column (0.4.1 dropped the comment text).
+        extra_name = names[5] if len(names) > 5 else "COMMENTS"
         names = names[:5] if len(names) >= 5 else names
         data_lines = lines[2:]
 
@@ -641,18 +715,31 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
     # step below).
     ncols = len(names)
     rows: List[List[str]] = []
+    extras: List[str] = []           # 0.4.2: rest of each row after ncols tokens
     for ln in data_lines:
         s = ln.rstrip()
-        if not s.strip() or s.lstrip().startswith("#"):
+        if not s.strip():
+            continue
+        if s.lstrip().startswith("#"):
+            # 0.4.2: comment lines are kept with the header lines (page
+            # notes) instead of being dropped.
+            header_lines.append(s)
             continue
         # Handle the embedded "==" separator (time_gbt) that contains '='
         if "====" in s:
             continue
-        toks = s.split()
-        # Don't run past the names list (extra COMMENTS tokens in time_gbt);
-        # right-pad short rows with "" so the matrix stays rectangular.
-        if len(toks) >= ncols:
-            rows.append(toks[:ncols])
+        # 0.4.2: split off the first ncols tokens; the rest of the line
+        # (comment text, with its own spacing) is kept in ``extras``.
+        # Short rows are right-padded with "" so the matrix stays
+        # rectangular.
+        toks = s.split(None, ncols)
+        if len(toks) > ncols:
+            extras.append(toks[ncols].strip())
+            toks = toks[:ncols]
+        else:
+            extras.append("")
+        if len(toks) == ncols:
+            rows.append(toks)
         else:
             rows.append(toks + [""] * (ncols - len(toks)))
 
@@ -692,8 +779,22 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
         finite_frac = np.isfinite(arr_num).mean() if arr_num.size else 0.0
         if finite_frac > 0.5:
             columns[n] = cache.store("%s.%s" % (base, n), arr_num)
+            # 0.4.2: a numeric column whose text cannot all be held in
+            # float64 (a word among numbers, or more digits than float64
+            # keeps) also keeps its original text, so nothing is lost.
+            if float_loses_text(col_strs, arr_num):
+                text_name = "%s_exact_text" % n
+                columns[text_name] = cache.store("%s.%s.txt" % (base, text_name),
+                                                 col_strs.copy())
         else:
             columns[n] = cache.store("%s.%s.txt" % (base, n), col_strs.copy())
+    # 0.4.2: the comment text (time_gbt) or any tokens beyond the named
+    # columns, one entry per row, as a text column.
+    if any(extras):
+        while extra_name in columns:
+            extra_name += "_text"
+        columns[extra_name] = cache.store("%s.%s.txt" % (base, extra_name),
+                                          np.asarray(extras, dtype=str))
 
     return {
         "flavour": flavour,
@@ -701,13 +802,26 @@ def parse_franks_file(path: str, cache: MemoryAwareCache) -> Dict[str, Any]:
         "sort_key": "MJD" if "MJD" in columns else None,
         "header_lines": header_lines,
         "base_name": base,
+        "source_name": source_name,
     }
 
 
 # ============================================================================
 # %% VEUSZ INTEGRATION
 # ============================================================================
-def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
+def push_franks_to_veusz(doc, data: Dict[str, Any], *args, **kwargs) -> None:
+    """Add parsed Franks columns to a native in-memory project model
+    (_push_franks_body), then tag every new dataset (0.4.2) with
+    ``source_<file>`` and the kinds read from its name (raw, sorted,
+    time_MJD, time_labels, time_text, text ...); replaces the bare
+    "<file>", "raw", "sorted" and "datestr" tags of 0.4.1."""
+    names_before = set(document_dataset_names(doc))
+    _push_franks_body(doc, data, *args, **kwargs)
+    tag_named_datasets(doc, [n for n in document_dataset_names(doc) if n not in names_before],
+                       sources=[data.get("source_name") or data.get("base_name") or "Franks"])
+
+
+def _push_franks_body(doc, data: Dict[str, Any], log_cb=None,
                          emit_datestr: bool = False,
                          column_cb=None,
                          plot_individual: bool = True,
@@ -826,13 +940,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
         sorted_names.append(sorted_name)
         _tick()
 
-    # Tag everything
-    try:
-        doc.TagDatasets(base, raw_names + sorted_names)
-        doc.TagDatasets("raw", raw_names)
-        doc.TagDatasets("sorted", sorted_names)
-    except Exception:
-        pass
+    # 0.4.2: tags are set by push_franks_to_veusz() (source_ / type_).
 
     # ---- v0.0.15: Optional per-point datetime label datasets -------------
     # Replaces the v0.0.11..0.0.13 SetDataDateTime path.  When the user
@@ -909,16 +1017,8 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                 )
             except Exception:
                 datelabels_mjd_sorted = None
-            # Tag all datasets so they group nicely in Veusz's Data
-            # Browser alongside the file's other sorted datasets.
-            for _ln in (datelabels_density_name, datelabels_textx_name,
-                        datelabels_dtnum_name):
-                if _ln:
-                    try:
-                        doc.TagDatasets(base, [_ln])
-                        doc.TagDatasets("sorted", [_ln])
-                    except Exception:
-                        pass
+            # 0.4.2: tagged by push_franks_to_veusz() (source_<file>,
+            # type_time_labels ...).
             # Note: legacy v0.0.14 dataset names
             # (``..__datelabels_sparse`` / ``..__datelabels_full``) are
             # not re-emitted here.  External code that read them must
@@ -944,11 +1044,6 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                                     list(np.asarray(date_strings)[sort_idx]))
                 else:
                     doc.SetDataText(sorted_ds, list(date_strings))
-                try:
-                    doc.TagDatasets(base, [raw_ds, sorted_ds])
-                    doc.TagDatasets("datestr", [raw_ds, sorted_ds])
-                except Exception:
-                    pass
                 if log_cb:
                     log_cb("  Date-string datasets created (2)")
                 _tick()
@@ -1018,7 +1113,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
             graph.y.GridLines.hide.val = False
         except Exception:
             pass
-        xy = graph.Add("xy", name=safe_dsname("xy_%s" % cname))
+        xy = graph.Add("xy", name=trace_widget_name(ds))     # 0.4.2: was "xy_<col>"
         if x_ds is not None:
             xy.xData.val = x_ds
         xy.yData.val = ds
@@ -1089,7 +1184,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                 graph.y.GridLines.hide.val = False
             except Exception:
                 pass
-            xy = graph.Add("xy", name=safe_dsname("xy_%s_dt" % cname))
+            xy = graph.Add("xy", name=trace_widget_name(ds, "date_labels"))
             if x_ds is not None:
                 xy.xData.val = x_ds
             xy.yData.val = ds
@@ -1167,7 +1262,7 @@ def push_franks_to_veusz(doc, data: Dict[str, Any], log_cb=None,
                 )
             except Exception:
                 pass
-            xy = graph.Add("xy", name=safe_dsname("xy_%s_dtL" % cname))
+            xy = graph.Add("xy", name=trace_widget_name(ds, "local_time"))
             xy.xData.val = x_ds_dtl       # numeric dtsec
             xy.yData.val = ds
             apply_trace_style(
@@ -1188,7 +1283,20 @@ _OVERLAY_COLORS = [
 ]
 
 
-def build_unit_overlay_pages_franks(doc, file_records,
+def build_unit_overlay_pages_franks(doc, file_records, *args, **kwargs):
+    """Cross-file column overlay pages (_build_overlay_pages_franks_body),
+    then the Veusz tags of every overlay dataset (0.4.2): the source tag of
+    each file in the batch (an overlay joins them) and the kinds read from
+    the names (overlay, sorted, time_MJD, time_labels ...)."""
+    names_before = set(document_dataset_names(doc))
+    result = _build_overlay_pages_franks_body(doc, file_records, *args, **kwargs)
+    sources = [rec.get("source") or rec.get("base") or "overlay" for rec in file_records]
+    tag_named_datasets(doc, [n for n in document_dataset_names(doc) if n not in names_before],
+                       sources=sources)
+    return result
+
+
+def _build_overlay_pages_franks_body(doc, file_records,
                                      gap_k=10.0, gap_absolute=0.0,
                                      log_cb=None,
                                      datetime_duplicate=False,
@@ -1367,7 +1475,7 @@ def build_unit_overlay_pages_franks(doc, file_records,
             if log_cb:
                 log_cb("  Overlay '%s' SetData failed: %s" % (cname, _exc))
             continue
-        xy = graph.Add("xy", name=safe_dsname("xy_%s" % cname))
+        xy = graph.Add("xy", name=trace_widget_name(y_name))   # 0.4.2: named after its data
         xy.xData.val = x_name
         xy.yData.val = y_name
         try:
@@ -1481,7 +1589,7 @@ def build_unit_overlay_pages_franks(doc, file_records,
             except Exception:
                 pass
             xy_dt = graph_dt.Add(
-                "xy", name=safe_dsname("xy_%s_dt" % cname)
+                "xy", name=trace_widget_name(y_name, "date_labels")
             )
             xy_dt.xData.val = x_name              # numeric seconds (overlay dataset)
             xy_dt.yData.val = y_name
@@ -1562,7 +1670,7 @@ def build_unit_overlay_pages_franks(doc, file_records,
             except Exception:
                 pass
             xy_dtL = graph_dtL.Add(
-                "xy", name=safe_dsname("xy_%s_dtL" % cname)
+                "xy", name=trace_widget_name(y_name, "local_time")
             )
             xy_dtL.xData.val = dt_dtnum_name or dt_textx_name
             xy_dtL.yData.val = y_name
@@ -1997,6 +2105,9 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
                 file_records.append({
                     "base": data.get("base_name") or
                             safe_dsname(os.path.basename(path)),
+                    # 0.4.2: source_<file> tag of the overlay datasets
+                    "source": (data.get("source_name") or data.get("base_name")
+                               or os.path.basename(path)),
                     "columns": data.get("columns") or {},
                     "sort_key": data.get("sort_key"),
                 })

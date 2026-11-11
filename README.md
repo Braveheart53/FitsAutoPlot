@@ -8,12 +8,12 @@ as well for various data strucure parsing such as Keysight, Agilent, OrbitFR, an
 
 |               File Description               | Extennsion 1 | Extension 2 |  Extension 3  |                                                                                                                                                    Status                                                                                                                                                    |
 |:--------------------------------------------:|:------------:|:-----------:|:-------------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
-|                  FITS files                  |     .fit     |    .fits    |   .fits.gz    | FITS_AutoPlot 0.4.1: astropy reader (files read in parallel processes when that is faster), native .vszh5 output (no Veusz needed to write), interactive pyqtgraph Plots tab. Every page draws DMJD as a Veusz date-time axis in local ISO 8601 (2026-11-09T08:39:00-05:00); small gaps break the line, large gaps break the x axis (both set in the GUI); padding rows (DMJD = 0) are left out; the full FITS header is in each page's notes. Checked with GBT sampler2log files (azServo1Hz, Rcvr_2500 Temperature/Vacuum, SiteTime OnePpsDeltas). |
-| Rhode & Schwarz spectrum analyzer trace files |     .sft     |             |               | RAndS_FSW_ASCII_Plotter 1.1.3: FSP/FSW "Section" files (ASCII and binary) and FSW x;y exports; frequency or zero-span time axis from the header; power averages per file and for all files, taken in the linear domain (optionally on an NVIDIA or AMD GPU for large stacks); pyqtgraph Plots tab; native .vszh5. |
-|            Comma Separated Files             |     .csv     |    .tsv     |  .txt / .dat  | CSV_TSV_AutoPlot 6.1.2: any delimiter, numeric and date/time columns (Veusz date-times shown in local ISO 8601), rows kept aligned, pyqtgraph Plots tab, native .vszh5. |
-|         GBO Outdoor Range Data Files         |     .atr     |             |               | ATR_AutoPlot 0.2.3: Cartesian and polar magnitude / phase pages, multi-frequency files, overlays; pyqtgraph Plots tab with polar plots; native .vszh5. |
-|               Touchstone Files               |     .s1p     |    .s2p     | .s\*p or .snp | Touchstone_AutoPlot 0.7.2 (process pool and GPU only when they pay off); 0.7.1 (Smith chart pages in the Veusz project, drawn with Veusz widgets by vszh5_writer 0.0.26; pyqtgraph previews and Plots tab; see RELEASE_suite-2026-11-09.md); 0.5.0: magnitude / phase (wrapped or unwrapped), scikit-rf time domain and time gating (auto or manual, band-pass or band-stop) shown in time and frequency, Smith charts (PNG/SVG/PDF/HTML, bookmarked combined PDF), native .vszh5 output without Veusz. Checked on the 223 example .s2p files (220 processed; 3 are malformed and are reported as failures); the projects load and render in Veusz 4.2.1. |
-|        Franks timing data (FranksProcessed)  |   .t00new    | time_gbt.dat |               | Franks_AutoPlot 0.4.1: native .vszh5 output, files parsed in parallel processes when that is faster, the same pyqtgraph Plots tab, local ISO 8601 time axes and small/large gap controls as FITS AutoPlot. |
+|                  FITS files                  |     .fit     |    .fits    |   .fits.gz    | FITS_AutoPlot 0.4.2 (traces named after their data, source_/type_ tags, complex columns as re/im, exact text for integers beyond 2^53); 0.4.1: astropy reader (files read in parallel processes when that is faster), native .vszh5 output (no Veusz needed to write), interactive pyqtgraph Plots tab. Every page draws DMJD as a Veusz date-time axis in local ISO 8601 (2026-11-09T08:39:00-05:00); small gaps break the line, large gaps break the x axis (both set in the GUI); padding rows (DMJD = 0) are left out; the full FITS header is in each page's notes. Checked with GBT sampler2log files (azServo1Hz, Rcvr_2500 Temperature/Vacuum, SiteTime OnePpsDeltas). |
+| Rhode & Schwarz spectrum analyzer trace files |     .sft     |             |               | RAndS_FSW_ASCII_Plotter 1.1.4 (every sweep listed in the notes, inf/nan values and odd sections kept, source_/type_ tags); 1.1.3: FSP/FSW "Section" files (ASCII and binary) and FSW x;y exports; frequency or zero-span time axis from the header; power averages per file and for all files, taken in the linear domain (optionally on an NVIDIA or AMD GPU for large stacks); pyqtgraph Plots tab; native .vszh5. |
+|            Comma Separated Files             |     .csv     |    .tsv     |  .txt / .dat  | CSV_TSV_AutoPlot 6.1.3 (numbers and time stamps read exactly, original text kept where float64 cannot hold it, mixed ISO 8601 stamps, source_/type_ tags); 6.1.2: any delimiter, numeric and date/time columns (Veusz date-times shown in local ISO 8601), rows kept aligned, pyqtgraph Plots tab, native .vszh5. |
+|         GBO Outdoor Range Data Files         |     .atr     |             |               | ATR_AutoPlot 0.2.4 (exact frequencies - close frequencies no longer share a name -, text/Inf values and trailing lines kept, source_/type_ tags); 0.2.3: Cartesian and polar magnitude / phase pages, multi-frequency files, overlays; pyqtgraph Plots tab with polar plots; native .vszh5. |
+|               Touchstone Files               |     .s1p     |    .s2p     | .s\*p or .snp | Touchstone_AutoPlot 0.7.3 (source_/type_ tags, data-named traces, notes with every digit, PNG fallback when mpld3 cannot run; the 0.7.2 time-gated page-order fix documented and tested); 0.7.2 (process pool and GPU only when they pay off); 0.7.1 (Smith chart pages in the Veusz project, drawn with Veusz widgets by vszh5_writer 0.0.26; pyqtgraph previews and Plots tab; see RELEASE_suite-2026-11-09.md); 0.5.0: magnitude / phase (wrapped or unwrapped), scikit-rf time domain and time gating (auto or manual, band-pass or band-stop) shown in time and frequency, Smith charts (PNG/SVG/PDF/HTML, bookmarked combined PDF), native .vszh5 output without Veusz. Checked on the 223 example .s2p files (220 processed; 3 are malformed and are reported as failures); the projects load and render in Veusz 4.2.1. |
+|        Franks timing data (FranksProcessed)  |   .t00new    | time_gbt.dat |               | Franks_AutoPlot 0.4.2 (time_gbt.dat comments kept as the COMMENTS column, exact text, data-named traces, source_/type_ tags); 0.4.1: native .vszh5 output, files parsed in parallel processes when that is faster, the same pyqtgraph Plots tab, local ISO 8601 time axes and small/large gap controls as FITS AutoPlot. |
 |        ORBIT/FR (MVG 959 Spectrum) data      |              |             |               | Not written yet: the vendor COM API is not public. See ORBIT_FR/ORBIT_FR_API_REQUIREMENTS.md and run ORBIT_FR/orbitfr_com_probe.py on the 959 Spectrum PC. |
 
 # postProcessing_Launcher.py
@@ -25,8 +25,9 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
 
 # Common to every tool (2026-11-09)
 
-* **Project files**: every `.vszh5` is written by the shared writer `vszh5_writer.py` 0.0.28 (through
-  `_autoplot_native.py` 0.5.1; 0.0.28 saves the 30-day 1PPS project in 14 s instead of 34 s, same file contents). Veusz is not needed to write a project, only to open it, or for
+* **Project files**: every `.vszh5` is written by the shared writer `vszh5_writer.py` 0.0.29 (the
+  registry master, SHA-256 `50631331...`; additions only: exact ISO 8601 / MJD text) through
+  `_autoplot_native.py` 0.5.2 (0.0.28 saves the 30-day 1PPS project in 14 s instead of 34 s, same file contents). Veusz is not needed to write a project, only to open it, or for
   File > Export PDF / PNG.
 * **Plots tab**: every tool shows the pages of its project with pyqtgraph (`_autoplot_pyqtgraph.py`):
   values at the cursor, Ctrl+wheel zoom, CSV/PNG/SVG export, polar (ATR) and Smith (Touchstone) plots.
@@ -39,7 +40,18 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
   starts. Set `VSZH5_DISPLAY_TZ` (for example `America/New_York`, `-05:00` or `UTC`) to process for
   another zone, e.g. on a build server that runs in UTC.
 * **Names and notes**: page and graph names follow the original scripts; traces are named after their
-  y dataset; the source-file header is in each page's notes (Veusz: Properties > notes).
+  y dataset (file, column, processing step, e.g. `ds_2026_01__CNS2018__sorted`); the source-file
+  header is in each page's notes (Veusz: Properties > notes).
+* **Tags (2026-11-10)**: every dataset carries two kinds of Veusz tag - `source_<file>` (the data's
+  file; also `source_<run>` in Touchstone, every contributing file on overlays, the program for
+  drawn grids) and `type_<kind>` (what the values are: `type_magnitude_dB`, `type_S21`,
+  `type_time_local`, `type_sorted`, `type_exact_text` ...). In Veusz: Data > Edit, or the tag filter
+  of the data browser.
+* **Nothing cut (2026-11-10)**: numbers in notes and titles are written with every digit (`repr`);
+  MJD date text keeps fractions of a second; numeric axes show up to 12 digits (`%.12Vg`). Values
+  float64 cannot hold exactly - integers beyond 2^53, words among numbers, numbers with more than 15
+  digits, nanosecond time stamps - also keep their text (`*_exact_text`, `*_text`). The Plots tab's
+  CSV export writes every digit; CSV/TSV files are parsed exactly with every pandas version.
 * **Gaps** (FITS / Franks, 0.4.0): a *small gap* - a step longer than K x the median step of that trace
   (default K = 10), or a fixed time - breaks the line; a *large gap* - longer than n x the small gap
   (default n = 100), or a fixed time such as `3d` - also breaks the x axis. n = 0 keeps one continuous
@@ -60,8 +72,8 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
   (`_autoplot_gpu.power_mean_db`). The R&S averages are the only averages of dB values in the suite;
   everything else plots dB values or computes them from linear quantities (checked 2026-11-09).
 
-Release notes: RELEASE_suite-2026-11-09.md (sections 1-9), its FITS addendum (section 10) and the
-speed / GPU / dB-averaging round (section 11).
+Release notes: RELEASE_suite-2026-11-09.md (sections 1-9), its FITS addendum (section 10), the
+speed / GPU / dB-averaging round (section 11) and the names / tags / nothing-cut round (section 12).
 Every option has a tooltip (hover over it for help).
 
 # FITS-AutoPlot.py

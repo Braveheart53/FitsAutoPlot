@@ -61,6 +61,60 @@ frequency; this program assumes lower -> upper (see DATA_GAPS).
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.4: Nothing dropped, exact frequencies, source_/type_ tags.
+Date: 2026-11-10
+#              * Frequencies with every digit in dataset names, legends and
+#                notes (_mhz_text, repr): %g kept 6 digits, so 1420.4051 and
+#                1420.4052 MHz both became "1420p41MHz" and one trace
+#                overwrote the other.
+#              * A data line with a word, +/-Inf or an unpaired last value
+#                keeps its values as written ("<trace>_exact_text" text
+#                datasets); the lines after the data ("*" and any table)
+#                and the reading notes are kept in the page notes.
+#              * Tags source_<file> and type_azimuth_deg, frequency_MHz,
+#                magnitude_dB, phase_deg, time_measured, exact_text (was
+#                one tag "<stem>").  Traces named after their data.
+#              * Measured time with seconds when the header has them.
+#              Checked (25 example files): every 0.2.3 dataset identical;
+#              4 exact-text datasets added; no dataset untagged.
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _mhz_text: A frequency (MHz) as exact text (0.2.4): every digit of the float64 (repr), without a trailing ".0" - 2700.0 -> "2700", 1420.40575 -> "1420.40575".
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.2.4"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.3: Process pool only when it pays off (_autoplot_parallel).
 Date: 2026-11-09
 #              * read_files(): the first files are read here and timed; a
@@ -215,10 +269,15 @@ os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
 import numpy as np  # noqa: E402
 from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
+# 0.2.4: Veusz tags source_<file> / type_<kind>, numbers as exact text,
+# trace names from their data (_autoplot_native, no Qt: the batch mode and
+# the reader processes stay Qt-free).
+from _autoplot_native import (exact_number_text, tag_data,   # noqa: E402
+                              trace_widget_name)
 from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (0.x adaptive pool)
 
 APP_NAME = "ATR AutoPlot"
-APP_VERSION = "0.2.3"
+APP_VERSION = "0.2.4"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
                    ".vszh5 projects, with interactive pyqtgraph plots.")
@@ -249,6 +308,13 @@ class ATRPattern:
     magnitude_db: np.ndarray         # (n_freq, n_az)
     phase_deg: np.ndarray            # (n_freq, n_az)
     warnings: List[str] = field(default_factory=list)
+    # 0.2.4: nothing in the file is dropped.  Lines after the data (the "*"
+    # end marker and anything after it) are kept for the page notes, and a
+    # data line with a value that is not a finite number (text, +/-Inf) or
+    # with an unpaired last value keeps its tokens exactly as written
+    # (row index -> tokens), stored as text datasets next to the numbers.
+    trailer_lines: List[str] = field(default_factory=list)
+    text_rows: Dict[int, List[str]] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -322,21 +388,30 @@ def parse_atr_text(text: str, path: str = "<text>") -> ATRPattern:
         raise ATRFormatError("%s: no data line found" % os.path.basename(path))
     warnings: List[str] = []
     rows: List[np.ndarray] = []
+    trailer: List[str] = []
+    text_rows: Dict[int, List[str]] = {}
     for number, raw in enumerate(lines[index:], start=index + 1):
         line = raw.strip().rstrip("#").strip()
         if not line:
             continue
         if line.startswith("*") or not _NUMBER_LINE.match(line + " "):
-            break                                   # end marker or a trailing table
+            # end marker or a trailing table: 0.2.4 keeps these lines (notes)
+            trailer = [text.rstrip() for text in lines[number - 1:] if text.strip()]
+            break
         tokens = line.replace(",", " ").split()
         values = np.array([float(t) if _is_float(t) else np.nan for t in tokens])
-        bad = int(np.isnan(values).sum())
-        if bad:
-            warnings.append("line %d: %d value(s) are not numbers (kept as gaps)" % (number, bad))
+        not_numbers = [t for t in tokens if not _is_float(t)]
+        if not_numbers:
+            warnings.append("line %d: %d value(s) are not numbers (gaps in the plots; "
+                            "the text is kept): %s" % (number, len(not_numbers),
+                                                      ", ".join(not_numbers)))
         if values.size % 2:
-            warnings.append("line %d: odd number of values (%d); the last one is "
-                            "ignored" % (number, values.size))
+            warnings.append("line %d: odd number of values (%d); the last one (%s) has "
+                            "no partner, so it is not plotted (kept in the text "
+                            "dataset)" % (number, values.size, tokens[-1]))
             values = values[:-1]
+        if not_numbers or len(tokens) % 2 or not np.all(np.isfinite(values)):
+            text_rows[len(rows)] = list(tokens)
         rows.append(values)
     if not rows:
         raise ATRFormatError("%s: no data line found" % os.path.basename(path))
@@ -353,7 +428,8 @@ def parse_atr_text(text: str, path: str = "<text>") -> ATRPattern:
         infinite = np.isinf(values)     # "-Inf" dB: the receiver saw no signal
         if infinite.any():
             values[infinite] = np.nan
-            warnings.append("%d %s value(s) were +/-Inf (no signal); stored as gaps (NaN)%s"
+            warnings.append("%d %s value(s) were +/-Inf (no signal); gaps (NaN) in the "
+                            "plots, the text is kept%s"
                             % (int(infinite.sum()), what,
                                "; no finite values left" if np.isnan(values).all() else ""))
 
@@ -363,8 +439,9 @@ def parse_atr_text(text: str, path: str = "<text>") -> ATRPattern:
     if n_az > 1:
         step = (right - left) / (n_az - 1)
         if abs(step - round(step)) > 1e-9 or abs(step) != 1.0:
-            warnings.append("azimuth step %.6g deg (%d points from %g to %g deg)"
-                            % (step, n_az, left, right))
+            warnings.append("azimuth step %s deg (%d points from %s to %s deg)"
+                            % (exact_number_text(step), n_az, exact_number_text(left),
+                               exact_number_text(right)))
 
     upper = _header_number(header, "Upper Frequency", path)
     lower = _header_number(header, "Lower Frequency", path)
@@ -376,8 +453,8 @@ def parse_atr_text(text: str, path: str = "<text>") -> ATRPattern:
     if n_freq == 1:
         frequencies = np.array([lower])
         if upper != lower:
-            warnings.append("one data line but the header spans %g-%g MHz; labelled %g MHz"
-                            % (lower, upper, lower))
+            warnings.append("one data line but the header spans %s-%s MHz; labelled %s MHz"
+                            % (_mhz_text(lower), _mhz_text(upper), _mhz_text(lower)))
     else:
         expected = int(round((upper - lower) / increment)) + 1 if increment > 0 else 0
         if expected == n_freq:
@@ -388,11 +465,22 @@ def parse_atr_text(text: str, path: str = "<text>") -> ATRPattern:
                             % n_freq)
         else:
             frequencies = np.linspace(lower, upper, n_freq)
-            warnings.append("%d data lines do not match %g-%g MHz in %g MHz steps; "
-                            "frequencies spread evenly" % (n_freq, lower, upper, increment))
+            warnings.append("%d data lines do not match %s-%s MHz in %s MHz steps; "
+                            "frequencies spread evenly" % (n_freq, _mhz_text(lower),
+                                                           _mhz_text(upper),
+                                                           _mhz_text(increment)))
     return ATRPattern(path=path, header=header, header_lines=header_lines, sweep=sweep,
                       frequencies_mhz=frequencies, azimuth_deg=azimuth,
-                      magnitude_db=magnitude, phase_deg=phase, warnings=warnings)
+                      magnitude_db=magnitude, phase_deg=phase, warnings=warnings,
+                      trailer_lines=trailer, text_rows=text_rows)
+
+
+def _mhz_text(mhz: float) -> str:
+    """A frequency (MHz) as exact text (0.2.4): every digit of the float64
+    (repr), without a trailing ".0" - 2700.0 -> "2700", 1420.40575 ->
+    "1420.40575".  0.2.3 used %g, which keeps only 6 digits."""
+    text = exact_number_text(float(mhz))
+    return text[:-2] if text.endswith(".0") else text
 
 
 def _is_float(token: str) -> bool:
@@ -487,7 +575,9 @@ class ATRPlotter:
     def _freq_tag(mhz: float) -> str:
         """Dataset-name tag for a frequency in MHz, e.g. 1420.4 -> '1420p4MHz'.
         """
-        return ("%g" % mhz).replace(".", "p") + "MHz"
+        # 0.2.4: every digit (_mhz_text); %g kept 6, so 1420.4051 and
+        # 1420.4052 MHz both became "1420p41MHz" and one overwrote the other.
+        return _mhz_text(mhz).replace(".", "p").replace("-", "m").replace("+", "") + "MHz"
 
     # ----- public ---------------------------------------------------------------
     def add_pattern(self, pattern: ATRPattern) -> str:
@@ -501,27 +591,51 @@ class ATRPlotter:
         doc.SetData(freq_name, pattern.frequencies_mhz)
         single = pattern.frequencies_mhz.size == 1
         traces = []
+        text_names: List[str] = []
         for k, mhz in enumerate(pattern.frequencies_mhz):
             suffix = "" if single else "_" + self._freq_tag(mhz) + ("" if np.sum(
                 pattern.frequencies_mhz == mhz) == 1 else "_%d" % (k + 1))
             mag_name, phase_name = "%s%s_mag" % (stem, suffix), "%s%s_phase" % (stem, suffix)
             doc.SetData(mag_name, pattern.magnitude_db[k])
             doc.SetData(phase_name, pattern.phase_deg[k])
-            key = "%g MHz" % mhz
+            key = "%s MHz" % _mhz_text(mhz)
             traces.append((mag_name, phase_name, key))
-        names = [az_name, freq_name] + [n for t in traces for n in t[:2]]
+            # 0.2.4: a line with text, +/-Inf or an unpaired value also keeps
+            # its values exactly as written (text datasets, same order).
+            tokens = pattern.text_rows.get(k)
+            if tokens is not None:
+                doc.SetDataText(mag_name + "_exact_text", tokens[1::2])
+                doc.SetDataText(phase_name + "_exact_text", tokens[0::2])
+                text_names.extend([mag_name + "_exact_text", phase_name + "_exact_text"])
         measured = pattern.measured
+        time_name = ""
         if measured is not None:            # range computer's clock (zone not recorded)
             time_name = "%s_datetime" % stem
             doc.SetDataDateTime(time_name, [(measured - VEUSZ_EPOCH).total_seconds()])
-            names.append(time_name)
-        doc.TagDatasets(stem, names)
+        # 0.2.4: tags source_<file> and type_<kind> (was one tag <stem>)
+        source = os.path.splitext(pattern.name)[0]
+        tag_data(doc, [az_name], source, ("azimuth_deg",))
+        tag_data(doc, [freq_name], source, ("frequency_MHz",))
+        tag_data(doc, [t[0] for t in traces], source, ("magnitude_dB",))
+        tag_data(doc, [t[1] for t in traces], source, ("phase_deg",))
+        tag_data(doc, text_names, source, ("exact_text", "text"))
+        if time_name:
+            tag_data(doc, [time_name], source, ("time_measured",))
         self._az_span.extend([float(np.nanmin(pattern.azimuth_deg)),
                               float(np.nanmax(pattern.azimuth_deg))])
-        notes = header_notes(pattern.header_lines, source=pattern.path, extra=[
-            "Frequencies (MHz): %s" % ", ".join("%g" % f for f in pattern.frequencies_mhz),
+        # 0.2.4: exact numbers; the measured time with its seconds when the
+        # header has them; reading notes and the lines after the data kept.
+        extra = [
+            "Frequencies (MHz): %s" % ", ".join(_mhz_text(f) for f in pattern.frequencies_mhz),
             "Measured (range computer clock, zone not recorded): %s" % (
-                measured.isoformat(timespec="minutes") if measured else "not readable")])
+                measured.isoformat(timespec="minutes" if measured.second == 0
+                                   and measured.microsecond == 0 else "auto")
+                if measured else "not readable")]
+        if pattern.warnings:
+            extra += ["", "Reading notes:"] + ["  " + text for text in pattern.warnings]
+        if pattern.trailer_lines:
+            extra += ["", "Lines after the data, as written:"] + list(pattern.trailer_lines)
+        notes = header_notes(pattern.header_lines, source=pattern.path, extra=extra)
         self._overlay_notes.append(notes)
         title = stem.replace("_", " ")
         colour = "red" if single else "auto"
@@ -535,7 +649,7 @@ class ATRPlotter:
             self._configure_graph(graph, title, label, y_range, x_range)
             for mag_name, phase_name, key in traces:
                 y_name = mag_name if kind == "mag" else phase_name
-                xy = graph.Add("xy", name=stem if single else y_name)
+                xy = graph.Add("xy", name=trace_widget_name(y_name))   # 0.2.4: data name
                 self._configure_xy(xy, az_name, mag_name if kind == "mag" else phase_name,
                                    colour, key, fill=single)
         for kind, r_range in (("mag", self.options.mag_range), ("phase", PHASE_RANGE)):
@@ -547,15 +661,16 @@ class ATRPlotter:
             self._configure_polar_graph(polar, *r_range)
             for mag_name, phase_name, key in traces:
                 r_name = mag_name if kind == "mag" else phase_name
-                point = polar.Add("nonorthpoint", name=stem if single else r_name)
+                point = polar.Add("nonorthpoint", name=trace_widget_name(r_name))   # 0.2.4
                 self._configure_polar_plot(point, mag_name if kind == "mag" else phase_name,
                                            az_name, colour, fill=single)
         mag_graph, phase_graph = self._overlays
         for mag_name, phase_name, key in traces:
             label = stem if single else "%s %s" % (stem, key)
-            self._configure_overlay_xy(mag_graph.Add("xy", name=mag_name), az_name, mag_name, label)
-            self._configure_overlay_xy(phase_graph.Add("xy", name=phase_name), az_name,
-                                       phase_name, label)
+            self._configure_overlay_xy(mag_graph.Add("xy", name=trace_widget_name(mag_name)),
+                                       az_name, mag_name, label)
+            self._configure_overlay_xy(phase_graph.Add("xy", name=trace_widget_name(phase_name)),
+                                       az_name, phase_name, label)
         return stem
 
     def finish(self) -> None:

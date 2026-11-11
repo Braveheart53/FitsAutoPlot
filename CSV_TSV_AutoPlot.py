@@ -49,6 +49,74 @@ Compatible with: Python 3.8+ (pandas >= 1.3, qtpy with PySide6 or PyQt5)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 6.1.3: Exact numbers and time stamps, kept text, source_/type_ tags.
+Date: 2026-11-10
+#              * pandas' default C parser is not exact everywhere: pandas
+#                2.0.3 (Python 3.8) and 3.0.5 read 212 971 of 400 000
+#                17-digit values wrongly (up to 7 375 ulp, relative 1e-12),
+#                also 15-digit numbers with a power of ten beyond +/-22.
+#                A file with such a number (scan_number_forms: 16+ digits /
+#                points in a row, or an exponent) is read with
+#                float_precision="round_trip" (exact, slower) when the
+#                installed pandas needs it (_default_parser_is_exact;
+#                pandas 3.1.1 does not).  Mixed numeric columns use float()
+#                there too.
+#              * Cells float64 cannot hold exactly - integers beyond
+#                +/-2**53, words among numbers, more digits than float64
+#                keeps - keep their text in "<file>_<column>_exact_text".
+#              * Date-time X: seconds from integer nanoseconds (pandas 2.0
+#                total_seconds() was 1 ulp off); the stamps as written are
+#                kept in "<file>_<column>_text"; ISO 8601 stamps of mixed
+#                form (fraction digits, Z, +02:00) are read with
+#                format="ISO8601" instead of the file being skipped.
+#              * Tags source_<file> and type_<column> plus x_data / y_data
+#                / time_utc / time_local / time_text / exact_text (was one
+#                tag "<stem>"); traces named after their data.
+#              Checked: temps.tsv identical to 6.1.2 plus the time text;
+#              60 files of 50 000 x 5 load in 2.1 s on Python 3.8 (1.1 s in
+#              6.1.2; the scan), 0.6 s on 3.12.
+# %%%%% Function Descriptions
+        _default_parser_is_exact: True when pandas' default C float parser reads _PARSER_PROBE exactly.
+        scan_number_forms: (long digit run, exponent notation) found in the file (6.1.3); read in 4 MiB blocks, a run across two blocks included; (True, True) when the file c...
+        CSVProcessingConfig (class): How the files are read.
+        PlotConfig (class): Plot formatting.
+        LoadedFile (class): One delimited file in memory.
+        exact_cell_texts: {column: every cell as text} for the numeric ``columns`` whose float64 ``values`` cannot hold the cells exactly (6.1.3): integers beyond +/-2**53,...
+        delimiter_from_text: GUI text -> delimiter ('\\t' typed as two characters means a tab).
+        detect_delimiter: Most frequent of , TAB ; | in the first non-comment lines.
+        read_file_metadata: The lines before the header line.
+        load_csv_file: (LoadedFile or None, status message) of one file.
+        load_files: Load files in parallel threads; (files in input order, messages).
+        get_common_columns: Columns in ALL files (intersection).
+        get_all_columns: Columns of ANY file (union).
+        _naive_zone: Zone of time stamps written without one, when they are local time.
+        column_values: ('numeric' | 'date' | 'text', values) of one column, rows kept.
+        VeuszPlotter (class): Builds the project: one overlay page and one page per file.
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "CSV/TSV AutoPlot"
+        APP_VERSION = "6.1.3"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        VEUSZ_EPOCH: Veusz datetime zero (UTC)
+        MIN_PARSED_FRACTION: a column is numeric / date when >= 80 % of its cells parse
+        _PARSER_PROBE: numbers the inexact pandas parsers read wrongly (checked once at import)
+        PANDAS_NEEDS_ROUND_TRIP: True when pandas' default C parser is not exact (pandas 2.0.3 / 3.0.5 measured; 3.1.1 is exact)
+        _FORM_TABLE: byte map d = digit or point, e = e/E, s = sign, x = other (scan_number_forms)
+        COLOURS: trace colours (Tableau 10, hex, the same in Veusz and the Plots tab)
+# %%%%% More Info
+    Run:  python CSV_TSV_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python CSV_TSV_AutoPlot.py a.csv --x Time --y V --output out.vszh5
+    Date-time columns are stored as Veusz date-times (UTC) and drawn in local
+    ISO 8601 (VSZH5_DISPLAY_TZ overrides the computer's zone); the stamps as
+    written are kept as text.  Numbers are read exactly (PANDAS_NEEDS_ROUND_TRIP).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 6.1.2: Header template, docstrings and tooltips.
 Date: 2026-11-09
 #              * Header in the author's template: author contact lines and,
@@ -154,15 +222,77 @@ os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from vszh5_writer import header_notes  # noqa: E402
+# 6.1.3: tags source_<file> / type_<kind>, trace names from their data and the
+# exact-text check (Qt-free helpers shared by the AutoPlot programs)
+from _autoplot_native import (float_loses_text, tag_data,  # noqa: E402
+                              trace_widget_name)
 
 APP_NAME = "CSV/TSV AutoPlot"
-APP_VERSION = "6.1.2"
+APP_VERSION = "6.1.3"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Delimited text files (CSV, TSV, custom) to native Veusz .vszh5 "
                    "projects, with interactive pyqtgraph plots.")
 
 VEUSZ_EPOCH = pd.Timestamp("2009-01-01 00:00:00")   # Veusz datetime zero (UTC)
 MIN_PARSED_FRACTION = 0.8      # a column is numeric / date when >= 80 % of its cells parse
+#: 6.1.3: the default C parser of pandas 2.x and 3.0 is not correctly rounded
+#: for every number: it gathers at most 17 digits into an integer and then
+#: multiplies or divides by a power of ten, so a number with more than 15
+#: significant digits, or whose power of ten (the written exponent minus the
+#: digits after the point) is beyond +/-22, can come out wrong - measured
+#: with pandas 2.0.3 and 3.0.5: 212 971 of 400 000 17-digit values, up to
+#: 7 375 ulp (relative 1e-12).  float_precision="round_trip" is exact but
+#: about 7 times slower (60 files of 50 000 x 5: 7.6 s instead of 1.1 s), so
+#: it is used only for a file that has such a number (scan_number_forms).
+#: pandas 3.1 is exact by default and deprecates the option; the check below
+#: runs the default parser on numbers it got wrong and decides from that.
+_PARSER_PROBE = ("0.12345678901234567", "1.2345678901234567e-17", "-0.0005227484414807474",
+                 "1.234567e-30", "9.87654321098765e-10")
+
+
+def _default_parser_is_exact() -> bool:
+    """True when pandas' default C float parser reads _PARSER_PROBE exactly."""
+    import io
+    try:
+        frame = pd.read_csv(io.StringIO("x\n" + "\n".join(_PARSER_PROBE)), engine="c")
+        return [float(v) for v in frame["x"].tolist()] == [float(t) for t in _PARSER_PROBE]
+    except Exception:
+        return False
+
+
+PANDAS_NEEDS_ROUND_TRIP = not _default_parser_is_exact()
+
+#: 6.1.3: the file bytes are mapped (bytes.translate, about 0.4 GB/s) to
+#: d = digit or point, e = e/E, s = sign, x = anything else; then a run of 16
+#: d (a number with 15 or more digits, which float64 may not hold and the
+#: fast parser may round wrongly) and an exponent ("e" + digit, the form
+#: whose power of ten can pass +/-22) are plain substring searches.  A
+#: number of 15 characters or fewer without an exponent has at most 15
+#: digits and a power of ten within +/-15: the fast parser is exact for it.
+_FORM_TABLE = bytes((ord("d") if (48 <= i <= 57 or i == 46) else
+                     ord("e") if i in (69, 101) else
+                     ord("s") if i in (43, 45) else ord("x")) for i in range(256))
+
+
+def scan_number_forms(file_path: str) -> Tuple[bool, bool]:
+    """(long digit run, exponent notation) found in the file (6.1.3); read in
+    4 MiB blocks, a run across two blocks included; (True, True) when the
+    file cannot be read (check everything)."""
+    long_run = exponent = False
+    tail = b""
+    try:
+        with open(file_path, "rb") as handle:
+            while not (long_run and exponent):
+                block = handle.read(1 << 22)
+                if not block:
+                    break
+                forms = (tail + block).translate(_FORM_TABLE)
+                long_run = long_run or b"dddddddddddddddd" in forms
+                exponent = exponent or b"ed" in forms or b"esd" in forms
+                tail = block[-15:]
+    except OSError:
+        return True, True
+    return long_run, exponent
 #: Trace colours (Tableau 10, as the Plots tab) - hex so Veusz shows the same colours.
 COLOURS = ("#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
            "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac")
@@ -202,11 +332,69 @@ class LoadedFile:
     path: str
     frame: pd.DataFrame
     metadata: List[str] = field(default_factory=list)
+    #: 6.1.3: pandas.read_csv() keywords the frame was read with (to read
+    #: columns again as text for the exact-text check)
+    read_options: Dict[str, Any] = field(default_factory=dict)
+    #: 6.1.3: scan_number_forms() of the file, once known
+    number_forms: Optional[Tuple[bool, bool]] = None
 
     @property
     def name(self) -> str:
         """File name (no folder)."""
         return os.path.basename(self.path)
+
+    def may_have_long_numbers(self) -> bool:
+        """True when the file has a run of 16+ digits / points (6.1.3), so a
+        number in it may have more digits than float64 keeps."""
+        if self.number_forms is None:
+            self.number_forms = scan_number_forms(self.path)
+        return self.number_forms[0]
+
+    def column_texts(self, columns: Sequence[str]) -> Dict[str, np.ndarray]:
+        """Cells of ``columns`` as written (6.1.3): the file read again with
+        every cell as text, only those columns; "" for an empty cell."""
+        names = list(self.frame.columns)
+        index = [names.index(c) for c in columns]
+        options = dict(self.read_options)
+        options.pop("float_precision", None)
+        frame = pd.read_csv(self.path, usecols=index, dtype=str, keep_default_na=False,
+                            **options)
+        return {names[i]: frame.iloc[:, k].to_numpy(dtype=str)
+                for k, i in enumerate(sorted(index))}
+
+
+def exact_cell_texts(loaded: LoadedFile, columns: Sequence[str],
+                     values: Dict[str, np.ndarray]) -> Dict[str, List[str]]:
+    """{column: every cell as text} for the numeric ``columns`` whose float64
+    ``values`` cannot hold the cells exactly (6.1.3): integers beyond
+    +/-2**53, cells that are not numbers (kept as gaps in the plots) and
+    numbers with more digits than float64 keeps.  Other columns are left out.
+    """
+    out: Dict[str, List[str]] = {}
+    long_check: List[str] = []
+    for column in columns:
+        series = loaded.frame[column]
+        if pd.api.types.is_bool_dtype(series):
+            continue
+        if pd.api.types.is_integer_dtype(series):
+            present = series.dropna().to_numpy()
+            if present.size and (np.any(present > 2 ** 53) or
+                                 (present.dtype.kind == "i" and np.any(present < -2 ** 53))):
+                out[column] = ["" if pd.isna(v) else str(int(v)) for v in series.tolist()]
+            continue
+        if series.dtype == object or pd.api.types.is_string_dtype(series):
+            # text cells (pandas 3: "str" dtype): the frame already has them
+            texts = ["" if (not isinstance(v, str) and pd.isna(v)) else str(v)
+                     for v in series.tolist()]
+            if float_loses_text(texts, values[column]):
+                out[column] = texts
+            continue
+        long_check.append(column)
+    if long_check and loaded.may_have_long_numbers():
+        for column, texts in loaded.column_texts(long_check).items():
+            if float_loses_text(texts, values[column]):
+                out[column] = texts.tolist()
+    return out
 
 
 # %% Reading
@@ -264,15 +452,23 @@ def load_csv_file(file_path: str, config: Optional[CSVProcessingConfig] = None
     else:                                      # pandas treats longer separators as regex
         delimiter = re.escape(delimiter)
         kwargs["engine"] = "python"
+    options = dict(sep=delimiter, encoding=config.encoding, encoding_errors="replace",
+                   skiprows=range(config.header_line) if config.header_line else None,
+                   skip_blank_lines=config.skip_empty_lines, **kwargs)
+    forms = None
     try:
-        frame = pd.read_csv(file_path, sep=delimiter, encoding=config.encoding,
-                            encoding_errors="replace",
-                            skiprows=range(config.header_line) if config.header_line else None,
-                            skip_blank_lines=config.skip_empty_lines, **kwargs)
+        if kwargs["engine"] == "c" and PANDAS_NEEDS_ROUND_TRIP:
+            # 6.1.3: the exact (slower) parser only for a file that has a
+            # number the fast one may read wrongly (scan_number_forms)
+            forms = scan_number_forms(file_path)
+            if any(forms):
+                options["float_precision"] = "round_trip"
+        frame = pd.read_csv(file_path, **options)
     except Exception as exc:
         return None, "Error loading %s: %s" % (file_path, exc)
     frame.columns = [str(c).strip() for c in frame.columns]
-    loaded = LoadedFile(file_path, frame, read_file_metadata(file_path, config.header_line))
+    loaded = LoadedFile(file_path, frame, read_file_metadata(file_path, config.header_line),
+                        read_options=options, number_forms=forms)
     return loaded, ("Loaded %s: %d rows, %d columns (header at line %d)"
                     % (loaded.name, frame.shape[0], frame.shape[1], config.header_line + 1))
 
@@ -336,7 +532,19 @@ def column_values(series: pd.Series, naive_time: str = "utc") -> Tuple[str, np.n
         return "numeric", series.to_numpy(dtype=float, na_value=np.nan)
     numbers = pd.to_numeric(series, errors="coerce")
     if n_cells and numbers.notna().sum() >= MIN_PARSED_FRACTION * n_cells:
-        return "numeric", numbers.to_numpy(dtype=float, na_value=np.nan)
+        values = numbers.to_numpy(dtype=float, na_value=np.nan)
+        if PANDAS_NEEDS_ROUND_TRIP:
+            # 6.1.3: where pandas' own parser is not exact (pandas before
+            # 3.1, PANDAS_NEEDS_ROUND_TRIP), to_numeric is not either;
+            # Python's float() is.  Cells float() rejects keep to_numeric.
+            ok = np.flatnonzero(numbers.notna().to_numpy())
+            cells = series.to_numpy()
+            for i in ok.tolist():
+                try:
+                    values[i] = float(str(cells[i]).strip())
+                except ValueError:
+                    pass
+        return "numeric", values
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")        # "could not infer format" etc.
         stamps = pd.to_datetime(series, errors="coerce", utc=True)
@@ -346,10 +554,30 @@ def column_values(series: pd.Series, naive_time: str = "utc") -> Tuple[str, np.n
                     not isinstance(plain.dtype, pd.DatetimeTZDtype):
                 stamps = plain.dt.tz_localize(_naive_zone(), ambiguous="NaT",
                                               nonexistent="NaT").dt.tz_convert("UTC")
+        if n_cells and stamps.notna().sum() < MIN_PARSED_FRACTION * n_cells \
+                and naive_time != "local":
+            # 6.1.3: ISO 8601 stamps that differ in form from row to row
+            # (fraction digits, "Z" or "+02:00") failed the format inferred
+            # from the first row and the whole file was skipped; pandas 2+
+            # reads every ISO 8601 form with format="ISO8601".
+            try:
+                iso = pd.to_datetime(series, errors="coerce", utc=True, format="ISO8601")
+                if iso.notna().sum() > stamps.notna().sum():
+                    stamps = iso
+            except (TypeError, ValueError):
+                pass
     if n_cells and stamps.notna().sum() >= MIN_PARSED_FRACTION * n_cells:
         stamps = stamps.dt.tz_convert(None)    # UTC, naive
-        seconds = (stamps - VEUSZ_EPOCH).dt.total_seconds()
-        return "date", seconds.to_numpy(dtype=float, na_value=np.nan)
+        # 6.1.3: seconds from whole integer nanoseconds, split into whole
+        # seconds and the rest so each part is exact before the one final
+        # float64 rounding; pandas 2.0 total_seconds() was 1 ulp off for
+        # some nanosecond stamps (the text is also kept, see the project).
+        ns = (stamps - VEUSZ_EPOCH).to_numpy(dtype="timedelta64[ns]")
+        missing = np.isnat(ns)
+        whole, rest = np.divmod(ns.astype(np.int64), 10 ** 9)
+        seconds = whole.astype(float) + rest.astype(float) / 1e9
+        seconds[missing] = np.nan
+        return "date", seconds
     return "text", series.to_numpy()
 
 
@@ -423,13 +651,28 @@ class VeuszPlotter:
                                  "dates - file skipped" % (x_column, loaded.name))
                 continue
             x_name = "%s_%s" % (stem, x_column)
+            source = os.path.splitext(loaded.name)[0]          # 6.1.3: source_<file>
             if x_kind == "date":
                 doc.SetDataDateTime(x_name, x_values)          # UTC
                 tagged_local = doc.SetDataLocalTime(x_name)    # local display copy
+                tag_data(doc, [x_name], source, (x_column, "x_data", "time_utc"))
+                tag_data(doc, [tagged_local], source, (x_column, "x_data", "time_local"))
+                # 6.1.3: the time stamps as written (offsets, every digit of
+                # the seconds) - Veusz date-times are float64 seconds.
+                texts = ["" if (not isinstance(v, str) and pd.isna(v)) else str(v)
+                         for v in loaded.frame[x_column].tolist()]
+                doc.SetDataText(x_name + "_text", texts)
+                tag_data(doc, [x_name + "_text"], source, (x_column, "time_text", "text"))
             else:
                 doc.SetData(x_name, x_values)
-            tagged = [x_name] + ([tagged_local] if x_kind == "date" else [])
+                tag_data(doc, [x_name], source, (x_column, "x_data"))
+                exact = exact_cell_texts(loaded, [x_column], {x_column: x_values})
+                if x_column in exact:
+                    doc.SetDataText(x_name + "_exact_text", exact[x_column])
+                    tag_data(doc, [x_name + "_exact_text"], source,
+                             (x_column, "exact_text", "text"))
             traces: List[Tuple[str, str]] = []
+            y_values_of: Dict[str, np.ndarray] = {}
             for y_col in y_columns:
                 if y_col not in loaded.frame.columns:
                     self.log_message("WARNING: Y column '%s' not found in %s - skipping"
@@ -446,9 +689,19 @@ class VeuszPlotter:
                                      "as gaps" % (loaded.name, y_col, gaps))
                 y_name = "%s_%s" % (stem, y_col)
                 doc.SetData(y_name, y_values)
-                tagged.append(y_name)
+                tag_data(doc, [y_name], source, (y_col, "y_data"))
                 traces.append((y_col, y_name))
-            doc.TagDatasets(stem, tagged)
+                y_values_of[y_col] = y_values
+            # 6.1.3: cells float64 cannot hold exactly keep their text
+            exact = exact_cell_texts(loaded, list(y_values_of), y_values_of)
+            for y_col, y_name in traces:
+                if y_col in exact:
+                    doc.SetDataText(y_name + "_exact_text", exact[y_col])
+                    tag_data(doc, [y_name + "_exact_text"], source,
+                             (y_col, "exact_text", "text"))
+                    self.log_message("%s: '%s' has cells float64 cannot hold exactly; "
+                                     "their text is kept in %s_exact_text"
+                                     % (loaded.name, y_col, y_name))
             per_file.append((loaded, stem, x_kind, x_name, traces))
             if overlay_kind is None:
                 overlay_kind = x_kind
@@ -457,7 +710,7 @@ class VeuszPlotter:
                     self.log_message("WARNING: %s has a %s X column; the overlay uses %s X "
                                      "values - not overlaid" % (loaded.name, x_kind, overlay_kind))
                     break
-                self._style(overlay.Add("xy", name="Overlay_%s" % y_name, xData=x_name,
+                self._style(overlay.Add("xy", name=trace_widget_name(y_name), xData=x_name,
                                         yData=y_name), COLOURS[n_traces % len(COLOURS)],
                             line_style, marker, config, "%s_%s" % (stem, y_col))
                 n_traces += 1
@@ -470,7 +723,8 @@ class VeuszPlotter:
                 extra=["X: %s; Y: %s" % (x_column, ", ".join(t[0] for t in traces))])
             graph = page.Add("graph", name="Graph_%s" % stem)
             for index, (y_col, y_name) in enumerate(traces):
-                self._style(graph.Add("xy", name=y_name, xData=x_name, yData=y_name),
+                self._style(graph.Add("xy", name=trace_widget_name(y_name), xData=x_name,
+                                      yData=y_name),
                             COLOURS[index % len(COLOURS)], line_style, marker, config, y_col)
             self._configure_graph(graph, stem, config, x_kind == "date")
         self.log_message("Created %d pages: 1 overlay + %d file pages, %d overlay trace(s)"

@@ -26,6 +26,73 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.2: Traces named after their data; source_/type_ tags; nothing cut.
+Date: 2026-11-10
+#              * Every dataset of a file is tagged source_<file> and
+#                type_<kind> (tag_named_datasets); overlay datasets carry the
+#                source tag of every file in the batch.  Replaces the bare
+#                "<file>", "raw", "sorted" and "datestr" tags.
+#              * Trace (xy) widgets are named after their y dataset (file,
+#                HDU, column, channel tag, processing step), e.g.
+#                ds_2026_04_20_01_39_03__azServo1Hz__Tach1__sorted; a second
+#                drawing adds _date_labels or _local_time.  Was
+#                xy_<col>_<tag>.
+#              * Complex columns (FITS C / M) are stored as <..>__re and
+#                <..>__im (0.4.1 kept the real part only); integer columns
+#                beyond +/-2**53 also get <..>__exact_text; cells with more
+#                than two dimensions become one row per table row.
+#              * Numeric axes: "%.12Vg" tick labels; MJD date text with every
+#                digit of the time.
+#              Checked (tack 776 datasets, UWBR Temps 384): data identical to
+#              0.4.1 except the local-time copies (exact UTC + offset, at
+#              most 1.2e-7 s different); no dataset untagged.
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        file_source_word: Source of a file's datasets for the ``source_*`` tag (0.4.2): the file name without its FITS extensions (data["base_name"] when present).
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Cross-file unit-overlay pages (see _build_unit_overlay_pages_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_unit_overlay_pages_body: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.2"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.1: Files read in parallel processes; GPU for NVIDIA or AMD.
 Date: 2026-11-09
 #              * NEW "Read files in parallel processes (when it pays off)"
@@ -601,7 +668,7 @@ from astropy.table import QTable
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.4.2"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -630,6 +697,8 @@ from _autoplot_common import (   # noqa: E402
     gpu_enabled, gpu_tooltip, gpu_usage_text, reset_gpu_usage,
     set_gpu_argsort_threshold,
     mjd_to_datestr,
+    # 0.4.2: names and tags from the data
+    trace_widget_name, tag_named_datasets, tag_data, document_dataset_names,
     register_nrao_fits_units, suppress_fits_unit_warnings,
     detect_time_breaks, make_broken_x_axis,
     # v0.0.18: unit-aware break detection (manual gap units fix)
@@ -973,6 +1042,18 @@ class FITSProcessor:
 # ============================================================================
 # %% VEUSZ INTEGRATION  (runs on the GUI thread)
 # ============================================================================
+def file_source_word(file_path: str, data: Optional[Dict[str, Any]] = None) -> str:
+    """Source of a file's datasets for the ``source_*`` tag (0.4.2): the file
+    name without its FITS extensions (data["base_name"] when present)."""
+    if data and data.get("base_name"):
+        return str(data["base_name"])
+    name = os.path.basename(str(file_path))
+    for ending in (".gz", ".fits", ".fit", ".fts"):
+        if name.lower().endswith(ending):
+            name = name[:-len(ending)]
+    return name
+
+
 def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   backend: str, log_cb=None,
                   emit_datestr: bool = False,
@@ -1042,6 +1123,9 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
     base = safe_dsname(data["base_name"])
     raw_names: List[str] = []
     sorted_names: List[str] = []
+    # 0.4.2: every dataset made for this file is tagged at the end with
+    # source_<file> and type_<kind> (tag_named_datasets).
+    names_before = set(document_dataset_names(doc))
 
     # ---- column-level progress book-keeping ------------------------------
     # Pre-count the operations the caller will see ticking on the column bar:
@@ -1083,13 +1167,35 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
         raw_name = "%s__%s__%s__raw" % (
             base, safe_dsname(hname), safe_dsname(col))
         array = np.asarray(values)
+        # 0.4.2: nothing is cut.  Complex columns (FITS C/M) are stored as
+        # "<..>__re" and "<..>__im" (0.4.1 kept the real part only); integer
+        # columns beyond 2**53, where float64 (the only Veusz number) drops
+        # digits, get an exact text copy "<..>__exact_text"; cells with
+        # more than one dimension are stored one row per table row.
+        if array.ndim > 2:
+            array = array.reshape(array.shape[0], -1)
         if array.dtype.kind in ("S", "U", "O"):
             doc.SetDataText(raw_name, array.reshape(-1))
+        elif array.dtype.kind == "c":
+            for part, values_part in (("re", array.real), ("im", array.imag)):
+                part_name = raw_name[:-len("__raw")] + "__" + part
+                if values_part.ndim == 2:
+                    doc.SetData2D(part_name, np.ascontiguousarray(values_part, dtype=float))
+                else:
+                    doc.SetData(part_name, np.ascontiguousarray(values_part, dtype=float))
+                raw_names.append(part_name)
+            _tick()
+            continue
         elif array.ndim == 2:
             doc.SetData2D(raw_name, array)
         else:
             doc.SetData(raw_name, array.reshape(-1))
         raw_names.append(raw_name)
+        if array.dtype.kind in ("i", "u") and array.size and (
+                np.any(array > 2 ** 53) or (array.dtype.kind == "i" and np.any(array < -2 ** 53))):
+            exact_name = raw_name[:-len("__raw")] + "__exact_text"
+            doc.SetDataText(exact_name, [str(int(v)) for v in array.reshape(-1).tolist()])
+            raw_names.append(exact_name)
         # 0.4.0: the time column is also stored as a Veusz date-time
         # dataset in UTC ("<...>__utc"), once per file and HDU; the pages
         # draw local date-time copies of it (see _autoplot_native 0.5.0).
@@ -1103,8 +1209,6 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             doc.SetDataDateTime(utc_name, utc)
             raw_names.append(utc_name)
         _tick()
-    doc.TagDatasets(base, raw_names)
-    doc.TagDatasets("raw", raw_names)
     if log_cb:
         log_cb("  Native model: %d raw datasets (Astropy only)" % len(raw_names))
 
@@ -1557,9 +1661,6 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 log_cb("  Datetime duplicate skipped: %s epoch unknown"
                        % sk_col)
 
-        if sorted_names:
-            doc.TagDatasets(base, sorted_names)
-            doc.TagDatasets("sorted", sorted_names)
         if log_cb:
             log_cb("  Column datasets created: %d" % len(sorted_names))
 
@@ -1592,12 +1693,6 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                     log_cb("  SetDataText failed for %s: %s" % (ds_raw, exc))
                 continue
             datestr_names.extend([ds_raw, ds_sorted])
-        if datestr_names:
-            try:
-                doc.TagDatasets(base, datestr_names)
-                doc.TagDatasets("datestr", datestr_names)
-            except Exception:
-                pass
             if log_cb:
                 log_cb("  Date-string datasets created: %d" % len(datestr_names))
 
@@ -1631,6 +1726,13 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                          hide_keys=hide_keys)
     elif log_cb:
         log_cb("  Per-file plot pages skipped (combined plots only).")
+
+    # 0.4.2: Veusz tags on every dataset of this file - the source (file
+    # name) and the kinds read from the dataset names (raw, sorted,
+    # time_MJD, time_text, image, ...); replaces the bare "<file>", "raw",
+    # "sorted" and "datestr" tags of 0.4.1.
+    tag_named_datasets(doc, [n for n in document_dataset_names(doc) if n not in names_before],
+                       sources=[file_source_word(file_path, data)])
 
     # cleanup any temporary uncompressed copy
     if data["tmp_uncompressed"]:
@@ -1815,10 +1917,9 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                 if not y_ds or not x_ds:
                     continue
                 tag_label = ".".join(t or "NA" for t in tup)
-                xy = graph.Add(
-                    "xy",
-                    name=safe_dsname("xy_%s_%s" % (col, tag_label)),
-                )
+                # 0.4.2: trace named after its data (file, HDU, column,
+                # tag, processing step); was "xy_<col>_<tag>".
+                xy = graph.Add("xy", name=trace_widget_name(y_ds))
                 xy.xData.val = x_ds
                 xy.yData.val = y_ds
                 try:
@@ -1896,12 +1997,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     if not y_ds or not x_ds_dt or not label_ds:
                         continue
                     tag_label = ".".join(t or "NA" for t in tup)
-                    xy = graph.Add(
-                        "xy",
-                        name=safe_dsname(
-                            "xy_%s_%s_dt" % (col, tag_label)
-                        ),
-                    )
+                    xy = graph.Add("xy", name=trace_widget_name(y_ds, "date_labels"))
                     xy.xData.val = x_ds_dt   # same numeric seconds
                     xy.yData.val = y_ds
                     try:
@@ -1996,12 +2092,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     if not y_ds or not x_ds:
                         continue
                     tag_label = ".".join(t or "NA" for t in tup)
-                    xy = graph.Add(
-                        "xy",
-                        name=safe_dsname(
-                            "xy_%s_%s_dtl" % (col, tag_label)
-                        ),
-                    )
+                    xy = graph.Add("xy", name=trace_widget_name(y_ds, "local_time"))
                     xy.xData.val = x_ds
                     xy.yData.val = y_ds
                     try:
@@ -2059,7 +2150,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                     graph.x.GridLines.hide.val = False
                 except Exception:
                     pass
-            xy = graph.Add("xy", name=safe_dsname("xy_%s" % c))
+            xy = graph.Add("xy", name=trace_widget_name(ds))     # 0.4.2: was "xy_<col>"
             xy.xData.val = x_name
             xy.yData.val = ds
             # v0.0.13: untagged graph carries exactly one trace, so
@@ -2127,7 +2218,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                             graph.x.GridLines.hide.val = False
                         except Exception:
                             pass
-                    xy = graph.Add("xy", name=safe_dsname("xy_%s_dt" % c))
+                    xy = graph.Add("xy", name=trace_widget_name(ds, "date_labels"))
                     xy.xData.val = x_name           # numeric seconds (same as seconds page)
                     xy.yData.val = ds
                     if label_density:
@@ -2202,7 +2293,7 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
                         )
                     except Exception:
                         pass
-                    xy = graph.Add("xy", name=safe_dsname("xy_%s_dtL" % c))
+                    xy = graph.Add("xy", name=trace_widget_name(ds, "local_time"))
                     xy.xData.val = x_ds_dtl       # numeric dtsec
                     xy.yData.val = ds
                     apply_trace_style(
@@ -2243,7 +2334,20 @@ _OVERLAY_COLORS = [
 ]
 
 
-def build_unit_overlay_pages(doc, file_records,
+def build_unit_overlay_pages(doc, file_records, *args, **kwargs):
+    """Cross-file unit-overlay pages (see _build_unit_overlay_pages_body),
+    then the Veusz tags of every overlay dataset (0.4.2): the source tag of
+    each file in the batch (an overlay joins all of them) and the kinds read
+    from the names (overlay, sorted, time_MJD, time_labels ...)."""
+    names_before = set(document_dataset_names(doc))
+    result = _build_unit_overlay_pages_body(doc, file_records, *args, **kwargs)
+    sources = [rec.get("source") or rec.get("base") or "overlay" for rec in file_records]
+    tag_named_datasets(doc, [n for n in document_dataset_names(doc) if n not in names_before],
+                       sources=sources)
+    return result
+
+
+def _build_unit_overlay_pages_body(doc, file_records,
                               gap_k=10.0, gap_absolute=0.0, log_cb=None,
                               datetime_duplicate=False,
                               datetime_full_labels=None,
@@ -2548,7 +2652,7 @@ def build_unit_overlay_pages(doc, file_records,
                     log_cb("  Overlay '%s.%s [%s]' SetData failed: %s"
                            % (hname, col, _tup_label(tup), _exc))
                 continue
-            xy_name = safe_dsname("xy_%s_%s_%s" % (hname, col, t_safe))
+            xy_name = trace_widget_name(y_name)          # 0.4.2: named after its data
             xy = graph.Add("xy", name=xy_name)
             xy.xData.val = x_name
             xy.yData.val = y_name
@@ -2704,9 +2808,7 @@ def build_unit_overlay_pages(doc, file_records,
                      xnum_name, y_name, idx, _npts,
                      _dtnum_name, _mjds_arr) in dt_eligible:
                     t_safe = _tup_suffix(tup)
-                    xy_name = safe_dsname(
-                        "xy_%s_%s_%s_dt" % (hname, col, t_safe)
-                    )
+                    xy_name = trace_widget_name(y_name, "date_labels")
                     xy = graph_dt.Add("xy", name=xy_name)
                     xy.xData.val = xnum_name        # numeric seconds (seconds-overlay dataset)
                     xy.yData.val = y_name
@@ -2820,9 +2922,7 @@ def build_unit_overlay_pages(doc, file_records,
                     if not x_ds_dtL:
                         continue
                     t_safe = _tup_suffix(tup)
-                    xy_name = safe_dsname(
-                        "xy_%s_%s_%s_dtL" % (hname, col, t_safe)
-                    )
+                    xy_name = trace_widget_name(y_name, "local_time")
                     xy = graph_dtL.Add("xy", name=xy_name)
                     xy.xData.val = x_ds_dtL
                     xy.yData.val = y_name
@@ -3347,6 +3447,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
                 file_records.append({
                     "base": safe_dsname(data.get("base_name") or
                                         os.path.basename(path)),
+                    "source": data.get("base_name") or os.path.basename(path),   # 0.4.2: source_* tag
                     "columns": data.get("columns") or {},
                     "units": data.get("units") or {},
                     "sort_key": data.get("sort_key"),

@@ -32,6 +32,78 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.5.2: source_/type_ tags on every dataset, data-named traces, exact numbers.
+Date: 2026-11-10
+#              * NEW tag_word, source_tag, type_tag, tag_data(): the Veusz
+#                tags source_<origin> and type_<kind> used by every program
+#                (no Qt here, so batch modes and reader processes stay
+#                light); trace_widget_name(): a trace widget is named after
+#                the dataset it draws; exact_number_text(): repr() of a
+#                float, str() of an integer; float_loses_text() with
+#                MISSING_VALUE_WORDS: can float64 hold a column's text?
+#              * finalize(): local and gap copies inherit the source_ and
+#                type_ tags of their data (plus type_time_local /
+#                type_gap_rows); a dataset still untagged gets
+#                source_<program> and a type_ of its kind; numeric axes
+#                without a format get "%.12Vg" ticks (NUMERIC_TICK_FORMAT;
+#                Veusz's %Vg showed MJD 61234.1 as 6.1x10^4).
+#              * NEW GetDataType(name): '1d', '2d', 'text' or 'datetime'.
+#              * Local-time copies are UTC + offset in one addition
+#                (local_veusz_seconds); the writer's round trip through Unix
+#                epoch seconds rounded fractions of a second to about
+#                0.24 us (tack / Temps: at most 1.2e-7 s; whole seconds
+#                unchanged).
+#              * _seconds_text(): the exact seconds in brackets when the
+#                short text is rounded.
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        TimeLayout (class): Gap rule of the time axes (0.5.0), see vszh5_writer TIME GAPS.
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0).
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.5.1: Faster building and saving of large projects (same output).
 Date: 2026-11-09
 #              * NativeDocument.utc_of: the reverse of local_of, kept up to
@@ -209,7 +281,7 @@ import numpy as np
 import vszh5_writer
 from vszh5_writer import VeuszWriter, VszDoc, vz_text
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 WRITER_VERSION = vszh5_writer.__version__
 DATASET_SETTINGS = frozenset((
     "xData", "yData", "labels", "scalePoints", "yDataLow", "yDataHigh",
@@ -420,6 +492,20 @@ class NativeWidget:
             doc.up()
 
 
+def local_veusz_seconds(utc_veusz, axis):
+    """Local wall-clock Veusz date seconds of the UTC Veusz date seconds
+    ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis``
+    (0.5.2): one addition, UTC + offset.
+
+    The writer's ``axis.veusz_seconds`` goes through Unix epoch seconds
+    (about 1.8e9 s, where float64 steps are 2.4e-7 s) and back, which
+    rounded fractions of a second to about 0.24 microseconds; Veusz date
+    values (about 5.6e8 s, steps 6e-8 s) keep them.  Whole seconds are
+    identical either way; NaN stays NaN (its offset is 0).
+    """
+    return np.asarray(utc_veusz, dtype=float) + np.asarray(axis.offsets_s, dtype=float)
+
+
 def mark_local_time_axis(axis, label="Local time"):
     """
     Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis
@@ -493,12 +579,21 @@ class TimeLayout(object):
 
 
 def _seconds_text(seconds):
-    """A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'."""
+    """A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+
+    0.5.2: when the short form is not exact, the exact seconds follow in
+    parentheses (repr: every digit), e.g. '1.334 min (80.04000000000001 s)';
+    the notes are exported with the project, so nothing is rounded away.
+    """
     seconds = float(seconds)
+    exact = "%s s" % repr(seconds)
     for size, unit in ((86400.0, "d"), (3600.0, "h"), (60.0, "min")):
         if seconds >= size:
-            return "%g %s" % (round(seconds / size, 3), unit)
-    return "%g s" % round(seconds, 3)
+            short = "%g %s" % (round(seconds / size, 3), unit)
+            same = float("%g" % round(seconds / size, 3)) * size == seconds
+            return short if same else "%s (%s)" % (short, exact)
+    short = "%g s" % round(seconds, 3)
+    return short if float("%g" % round(seconds, 3)) == seconds else "%s (%s)" % (short, exact)
 
 
 #: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
@@ -606,13 +701,14 @@ def _layout_time_axis(doc, graph, axis):
         thresholds.append(threshold)
         if dated:
             local = vszh5_writer.local_time_from_veusz(utc)
+            local_values = local_veusz_seconds(utc, local)      # 0.5.2: exact sum
             local_name = utc_name + "_local"
-            doc.SetDataDateTime(local_name, vszh5_writer.insert_gaps(local.veusz_seconds, cut))
+            doc.SetDataDateTime(local_name, vszh5_writer.insert_gaps(local_values, cut))
             doc.local_axes[local_name] = local
             doc.local_of[utc_name] = local_name
             doc.utc_of[local_name] = utc_name
             plot_x = local_name
-            union.append(local.veusz_seconds)
+            union.append(local_values)
             if local_name not in local_names:
                 local_names.append(local_name)
         else:
@@ -632,7 +728,7 @@ def _layout_time_axis(doc, graph, axis):
                 # local copy without gap rows (never misalign the points).
                 if dated:
                     plot_x = _plot_name(doc, utc_name + "_local_nogaps", utc_name)
-                    doc.SetDataDateTime(plot_x, local.veusz_seconds)
+                    doc.SetDataDateTime(plot_x, local_values)
                     doc.local_axes[plot_x] = local
                 else:
                     plot_x = x_name
@@ -797,6 +893,121 @@ def _rename_from_data(widget):
     widget.name = vszh5_writer.unique_widget_name(base, used)
 
 
+# %% Dataset tags and trace names (0.5.2; shared by every AutoPlot program)
+# Every dataset carries Veusz tags source_<origin> (file or program) and
+# type_<kind> (what the values are); trace widgets are named after the
+# data they draw.  Imported by _autoplot_common, ATR, R&S, CSV and
+# Touchstone AutoPlot (no Qt here, so batch modes and workers stay light).
+#: Characters allowed in a tag word; everything else becomes "_".
+_TAG_WORD = re.compile(r"[^A-Za-z0-9_]+")
+
+
+def tag_word(text):
+    """``text`` as a tag word: letters, digits and '_' only (never empty)."""
+    word = _TAG_WORD.sub("_", str(text)).strip("_")
+    return word or "unnamed"
+
+
+def source_tag(source):
+    """Veusz tag naming where data come from: ``source_<word>``."""
+    return "source_" + tag_word(source)
+
+
+def type_tag(kind):
+    """Veusz tag naming what data are: ``type_<word>``."""
+    return "type_" + tag_word(kind)
+
+
+def tag_data(doc, names, sources=(), kinds=()):
+    """Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+
+    ``sources`` and ``kinds`` are one string or a sequence of them.  Works
+    with a NativeDocument and with Veusz's own document (plugins).
+    """
+    names = [n for n in dict.fromkeys(names) if n]
+    if not names:
+        return
+    if isinstance(sources, str):
+        sources = (sources,)
+    if isinstance(kinds, str):
+        kinds = (kinds,)
+    for tag in [source_tag(s) for s in sources] + [type_tag(k) for k in kinds]:
+        doc.TagDatasets(tag, names)
+
+
+def _safe_name(name):
+    """``name`` with letters, digits and '_' only (any other character
+    becomes '_'), so a widget name reads like the dataset it draws; a
+    leading digit stays (Veusz widget names allow it)."""
+    text = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in str(name))
+    return text or "trace"
+
+
+def trace_widget_name(y_dataset, variant=""):
+    """Name of the xy widget that draws ``y_dataset``: the dataset name (it
+    holds the source file, the item and the processing type), plus
+    ``_<variant>`` for another drawing of the same data (e.g. "local_time",
+    "date_labels").  Letters, digits and '_' only."""
+    name = _safe_name(y_dataset)
+    return name + ("_" + tag_word(variant) if variant else "")
+
+
+def exact_number_text(value):
+    """A number as text with every digit: repr() of a float (the shortest
+    text that gives back the same float64), str() of an integer."""
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+        return str(int(value))
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return repr(number) if math.isfinite(number) else str(number)
+
+
+#: Cell texts that mean "no value" (pandas' default NA strings): a NaN read
+#: from one of these loses nothing, so it needs no exact-text copy.
+MISSING_VALUE_WORDS = frozenset((
+    "", "#N/A", "#N/A N/A", "#NA", "-1.#IND", "-1.#QNAN", "-NaN", "-nan", "1.#IND",
+    "1.#QNAN", "<NA>", "N/A", "NA", "NULL", "NaN", "None", "n/a", "nan", "null", "+nan",
+    "+NaN"))
+
+
+def float_loses_text(texts, values):
+    """True when float64 ``values`` parsed from the cell ``texts`` do not hold
+    all of them (0.5.2): a cell that is not a number and not a missing-value
+    word (MISSING_VALUE_WORDS), or a number with more significant digits
+    than float64 keeps.
+
+    A text of 15 characters or fewer has at most 15 digits, which float64
+    always keeps (DBL_DIG = 15), so only longer ones are compared - exactly,
+    with decimal.Decimal against repr() of the parsed value.
+    """
+    import decimal
+    text = np.char.strip(np.asarray(texts).astype(str))
+    values = np.asarray(values, dtype=float).reshape(-1)
+    if text.size == 0:
+        return False
+    missing = np.isin(text, sorted(MISSING_VALUE_WORDS))
+    if np.any(~missing & np.isnan(values)):
+        return True
+    long_text = np.char.str_len(text) > 15
+    for token, value in zip(text[long_text].tolist(), values[long_text].tolist()):
+        if not math.isfinite(value):
+            continue
+        try:
+            if decimal.Decimal(token) != decimal.Decimal(repr(value)):
+                return True
+        except decimal.InvalidOperation:
+            return True
+    return False
+
+
+#: (0.5.2) Tick-label format of numeric axes: up to 12 significant digits
+#: (the MHM2010 / T4 workbench 0.2.3 uses the same); ticks are positions,
+#: the data are stored with every digit.
+NUMERIC_TICK_FORMAT = "%.12Vg"
+
+
 # %% Dataset model and file output
 class NativeDocument:
     """Build and atomically save a self-contained Veusz format-1 document."""
@@ -905,7 +1116,9 @@ class NativeDocument:
             raise ValueError("%s is not a date dataset" % utc_name)
         axis = vszh5_writer.local_time_from_veusz(parts["data"], zone=zone, label=label)
         local_name = local_name or "%s_local" % utc_name
-        self.SetDataDateTime(local_name, axis.veusz_seconds)
+        # 0.5.2: UTC + offset in Veusz seconds (local_veusz_seconds), not the
+        # writer's round trip through Unix epoch seconds.
+        self.SetDataDateTime(local_name, local_veusz_seconds(parts["data"], axis))
         self.local_axes[local_name] = axis
         self.local_of[utc_name] = local_name
         self.utc_of[local_name] = utc_name
@@ -981,6 +1194,79 @@ class NativeDocument:
             widget.settings["TickLabels/format"] = fmt
             widget.settings.setdefault("TickLabels/rotate", str(vszh5_writer.LOCAL_DATETIME_ROTATE))
             widget.settings["label"] = text
+        # 0.5.2: numeric axes show up to 12 significant digits.  Veusz's
+        # automatic "%Vg" cuts tick labels to about 4 digits, so MJD 61000.25
+        # read "6.1x10^4" and a 100 Hz span at 10 MHz showed the same label
+        # on every tick in the exported PDF/PNG.  An explicit format, a log
+        # axis or a hidden axis (Smith chart) is left alone.
+        for widget in self.Root.WalkWidgets():
+            if widget.kind in ("axis", "axis-broken") \
+                    and widget.settings.get("mode", "numeric") == "numeric" \
+                    and not widget.settings.get("log", False) \
+                    and not widget.settings.get("hide", False) \
+                    and "TickLabels/format" not in widget.settings:
+                widget.settings["TickLabels/format"] = NUMERIC_TICK_FORMAT
+        self._tag_untagged()
+
+    def GetDataType(self, name):
+        """veusz.embed-compatible data type of dataset ``name`` (0.5.2):
+        '1d', '2d', 'text' or 'datetime'; KeyError when it does not exist."""
+        kind = self.datasets[name][0]
+        return {"date": "datetime"}.get(kind, kind)
+
+    def _tag_untagged(self):
+        """Give every dataset a ``source_*`` and a ``type_*`` tag (0.5.2).
+
+        The programs tag their datasets themselves (source file and kind,
+        _autoplot_common.tag_data); this is the safety net for any dataset
+        they missed: ``source_<document name>`` and ``type_numeric`` /
+        ``type_time`` / ``type_text`` / ``type_image`` by data type.
+        """
+        self._inherit_tags()
+        with_source, with_type = set(), set()
+        for tag, members in self.tags.items():
+            if tag.startswith("source_"):
+                with_source |= members
+            elif tag.startswith("type_"):
+                with_type |= members
+        missing_source = [n for n in self.datasets if n not in with_source]
+        if missing_source:
+            word = re.sub(r"[^A-Za-z0-9_]+", "_", str(self.name)).strip("_") or "AutoPlot"
+            self.tags.setdefault("source_" + word, set()).update(missing_source)
+        kind_tag = {"1d": "type_numeric", "date": "type_time", "text": "type_text",
+                    "2d": "type_image"}
+        for name in self.datasets:
+            if name not in with_type:
+                self.tags.setdefault(kind_tag[self.datasets[name][0]], set()).add(name)
+
+    def _inherit_tags(self):
+        """Plot copies made by finalize() take the tags of their data (0.5.2).
+
+        A local date-time copy "<utc>_local" gets the ``source_*`` tags and
+        the non-time ``type_*`` tags of its UTC dataset plus
+        ``type_time_local``; a line-break copy "<y>_gaps" gets every tag of
+        ``<y>`` plus ``type_gap_rows``.
+        """
+        tags_of = {}
+        for tag, members in self.tags.items():
+            for member in members:
+                tags_of.setdefault(member, set()).add(tag)
+        copies = {}
+        for local, utc in self.utc_of.items():
+            copies[local] = (utc, "type_time_local")
+        for name, owner in getattr(self, "_plot_copies", {}).items():
+            origin = owner if isinstance(owner, str) else owner[-1]
+            extra = "type_time_local" if "_local" in name else "type_gap_rows"
+            copies.setdefault(name, (origin, extra))
+        for name, (origin, extra) in copies.items():
+            if name not in self.datasets:
+                continue
+            for tag in tags_of.get(origin, ()):
+                if tag.startswith("source_") or (
+                        tag.startswith("type_") and not (
+                            extra == "type_time_local" and tag.startswith("type_time"))):
+                    self.tags[tag].add(name)
+            self.tags.setdefault(extra, set()).add(name)
 
     def TagDatasets(self, tag, names):
         """Attach ``tag`` to the existing datasets ``names`` (Veusz dataset tags).

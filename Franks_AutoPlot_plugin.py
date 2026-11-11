@@ -26,6 +26,25 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.2: Source tags of the overlay datasets; names and tags as Franks 0.4.2.
+Date: 2026-11-10
+#              * The file records of the overlay pass carry "source" (the
+#                file stem), so overlay datasets are tagged source_<file>.
+#              * COMMENTS column, exact text, tags and trace names come from
+#                Franks AutoPlot 0.4.2 (parse_franks_file, push_franks_to_veusz).
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal qtpy dialog used by the plugin entry point.
+        FranksAutoPlotPlugin (class): Veusz menu entry for native ASCII project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Veusz 3.x's exec loader supplies its selected filename as local "plugin".
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> Franks AutoPlot (Batch).  Writes a
+    separate native .vszh5 project; the host Veusz document is not changed.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.1: Progress throttle; GPU checkbox for NVIDIA or AMD.
 Date: 2026-11-09
 #              * Column progress at most every 50 ms (ProgressThrottle).
@@ -301,7 +320,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.3.1"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.3.2"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -939,6 +958,9 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                 file_records.append({
                     "base": data.get("base_name") or
                             safe_dsname(os.path.basename(path)),
+                    # 0.3.2: source_<file> tag of the overlay datasets
+                    "source": (data.get("source_name") or data.get("base_name")
+                               or os.path.basename(path)),
                     "columns": data.get("columns") or {},
                     "sort_key": data.get("sort_key"),
                 })

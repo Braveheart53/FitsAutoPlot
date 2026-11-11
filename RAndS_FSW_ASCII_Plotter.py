@@ -67,6 +67,69 @@ as one trace per y column.
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 1.1.4: Nothing dropped; every sweep in the notes; source_/type_ tags.
+Date: 2026-11-10
+#              * The average page lists every sweep (1.1.3 stopped at 2000);
+#                the reading notes and lines after "Values" that are not
+#                data rows are kept in the notes.
+#              * "inf" / "nan" are numbers (such a section was dropped or
+#                read as binary); printable text is never read as binary
+#                float32.  A section whose value count differs from the
+#                header is stored as "<file>_Section<n>_unaligned" (not
+#                plotted or averaged) and a text section as
+#                "<file>_Section<n>_text", instead of being dropped.  FSW
+#                ASCII rows with a word keep their row (the word is a gap);
+#                rows of different lengths are padded instead of the file
+#                being refused.
+#              * Tags source_<file> and type_<kind>: frequency_Hz / time_s /
+#                index, time_sweep, sweep, average_dB / average_linear, the
+#                y unit, power_linear, all_files (were "<stem>", "Avg_dB",
+#                "Avg_Linear").  Traces named after their data.
+#              Checked (42 example files): all 826 datasets identical to
+#              1.1.3; no dataset untagged.
+# %%%%% Function Descriptions
+        SFTFormatError (class): The file holds no trace this program can read.
+        SFTTrace (class): One sweep (section) of an R&S SFT file: its number, the instrument time stamp text and the trace values.
+        SFTFile (class): A parsed R&S FSP/FSW ASCII trace file (.sft).
+        _header: Parse the 'key;value;unit' header lines of an SFT file.
+        parse_sweep_time: FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime.
+        _float: float(text), or ``default`` (NaN) when text is not a number.
+        _text_tokens: Tokens of a section that is ASCII text but not numbers (1.1.4), or [] for a block that is not ASCII text.
+        _ascii_values: Values of an ASCII section, or None when the block is not ASCII numbers.
+        parse_sft_bytes: Parse one .sft file (see the file layout in the module header).
+        read_sft: Read and parse one SFT file (bytes, any encoding the parser accepts).
+        _read_worker: Process-pool worker: (path, SFTFile or None, error text).
+        read_files: Read in input order (a 'spawn' process pool when it pays off); (files, errors).
+        power_mean: Average of traces (rows) in their unit.
+        PlotOptions (class): Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and overlay, 2 = average only; ``use_gpu`` allows the GPU (NVIDIA or AMD) for...
+        RnSPlotter (class): Builds the project of a batch of .sft files.
+        build_project: RnSPlotter with every file of ``files`` added and finished.
+        batches: Split whole files into groups of at most ``plots_per_file`` sections (a file with more sections than that is a group of its own).
+        save_split: Write {base}_001.vszh5, {base}_002.vszh5 ...
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "R&S FSW / FSP Trace Plotter"
+        APP_VERSION = "1.1.4"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        MODE_NAMES: plot mode names (0 all, 1 average + overlay, 2 average only)
+        _SECTION: the 'Section<n>;<time stamp>' line that starts each sweep (bytes)
+        _NUMBER: one numeric token (inf, infinity and nan included)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python RAndS_FSW_ASCII_Plotter.py [files]   (GUI; View menu)
+          python RAndS_FSW_ASCII_Plotter.py *.sft --output rns.vszh5 [--split N]
+    Sweep averages are taken in the linear domain (10 log10 of the mean of
+    10^(P/10)); --gpu allows the GPU (NVIDIA or AMD, _autoplot_gpu) for
+    large stacks.  Files are read in a 'spawn' process pool when it pays off.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data; sections that are text or do not line up with
+    x are kept (_Section<n>_text, _Section<n>_unaligned).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 1.1.3: Adaptive process pool; GPU averages for NVIDIA or AMD.
 Date: 2026-11-09
 #              * read_files(): adaptive 'spawn' pool (_autoplot_parallel),
@@ -245,9 +308,12 @@ import numpy as np  # noqa: E402
 from vszh5_writer import VEUSZ_EPOCH, header_notes  # noqa: E402
 from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (1.1.3 adaptive pool)
 import _autoplot_gpu  # noqa: E402  (1.1.3: NVIDIA or AMD GPU, NumPy fallback)
+# 1.1.4: tags source_<file> / type_<kind>, exact number text and trace names
+# from their data (Qt-free helpers shared by the AutoPlot programs)
+from _autoplot_native import exact_number_text, tag_data, trace_widget_name  # noqa: E402
 
 APP_NAME = "R&S FSW / FSP Trace Plotter"
-APP_VERSION = "1.1.3"
+APP_VERSION = "1.1.4"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Rohde & Schwarz .sft trace files to native Veusz .vszh5 projects, "
                    "with averages and interactive pyqtgraph plots.")
@@ -288,6 +354,14 @@ class SFTFile:
     y_unit: str
     traces: List[SFTTrace]
     warnings: List[str] = field(default_factory=list)
+    # 1.1.4: nothing read is dropped.  A section whose value count differs
+    # from the header's "Values" is kept here (stored, not plotted or
+    # averaged: it does not line up with x); a section of text that is not
+    # numbers keeps its tokens (number, stamp, tokens); lines after "Values"
+    # that are not data rows are kept for the notes.
+    unaligned: List[SFTTrace] = field(default_factory=list)
+    text_sections: List[Tuple[int, str, List[str]]] = field(default_factory=list)
+    extra_lines: List[str] = field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -300,7 +374,10 @@ class SFTFile:
 
 
 _SECTION = re.compile(rb"Section\s*(\d+);([^\r\n]*)\r?\n")
-_NUMBER = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
+# 1.1.4: inf / nan words are numbers too (a section or row holding one was
+# dropped before, or read as binary).
+_NUMBER = re.compile(r"^[-+]?((\d+\.?\d*|\.\d+)([eE][-+]?\d+)?|inf|infinity|nan)$",
+                     re.IGNORECASE)
 
 
 def _header(text: str) -> Tuple[Dict[str, Tuple[str, str]], List[str]]:
@@ -346,6 +423,18 @@ def _float(text: str, default: float = float("nan")) -> float:
         return default
 
 
+def _text_tokens(block: bytes) -> List[str]:
+    """Tokens of a section that is ASCII text but not numbers (1.1.4), or []
+    for a block that is not ASCII text."""
+    try:
+        text = block.decode("ascii").strip()
+    except UnicodeDecodeError:
+        return []
+    if any(ord(ch) < 9 or 13 < ord(ch) < 32 for ch in text):
+        return []                                       # control bytes: not text
+    return [t for t in re.split(r"[,;\s]+", text) if t]
+
+
 def _ascii_values(block: bytes) -> Optional[np.ndarray]:
     """Values of an ASCII section, or None when the block is not ASCII numbers."""
     try:
@@ -368,6 +457,9 @@ def parse_sft_bytes(raw: bytes, path: str = "<bytes>") -> SFTFile:
     declared = _float(header.get("values", ("", ""))[0])
     n_values = int(declared) if np.isfinite(declared) and declared > 0 else None
     traces: List[SFTTrace] = []
+    unaligned: List[SFTTrace] = []
+    text_sections: List[Tuple[int, str, List[str]]] = []
+    extra_lines: List[str] = []
     rows_x: Optional[np.ndarray] = None
     if matches:
         for index, match in enumerate(matches):
@@ -377,30 +469,65 @@ def parse_sft_bytes(raw: bytes, path: str = "<bytes>") -> SFTFile:
             number = int(match.group(1))
             stamp = match.group(2).decode("ascii", errors="replace").strip()
             values = _ascii_values(block)
-            if values is None and n_values:
+            # 1.1.4: printable ASCII text is never read as binary float32
+            # (dBm float32 bytes always hold a NUL or a byte >= 128)
+            if values is None and n_values and not _text_tokens(block):
                 if len(block) >= 4 * n_values:           # binary float32 trace
                     values = np.frombuffer(block[:4 * n_values], dtype="<f4").astype(float)
+                    if len(block) - 4 * n_values > 2:     # more than a line end after it
+                        warnings.append("section %d: %d bytes after the %d binary values "
+                                        "(not read)" % (number, len(block) - 4 * n_values,
+                                                        n_values))
             if values is None or values.size == 0:
-                warnings.append("section %d (%s) holds no readable trace; skipped" % (number, stamp))
+                tokens = _text_tokens(block)
+                if tokens:
+                    # 1.1.4: kept as a text dataset, not dropped
+                    text_sections.append((number, stamp, tokens))
+                    warnings.append("section %d (%s) is text, not numbers; kept as text "
+                                    "(%d tokens)" % (number, stamp, len(tokens)))
+                else:
+                    warnings.append("section %d (%s) holds no readable trace (%d bytes)"
+                                    % (number, stamp, len(block)))
                 continue
             if n_values and values.size != n_values:
-                warnings.append("section %d has %d values, the header says %d; skipped"
-                                % (number, values.size, n_values))
+                # 1.1.4: kept (stored, not plotted or averaged), not dropped
+                unaligned.append(SFTTrace(number, stamp, values))
+                warnings.append("section %d has %d values, the header says %d; stored "
+                                "unplotted as Section%d_unaligned"
+                                % (number, values.size, n_values, number))
                 continue
             traces.append(SFTTrace(number, stamp, values))
     else:                                               # FSW ASCII export: x;y;... rows
         text = raw.decode("ascii", errors="replace").splitlines()
         rows = []
         after_values = False
-        for line in text:
+        for number, line in enumerate(text, start=1):
             if line.strip().lower().startswith("values"):
                 after_values = True
                 continue
             if not after_values:
                 continue
             tokens = [t for t in re.split(r"[;,\s]+", line.strip()) if t]
-            if len(tokens) >= 2 and all(_NUMBER.match(t) for t in tokens):
-                rows.append([float(t) for t in tokens])
+            if not tokens:
+                continue
+            numeric = [bool(_NUMBER.match(t)) for t in tokens]
+            if len(tokens) >= 2 and numeric[0] and any(numeric[1:]):
+                # 1.1.4: a row with a word among numbers keeps its row (the
+                # word is a gap, named in the notes); it was dropped before.
+                if not all(numeric):
+                    warnings.append("line %d: not numbers (gaps): %s"
+                                    % (number, ", ".join(t for t, ok in zip(tokens, numeric)
+                                                         if not ok)))
+                rows.append([float(t) if ok else np.nan for t, ok in zip(tokens, numeric)])
+            else:
+                extra_lines.append(line.rstrip())          # 1.1.4: kept for the notes
+        if rows and len({len(r) for r in rows}) > 1:
+            # 1.1.4: rows of different lengths are padded with gaps (NaN);
+            # the file used to be refused.
+            width = max(len(r) for r in rows)
+            warnings.append("data rows have %s values; shorter rows padded with gaps"
+                            % sorted({len(r) for r in rows}))
+            rows = [r + [np.nan] * (width - len(r)) for r in rows]
         if rows and len({len(r) for r in rows}) == 1:
             table = np.array(rows)
             rows_x = table[:, 0]
@@ -423,8 +550,8 @@ def parse_sft_bytes(raw: bytes, path: str = "<bytes>") -> SFTFile:
             raise SFTFormatError("%s: x-Unit s but no sweep time (SWT)" % name)
         x = np.linspace(0.0, sweep, n)
         x_kind, x_label = "time", "Time (s)"
-        warnings.append("x-Unit s: time axis 0 to %g s (sweep time); Start/Stop are not "
-                        "used" % sweep)
+        warnings.append("x-Unit s: time axis 0 to %s s (sweep time); Start/Stop are not "
+                        "used" % exact_number_text(sweep))
         x_log = False
     elif np.isfinite(start) and np.isfinite(stop):
         if x_log and start > 0 and stop > 0:
@@ -442,7 +569,8 @@ def parse_sft_bytes(raw: bytes, path: str = "<bytes>") -> SFTFile:
     y_unit = header.get("y-unit", ("dBm", ""))[0] or "dBm"
     return SFTFile(path=path, header=header, header_lines=header_lines, x=x, x_kind=x_kind,
                    x_label=x_label, x_log=x_log, y_unit=y_unit, traces=traces,
-                   warnings=warnings)
+                   warnings=warnings, unaligned=unaligned, text_sections=text_sections,
+                   extra_lines=extra_lines)
 
 
 def read_sft(path: str) -> SFTFile:
@@ -551,30 +679,41 @@ class RnSPlotter:
         stem = self._stem(sft)
         x_name = "%s_%s" % (stem, "time" if sft.x_kind == "time" else "freq")
         doc.SetData(x_name, sft.x)
-        names = [x_name]
+        # 1.1.4: tags source_<file> and type_<kind> (were "<stem>", "Avg_dB",
+        # "Avg_Linear"); the type names the quantity and its unit.
+        source = os.path.splitext(sft.name)[0]
+        x_unit = sft.value("x-unit") or ("s" if sft.x_kind == "time" else "Hz")
+        tag_data(doc, [x_name], source, (sft.x_kind if sft.x_kind == "index"
+                                         else "%s_%s" % (sft.x_kind, x_unit),))
         stamps = [parse_sweep_time(t.stamp) for t in sft.traces]
         if any(s is not None for s in stamps):       # instrument clock, zone not recorded
             time_name = "%s_sweep_time" % stem
             doc.SetDataDateTime(time_name, [(s - VEUSZ_EPOCH).total_seconds() if s else np.nan
                                             for s in stamps])
-            names.append(time_name)
+            tag_data(doc, [time_name], source, ("time_sweep",))
         summary = "%d sweep(s); x: %s; y: %s" % (len(sft.traces), sft.x_label, sft.y_unit)
         # The average page lists every sweep time; a section page names only
         # its own sweep (listing all of them on every section page made the
-        # notes grow as sweeps^2: an 11.5 MB script for 588 pages).
-        notes = header_notes(sft.header_lines, source=sft.path, extra=[summary]
-            + ["Section %d: %s" % (t.number, t.stamp) for t in sft.traces[:2000]]
-            + (["... %d more" % (len(sft.traces) - 2000)] if len(sft.traces) > 2000 else []))
+        # notes grow as sweeps^2: an 11.5 MB script for 588 pages).  1.1.4:
+        # every sweep is listed (1.1.3 stopped at 2000), and the reading
+        # notes and any lines that were not data are kept.
+        extra = [summary] + ["Section %d: %s" % (t.number, t.stamp) for t in sft.traces]
+        if sft.warnings:
+            extra += ["", "Reading notes:"] + ["  " + text for text in sft.warnings]
+        if sft.extra_lines:
+            extra += ["", "Lines after Values that are not data rows, as written:"] \
+                + list(sft.extra_lines)
+        notes = header_notes(sft.header_lines, source=sft.path, extra=extra)
         self._file_notes.append(header_notes(sft.header_lines, source=sft.path))
         y_label = "Uncalibrated (%s)" % sft.y_unit
         for trace in sft.traces:
             y_name = "%s_Section%d" % (stem, trace.number)
             doc.SetData(y_name, trace.values)
-            names.append(y_name)
+            tag_data(doc, [y_name], source, ("sweep", sft.y_unit))
             key = "%s S%d %s" % (stem, trace.number, trace.stamp)
             if mode in (0, 1):
                 overlay = self._overlay(sft)
-                xy = overlay.Add("xy", name=y_name)
+                xy = overlay.Add("xy", name=trace_widget_name(y_name))
                 self._style_overlay(xy, x_name, y_name, key)
             if mode == 0:
                 title = ("%s::Section %d;%s" % (stem, trace.number, trace.stamp)).replace("_", " ")
@@ -582,23 +721,33 @@ class RnSPlotter:
                     summary, "Section %d of %d: %s" % (trace.number, len(sft.traces), trace.stamp)])
                 graph = self._page_graph(title, title, section_notes, sft, y_label,
                                          graph_name=y_name)
-                self._style_single(graph.Add("xy", name=y_name), x_name, y_name, key)
+                self._style_single(graph.Add("xy", name=trace_widget_name(y_name)),
+                                   x_name, y_name, key)
+        # 1.1.4: sections that do not line up with x, and text sections, are
+        # stored too (not plotted, not averaged)
+        for trace in sft.unaligned:
+            name = "%s_Section%d_unaligned" % (stem, trace.number)
+            doc.SetData(name, trace.values)
+            tag_data(doc, [name], source, ("sweep_unaligned", sft.y_unit))
+        for number, _stamp, tokens in sft.text_sections:
+            name = "%s_Section%d_text" % (stem, number)
+            doc.SetDataText(name, tokens)
+            tag_data(doc, [name], source, ("sweep_text", "text"))
         stack = np.vstack([t.values for t in sft.traces])
         avg_db = power_mean(stack, sft.y_unit, self.options.use_gpu)
         db_name = "%s_avg_dB" % stem
         doc.SetData(db_name, avg_db)
-        names.append(db_name)
-        if sft.y_unit.lower().startswith("db"):
+        log_unit = sft.y_unit.lower().startswith("db")
+        tag_data(doc, [db_name], source, ("average_dB" if log_unit else "average_linear",
+                                          sft.y_unit))
+        if log_unit:
             lin_name = "%s_avg_lin" % stem
             doc.SetData(lin_name, np.power(10.0, avg_db / 10.0))
-            names.append(lin_name)
-            doc.TagDatasets("Avg_Linear", [lin_name])
-        doc.TagDatasets("Avg_dB", [db_name])
-        doc.TagDatasets(stem, names)
+            tag_data(doc, [lin_name], source, ("average_linear", "power_linear"))
         title = ("%s average of %d sweep(s)" % (stem, len(sft.traces))).replace("_", " ")
         graph = self._page_graph("%s average" % stem, title, notes, sft, y_label,
                                  graph_name=db_name)
-        self._style_single(graph.Add("xy", name=db_name), x_name, db_name,
+        self._style_single(graph.Add("xy", name=trace_widget_name(db_name)), x_name, db_name,
                            "%s average (%d)" % (stem, len(sft.traces)))
         self._averages.setdefault(sft.x_kind, []).append((x_name, db_name, sft))
         for warning in sft.warnings:
@@ -619,7 +768,7 @@ class RnSPlotter:
                                      "Uncalibrated (%s)" % sft0.y_unit,
                                      graph_name="Averages%s_avg_dB" % suffix)
             for index, (x_name, db_name, sft) in enumerate(entries):
-                xy = graph.Add("xy", name=db_name)
+                xy = graph.Add("xy", name=trace_widget_name(db_name))
                 self._style_overlay(xy, x_name, db_name, db_name.replace("_avg_dB", ""))
             same = all(np.array_equal(e[2].x, sft0.x) and e[2].y_unit == sft0.y_unit
                        for e in entries)
@@ -627,8 +776,11 @@ class RnSPlotter:
                 stack = np.vstack([t.values for e in entries for t in e[2].traces])
                 name = "AllFiles%s_avg_dB" % suffix
                 self.doc.SetData(name, power_mean(stack, sft0.y_unit, self.options.use_gpu))
-                self.doc.TagDatasets("Avg_dB", [name])
-                xy = graph.Add("xy", name=name)
+                # 1.1.4: the sources of every file in this average
+                tag_data(self.doc, [name], [os.path.splitext(e[2].name)[0] for e in entries],
+                         ("average_dB" if sft0.y_unit.lower().startswith("db")
+                          else "average_linear", sft0.y_unit, "all_files"))
+                xy = graph.Add("xy", name=trace_widget_name(name))
                 self._style_single(xy, entries[0][0], name,
                                    "All files (%d sweeps)" % stack.shape[0])
                 xy.PlotLine.color.val = "black"

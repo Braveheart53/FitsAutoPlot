@@ -26,6 +26,26 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.2: Source tags of the overlay datasets; names and tags as FITS 0.4.2.
+Date: 2026-11-10
+#              * The file records of the overlay pass carry "source" (the
+#                file name), so overlay datasets are tagged source_<file>.
+#              * Dataset tags, trace names and nothing-cut rules come from
+#                FITS AutoPlot 0.4.2 (push_to_veusz, build_unit_overlay_pages).
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal version of the AutoPlot main window for in-plugin use.
+        FITSAutoPlotPlugin (class): Veusz menu entry for native FITS project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Make sibling files importable when Veusz loads the plugin from a path Veusz 3.x executes plugin text inside Document.loadPlugins(), where __file__...
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> FITS AutoPlot (Batch).  The dialog
+    has the standalone program's options; the result is written as a separate
+    native .vszh5 project and the host Veusz document is not changed.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.1: Progress throttle; GPU checkbox for NVIDIA or AMD.
 Date: 2026-11-09
 #              * Column progress at most every 50 ms (ProgressThrottle).
@@ -323,7 +343,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.3.1"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.3.2"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -1024,6 +1044,7 @@ class FITSAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                     file_records.append({
                         "base": safe_dsname(data.get("base_name") or
                                             os.path.basename(path)),
+                        "source": data.get("base_name") or os.path.basename(path),   # 0.3.2: source_* tag
                         "columns": data.get("columns") or {},
                         "units": data.get("units") or {},
                         "sort_key": data.get("sort_key"),

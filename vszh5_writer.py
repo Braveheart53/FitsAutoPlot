@@ -13,12 +13,12 @@
 --------
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.27 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.29 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-11
- Modified       : 2026-11-09
+ Modified       : 2026-11-10
  Language       : Python 3.8 through 3.12 (3.12 primary; parses at 3.7)
  Requires       : numpy, h5py   (Veusz only to open or render the result;
                   pypdf only for PDF bookmarks)
@@ -38,7 +38,9 @@
                   local ISO-8601 time axes: 3.6.2; 0.0.25 names, notes and
                   local time axes: 4.2.1; 0.0.26 Smith charts: 4.2.1,
                   settings checked in the 3.6.2 source; 0.0.27 gap rule:
-                  4.2.1 with real GBT sampler2log files)
+                  4.2.1 with real GBT sampler2log files; 0.0.28 faster
+                  save: files identical to 0.0.27; 0.0.29 exact ISO text:
+                  3.6.2, every other output identical to 0.0.28)
  Lineage        : 0.0.20 joins the two releases that were both numbered
                   0.0.18 - the R&S FSP logger 0.9.0 release (render fixes)
                   and the AB Power Meter Monitor 1.6.0 release (appender) -
@@ -58,7 +60,11 @@
                   for Veusz date datasets. 0.0.26 (FitsAutoPlot suite,
                   Touchstone AutoPlot 0.7.0) adds Smith charts; 0.0.27
                   (FitsAutoPlot, FITS AutoPlot 0.4.0) the small/large gap
-                  rule and exact DST change instants. One master copy: the
+                  rule and exact DST change instants; 0.0.28 (FITS / Franks
+                  AutoPlot 0.4.1) saves faster with identical files; 0.0.29
+                  (MHM2010 / T4 Maser Timing Workbench 0.2.4) writes local
+                  ISO-8601 text without dropping digits on request
+                  (iso_local_strings timespec="exact"). One master copy: the
                   RF project document
                   claude/vszh5_writer.py (see claude/vszh5-writer-registry.md).
 ===============================================================================
@@ -251,6 +257,16 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
   axis_break_pairs (intervals of a broken axis at a large gap, shrunk by a
   fraction of the gap); local_time_axis names the minute a DST change
   happens.
+* (0.0.28) Faster saving with identical files: a name set beside the name
+  list, one create_dataset() per dataset, text in one call, UTC offsets
+  cached per (zone, UTC hour).
+* (0.0.29) iso_local_strings(timespec=): "seconds" (default, as before:
+  fractions of a second are cut off), "milliseconds", "microseconds",
+  "auto" (Python's isoformat) or "exact" - every digit of the shortest
+  decimal that gives back the same float epoch (Python repr), so the text
+  is never rounded or cut; ISO_TIMESPECS lists them. mjd_iso_local_strings:
+  the same exact text straight from UTC MJD values, converted in decimal
+  arithmetic (MJD 61234.10355 -> 22:29:06.72, not 06.7199999...).
 
 # %%% References
 [R1] Veusz Developers, Veusz 4.2.1 source: veusz/document/doc.py
@@ -272,6 +288,181 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.29: MHM2010 / T4 Maser Timing Workbench 0.2.4 ("in all exports,
+Date: 2026-11-10
+#              all floats or numbers should never be rounded or trimmed"),
+#              built on master 0.0.28 (SHA-256 13f68513...f634a64b5).
+#              Additions only: every 0.0.28 call writes the same file.
+#              * NEW iso_local_strings(epoch_s, zone=None,
+#                timespec="seconds"): "seconds" keeps the 0.0.24-0.0.28
+#                text (datetime.isoformat cuts the fraction off, so
+#                12:00:00.9 reads 12:00:00); "milliseconds",
+#                "microseconds" and "auto" are isoformat's; "exact" writes
+#                every digit of the shortest decimal that gives back the
+#                same float epoch (Python repr, e.g.
+#                2026-07-12T22:29:06.1234567-04:00), so the epoch can be
+#                recovered bit for bit from the text. A float64 epoch near
+#                2026 resolves 0.24 us and an MJD near 61220 0.63 us, below
+#                the 1 us of datetime, so "microseconds" would still round.
+#                ValueError for any other timespec; ISO_TIMESPECS lists
+#                the accepted values.
+#              * NEW mjd_iso_local_strings(mjd, zone=None): exact local ISO
+#                text of UTC MJD values. The MJD's shortest decimal (repr)
+#                becomes Unix seconds in decimal arithmetic, (MJD - 40587)
+#                x 86400, so the text states the time the MJD states (MJD
+#                61234.10355 -> 22:29:06.72-04:00; through the float epoch
+#                06.7199999...); the zone offset is taken at that instant;
+#                Decimal inversion gives the identical MJD float back.
+#              * Header: the "Version :" line said 0.0.27 in 0.0.28 (only
+#                __version__ was raised); now 0.0.29. Lineage, Status and
+#                DIFFERENCES name 0.0.28 and 0.0.29.
+#              Checked: tests/test_writer_0029.py (workbench): round trip
+#              of 10 000 random epochs and of 10 000 random and the real
+#              Franks MJD values to the identical float (and the Franks
+#              text equals the decimal MJD the file states); the default
+#              text equals 0.0.28's;
+#              DST zones and NaN; Python 3.8 grammar; every other function
+#              unchanged (diff limited to the ISO text and the header).
+# %%%%% Function Descriptions
+        epoch_to_veusz: Unix epoch seconds -> Veusz date value (seconds since 2009-01-01).
+        local_utc_offsets: Local UTC offset in seconds for every timestamp, DST-aware.
+        _hour_offsets: UTC offset (s) at the middle of each UTC hour number in ``hours``.
+        vz_text: Escape Veusz text-markup characters so a string prints literally.
+        escape_hdf_name: Escape a dataset name for use as an HDF5 member name, as Veusz does.
+        widget_name: Any text -> a valid Veusz widget name (0.0.25).
+        unique_widget_name: ``name``, or ``name_2``, ``name_3`` ...
+        header_notes: Page notes text from a source-file header (0.0.25).
+        set_notes: Set the notes of the current widget (a page) when ``notes`` is not empty.
+        VszDoc (class): Builder for the Veusz command script stored in the document.
+        VeuszWriter (class): Write Veusz datasets and a document script to a .vszh5 file.
+        _default_file_mode: Mode a new file would get from open(): 0o666 minus the process umask.
+        _one_dimensional: ``values`` as a contiguous float64 1-D array, or ValueError (0.0.23).
+        _create_resizable_1d: Create ``group[key]``: a chunked, resizable, uncompressed float64 array.
+        _is_regular: True when the spacing of ``values`` is constant (relative 1e-6).
+        _image_axis: Choose and check the stored form of one image axis (see dataset_2d).
+        Trace (class): One line or marker series (Veusz 'xy' widget) for xy_page().
+        add_title: Centred title label near the top of the current page.
+        title_settings: Settings of add_title()'s page title label (0.0.26: shared with the widget-tree builders, same values and order as before).
+        _distance_cm: A physical Veusz distance ("15cm", "6in", "20pt") in cm; None otherwise.
+        _graph_name: (0.0.25) Explicit name, else "g_<y>" for one trace, else "g_<page>".
+        _open_page_and_graph: Add a page (sized, with notes), its title and a graph; leave the graph current.
+        _add_axes: The x and y axes of the current graph, with labels, scales and limits.
+        xy_page: A page with one graph of line/marker traces; returns the graph name.
+        _add_traces: Add the xy widgets of ``traces`` to the current graph (0.0.25: named after Trace.name or the y dataset, unique in the graph); returns the names.
+        _trace_settings: Settings of the xy widget that draws ``trace`` (relative paths, in the order Veusz receives them); shared by _add_traces and smith_graph_spec (0.0....
+        _add_key: Legend in the current graph: True, False or "auto" (more than one label).
+        image_page: A page with a 2-D dataset drawn as an image, and a colour bar; returns the graph name.
+        Panel (class): One graph of grid_page(): traces, axes and a small title (0.0.12).
+        grid_page: A page with several graphs in a Veusz grid (rows filled left to right).
+        linear_power_mean_dbm: Equal-weight power mean of finite dBm samples, returned in dBm.
+        frequency_ghz_text: Scale decimal Hz to GHz without coarse rounding/name collisions.
+        frequency_time_pages: Append one page per frequency and a combined page; preserve all raw data.
+        mjd_to_epoch: UTC Modified Julian Date (days) -> Unix epoch seconds.
+        mjd_to_veusz: UTC MJD -> Veusz date seconds; ``offset_s`` shifts to a local clock.
+        iso_offset_text: UTC offset in seconds -> ISO-8601 "+HH:MM" / "-HH:MM" (e.g.
+        _zone_from_text: "UTC"/"Z", "+HH:MM", "-5", "UTC-05:00" or an IANA name -> tzinfo.
+        iana_zone: An IANA zone ("America/New_York") as a tzinfo on every Python (0.0.27).
+        display_zone: Zone for local date-time axes (0.0.25): VSZH5_DISPLAY_TZ when set, else ``default`` (None = the time zone of this computer).
+        _zone_offsets: Per-sample UTC offset (s) in ``zone`` (None = VSZH5_DISPLAY_TZ, else this computer's zone).
+        LocalTimeAxis (class): A local wall-clock date axis for Veusz (0.0.24), see local_time_axis().
+        _offset_change_instant: First whole UTC minute in (before, after] whose offset is ``offset_after`` (bisection; the zone changes offset once between two samples) (0.0.27).
+        local_time_axis: Veusz date values and an ISO-8601 tick format on a local clock.
+        veusz_to_epoch: Veusz date seconds (since 2009-01-01, UTC) -> Unix epoch seconds (0.0.25).
+        local_time_from_veusz: local_time_axis() for UTC values already in Veusz date seconds (0.0.25).
+        style_datetime_axis: Make ``axis`` (path from the current widget, e.g.
+        iso_local_strings: ISO-8601 local date-times with offsets, e.g.
+        _exact_wall_text: (0.0.29) ISO text (no offset suffix) of an exact wall-clock time in Unix-style seconds (Decimal).
+        mjd_iso_local_strings: (0.0.29) ISO-8601 local date-times of UTC MJD values, every digit kept.
+        with_x: The same traces drawn against another x dataset (0.0.24).
+        time_pair_pages: Two xy pages from one set of traces: against MJD and against local time.
+        median_step: Median of the positive, finite steps of ``t`` (0.0 when there is none).
+        gap_threshold: Line-break threshold in the units of ``t``: ``manual`` when > 0, else ``k * median_step(t)`` (0.0 = no threshold, e.g.
+        gap_positions: Insertion indices of the gap rows: ``i + 1`` for every step ``t[i+1] - t[i] > threshold``.
+        insert_gaps: ``values`` (float) with a NaN inserted before each of ``positions`` (from gap_positions); the input is not changed.
+        axis_break_pairs: (start, end) intervals to leave out of a broken axis.
+        gamma_from_impedance: Reflection coefficient Gamma = (Z - Z0) / (Z + Z0) (complex array).
+        impedance_from_gamma: Impedance Z = Z0 (1 + Gamma) / (1 - Gamma); Gamma = 1 gives inf.
+        vswr_from_gamma: VSWR = (1 + |Gamma|) / (1 - |Gamma|); inf for |Gamma| >= 1.
+        _joined: Concatenate (x, y) curves with a NaN point between them (Veusz breaks an xy line at NaN, nanHandling 'break-on', its default).
+        SmithGrid (class): Datasets and widget specifications of a Smith-chart grid (0.0.26).
+        _grid_line_settings: xy settings of a grid line family: no markers, no legend entry.
+        _grid_label_settings: xy settings that print a text dataset at points (no line, no marker).
+        smith_grid: The grid of a Smith chart as Veusz datasets and xy widget settings.
+        smith_trace_datasets: Datasets of one Smith trace: "<stem>_re", "<stem>_im" and, when given, "<stem>_freq_Hz" (read by the suite's interactive Smith plot).
+        smith_trace: Trace of Im(Gamma) against Re(Gamma) for the datasets of smith_trace_datasets(stem, ...); keyword arguments go to Trace.
+        smith_has_key: True when a Smith graph gets a legend: key=True, or "auto" with more than one labelled trace (as xy_page).
+        smith_graph_spec: Settings of a Smith graph and its children, for any Veusz builder.
+        smith_page_layout: (page width, page height, graph top margin) of a Smith page: the chart about ``size`` across, 1 cm more height for the title, ``key_width`` more wi...
+        smith_page: A page with one Smith chart; returns the graph name (0.0.26).
+        text_page: Pages of plain text lines (escaped; monospaced by default) (0.0.12).
+        step_mask: (x, y) arrays of a stepped mask: one flat segment per band.
+        reference_line: (x, y) arrays of a straight threshold or marker line.
+        bar_page: A page with a vertical category bar chart (0.0.14); returns the graph name.
+        _reduce_axis: Reduce ``values`` along ``axis`` in groups of ``factor`` (see block_reduce).
+        _reduce_groups: Collapse ``axis`` of a grouped array with ``method``.
+        block_reduce: Decimate a 2-D array in blocks of ``row_factor`` x ``column_factor``.
+        regularize_rows: Image rows with (possibly uneven) centres -> an even grid for drawing.
+        dataset_names: Names of the datasets stored in a .vszh5 document (unescaped, sorted).
+        read_text_dataset: The strings of a text dataset written by dataset_text(), or None if absent.
+        page_names: Names of the pages of a written document, in page order (0.0.13).
+        AppendLockedError (class): The document is locked by another process (HDF5 file locking).
+        _is_lock_error: True for HDF5's "unable to lock file" open failure (any platform).
+        VeuszAppender (class): Grow an existing .vszh5 document in place, a few rows at a time.
+        _decode: bytes or numpy bytes -> str (UTF-8); anything else -> str().
+        find_veusz_exe: Locate the Veusz program: explicit path, env var, PATH, usual folders.
+        _popen_kwargs: Hide the console window of child processes on Windows.
+        _render_script: The script piped into `veusz --listen`.
+        _outline_parts: Split an outline entry into (title, page, children).
+        add_pdf_bookmarks: Write a bookmark (outline) hierarchy into an existing PDF, in place.
+        render_pages: Render a .vszh5 to one multipage PDF and per-page PNG files.
+        _page_names_from_log: Veusz page names from the VSZH5_PAGES line the render script prints.
+        _run_listen: Pipe a script into `veusz --listen --quiet` and wait for the marker.
+        _render_in_process: Fallback: render with the veusz Python package in this process.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VSZH5_FORMAT: Highest document format the Veusz 3.6 and 4.2 loaders accept.
+        VSZH5_LAYOUT_VERSION: Veusz release whose HDF5 layout this writer follows (written as vsz_version).
+        COMPRESS_MIN_ELEMENTS: Arrays at least this long are gzip+shuffle compressed when compress=True.
+        _VLEN_BYTES: text datasets
+        APPEND_CHUNK_ELEMENTS: (0.0.18) Rows per chunk of a resizable (appendable) 1-D or date dataset: : 1024 float64 = 8 KiB, at the low end of the 10 KiB - 1 MiB range h5py :...
+        PDF_DPI: Resolution passed to Veusz's Export() for PDF. Veusz 4.x lays a PDF page : out at the nearest resolution the Qt PDF engine supports (72) but sets t...
+        VEUSZ_EPOCH: Veusz date origin, and the offset that maps Unix seconds onto it.
+        UNIX_TO_VEUSZ_S: -1230768000
+        _HOUR_OFFSET_CACHE: 0.0.28: UTC offset of each whole UTC hour, per zone, kept between calls. A project with thousands of time traces asked the zone database for the sa...
+        _HOUR_OFFSET_CACHE_MAX: entries (about 114 years of hours)
+        WIDGET_NAME_MAX: Longest widget name the helpers make (Veusz has no limit; long names make : the widget tree and PDF bookmarks hard to read).
+        TRACE_COLOURS: 1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+        _CM_PER_UNIT: Centimetres per unit for the physical Veusz distance units.
+        MJD_UNIX_EPOCH: Modified Julian Date of the Unix epoch, 1970-01-01T00:00:00 UTC.
+        ISO_DATETIME_FORMAT: Veusz tick format of an ISO-8601 date-time without offset (Veusz %VD codes).
+        ISO_TIMESPECS: (0.0.29) timespec values of iso_local_strings(): seconds (default), milliseconds, microseconds, auto, exact.
+        _EXACT: (0.0.29) Decimal context (80 digits) of the exact ISO text.
+        DISPLAY_TZ_ENV: (0.0.25) Environment variable that overrides the computer's time zone for : local date-time axes: "UTC", a fixed offset such as "-05:00" or "+0530"...
+        _FIXED_OFFSET: fixed UTC offset text (-05:00, UTC-05:00, GMT+0100) for VSZH5_DISPLAY_TZ
+        LOCAL_DATETIME_ROTATE: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis; a : 25-character "2026-11-09T08:39:00-05:00" label needs it.
+        GAP_K: Default line-break multiplier K (gap when dt > K * median(dt)).
+        GAP_AXIS_N: Default axis-break multiple n (axis cut when dt > n * K * median(dt)); 0 = never.
+        GAP_AXIS_MARGIN: Fraction of a gap kept visible at each side of an axis break.
+        SMITH_RESISTANCES: Normalized resistance (conductance) circles and reactance (susceptance) : arcs drawn by default - the values of scikit-rf's and the Plots tab's chart.
+        SMITH_REACTANCES: normalised reactances of the Smith grid arcs
+        SMITH_VSWR: VSWR circles of scikit-rf's draw_vswr=True.
+        SMITH_GRID_COLOUR: a6a6a6"
+        SMITH_FRAME_COLOUR: 4d4d4d"
+        SMITH_LABEL_COLOUR: 595959"
+        SMITH_LIMIT: Half-width of the Re/Im Gamma axes: room outside |Gamma| = 1 for labels.
+        SMITH_NOTES_PREFIX: First words of the notes of every Smith graph (how readers recognise one).
+        VEUSZ_LINE_BREAK: Veusz text markup for a line break (two backslashes in the label text).
+        REDUCE_METHODS: Methods of block_reduce().
+        APPEND_META_GROUP: Top-level HDF5 group for the appender's private bookkeeping (e.g. a logger's : column index). Veusz reads only /Veusz [R1: loader.loadHDF5Doc], so...
+# %%%%% More Info
+    Master copy: RF project document claude/vszh5_writer.py (registry
+    claude/vszh5-writer-registry.md).  Needs numpy and h5py; Veusz only to open
+    or render; pypdf only for PDF bookmarks; on Python 3.8 backports.zoneinfo
+    or python-dateutil for IANA zone names (VSZH5_DISPLAY_TZ=America/New_York).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md of FitsAutoPlot (mamba:
+    environment-py38.yml, environment-py312.yml).  Release notes: RF project
+    claude/vszh5-writer-0.0.29-notes.md (workbench docs/vszh5_writer_0.0.29_NOTES.md).
 # %%%% 0.0.28: FitsAutoPlot suite speed round (FITS / Franks AutoPlot 0.4.1):
 Date: 2026-11-09
 #              faster saving, the same file contents. Built on master 0.0.27.
@@ -1071,7 +1262,7 @@ import tempfile
 import time
 import warnings
 from dataclasses import dataclass, replace as _replace
-from decimal import Decimal
+from decimal import Context, Decimal, ROUND_FLOOR
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence, Union, List, Mapping
 
@@ -1082,7 +1273,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.28"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.29"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -1111,7 +1302,7 @@ __all__ = [
     # 0.0.24: MJD and local ISO-8601 time axes
     "MJD_UNIX_EPOCH", "ISO_DATETIME_FORMAT", "mjd_to_epoch", "mjd_to_veusz",
     "iso_offset_text", "LocalTimeAxis", "local_time_axis", "iso_local_strings",
-    "with_x", "time_pair_pages",
+    "with_x", "time_pair_pages", "ISO_TIMESPECS", "mjd_iso_local_strings",
     # 0.0.25: names, page notes, local display of stored UTC dates
     "widget_name", "unique_widget_name", "header_notes", "set_notes",
     "veusz_to_epoch", "DISPLAY_TZ_ENV", "display_zone", "local_time_from_veusz",
@@ -2267,6 +2458,14 @@ def frequency_time_pages(doc: VszDoc, frequency_hz: Sequence[float], time_datase
 MJD_UNIX_EPOCH = 40587.0
 #: Veusz tick format of an ISO-8601 date-time without offset (Veusz %VD codes).
 ISO_DATETIME_FORMAT = "%VDY-%VDm-%VDdT%VDH:%VDM:%VDS"
+#: (0.0.29) timespec values of iso_local_strings(): seconds (default),
+#: milliseconds, microseconds, auto, exact.
+ISO_TIMESPECS = ("seconds", "milliseconds", "microseconds", "auto", "exact")
+# (0.0.29) Decimal arithmetic of the exact ISO text: 80 digits, far above the
+# 17 + 5 digits an MJD or epoch times 86400 can need, so nothing is rounded.
+_EXACT = Context(prec=80)
+_MJD_UNIX_EPOCH_DECIMAL = Decimal("40587")
+_SECONDS_PER_DAY_DECIMAL = Decimal("86400")
 
 
 def mjd_to_epoch(mjd: Any) -> np.ndarray:
@@ -2492,8 +2691,27 @@ def style_datetime_axis(doc: "VszDoc", axis: str, local_axis: Any = None,
         doc.set(f"{axis}/label", vz_text(text))
 
 
-def iso_local_strings(epoch_s: Any, zone: Any = None) -> list[str]:
-    """ISO-8601 local date-times with offsets, e.g. "2026-11-03T06:31:15-05:00"."""
+def iso_local_strings(epoch_s: Any, zone: Any = None, timespec: str = "seconds") -> list[str]:
+    """ISO-8601 local date-times with offsets, e.g. "2026-11-03T06:31:15-05:00".
+
+    Parameters
+    ----------
+    epoch_s:
+        Unix epoch seconds (UTC), 1-D; NaN gives "".
+    zone:
+        As local_time_axis() (None = VSZH5_DISPLAY_TZ, else this computer).
+    timespec:
+        (0.0.29) "seconds" (default, the text of 0.0.24-0.0.28: the fraction
+        of a second is cut off, not rounded), "milliseconds",
+        "microseconds" or "auto" (datetime.isoformat; the epoch is first
+        rounded to whole microseconds), or "exact": every digit of the
+        shortest decimal that gives back the same float epoch (Python
+        repr), e.g. "2026-07-12T22:29:06.1234567-04:00" - nothing rounded
+        or cut, float(text seconds) recovers the value bit for bit. A whole
+        second has no fraction in "exact" text.
+    """
+    if timespec not in ISO_TIMESPECS:
+        raise ValueError(f"timespec must be one of {ISO_TIMESPECS}, not {timespec!r}")
     epoch = _one_dimensional(epoch_s, "epoch_s")
     offsets = _zone_offsets(epoch, zone)
     out = []
@@ -2501,8 +2719,67 @@ def iso_local_strings(epoch_s: Any, zone: Any = None) -> list[str]:
         if not np.isfinite(value):
             out.append("")
             continue
+        if timespec == "exact":
+            wall = _EXACT.add(Decimal(repr(float(value))), Decimal(repr(float(offset))))
+            out.append(_exact_wall_text(wall) + iso_offset_text(offset))
+            continue
         stamp = _dt.datetime.fromtimestamp(value + offset, _dt.timezone.utc).replace(tzinfo=None)
-        out.append(stamp.isoformat(timespec="seconds") + iso_offset_text(offset))
+        out.append(stamp.isoformat(timespec=timespec) + iso_offset_text(offset))
+    return out
+
+
+def _exact_wall_text(wall: Decimal) -> str:
+    """(0.0.29) ISO text (no offset suffix) of an exact wall-clock time in
+    Unix-style seconds (Decimal): whole seconds through datetime, then every
+    digit of the fraction - nothing rounded, trailing zeros dropped.
+    """
+    whole = wall.to_integral_value(rounding=ROUND_FLOOR)
+    fraction = _EXACT.subtract(wall, whole)         # 0 <= fraction < 1, exact
+    stamp = _dt.datetime(1970, 1, 1) + _dt.timedelta(seconds=int(whole))
+    text = stamp.isoformat(timespec="seconds")
+    if fraction:
+        digits = format(fraction, "f").partition(".")[2].rstrip("0")
+        if digits:
+            text += "." + digits
+    return text
+
+
+def mjd_iso_local_strings(mjd: Any, zone: Any = None) -> list[str]:
+    """(0.0.29) ISO-8601 local date-times of UTC MJD values, every digit kept.
+
+    The shortest round-trip decimal of each MJD (repr) is turned into Unix
+    seconds in decimal arithmetic, (MJD - 40587) x 86400, with no binary
+    rounding, so the text states the time the MJD states: MJD 61234.10355
+    gives "2026-07-12T22:29:06.72-04:00" (America/New_York), where
+    iso_local_strings(mjd_to_epoch(mjd), timespec="exact") gives the digits
+    of the float epoch, "...06.7199999...", and the default text cuts it to
+    "...06-04:00". The offset is the zone's offset at that instant (zone as
+    local_time_axis()). Inverting the formula in Decimal arithmetic gives the
+    identical MJD float back. NaN -> "".
+    """
+    values = _one_dimensional(mjd, "mjd")
+    if zone is None:
+        zone = display_zone()
+    if isinstance(zone, str):
+        zone = _zone_from_text(zone)
+    seconds, hours = [], []
+    for value in values.tolist():
+        if not math.isfinite(value):
+            seconds.append(None)
+            continue
+        epoch = _EXACT.multiply(_EXACT.subtract(Decimal(repr(value)), _MJD_UNIX_EPOCH_DECIMAL),
+                                _SECONDS_PER_DAY_DECIMAL)
+        seconds.append(epoch)
+        hours.append(float(_EXACT.divide(epoch, 3600).to_integral_value(rounding=ROUND_FLOOR)))
+    offsets = iter(_hour_offsets(np.array(hours, dtype=float), zone).tolist()) if hours else iter(())
+    out = []
+    for epoch in seconds:
+        if epoch is None:
+            out.append("")
+            continue
+        offset = next(offsets)
+        out.append(_exact_wall_text(_EXACT.add(epoch, Decimal(repr(float(offset)))))
+                   + iso_offset_text(offset))
     return out
 
 

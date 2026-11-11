@@ -78,6 +78,74 @@ Compatible with: Python 3.8+ (pyqtgraph 0.13.3) and 3.12+ (pyqtgraph 0.14),
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.2: CSV export (right-click > Export) keeps every digit.
+Date: 2026-11-10
+#              * pyqtgraph 0.13 / 0.14 write CSV values with
+#                numpy.format_float_positional(precision=10): 1.234e-12
+#                became 0.0000000000 and 0.12345678901234568 became
+#                0.1234567890.  install_exact_csv_export() replaces that
+#                exporter with "CSV of original plot data (every digit)"
+#                (repr of each float; same columns and header).
+# %%%%% Function Descriptions
+        exact_cell_text: A CSV cell with every digit: text as is, an integer as is, a float as repr() (the shortest text that gives back the same float64).
+        install_exact_csv_export: Replace pyqtgraph's "CSV of original plot data" exporter (right-click > Export...) with one that writes every digit (0.3.2).
+        _ctrl_pressed: True when Ctrl is held during a (scene) wheel event.
+        _utc_text: Wall-clock text of a Unix time ('-' when unknown).
+        _value_text: Compact number; '-' for None/NaN.
+        _align_right: Right-align a table cell (Qt.Alignment on new PySide6, int on old).
+        _swatch: Small square icon in a trace colour (legend column).
+        break_gaps: Insert one NaN after every step longer than ``factor`` x the median step.
+        _scroll_enclosing_area: Scroll the nearest QScrollArea around the plot by the wheel's steps.
+        _wheel_passes_through: True when the wheel must NOT zoom: scroll the page instead.
+        _ViewBox (class): ViewBox whose wheel zoom needs Ctrl.
+        _AxisItem (class): Value axis with the same wheel rule.
+        _DateAxisItem (class): UTC date axis with the same wheel rule.
+        _PlotWidget (class): PlotWidget that reports when the mouse leaves it (to clear the crosshair).
+        configure: Global pyqtgraph options and the wheel rule (call before plots exist).
+        _setting: A NativeWidget setting ('PlotLine/color', 'label', ...).
+        _children: Child widgets of ``widget`` whose kind is one of ``kinds``, in order.
+        _graphs_of: Graphs of a page in drawing order (directly or inside grids).
+        _numeric: (array, kind) of a numeric 1-D or date dataset, else (None, kind).
+        _looks_like_mjd: MJD axis: 'MJD' in the dataset name or axis label and plausible values.
+        document_pages: Pages of a NativeDocument as plain descriptions (no Qt objects).
+        _axis_offset: UTC offset ("-05:00") of a local ISO date-time axis, "local" when the data cross offsets, "" for UTC / not a local axis (0.2.1).
+        _axis_range: (min, max) fixed in the project, None where the limit is Auto.
+        _smith_graph: Description of a Smith chart written by vszh5_writer 0.0.26 (0.3.0).
+        _polar_graph: Description of a Veusz polar graph and its nonorthpoint traces.
+        trace_arrays: (x, y, x_is_unix_time) of one trace, converted for display.
+        TracePlot (class): A pyqtgraph plot with its legend-and-values column beside it (same layout and behaviour as the AB monitor's TracePlot).
+        ImagePlot (class): A 2-D dataset (FITS image HDU) with a colour bar.
+        _nice_ticks: About ``count`` round tick values from low to high.
+        _GridPlot (class): Common base of PolarPlot and SmithPlot: an aspect-locked plot with a drawn grid, and the same legend-and-values column as TracePlot.
+        PolarPlot (class): Veusz-style polar plot of r(theta) traces (e.g.
+        SmithPlot (class): Smith chart (impedance grid "z" or admittance grid "y") of reflection coefficients, with f, Gamma, Z and VSWR of the nearest point under the mouse.
+        html_escape: Minimal HTML escaping for header labels.
+        ProjectPlotPanel (class): The "Plots" tab.
+        self_test: Build and delete one plot; None when pyqtgraph works, else the reason (needs a QApplication).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        COLOURS: 4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+        THEMES: 1e1e2e", "#cdd6f4", "#9399b2"),
+        PLOT_HEIGHT: px per plot row
+        LEGEND_WIDTH: px of the legend column (user can drag the splitter)
+        SYMBOL_MAX_POINTS: point symbols only up to this many points per trace
+        GAP_FACTOR: a step > GAP_FACTOR x median step breaks the line
+        WHEEL_NEEDS_CTRL: plain wheel scrolls the page, Ctrl+wheel zooms
+        VEUSZ_EPOCH_UNIX: 2009-01-01T00:00:00Z: Veusz datetime zero
+        MJD_UNIX_EPOCH: MJD of 1970-01-01T00:00:00Z
+        MJD_PLAUSIBLE: values outside are not treated as MJD
+        SMITH_NOTES_PREFIX: (0.3.0) How a Smith chart graph of vszh5_writer 0.0.26 is recognised (its : notes) and how its trace datasets are named (same values as the writer).
+        _LINE_STYLES: Veusz line style -> Qt pen style
+        _MARKERS: Veusz marker -> pyqtgraph symbol
+# %%%%% More Info
+    The Plots tab of every program (pyqtgraph 0.13 on Python 3.8, 0.14 on
+    3.12, through qtpy/PySide6).  Ctrl + wheel zooms; the wheel alone scrolls.
+    Right-click > Export > "CSV of original plot data (every digit)" writes
+    repr() of every value.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.1: Gap rule of the project; local time axes everywhere.
 Date: 2026-11-09
 #              * Time traces break where the step dt > K x median(dt) (or the
@@ -208,7 +276,7 @@ from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from qtpy.QtCore import Qt, Signal  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 __version__ = VERSION
 
 # %% Settings
@@ -231,6 +299,90 @@ MJD_PLAUSIBLE = (30000.0, 100000.0)   # values outside are not treated as MJD
 #: notes) and how its trace datasets are named (same values as the writer).
 SMITH_NOTES_PREFIX = "Smith chart"
 SMITH_IM_SUFFIX, SMITH_FREQUENCY_SUFFIX = "_im", "_freq_Hz"
+
+# %% Exact CSV export (0.3.2)
+def exact_cell_text(value: Any) -> str:
+    """A CSV cell with every digit: text as is, an integer as is, a float as
+    repr() (the shortest text that gives back the same float64)."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+        return str(int(value))
+    return repr(float(value))
+
+
+def install_exact_csv_export() -> Optional[type]:
+    """Replace pyqtgraph's "CSV of original plot data" exporter (right-click
+    > Export...) with one that writes every digit (0.3.2).
+
+    pyqtgraph 0.13 / 0.14 write each value with
+    numpy.format_float_positional(value, precision=10): at most 10 digits
+    after the point, so 1.234e-12 became "0.0000000000" and
+    0.12345678901234568 became "0.1234567890" (checked with numpy 1.24.4
+    and 2.5.4).  The replacement writes repr(float) (exact float64
+    round trip) and hides the precision setting.  Same columns, header and
+    separators.  Returns the exporter class, or None without pyqtgraph's
+    exporters.
+    """
+    import csv
+    import itertools
+    try:
+        from pyqtgraph.exporters import CSVExporter
+        from pyqtgraph.exporters.Exporter import Exporter
+    except Exception:
+        return None
+    registered = Exporter.Exporters
+    for cls in registered:
+        if getattr(cls, "exact_digits", False):
+            return cls                                  # already installed
+
+    class ExactCSVExporter(CSVExporter):
+        """CSV of the original plot data with every digit (exact_cell_text)."""
+        Name = "CSV of original plot data (every digit)"
+        windows: List[Any] = []
+        exact_digits = True
+
+        def __init__(self, item: Any) -> None:
+            """As pyqtgraph's CSVExporter; the precision setting is hidden."""
+            super().__init__(item)
+            try:
+                self.params.child("precision").setOpts(visible=False)
+            except Exception:
+                pass
+
+        def export(self, fileName: Any = None) -> None:
+            """pyqtgraph's CSVExporter.export() with exact_cell_text()."""
+            if not isinstance(self.item, pg.PlotItem):
+                raise TypeError("Must have a PlotItem selected for CSV export.")
+            if fileName is None:
+                self.fileSaveDialog(filter=["*.csv", "*.tsv"])
+                return
+            for item in self.item.items:
+                if isinstance(item, pg.ErrorBarItem):
+                    self._exportErrorBarItem(item)
+                elif hasattr(item, "implements") and item.implements("plotData"):
+                    self._exportPlotDataItem(item)
+            sep = "," if self.params["separator"] == "comma" else "\t"
+            columns = [column for dataset in self.data for column in dataset]
+            with open(fileName, "w", newline="") as handle:
+                writer = csv.writer(handle, delimiter=sep, quoting=csv.QUOTE_MINIMAL)
+                writer.writerow(self.header)
+                for row in itertools.zip_longest(*columns, fillvalue=""):
+                    writer.writerow([exact_cell_text(cell) for cell in row])
+            self.header.clear()
+            self.data.clear()
+
+    for index, cls in enumerate(registered):
+        if cls is CSVExporter:
+            registered[index] = ExactCSVExporter
+            break
+    else:
+        registered.append(ExactCSVExporter)
+    return ExactCSVExporter
+
+
+install_exact_csv_export()
+
 
 _LINE_STYLES = {"solid": Qt.PenStyle.SolidLine, "dashed": Qt.PenStyle.DashLine,
                 "dotted": Qt.PenStyle.DotLine, "dash-dot": Qt.PenStyle.DashDotLine}
