@@ -61,6 +61,61 @@ frequency; this program assumes lower -> upper (see DATA_GAPS).
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.5: Gap options (line breaks, x-axis breaks) in the GUI and batch mode.
+Date: 2026-11-16
+#              * "Gaps" box (_suite_gui.GapOptionsBox) under the options;
+#                PlotOptions.gaps carries the TimeLayout to the project.
+#              * Batch flags --gap-k, --gap-small, --gap-n, --gap-large,
+#                --no-line-breaks, --no-axis-breaks, --no-numeric-gaps.
+#              * Sorted angle / frequency axes use the geometric rule; polar
+#                graphs and unsorted cuts are left as they are.
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _mhz_text: A frequency (MHz) as exact text (0.2.4): every digit of the float64 (repr), without a trailing ".0" - 2700.0 -> "2700", 1420.40575 -> "1420.40575".
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.2.5"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.4: Nothing dropped, exact frequencies, source_/type_ tags.
 Date: 2026-11-10
 #              * Frequencies with every digit in dataset names, legends and
@@ -277,7 +332,7 @@ from _autoplot_native import (exact_number_text, tag_data,   # noqa: E402
 from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (0.x adaptive pool)
 
 APP_NAME = "ATR AutoPlot"
-APP_VERSION = "0.2.4"
+APP_VERSION = "0.2.5"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
                    ".vszh5 projects, with interactive pyqtgraph plots.")
@@ -537,6 +592,9 @@ class PlotOptions:
     title: str = "GBO Outdoor Antenna Range Pattern"
     mag_range: Tuple[float, float] = DEFAULT_MAG_RANGE
     fit_azimuth: bool = False
+    #: 0.2.5: gap options (_autoplot_native TimeLayout); None = the defaults
+    #: (line and axis breaks on, non-time axes included)
+    gaps: Any = None
 
 
 class ATRPlotter:
@@ -555,6 +613,8 @@ class ATRPlotter:
         from _autoplot_native import NativeDocument
         self.options = options or PlotOptions()
         self.doc = NativeDocument("ATR AutoPlot")
+        if self.options.gaps is not None:          # 0.2.5: gap options of the project
+            self.doc.time_layout = self.options.gaps
         self.doc.Root.colorTheme.val = "max128"
         self._stems: Dict[str, int] = {}
         self._overlays: Optional[Tuple[Any, Any]] = None
@@ -953,6 +1013,9 @@ def _build_gui_classes():
                 "180 degrees.")
             form.addRow(self.fit_box)
             layout.addWidget(options)
+            # 0.2.5: gaps (missing azimuths, time breaks): line / axis breaks
+            self.gap_box = suite.GapOptionsBox()
+            layout.addWidget(self.gap_box)
 
             self.status_text = QTextEdit()
             self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
@@ -1033,7 +1096,8 @@ def _build_gui_classes():
             if high <= low:
                 high = low + 1.0
             return PlotOptions(title=self.title_edit.text().strip(),
-                               mag_range=(low, high), fit_azimuth=self.fit_box.isChecked())
+                               mag_range=(low, high), fit_azimuth=self.fit_box.isChecked(),
+                               gaps=self.gap_box.time_layout())
 
         # ----- processing ---------------------------------------------------------
         def _process(self) -> None:
@@ -1100,6 +1164,7 @@ def _build_gui_classes():
             if not path:
                 return
             try:
+                self.plotter.doc.time_layout = self.gap_box.time_layout()   # 0.2.5
                 self.last_saved = self.plotter.save(path)
             except Exception as exc:
                 QMessageBox.critical(self, APP_NAME, "Failed to save the project:\n%s" % exc)
@@ -1161,10 +1226,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--fit-azimuth", action="store_true")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
+    from _autoplot_native import add_gap_arguments, layout_from_args
+    add_gap_arguments(parser)                  # 0.2.5: --gap-k ... --no-axis-breaks
     args = parser.parse_args(argv)
     if args.output:
         return batch(args.files, args.output,
-                     PlotOptions(args.title, tuple(args.mag_range), args.fit_azimuth),
+                     PlotOptions(args.title, tuple(args.mag_range), args.fit_azimuth,
+                                 gaps=layout_from_args(args)),
                      args.workers)
     QApplication, ATRMainWindow = _build_gui_classes()
     app = QApplication.instance() or QApplication(sys.argv[:1])

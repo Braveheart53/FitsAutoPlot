@@ -40,6 +40,99 @@ Optional: cupy (NVIDIA CUDA or AMD ROCm) or pyopencl + pyvkfft (any OpenCL
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.7.4: Gap options for segmented sweeps (line breaks, x-axis breaks).
+Date: 2026-11-16
+#              * "Gaps" box (_suite_gui.GapOptionsBox) in the side panel; the
+#                TimeLayout is set before processing and before saving.  A
+#                segmented frequency sweep breaks its lines (and, at n x the
+#                small gap, the x axis); a log-spaced sweep is not cut
+#                (geometric rule); Smith charts are left as they are.
+#              Checked (223 example files, 7 279 datasets): data identical
+#              to 0.7.3 with the defaults.
+# %%%%% Function Descriptions
+        is_windows: True on Windows.
+        get_extended_path: Convert a path to Windows extended-length form (\\\\?\\) if needed.
+        normalize_path: Resolved path; extended-length form on Windows.
+        validate_path_length: Check a path against the classic Windows MAX_PATH limit.
+        truncate_filename: Shorten a file name to ``max_length`` keeping the extension.
+        ProcessingConfig (class): File processing options.
+        TimeDomainConfig (class): Time-domain transform and gate settings.
+        SmithChartConfig (class): Smith chart options.
+        get_sparam_color: Consistent colour for an S-parameter across every plot.
+        _num: A number for page notes and titles with every digit (0.7.3): the shortest text that gives back the same float64 (repr), an integer as is; 0.7.2 use...
+        sanitize_name: Veusz-safe dataset / widget / tag stem (letters, digits, '_').
+        s_param_names: [(i, j, 'S<i+1><j+1>'), ...] in row-major order.
+        to_db: 20*log10|x| with a floor so silence never becomes -inf; inf/NaN -> NaN.
+        td_axis_floor: Lower y limit (dB) for time-domain plots: peak minus TD_DISPLAY_RANGE_DB, rounded down to 10 dB.
+        read_touchstone_header: Comment ('!') and option ('#') lines, plus any keyword lines, up to the first numeric data line.
+        ensure_uniform_network: Return a network on an exactly uniform frequency grid.
+        resolve_window: scipy.signal.get_window specification for a GUI window choice.
+        time_domain_vectorized: Windowed band-pass time-domain response of every S-parameter at once.
+        one_port: S_ij of ``network`` as a one-port (scikit-rf gates one-ports only).
+        call_time_gate: ``skrf.time.time_gate`` with only the arguments this scikit-rf supports.
+        compute_time_domain: Time-domain response and time gating of every (or selected) S-parameter.
+        _td_worker: Process-pool entry point: (key, network, config, gpu) -> (key, result).
+        run_time_domain_batch: Time domain + gating for many files.
+        TimeDomainProcessor (class): Thin object wrapper over ``compute_time_domain`` (kept for 0.4.0 users).
+        make_smith_figure: Smith chart of a one-port with scikit-rf.
+        export_smith_worker: Process-pool entry point that writes one Smith chart file.
+        SmithChartPlottermpld3 (class): Smith chart export helpers (name kept from 0.4.0).
+        TouchstonePlotter (class): Builds the Veusz project for the processed Touchstone files.
+        _matplotlib_canvas: Fallback matplotlib Qt canvas (imported only when needed).
+        TouchstonePlotCanvas (class): Time-domain and Smith chart previews.
+        process_single_touchstone_file: Read one Touchstone file (process-pool entry point).
+        unique_keys: Map each path to a unique display key (file name, then ' (2)', ...).
+        TouchstoneProcessingThread (class): Reads the selected files (process pool for several files).
+        FunctionWorker (class): Run ``func(progress_callback)`` off the GUI thread.
+        _module_version: Installed version of a module, or 'not installed'.
+        build_about_content: Rich text and runtime details for Help > About.
+        TouchstoneMainWindow (class): Main window: processing, time domain and Smith chart tabs.
+        main: Start the GUI.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "Touchstone AutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        DB_FLOOR: |x| floor before 20*log10 (-240 dB)
+        TD_DISPLAY_RANGE_DB: time-domain y axis spans peak - 120 dB .. Auto
+        UNIFORM_RTOL: steps within this are taken as exactly uniform
+        NONUNIFORM_NOTE_RTOL: above this the re-gridding is reported
+        CPU_COUNT: logical CPUs of this computer
+        MAX_PATH_WINDOWS: classic Windows MAX_PATH (260 characters)
+        PATH_WARNING_THRESHOLD: warn when a path is longer than this
+        EXTENDED_PATH_PREFIX: Windows extended-length path prefix
+        GATING_MODES: gating combo box text -> gating mode
+        WINDOW_TYPES: transform / gate window choices
+        _NUMERIC_START: line starting with a number (Touchstone data line)
+        _TIME_GATE_PARAMS: parameters accepted by skrf.time.time_gate (they differ between scikit-rf versions)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+        QT_BINDING = "PySide6"
+        PYQTGRAPH_ERROR = ""
+        MPLD3_AVAILABLE = True
+        PDF_LIBRARY = "pypdf"
+        VEUSZ_BACKEND = "native"
+# %%%%% More Info
+    Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
+    scikit-rf reads the .sNp files; time domain and gating, Smith charts
+    (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
+    'spawn' start method on every platform and is used only when it pays off
+    (_autoplot_parallel); GPU optional for large transforms (NVIDIA or AMD,
+    _autoplot_gpu).
+    Every dataset carries the Veusz tags source_<file>, source_<run> and
+    type_<kind>; traces are named after their data; notes and titles give
+    every digit.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.7.3: source_/type_ tags, data-named traces, exact numbers; order fix noted.
 Date: 2026-11-10
 #              * Tags source_<file stem>, source_<run> ("Dataset name") and
@@ -561,7 +654,7 @@ except ImportError:  # pragma: no cover - script copied without the module
 
 # %% Application identity
 APP_NAME = "Touchstone AutoPlot"
-__version__ = "0.7.3"
+__version__ = "0.7.4"
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO / Green Bank Observatory (GBO)"
@@ -2029,6 +2122,10 @@ class TouchstoneMainWindow(QMainWindow):
         self.unwrap_phase_checkbox.toggled.connect(self._update_unwrap_phase)
         plot.addRow(self.unwrap_phase_checkbox)
         side.addWidget(plot_group)
+        # 0.7.4: gaps in the frequency points (segmented sweeps): line / axis
+        # breaks; a log-spaced sweep is not cut (geometric rule)
+        self.gap_box = suite.GapOptionsBox()
+        side.addWidget(self.gap_box)
         layout.addLayout(side)
 
     def setup_time_domain_tab(self):
@@ -2542,6 +2639,7 @@ class TouchstoneMainWindow(QMainWindow):
         except RuntimeError as exc:
             QMessageBox.critical(self, "Veusz Output Unavailable", str(exc))
             return
+        self.touchstone_plotter.doc.time_layout = self.gap_box.time_layout()   # 0.7.4
         thread = TouchstoneProcessingThread(self.selected_files, self.config)
         thread.progress_updated.connect(self.progress_bar.setValue)
         thread.processing_finished.connect(self._on_processing_finished)
@@ -2778,6 +2876,7 @@ class TouchstoneMainWindow(QMainWindow):
         if not path:
             return
         try:
+            self.touchstone_plotter.doc.time_layout = self.gap_box.time_layout()   # 0.7.4
             saved = self.touchstone_plotter.save(path)
         except Exception as exc:
             QMessageBox.critical(self, "Save Error", "Failed to save project:\n%s" % exc)

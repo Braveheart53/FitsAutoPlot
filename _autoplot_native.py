@@ -32,6 +32,112 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.5.3: Gap options: line breaks and x-axis breaks each optional, on any sorted x.
+Date: 2026-11-16
+#              * TimeLayout gains break_lines, break_axis and numeric (all
+#                True by default, so 0.5.2 projects are unchanged):
+#                break_lines=False draws every line across its gaps (no NaN
+#                rows, no "_gaps" copies); break_axis=False keeps one
+#                continuous x axis; numeric=False limits the rule to time
+#                axes.  gap_rule() gives the vszh5_writer 0.0.30 GapRule;
+#                describe() states the options with every digit.
+#              * NEW _layout_numeric_axis(): x axes that are not time
+#                (frequency, angle, index) get the same rule on sorted 1-D x
+#                data, with the geometric test of the writer (the step must
+#                also be large on a log scale), so a log-spaced sweep is not
+#                cut; unsorted traces (loops, polar), label and hidden axes
+#                (Smith charts) are left alone.  _undo_numeric_layout()
+#                restores the traces when the option is turned off.
+#              * NEW _drop_unused_plot_copies(): gap / local copies of an
+#                earlier save that no widget draws any more are removed with
+#                their tags; _set_gap_note() replaces the "Gaps:" line of the
+#                graph notes instead of adding a second one.
+#              * NEW add_gap_arguments() / layout_from_args(): --gap-k,
+#                --gap-small, --gap-n, --gap-large, --no-line-breaks,
+#                --no-axis-breaks, --no-numeric-gaps for the batch modes.
+#              * parse_gap_string, GAP_STRING_HELP and the _DAYS_PER_*
+#                constants moved here from _autoplot_common (Qt-free; the
+#                common module re-exports them).
+#              * local_veusz_seconds() calls the writer's
+#                local_veusz_exact() (same UTC + offset in one addition).
+#              Checked: tests/test_gap_options.py and test_writer_0030.py
+#              on Python 3.8, 3.12 and 3.13 (Veusz 4.2.1 render); with the
+#              default options the datasets of every example project are
+#              identical to 0.4.2.
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        add_gap_arguments: Add the gap options to an argparse parser (0.5.3): --gap-k, --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks, --no-numeric-gap...
+        layout_from_args: The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3).
+        TimeLayout (class): Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any sorted x, and the two consequences of a gap made optional), see vszh5_writer T...
+        _number_text: A setting for the notes with every digit (repr), without a trailing ".0" (0.5.3; %g cut 12.3456789 to 12.3457).
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0).
+        _set_gap_note: Put the gap-rule line ``note`` into the graph notes (0.5.3: a line from an earlier layout is replaced, so the notes state the rule in use).
+        _sorted_finite: True when the finite values of ``values`` never decrease (at least 3).
+        _layout_numeric_axis: Gap options on an x axis that is not time (0.5.3): frequency, angle, index ...
+        _undo_numeric_layout: Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the gap options of a project turn non-time axes off between two saves, the traces d...
+        _drop_unused_plot_copies: Remove line-break plot copies no widget draws any more (0.5.3): when the gap options change between two saves, copies of the old layout would other...
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        _GAP_TOKEN_REGEX: one number and unit of a gap text (s, min, h, d, m; bare = hours)
+        GAP_STRING_HELP: tool tip of the gap text boxes
+        _DAYS_PER_MONTH: average Gregorian month (365.25 / 12 days) for 'm' in gap texts
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 1 / 1440 (gap text parsing)
+        _DAYS_PER_SECOND: 1 / 86400 (gap text parsing)
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    TimeLayout holds the options; finalize() lays out time axes
+    (_layout_time_axis), then other x axes (_layout_numeric_axis), then drops
+    plot copies no widget draws (_drop_unused_plot_copies).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.5.2: source_/type_ tags on every dataset, data-named traces, exact numbers.
 Date: 2026-11-10
 #              * NEW tag_word, source_tag, type_tag, tag_data(): the Veusz
@@ -281,7 +387,7 @@ import numpy as np
 import vszh5_writer
 from vszh5_writer import VeuszWriter, VszDoc, vz_text
 
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 WRITER_VERSION = vszh5_writer.__version__
 DATASET_SETTINGS = frozenset((
     "xData", "yData", "labels", "scalePoints", "yDataLow", "yDataHigh",
@@ -377,6 +483,8 @@ class NativeWidget:
         self.settings = OrderedDict()
         self.auto_named = False
         self.time_source = None        # 0.5.0: (x, y) datasets before the time layout
+        self.gap_source = None         # 0.5.3: (x, y) datasets before the numeric gap layout
+        self.gap_layout_key = None     # 0.5.3: gap options applied to this numeric axis
         self.time_layout_key = None    # 0.5.0: TimeLayout applied to this axis       # 0.3.0: named from its data by finalize()
         self.local_time = None        # 0.3.0: label prefix of a local date-time axis
 
@@ -503,7 +611,7 @@ def local_veusz_seconds(utc_veusz, axis):
     values (about 5.6e8 s, steps 6e-8 s) keep them.  Whole seconds are
     identical either way; NaN stays NaN (its offset is 0).
     """
-    return np.asarray(utc_veusz, dtype=float) + np.asarray(axis.offsets_s, dtype=float)
+    return vszh5_writer.local_veusz_exact(utc_veusz, axis)      # 0.5.3: writer 0.0.30
 
 
 def mark_local_time_axis(axis, label="Local time"):
@@ -518,10 +626,149 @@ def mark_local_time_axis(axis, label="Local time"):
     return axis
 
 
+# %% Gap texts (0.5.3; moved from _autoplot_common 0.4.2, unchanged)
+# v0.0.19: human-readable gap string parser.
+#
+# Accepts strings like ``"5m3d2h"`` (5 months, 3 days, 2 hours), with or
+# without whitespace between tokens, case-insensitive.  A bare number
+# (no unit suffix) is interpreted as hours, preserving the pre-0.0.19
+# behaviour of the GUI spinbox which was always in hours.  Returns the
+# total absolute gap expressed in MJD-days so callers can hand the
+# value straight to ``detect_time_breaks_unit_aware`` without changing
+# the engine signature.
+_GAP_TOKEN_REGEX = re.compile(
+    r"([+-]?\d+(?:\.\d+)?)\s*(min|[mMdDhHsS]?)", re.IGNORECASE
+)
+#: (0.4.0) Tool tip of the gap text boxes.
+GAP_STRING_HELP = ("Units: s = seconds, min = minutes, h = hours, d = days, "
+                   "m = months (30.4375 days).  Examples: '90s', '15min', '12h', "
+                   "'3d', '1m 3d 2h'.  A bare number is hours.")
+
+# Average Gregorian month length (365.25 / 12) -- intentionally the same
+# value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
+_DAYS_PER_MONTH = 30.4375
+_DAYS_PER_HOUR = 1.0 / 24.0
+_DAYS_PER_MINUTE = _DAYS_PER_HOUR / 60.0     # 0.4.0
+_DAYS_PER_SECOND = _DAYS_PER_MINUTE / 60.0   # 0.4.0
+
+
+def parse_gap_string(text, log_cb=None):
+    # type: (object, Optional[Callable[[str], None]]) -> float
+    """Parse a human-readable gap string into MJD-days.
+
+    Supported syntaxes (case-insensitive, whitespace tolerated)::
+
+        "5m3d2h"   -> 5 months + 3 days + 2 hours, in days
+        "5m 3d 2h" -> same
+        "3d"       -> 3 days
+        "120h"     -> 5 days
+        "120"      -> 120 hours = 5 days   (bare number = hours)
+        "0" / ""   -> 0.0  (disables absolute threshold)
+        None       -> 0.0
+
+    On parse failure returns 0.0 and (when ``log_cb`` is provided)
+    emits a warning so the GUI log shows that the entry was ignored.
+    Mixed unit ordering (e.g. ``"2h5m"``) is accepted -- the parser
+    sums all matched tokens.
+    """
+    if text is None:
+        return 0.0
+    try:
+        s = str(text).strip()
+    except Exception:
+        return 0.0
+    if not s:
+        return 0.0
+    # Strip ALL internal whitespace so "5m 3d 2h" and "5m3d2h" parse the
+    # same way.  Then iterate number+unit pairs.
+    compact = "".join(s.split())
+    if not compact:
+        return 0.0
+
+    # Fast path: pure number (no unit suffix anywhere).
+    try:
+        as_float = float(compact)
+    except (TypeError, ValueError):
+        as_float = None
+    if as_float is not None:
+        # Bare number => hours (pre-0.0.19 spinbox semantics).
+        return as_float * _DAYS_PER_HOUR
+
+    total_days = 0.0
+    matched_span = 0
+    saw_token = False
+    for m in _GAP_TOKEN_REGEX.finditer(compact):
+        num_str = m.group(1)
+        unit = (m.group(2) or "").lower()
+        if not num_str:
+            continue
+        try:
+            value = float(num_str)
+        except (TypeError, ValueError):
+            continue
+        if unit == "min":                            # 0.4.0
+            total_days += value * _DAYS_PER_MINUTE
+        elif unit == "s":                            # 0.4.0
+            total_days += value * _DAYS_PER_SECOND
+        elif unit == "m":
+            total_days += value * _DAYS_PER_MONTH
+        elif unit == "d":
+            total_days += value
+        elif unit == "h":
+            total_days += value * _DAYS_PER_HOUR
+        else:
+            # No unit on this fragment -- treat as hours (back-compat).
+            total_days += value * _DAYS_PER_HOUR
+        matched_span = m.end()
+        saw_token = True
+
+    if not saw_token or matched_span != len(compact):
+        if log_cb:
+            log_cb("  parse_gap_string: could not parse %r; "
+                   "treating as 0 (no absolute gap)." % (s,))
+        return 0.0
+    return total_days
+
+def add_gap_arguments(parser):
+    """Add the gap options to an argparse parser (0.5.3): --gap-k,
+    --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks,
+    --no-numeric-gaps; layout_from_args() turns them into a TimeLayout."""
+    group = parser.add_argument_group(
+        "gaps", "A small gap breaks the line, a large gap breaks the x axis; either can be "
+        "turned off. Time axes and (unless --no-numeric-gaps) any sorted x.")
+    group.add_argument("--gap-k", type=float, default=vszh5_writer.GAP_K,
+                       help="small gap: step > K x median step (default %(default)s)")
+    group.add_argument("--gap-small", default="",
+                       help="fixed small gap on time axes, e.g. 90s, 15min, 2h (overrides K)")
+    group.add_argument("--gap-n", type=float, default=vszh5_writer.GAP_AXIS_N,
+                       help="large gap: no data for > n x the small gap (0 = never; "
+                            "default %(default)s)")
+    group.add_argument("--gap-large", default="",
+                       help="fixed large gap on time axes, e.g. 12h, 3d (overrides n)")
+    group.add_argument("--no-line-breaks", action="store_true",
+                       help="draw every line across its gaps")
+    group.add_argument("--no-axis-breaks", action="store_true",
+                       help="never break the x axis")
+    group.add_argument("--no-numeric-gaps", action="store_true",
+                       help="gap rule on time axes only (not frequency, angle, index ...)")
+    return group
+
+
+def layout_from_args(args):
+    """The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3)."""
+    return TimeLayout(k=args.gap_k, n=args.gap_n,
+                      manual_s=parse_gap_string(args.gap_small) * 86400.0,
+                      axis_manual_s=parse_gap_string(args.gap_large) * 86400.0,
+                      break_lines=not args.no_line_breaks, break_axis=not args.no_axis_breaks,
+                      numeric=not args.no_numeric_gaps)
+
+
 # %% Time axes: local ISO 8601, line breaks and axis breaks (0.5.0)
 class TimeLayout(object):
     """
-    Gap rule of the time axes (0.5.0), see vszh5_writer TIME GAPS.
+    Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any
+    sorted x, and the two consequences of a gap made optional), see
+    vszh5_writer TIME GAPS and GAP OPTIONS (GapRule, 0.0.30).
 
     Small gap - the trace line breaks, the axis stays continuous:
         dt > k * median(dt) of that trace, or dt > manual_s when manual_s > 0.
@@ -529,13 +776,22 @@ class TimeLayout(object):
     on the axis has data for
         dt > n * (largest small-gap threshold of the traces on that axis),
         or dt > axis_manual_s when axis_manual_s > 0;
-    n = 0 with axis_manual_s = 0: no axis breaks. A large-gap threshold is
-    never smaller than the small one, so an axis break is always also a
-    line break.
+    n = 0 with axis_manual_s = 0: no axis breaks.
+
+    0.5.3 options:
+        break_lines - False draws every line across its gaps (no NaN rows).
+        break_axis  - False keeps one continuous axis (as n = 0).
+        numeric     - True applies the same rule to x axes that are not time
+                      (frequency, angle, index ...) whose x data are sorted,
+                      with the step also required to be large on a log
+                      scale (GapRule geometric), so a log-spaced sweep is not
+                      cut; the fixed gaps (seconds) apply to time axes only.
+    Either break can be used alone or both together (the 0.5.2 behaviour,
+    which every default keeps).
     """
 
     def __init__(self, k=vszh5_writer.GAP_K, n=vszh5_writer.GAP_AXIS_N, manual_s=0.0,
-                 axis_manual_s=0.0):
+                 axis_manual_s=0.0, break_lines=True, break_axis=True, numeric=True):
         """Store the gap settings (negative values are clamped to 0).
 
         k: small-gap factor - a trace's line breaks where its step dt exceeds
@@ -543,39 +799,79 @@ class TimeLayout(object):
         n: large-gap factor - the x axis breaks where no trace has data for
         dt > n x the largest small-gap threshold; 0 disables axis breaks.
         manual_s / axis_manual_s: fixed small / large gap in seconds; > 0
-        overrides k / n.
+        overrides k / n (time axes).
+        break_lines / break_axis / numeric: the 0.5.3 options (class text).
         """
         self.k = float(k)
         self.n = max(0.0, float(n))
         self.manual_s = max(0.0, float(manual_s or 0.0))
         self.axis_manual_s = max(0.0, float(axis_manual_s or 0.0))
+        self.break_lines = bool(break_lines)
+        self.break_axis = bool(break_axis)
+        self.numeric = bool(numeric)
 
     def key(self):
-        """Tuple of the settings; a change re-lays out the time axes on save.
-        """
-        return (self.k, self.n, self.manual_s, self.axis_manual_s)
+        """Tuple of the settings; a change re-lays out the axes on save."""
+        return (self.k, self.n, self.manual_s, self.axis_manual_s, self.break_lines,
+                self.break_axis, self.numeric)
+
+    def gap_rule(self, geometric=False):
+        """The writer's GapRule of these settings (0.5.3): for a time axis
+        (seconds, the fixed gaps apply) or, with ``geometric``, for a
+        numeric axis (k and n only; the step must also be large on a log
+        scale)."""
+        return vszh5_writer.GapRule(
+            k=self.k, n=self.n,
+            manual=0.0 if geometric else self.manual_s,
+            axis_manual=0.0 if geometric else self.axis_manual_s,
+            break_lines=self.break_lines, break_axis=self.break_axis, geometric=bool(geometric))
 
     def axis_threshold(self, line_threshold):
         """Large-gap threshold for an axis whose largest small-gap threshold
         is ``line_threshold`` (seconds); 0.0 = no axis breaks."""
+        if not self.break_axis:
+            return 0.0
         if self.axis_manual_s > 0:
             return max(self.axis_manual_s, float(line_threshold))
         if self.n > 0 and line_threshold > 0:
             return max(self.n, 1.0) * float(line_threshold)
         return 0.0
 
-    def describe(self):
-        """One-line human description of the gap rule, written into graph notes.
-        """
-        line = ("dt > %s" % _seconds_text(self.manual_s) if self.manual_s > 0
-                else "dt > %g x median(dt)" % self.k)
-        if self.axis_manual_s > 0:
+    def describe(self, numeric=False):
+        """One-line human description of the gap rule, written into graph notes
+        (0.5.3: the options; every number exact; ``numeric`` describes the
+        rule of a non-time axis)."""
+        if numeric:
+            return vszh5_writer.GapRule(
+                k=self.k, n=self.n, break_lines=self.break_lines, break_axis=self.break_axis,
+                geometric=True).describe()
+        if not self.break_lines:
+            line = "lines drawn across gaps"
+        elif self.manual_s > 0:
+            line = "line break (small gap) where dt > %s" % _seconds_text(self.manual_s)
+        else:
+            line = "line break (small gap) where dt > %s x median(dt)" % _number_text(self.k)
+        if not self.break_axis:
+            axis = "no x-axis breaks"
+        elif self.axis_manual_s > 0:
             axis = "x-axis break (large gap) where dt > %s" % _seconds_text(self.axis_manual_s)
         elif self.n > 0:
-            axis = "x-axis break (large gap) where dt > %g x the small-gap threshold" % self.n
+            axis = "x-axis break (large gap) where dt > %s x the small-gap threshold" % (
+                _number_text(self.n))
         else:
             axis = "no x-axis breaks"
-        return "Gaps: line break (small gap) where %s; %s." % (line, axis)
+        return "Gaps: %s; %s." % (line, axis)
+
+
+#: (0.5.3) Same as TimeLayout: the gap options apply to every x axis.
+GapLayout = TimeLayout
+
+
+def _number_text(value):
+    """A setting for the notes with every digit (repr), without a trailing
+    ".0" (0.5.3; %g cut 12.3456789 to 12.3457)."""
+    text = repr(float(value))
+    return text[:-2] if text.endswith(".0") else text
 
 
 def _seconds_text(seconds):
@@ -657,10 +953,10 @@ def _layout_time_axis(doc, graph, axis):
     xys = [c for c in graph.WalkWidgets()
            if c.kind == "xy" and c.settings.get("xAxis", "x") == axis.name]
     if not xys:
-        return
+        return False
     if (axis.time_layout_key == layout.key()
             and all(xy.time_source is not None for xy in xys)):
-        return
+        return True
     # 0.5.1: the document keeps the reverse map (local copy -> UTC dataset);
     # rebuilding it here for every axis was O(datasets) per axis.
     reverse_local = getattr(doc, "utc_of", None)
@@ -677,7 +973,7 @@ def _layout_time_axis(doc, graph, axis):
         plans.append((xy, x_name, y_name, kind))
     timed = [p for p in plans if p is not None]
     if not timed:
-        return
+        return False
     kinds = set(p[3] for p in timed)
     dated = kinds <= set(("date", "mjd"))
     local_names, union, thresholds = [], [], []
@@ -698,6 +994,8 @@ def _layout_time_axis(doc, graph, axis):
         seconds = utc                                  # gap rule in seconds
         threshold = vszh5_writer.gap_threshold(seconds, layout.k, layout.manual_s)
         cut = vszh5_writer.gap_positions(seconds, threshold)
+        if not layout.break_lines:                     # 0.5.3: lines across gaps
+            cut = cut[:0]
         thresholds.append(threshold)
         if dated:
             local = vszh5_writer.local_time_from_veusz(utc)
@@ -756,9 +1054,129 @@ def _layout_time_axis(doc, graph, axis):
         axis.settings["label"] = text
         axis.settings.setdefault("autoRange", "exact")
     axis.time_layout_key = layout.key()
-    note = layout.describe()
-    if note not in str(graph.settings.get("notes", "")):
-        graph.settings["notes"] = (str(graph.settings.get("notes", "")) + "\n" + note).strip()
+    _set_gap_note(graph, layout.describe())
+    return True
+
+
+def _set_gap_note(graph, note):
+    """Put the gap-rule line ``note`` into the graph notes (0.5.3: a line
+    from an earlier layout is replaced, so the notes state the rule in use)."""
+    lines = [line for line in str(graph.settings.get("notes", "")).split("\n")
+             if not line.startswith("Gaps: ")]
+    lines.append(note)
+    graph.settings["notes"] = "\n".join(line for line in lines if line).strip()
+
+
+def _sorted_finite(values):
+    """True when the finite values of ``values`` never decrease (at least 3)."""
+    finite = values[np.isfinite(values)]
+    return finite.size >= 3 and bool(np.all(np.diff(finite) >= 0))
+
+
+def _layout_numeric_axis(doc, graph, axis):
+    """
+    Gap options on an x axis that is not time (0.5.3): frequency, angle,
+    index ...
+
+    For every xy trace on the axis whose x dataset is numeric, 1-D and
+    sorted, the writer's geometric GapRule (TimeLayout.gap_rule) gives the
+    line breaks ("<x>_gaps" / "<y>_gaps" plot copies with NaN rows; the
+    stored data stay unchanged) and, when every trace on the axis is sorted,
+    the axis breaks (Veusz axis-broken). A label axis, a hidden axis (Smith
+    chart) or an axis with any unsorted trace (a loop, a polar trace) is
+    left as it is.
+    """
+    layout = getattr(doc, "time_layout", None) or TimeLayout()
+    xys = [c for c in graph.WalkWidgets()
+           if c.kind == "xy" and c.settings.get("xAxis", "x") == axis.name]
+    if not layout.numeric:
+        _undo_numeric_layout(graph, axis, xys)   # an earlier save had them on
+        return
+    if axis.settings.get("hide", False) or axis.settings.get("mode", "numeric") != "numeric":
+        return
+    if not hasattr(doc, "_plot_copies"):
+        doc._plot_copies = {}
+    if not xys:
+        return
+    if axis.gap_layout_key == layout.key() and all(xy.gap_source is not None for xy in xys):
+        return
+    rule = layout.gap_rule(geometric=True)
+    plans = []
+    for xy in xys:
+        x_name, y_name = xy.gap_source or (xy.settings.get("xData"), xy.settings.get("yData"))
+        entry = doc.datasets.get(x_name) if isinstance(x_name, str) else None
+        if entry is None or entry[0] != "1d":
+            return                        # an x that is not a numeric dataset: leave the axis
+        values = np.asarray(entry[1]["data"], dtype=float)
+        if values.ndim != 1 or not _sorted_finite(values):
+            return                        # unsorted: no gaps are defined on this axis
+        plans.append((xy, x_name, y_name, values))
+    series = []
+    for xy, x_name, y_name, values in plans:
+        series.append(values)
+        cut = vszh5_writer.rule_gap_positions(values, rule)
+        plot_x, plot_y = x_name, y_name
+        y_entry = doc.datasets.get(y_name) if isinstance(y_name, str) else None
+        if (cut.size and y_entry is not None and y_entry[0] == "1d"
+                and np.asarray(y_entry[1]["data"]).shape == values.shape):
+            plot_x = _plot_name(doc, x_name + "_gaps", x_name)
+            doc.SetData(plot_x, vszh5_writer.insert_gaps(values, cut))
+            plot_y = _plot_name(doc, y_name + "_gaps", (x_name, y_name))
+            doc.SetData(plot_y, vszh5_writer.insert_gaps(y_entry[1]["data"], cut))
+        xy.gap_source = (x_name, y_name)
+        xy.settings["xData"] = plot_x
+        xy.settings["yData"] = plot_y
+    pairs = vszh5_writer.rule_axis_break_pairs(series, rule)
+    if pairs:
+        axis.kind = "axis-broken"
+        axis.settings["breakPoints"] = vszh5_writer.break_points(pairs)
+    elif axis.kind == "axis-broken" or "breakPoints" in axis.settings:
+        axis.kind = "axis"
+        axis.settings.pop("breakPoints", None)
+    axis.gap_layout_key = layout.key()
+    _set_gap_note(graph, layout.describe(numeric=True))
+
+
+def _undo_numeric_layout(graph, axis, xys):
+    """Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the
+    gap options of a project turn non-time axes off between two saves, the
+    traces draw their own data again, the axis is no longer broken and the
+    "Gaps:" note goes; the unused copies are dropped by
+    _drop_unused_plot_copies. An axis this module never laid out is left
+    as it is."""
+    if axis.gap_layout_key is None:
+        return
+    for xy in xys:
+        if xy.gap_source is not None:
+            xy.settings["xData"], xy.settings["yData"] = xy.gap_source
+            xy.gap_source = None
+    if axis.kind == "axis-broken" or "breakPoints" in axis.settings:
+        axis.kind = "axis"
+        axis.settings.pop("breakPoints", None)
+    axis.gap_layout_key = None
+    _set_gap_note(graph, "")
+
+
+def _drop_unused_plot_copies(doc):
+    """Remove line-break plot copies no widget draws any more (0.5.3): when
+    the gap options change between two saves, copies of the old layout
+    would otherwise stay in the file. Only names made by _plot_name."""
+    copies = getattr(doc, "_plot_copies", None)
+    if not copies:
+        return
+    used = set()
+    for widget in doc.Root.WalkWidgets():
+        for key in ("xData", "yData"):
+            value = widget.settings.get(key)
+            if isinstance(value, str):
+                used.add(value)
+    for name in [n for n in copies if n not in used and n in doc.datasets]:
+        if name.endswith("_gaps") or "_gaps_" in name or name.endswith("_local_nogaps"):
+            del doc.datasets[name]
+            for members in getattr(doc, "tags", {}).values():
+                if name in members:
+                    members.remove(name)
+            del copies[name]
 
 
 def _size_dated_page(page):
@@ -1170,7 +1588,11 @@ class NativeDocument:
         for graph in [w for w in self.Root.WalkWidgets() if w.kind == "graph"]:
             for axis in [c for c in graph.children if c.kind in ("axis", "axis-broken")]:
                 if axis.settings.get("direction", "horizontal") != "vertical":
-                    _layout_time_axis(self, graph, axis)
+                    # 0.5.3: an x axis that is not time gets the gap options
+                    # too (TimeLayout.numeric)
+                    if not _layout_time_axis(self, graph, axis):
+                        _layout_numeric_axis(self, graph, axis)
+        _drop_unused_plot_copies(self)
         for page in [w for w in self.Root.children if w.kind == "page"]:
             _size_dated_page(page)
         for widget in self.Root.WalkWidgets():

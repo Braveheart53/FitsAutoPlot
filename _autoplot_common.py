@@ -32,6 +32,127 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.3: Gap controls: break lines, break the x axis, non-time axes.
+Date: 2026-11-16
+#              * add_gap_controls(): check boxes "Break the line / trace at
+#                small gaps", "Break the x axis at large gaps" and "Also on x
+#                axes that are not time" (tool tips); K and the fixed small
+#                gap stay enabled while either break is on (they also scale
+#                the large gap), n and the fixed large gap while axis breaks
+#                are on.  time_layout() passes break_lines, break_axis and
+#                numeric to TimeLayout.
+#              * parse_gap_string, GAP_STRING_HELP, _GAP_TOKEN_REGEX and the
+#                _DAYS_PER_* constants now live in _autoplot_native and are
+#                imported from there (same names, same results).
+#              Checked: tests/test_gap_options.py and test_writer_0030.py
+#              on Python 3.8, 3.12 and 3.13 (Veusz 4.2.1 render); with the
+#              default options the datasets of every example project are
+#              identical to 0.4.2.
+# %%%%% Function Descriptions
+        make_dark_palette: Return a Fusion-style dark palette.
+        make_light_palette: Return a default light palette (style standard).
+        apply_theme: Apply the suite's 'dark' or 'light' palette to the running QApplication (standalone windows only - plugins style their own dialog instead).
+        suite_theme: Theme stored for the whole suite (launcher and tools).
+        store_suite_theme: Save ``mode`` ('dark' or 'light') as the suite-wide theme.
+        MemoryMonitorConfig (class): Configuration knobs for the memory monitor.
+        MemoryAwareCache (class): Memory-aware data cache that spills large numpy arrays to disk via ``numpy.memmap``.
+        MemoryMonitor (class): Background thread that publishes a callback whenever process RSS crosses the high-water mark.
+        run_in_threadpool: Submit ``work_items`` -- ``(key, fn, args)`` triplets -- to a ``ThreadPoolExecutor`` and collect results keyed by ``key``.
+        open_embedded: Legacy function name; return a native model, never launch Veusz.
+        begin_native_plugin_export: Pick an output file before parsing; never modify the host document.
+        finish_native_plugin_export: Same HDF5 writer for both plugin entry points and standalone GUIs.
+        save_vszh5: Atomically write the native model with h5py; no Veusz runtime needed.
+        _walk_widget_tree: Recursive sibling of ``Root.WalkWidgets``.
+        _collect_referenced_dataset_names_via_walk: Original (v0.0.17) WalkWidgets-based traversal.
+        _collect_referenced_dataset_names_via_text: v0.0.19 authoritative collector: dump the document via Veusz's own text serialization and regex out every ``Set('xData', 'name')``-style binding.
+        _collect_referenced_dataset_names: v0.0.19: combine WalkWidgets-based traversal AND a document-text scan, returning the UNION of both whitelists.
+        save_vszh5_minimized: Save exactly the referenced native datasets without deleting anything.
+        _norm_tag_token: Lower-cased, stripped string form of a tag-tuple element.
+        is_sentinel_tag_tuple: Return True iff ``tup`` is a placeholder/catch-all channel-tag tuple that should be EXCLUDED from dt-overlay datetime emission.
+        is_delta_column: Deprecated stub kept for v0.0.17 back-compat.
+        open_in_veusz_app: Launch an optional external Veusz GUI and load ``filename`` (typically a .vszh5 project just written by save_vszh5).
+        detect_time_breaks: Detect large gaps in a 1-D monotonic-ish array of time samples and return a list of (start, end) pairs suitable for Veusz's ``axis-broken`` widget.
+        column_unit_factor_from_day: Return the multiplier that converts a day-scale threshold into the units of the column named ``col_name``.
+        detect_time_breaks_unit_aware: Unit-aware wrapper around ``detect_time_breaks``.
+        break_pairs_to_breakpoints: Flatten a list of (start, end) tuples to Veusz's flat-list format [s1, e1, s2, e2, ...] as expected by the ``breakPoints`` setting of the ``axis-br...
+        make_broken_x_axis: Add an ``axis-broken`` widget named ``x`` to ``graph`` with the given list of (start, end) break pairs, after removing the default ``x`` axis that...
+        mjd_to_veusz_seconds: Convert an array of Modified Julian Dates (UTC) to the float-seconds units Veusz uses internally for date-time datasets.
+        _coerce_axis_setting_to_str: Some Veusz axis settings (rotate, in particular) are documented as accepting either an int or its string form.
+        style_datetime_x_axis: Apply the standard datetime tick-label format and angled rotation to an axis widget.
+        is_gpu_available: True when a GPU back end (CuPy CUDA/ROCm or PyOpenCL) found a device.
+        gpu_backend_name: Short string describing the GPU back end (or why there is none) for the GUI/log.
+        enable_gpu: Toggle the process-wide GPU acceleration flag.
+        gpu_enabled: Return the current global GPU-enabled state.
+        set_gpu_argsort_threshold: Set the minimum array size (samples) at which the GPU sort is used.
+        get_gpu_argsort_threshold: Minimum array size (samples) for the GPU argsort path.
+        gpu_tooltip: Tooltip of a GPU checkbox: the device found (or why none), the size threshold of ``operation`` and the install hints for NVIDIA and AMD.
+        gpu_usage_text: GPU and CPU calls of each GPU-capable operation since reset_gpu_usage().
+        reset_gpu_usage: Start counting GPU and CPU calls again (at the start of a batch).
+        gpu_argsort: Return ``np.argsort(arr, kind="stable")`` (ascending, int64) with optional GPU acceleration (NVIDIA or AMD; see _autoplot_gpu).
+        ProgressThrottle (class): Rate limit for progress-bar updates (0.4.1).
+        AutoPlotMainWindow (class): Base main window mirroring the layout used by Touchstone_AutoPlot.py:
+        open_maybe_gzipped: Return a binary file handle for ``path``; transparently gunzip *.gz.
+        mjd_to_datestr: Convert an array of Modified Julian Dates (UTC, double precision) into an array of formatted timestamp strings, with every digit of the time.
+        dataset_kinds: Type kinds of a FITS / Franks AutoPlot dataset, read from its name.
+        document_dataset_names: Every dataset name of a NativeDocument or a Veusz document.
+        tag_named_datasets: Tag FITS / Franks datasets: ``sources`` plus the kinds of each name (dataset_kinds); text datasets also get ``type_text``.
+        register_nrao_fits_units: Register the non-standard NRAO FITS unit aliases with astropy.units so that ``QTable.read`` / ``Table.read`` no longer emit a UnitsWarning.
+        suppress_fits_unit_warnings: Context manager that filters the harmless FITS unit-related warnings emitted by ``astropy.io.fits`` and ``astropy.table`` when reading NRAO 1PPS-de...
+        set_datetime_dataset: Push a Veusz datetime dataset, coercing values to plain floats.
+        safe_dsname: Sanitize an arbitrary string for use as a Veusz dataset name.
+        _stable_index: Deterministic non-negative index in ``[0, modulus)``.
+        trace_style_for: Return ``(color_hex, line_style_str)`` for an identity key.
+        apply_trace_style: Apply identity-stable color + line style + markers to a Veusz xy.
+        build_sparse_datestr_dataset: Push a same-length sparse date-string text dataset to Veusz.
+        build_full_datestr_dataset: Push a same-length per-point date-string text dataset to Veusz.
+        style_xy_datetime_labels: Apply rotated, compact text formatting to an xy widget's labels.
+        build_density_datestr_dataset: Push a same-length date-string text dataset with continuous density.
+        build_textx_dataset: Push a same-length per-point date-string text dataset for use as xData.
+        configure_axis_labels_mode: Switch a Veusz axis to ``mode='labels'`` with sensible defaults.
+        build_dtnum_dataset: Push a numeric Veusz-datetime-seconds dataset for use as xData.
+        configure_axis_datetime_mode: Switch a Veusz x axis to ``mode='datetime'`` and style its ticks.
+        mjd_break_pairs_to_dtsec: Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _DATASET_REF_SETTINGS: v0.0.19: trimmed the tuple to entries that *actually* hold dataset names.  ``posn`` is a position rectangle, ``key`` is a legend-label STRING -- ne...
+        _DOC_DATASET_REF_REGEX: v0.0.19: regex used to extract dataset references from the document's own saved-text representation.  This is the AUTHORITATIVE source of truth --...
+        SENTINEL_TAG_TOKENS: The user can extend the sentinel set in place; the predicate is case-insensitive and trims whitespace before matching.
+        DELTA_COLUMN_NAME_PATTERNS: Deprecated column-name predicate -- retained as a no-op for any external script that may have imported it.  v0.0.17 superseded this with the tuple-...
+        DAY_SCALE_COLUMN_NAMES: Unknown column names default to 1.0 (i.e. assume MJD-day units), which is the safe choice when the column appears to be a generic time axis: a too-...
+        SECOND_SCALE_COLUMN_NAMES: column names whose values are seconds (time axes)
+        MJD_VEUSZ_EPOCH_MJD: MJD that corresponds to Veusz's internal date-time zero (2009-01-01 UTC).
+        DEFAULT_DATETIME_TICK_FORMAT: 0.3.0: ISO 8601
+        LOCAL_TIME_AXIS_LABEL: 0.3.0: label of a local date-time axis (the offset is appended on save).
+        DEFAULT_DATETIME_TICK_ROTATE_DEG: Default tick label rotation -- 45 degrees keeps a 19-character label readable at typical cadences.  Veusz accepts integer or stringified integer de...
+        DEFAULT_DATETIME_MAJOR_TICKS_TARGET: Target number of major ticks along the x axis.  Veusz auto-picks the spacing to satisfy roughly this many major ticks; we keep it modest so the rot...
+        QUEUED_CONNECTION: queued signal connection, valid for PySide6, PyQt5 and PyQt6
+        MJD_EPOCH_JD_OFFSET: Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC. JD = MJD + 2400000.5  -- we implement the conversion directly without astropy.time...
+        _NAME_KINDS: (name suffix, type kinds) of FITS / Franks dataset names, longest first
+        _NRAO_UNITS_REGISTERED: NRAO 1PPS-delta FITS files use non-standard FITS unit strings: * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit) * DELTAT  carr...
+        TRACE_COLOR_PALETTE: trace colours, cycled
+        TRACE_LINE_STYLES: line styles cycled after the colours
+        TRACE_STYLE_VARY_THRESHOLD: 16
+        DEFAULT_DATETIME_LABEL_ANCHORS: legacy date-label pages: labels per trace
+        DEFAULT_DATETIME_LABEL_ANGLE: legacy date-label pages: label angle (degrees)
+        DEFAULT_DATETIME_LABEL_SIZE: legacy date-label pages: label font size
+        DEFAULT_DATETIME_LABEL_FMT: legacy date-label pages: strftime format
+        PYQTGRAPH_ERROR = None
+        _PSUTIL_AVAILABLE = True
+# %%%%% More Info
+    Shared by FITS and Franks AutoPlot and their plugins.  numpy.memmap is
+    the RAM -> disk transport of MemoryAwareCache (no pickling, the kernel page
+    cache does the writing).  The memory monitor runs in its own thread: its
+    callback must not touch Qt widgets (log() is safe).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.2: Names and tags from the data; MJD text with every digit.
 Date: 2026-11-10
 #              * mjd_to_datestr(): every digit of the time (vszh5_writer
@@ -969,7 +1090,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.4.2"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.4.3"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -999,6 +1120,10 @@ from _autoplot_native import NativeDocument
 # 0.4.2: dataset tags and names shared by every AutoPlot program (Qt-free)
 from _autoplot_native import (tag_word, source_tag, type_tag, tag_data,   # noqa: E402,F401
                               trace_widget_name, exact_number_text, float_loses_text)
+# 0.4.3: the gap texts ("90s", "3d") are parsed in _autoplot_native (no Qt)
+from _autoplot_native import (parse_gap_string, GAP_STRING_HELP,   # noqa: E402,F401
+                              _DAYS_PER_MONTH, _DAYS_PER_HOUR, _DAYS_PER_MINUTE,
+                              _DAYS_PER_SECOND, _GAP_TOKEN_REGEX)
 
 # ---------------------------------------------------------------------------
 # %%% Qt imports via qtpy (with frozen-bundle fallback to PySide6, matching the
@@ -1968,107 +2093,9 @@ SECOND_SCALE_COLUMN_NAMES = frozenset((
 
 
 # %%% parse_gap_string
-# v0.0.19: human-readable gap string parser.
-#
-# Accepts strings like ``"5m3d2h"`` (5 months, 3 days, 2 hours), with or
-# without whitespace between tokens, case-insensitive.  A bare number
-# (no unit suffix) is interpreted as hours, preserving the pre-0.0.19
-# behaviour of the GUI spinbox which was always in hours.  Returns the
-# total absolute gap expressed in MJD-days so callers can hand the
-# value straight to ``detect_time_breaks_unit_aware`` without changing
-# the engine signature.
-_GAP_TOKEN_REGEX = re.compile(
-    r"([+-]?\d+(?:\.\d+)?)\s*(min|[mMdDhHsS]?)", re.IGNORECASE
-)
-#: (0.4.0) Tool tip of the gap text boxes.
-GAP_STRING_HELP = ("Units: s = seconds, min = minutes, h = hours, d = days, "
-                   "m = months (30.4375 days).  Examples: '90s', '15min', '12h', "
-                   "'3d', '1m 3d 2h'.  A bare number is hours.")
-
-# Average Gregorian month length (365.25 / 12) -- intentionally the same
-# value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
-_DAYS_PER_MONTH = 30.4375
-_DAYS_PER_HOUR = 1.0 / 24.0
-_DAYS_PER_MINUTE = _DAYS_PER_HOUR / 60.0     # 0.4.0
-_DAYS_PER_SECOND = _DAYS_PER_MINUTE / 60.0   # 0.4.0
-
-
-def parse_gap_string(text, log_cb=None):
-    # type: (object, Optional[Callable[[str], None]]) -> float
-    """Parse a human-readable gap string into MJD-days.
-
-    Supported syntaxes (case-insensitive, whitespace tolerated)::
-
-        "5m3d2h"   -> 5 months + 3 days + 2 hours, in days
-        "5m 3d 2h" -> same
-        "3d"       -> 3 days
-        "120h"     -> 5 days
-        "120"      -> 120 hours = 5 days   (bare number = hours)
-        "0" / ""   -> 0.0  (disables absolute threshold)
-        None       -> 0.0
-
-    On parse failure returns 0.0 and (when ``log_cb`` is provided)
-    emits a warning so the GUI log shows that the entry was ignored.
-    Mixed unit ordering (e.g. ``"2h5m"``) is accepted -- the parser
-    sums all matched tokens.
-    """
-    if text is None:
-        return 0.0
-    try:
-        s = str(text).strip()
-    except Exception:
-        return 0.0
-    if not s:
-        return 0.0
-    # Strip ALL internal whitespace so "5m 3d 2h" and "5m3d2h" parse the
-    # same way.  Then iterate number+unit pairs.
-    compact = "".join(s.split())
-    if not compact:
-        return 0.0
-
-    # Fast path: pure number (no unit suffix anywhere).
-    try:
-        as_float = float(compact)
-    except (TypeError, ValueError):
-        as_float = None
-    if as_float is not None:
-        # Bare number => hours (pre-0.0.19 spinbox semantics).
-        return as_float * _DAYS_PER_HOUR
-
-    total_days = 0.0
-    matched_span = 0
-    saw_token = False
-    for m in _GAP_TOKEN_REGEX.finditer(compact):
-        num_str = m.group(1)
-        unit = (m.group(2) or "").lower()
-        if not num_str:
-            continue
-        try:
-            value = float(num_str)
-        except (TypeError, ValueError):
-            continue
-        if unit == "min":                            # 0.4.0
-            total_days += value * _DAYS_PER_MINUTE
-        elif unit == "s":                            # 0.4.0
-            total_days += value * _DAYS_PER_SECOND
-        elif unit == "m":
-            total_days += value * _DAYS_PER_MONTH
-        elif unit == "d":
-            total_days += value
-        elif unit == "h":
-            total_days += value * _DAYS_PER_HOUR
-        else:
-            # No unit on this fragment -- treat as hours (back-compat).
-            total_days += value * _DAYS_PER_HOUR
-        matched_span = m.end()
-        saw_token = True
-
-    if not saw_token or matched_span != len(compact):
-        if log_cb:
-            log_cb("  parse_gap_string: could not parse %r; "
-                   "treating as 0 (no absolute gap)." % (s,))
-        return 0.0
-    return total_days
+# 0.4.3: parse_gap_string, GAP_STRING_HELP and the _DAYS_PER_* constants live
+# in _autoplot_native (no Qt), so the batch modes of ATR, CSV/TSV and R&S
+# parse the same gap texts; imported above.
 
 
 def column_unit_factor_from_day(col_name):
@@ -2901,6 +2928,14 @@ class AutoPlotMainWindow(QMainWindow):
         """
         heading = QLabel("<b>Gaps</b> - small: the line breaks; large: the x axis breaks")
         form.addRow(heading)
+        # 0.4.3: both consequences of a gap are options (either, both, none)
+        self.gap_lines_cb = QCheckBox("Break the line / trace at small gaps")
+        self.gap_lines_cb.setChecked(True)
+        self.gap_lines_cb.setToolTip(
+            "On: a trace's line stops and restarts where its step dt > K x median(dt) "
+            "(or the fixed small gap); NaN rows go into plot copies (<y>_gaps), the "
+            "data are not changed.  Off: every line is drawn across its gaps.")
+        form.addRow(self.gap_lines_cb)
         self.gap_k_spin = QDoubleSpinBox()
         self.gap_k_spin.setRange(1.0, 1000.0)
         self.gap_k_spin.setSingleStep(1.0)
@@ -2908,7 +2943,8 @@ class AutoPlotMainWindow(QMainWindow):
         self.gap_k_spin.setValue(10.0)
         self.gap_k_spin.setToolTip(
             "Small gap: the trace line stops and restarts where its sample "
-            "step dt > K x median(dt) of that trace; the x axis is not cut.")
+            "step dt > K x median(dt) of that trace.  Also the scale of the "
+            "large gap (n x small gap).")
         form.addRow(QLabel("Small gap K (line break: dt > K × median dt):"), self.gap_k_spin)
         self.gap_abs_spin = QDoubleSpinBox()
         self.gap_abs_spin.setRange(0.0, 1e12)
@@ -2922,6 +2958,13 @@ class AutoPlotMainWindow(QMainWindow):
         self.gap_abs_str.setPlaceholderText("e.g. 90s, 15min, 2h  (overrides the hours box)")
         self.gap_abs_str.setToolTip(GAP_STRING_HELP)
         form.addRow(QLabel("Small gap fixed (text):"), self.gap_abs_str)
+        self.gap_axis_cb = QCheckBox("Break the x axis at large gaps")
+        self.gap_axis_cb.setChecked(True)
+        self.gap_axis_cb.setToolTip(
+            "On: the x axis is cut (a Veusz broken axis) where no trace has data for "
+            "dt > n x the small-gap threshold (or the fixed large gap).  Off: one "
+            "continuous x axis.  Independent of the line breaks.")
+        form.addRow(self.gap_axis_cb)
         self.gap_axis_spin = QDoubleSpinBox()
         self.gap_axis_spin.setRange(0.0, 1.0e6)
         self.gap_axis_spin.setSingleStep(10.0)
@@ -2937,6 +2980,26 @@ class AutoPlotMainWindow(QMainWindow):
         self.gap_axis_str.setPlaceholderText("e.g. 12h, 3d, 1m  (overrides n)")
         self.gap_axis_str.setToolTip(GAP_STRING_HELP + "  Never shorter than the small gap.")
         form.addRow(QLabel("Large gap fixed (text):"), self.gap_axis_str)
+        self.gap_numeric_cb = QCheckBox("Also on x axes that are not time (frequency, angle, index)")
+        self.gap_numeric_cb.setChecked(True)
+        self.gap_numeric_cb.setToolTip(
+            "On: sorted non-time x data get the same rule (K and n), with the step "
+            "also large on a log scale, so a log-spaced sweep is not cut.  The fixed "
+            "gaps are times and apply to time axes only.")
+        form.addRow(self.gap_numeric_cb)
+        # K and the fixed small gap also set the scale of the large gap
+        # (n x small gap): enabled while either break is on
+        self.gap_lines_cb.toggled.connect(self._enable_gap_values)
+        self.gap_axis_cb.toggled.connect(self._enable_gap_values)
+
+    def _enable_gap_values(self, _checked: bool = False) -> None:
+        """Enable the small-gap values while either break is on and the
+        large-gap values while axis breaks are on (0.4.3)."""
+        small = self.gap_lines_cb.isChecked() or self.gap_axis_cb.isChecked()
+        for widget in (self.gap_k_spin, self.gap_abs_spin, self.gap_abs_str):
+            widget.setEnabled(small)
+        for widget in (self.gap_axis_spin, self.gap_axis_str):
+            widget.setEnabled(self.gap_axis_cb.isChecked())
 
     def gap_manual_days(self) -> float:
         """The fixed small gap in days (0 = K x median dt) for the page builders."""
@@ -2956,12 +3019,20 @@ class AutoPlotMainWindow(QMainWindow):
         return parse_gap_string(text, log_cb=self.log) if text else 0.0
 
     def time_layout(self):
-        """The TimeLayout (_autoplot_native) chosen in the gap controls."""
+        """The TimeLayout (_autoplot_native) chosen in the gap controls
+        (0.4.3: with the line-break, axis-break and non-time-axis options)."""
         from _autoplot_native import TimeLayout
         k = float(self.gap_k_spin.value()) if getattr(self, "gap_k_spin", None) else 10.0
         n = float(self.gap_axis_spin.value()) if getattr(self, "gap_axis_spin", None) else 0.0
+
+        def checked(name):
+            """State of an option check box (on when the window has none)."""
+            box = getattr(self, name, None)
+            return True if box is None else bool(box.isChecked())
         return TimeLayout(k=k, n=n, manual_s=self.gap_manual_days() * 86400.0,
-                          axis_manual_s=self.gap_axis_days() * 86400.0)
+                          axis_manual_s=self.gap_axis_days() * 86400.0,
+                          break_lines=checked("gap_lines_cb"), break_axis=checked("gap_axis_cb"),
+                          numeric=checked("gap_numeric_cb"))
 
     # ----- abstract hooks ---------------------------------------------------
     def _process_files(self) -> None:

@@ -67,6 +67,69 @@ as one trace per y column.
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 1.1.5: Gap options (line breaks, x-axis breaks) in the GUI and batch mode.
+Date: 2026-11-16
+#              * "Gaps" box (_suite_gui.GapOptionsBox) under the plot mode;
+#                PlotOptions.gaps carries the TimeLayout.
+#              * Batch flags --gap-k, --gap-small, --gap-n, --gap-large,
+#                --no-line-breaks, --no-axis-breaks, --no-numeric-gaps.
+#              * With the defaults the AllImported and Averages overlays of
+#                the example files (~10 MHz and ~14 GHz spans) get one x-axis
+#                break, [288280000.0, 13621720000.0] Hz, instead of the empty
+#                spectrum between them; --no-axis-breaks (or the check box)
+#                keeps one axis.  Sweeps themselves are not cut.
+# %%%%% Function Descriptions
+        SFTFormatError (class): The file holds no trace this program can read.
+        SFTTrace (class): One sweep (section) of an R&S SFT file: its number, the instrument time stamp text and the trace values.
+        SFTFile (class): A parsed R&S FSP/FSW ASCII trace file (.sft).
+        _header: Parse the 'key;value;unit' header lines of an SFT file.
+        parse_sweep_time: FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime.
+        _float: float(text), or ``default`` (NaN) when text is not a number.
+        _text_tokens: Tokens of a section that is ASCII text but not numbers (1.1.4), or [] for a block that is not ASCII text.
+        _ascii_values: Values of an ASCII section, or None when the block is not ASCII numbers.
+        parse_sft_bytes: Parse one .sft file (see the file layout in the module header).
+        read_sft: Read and parse one SFT file (bytes, any encoding the parser accepts).
+        _read_worker: Process-pool worker: (path, SFTFile or None, error text).
+        read_files: Read in input order (a 'spawn' process pool when it pays off); (files, errors).
+        power_mean: Average of traces (rows) in their unit.
+        PlotOptions (class): Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and overlay, 2 = average only; ``use_gpu`` allows the GPU (NVIDIA or AMD) for...
+        RnSPlotter (class): Builds the project of a batch of .sft files.
+        build_project: RnSPlotter with every file of ``files`` added and finished.
+        batches: Split whole files into groups of at most ``plots_per_file`` sections (a file with more sections than that is a group of its own).
+        save_split: Write {base}_001.vszh5, {base}_002.vszh5 ...
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "R&S FSW / FSP Trace Plotter"
+        APP_VERSION = "1.1.5"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        MODE_NAMES: plot mode names (0 all, 1 average + overlay, 2 average only)
+        _SECTION: the 'Section<n>;<time stamp>' line that starts each sweep (bytes)
+        _NUMBER: one numeric token (inf, infinity and nan included)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python RAndS_FSW_ASCII_Plotter.py [files]   (GUI; View menu)
+          python RAndS_FSW_ASCII_Plotter.py *.sft --output rns.vszh5 [--split N]
+    Sweep averages are taken in the linear domain (10 log10 of the mean of
+    10^(P/10)); --gpu allows the GPU (NVIDIA or AMD, _autoplot_gpu) for
+    large stacks.  Files are read in a 'spawn' process pool when it pays off.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data; sections that are text or do not line up with
+    x are kept (_Section<n>_text, _Section<n>_unaligned).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 1.1.4: Nothing dropped; every sweep in the notes; source_/type_ tags.
 Date: 2026-11-10
 #              * The average page lists every sweep (1.1.3 stopped at 2000);
@@ -313,7 +376,7 @@ import _autoplot_gpu  # noqa: E402  (1.1.3: NVIDIA or AMD GPU, NumPy fallback)
 from _autoplot_native import exact_number_text, tag_data, trace_widget_name  # noqa: E402
 
 APP_NAME = "R&S FSW / FSP Trace Plotter"
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.1.5"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Rohde & Schwarz .sft trace files to native Veusz .vszh5 projects, "
                    "with averages and interactive pyqtgraph plots.")
@@ -637,6 +700,8 @@ class PlotOptions:
     """
     mode: int = 0                    # 0 all plots, 1 average + overlay, 2 average only
     use_gpu: bool = False
+    #: 1.1.5: gap options (_autoplot_native TimeLayout); None = the defaults
+    gaps: Any = None
 
 
 class RnSPlotter:
@@ -649,6 +714,8 @@ class RnSPlotter:
         from _autoplot_native import NativeDocument
         self.options = options or PlotOptions()
         self.doc = NativeDocument("R&S trace plotter")
+        if getattr(self.options, "gaps", None) is not None:     # 1.1.5: gap options
+            self.doc.time_layout = self.options.gaps
         self.doc.Root.colorTheme.val = "max128"
         self.messages: List[str] = []
         self._stems: Dict[str, int] = {}
@@ -1048,6 +1115,9 @@ def _build_gui_classes():
                 self.plot_mode_group.addButton(radio, index)
                 plot_layout.addWidget(radio)
             layout.addWidget(plot_group)
+            # 1.1.5: gaps in frequency or time (zero span, sweep times)
+            self.gap_box = suite.GapOptionsBox()
+            layout.addWidget(self.gap_box)
 
             split = QGroupBox("Split Saving")
             split_form = QFormLayout(split)
@@ -1133,7 +1203,8 @@ def _build_gui_classes():
         def options(self) -> PlotOptions:
             """PlotOptions from the GUI (plot mode, GPU)."""
             return PlotOptions(mode=max(0, self.plot_mode_group.checkedId()),
-                               use_gpu=self.enable_gpu_checkbox.isChecked())
+                               use_gpu=self.enable_gpu_checkbox.isChecked(),
+                               gaps=self.gap_box.time_layout())
 
         def _browse_files(self) -> None:
             """Ask for .sft files and add them to the list."""
@@ -1235,6 +1306,7 @@ def _build_gui_classes():
                 if not path:
                     return
                 try:
+                    self.plotter.doc.time_layout = self.gap_box.time_layout()   # 1.1.5
                     self.last_saved = self.plotter.doc.save(path)
                 except Exception as exc:
                     QMessageBox.critical(self, APP_NAME, "Save failed:\n%s" % exc)
@@ -1292,6 +1364,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--gpu", action="store_true",
                         help="allow the GPU (NVIDIA or AMD) for large averages")
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
+    from _autoplot_native import add_gap_arguments, layout_from_args
+    add_gap_arguments(parser)                  # 1.1.5: --gap-k ... --no-axis-breaks
     args = parser.parse_args(argv)
     monitor = None
     if os.environ.get("AUTOPLOT_HANG_MONITOR") == "1":
@@ -1304,7 +1378,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print("FAILED", error, file=sys.stderr)
             if not files:
                 return 1
-            options = PlotOptions(args.mode, args.gpu)
+            options = PlotOptions(args.mode, args.gpu, gaps=layout_from_args(args))
             if args.split > 0:
                 for path in save_split(files, args.output, args.split, options):
                     print("Wrote", path)

@@ -731,3 +731,203 @@ Python 3.8 (1.1 s before; the byte scan), 0.6 s on 3.12.
 | [40] | pandas developers, "pandas.to_datetime" (format="ISO8601"), *pandas documentation*. [Online]. Available: https://pandas.pydata.org/docs/reference/api/pandas.to_datetime.html |
 | [41] | W. W. Wallace, "vszh5_writer 0.0.29 release notes" and "vszh5_writer registry," RF project documents, Nov. 10, 2026. |
 | [42] | mpld3 developers, "mpld3," PyPI. [Online]. Available: https://pypi.org/project/mpld3/ |
+
+## 13. Gap options in every plot generator (2026-11-16)
+
+Request: *"Update all the plot generators, especially the fitsAutoplot files to be gap aware in the
+data and add options to both break the line / trace or add an X-axis break. See the Maser Timing
+Plots and telemetry effort and the vszh5_writer in all chats (update as needed and ensure you bump
+the revision accordingly). Pull from those projects for the most up to date writer if you do not
+already have it, and use it accordingly."*
+Archive: `FitsAutoPlot_suite_0.4.3_2026-11-16.7z` (every tracked file, assets included).
+
+### 13.1 Versions
+
+| File | Before | Now | What changed |
+|---|---|---|---|
+| `vszh5_writer.py` | 0.0.29 | **0.0.30** | Built from the registry master 0.0.29 (SHA-256 `50631331...a504f9d701`, checked; no chat had a newer writer - the maser workbench 0.3.x still uses 0.0.29). Additions only: `GapRule`, `rule_gap_positions`, `rule_axis_break_pairs`, `break_points`, `gap_plan`, `local_veusz_exact`, `axis_break_pairs(log_threshold=)`, `x_breaks=` on `xy_page` / `Panel` (`grid_page`) / `time_pair_pages` (`mjd_breaks`, `local_breaks`). Every 0.0.29 call writes the same file (tested object by object). SHA-256 `26194c8e96572fce2106bb5588d33d7c3f024fbd5169ff626cab2e40aa01f604`; rebuilt byte for byte by `docs/writer_0.0.30/make_0030.py` + `add_entry_0030.py` from the stored 0.0.29. |
+| `_autoplot_native.py` | 0.5.2 | **0.5.3** | `TimeLayout(break_lines, break_axis, numeric)`; `_layout_numeric_axis` (non-time axes, geometric rule); `_drop_unused_plot_copies`; notes state the rule in use; `add_gap_arguments` / `layout_from_args`; gap-text parsing moved here (Qt-free) |
+| `_autoplot_common.py` | 0.4.2 | **0.4.3** | Three check boxes in the FITS / Franks gap controls; `time_layout()` passes them |
+| `_autoplot_pyqtgraph.py` | 0.3.2 | **0.3.3** | Plots tab follows the options; broken-axis intervals shaded; log sweeps no longer cut |
+| `_suite_gui.py` | 0.1.1 | **0.1.2** | `GapOptionsBox` for ATR, CSV/TSV, R&S and Touchstone |
+| `FITS_AutoPlot.py` / `Franks_AutoPlot.py` | 0.4.2 | **0.4.3** | Gap options (through `_autoplot_common` 0.4.3) |
+| `FITS_AutoPlot_plugin.py` / `Franks_AutoPlot_plugin.py` | 0.3.2 | **0.3.3** | Gap options in the dialog and as plugin fields |
+| `ATR_AutoPlot.py` | 0.2.4 | **0.2.5** | Gaps box; batch flags |
+| `CSV_TSV_AutoPlot.py` | 6.1.3 | **6.1.4** | Gaps box; batch flags |
+| `RAndS_FSW_ASCII_Plotter.py` | 1.1.4 | **1.1.5** | Gaps box; batch flags |
+| `Touchstone_AutoPlot.py` | 0.7.3 | **0.7.4** | Gaps box |
+| `tests/test_gap_options.py`, `tests/test_writer_0030.py` | — | **0.0.1** (new) | 16 + 12 tests |
+| `REQUIREMENTS.md` | 0.2.1 | **0.2.2** | No new packages; test results |
+
+### 13.2 The rule
+
+For one trace with sorted x values $x_0 \le x_1 \le \dots \le x_{N-1}$ (time in seconds, MJD in
+days, frequency in Hz, angle in degrees, index), the steps are
+
+$$
+\Delta x_i = x_{i+1} - x_i , \qquad i = 0, \dots, N-2 .
+$$
+
+**Small gap (line break).** With the multiplier $K$ (default 10) or a fixed small gap $\tau_\mathrm{fix}$,
+
+$$
+\tau_j =
+\begin{cases}
+\tau_\mathrm{fix}, & \tau_\mathrm{fix} > 0 \\
+K \cdot \operatorname{median}\{\Delta x_i > 0\}, & \text{otherwise}
+\end{cases}
+\qquad\text{gap at } i \iff \Delta x_i > \tau_j .
+$$
+
+A NaN row goes between samples $i$ and $i+1$ of the plot copies `<x>_gaps` / `<y>_gaps`; the
+stored data are not changed. With **break_lines off** no rows are added and the line is drawn across.
+
+**Large gap (x-axis break).** For the traces $j$ sharing one x axis, with the multiple $n$ (default
+100) or a fixed large gap $T_\mathrm{fix}$,
+
+$$
+T =
+\begin{cases}
+\max\left(T_\mathrm{fix},\ \max_j \tau_j\right), & T_\mathrm{fix} > 0 \\
+\max(n, 1) \cdot \max_j \tau_j, & n > 0 \\
+\text{no axis breaks}, & n = 0
+\end{cases}
+$$
+
+and the axis is cut where the merged, sorted x values of **all** traces, $u_0 < u_1 < \dots$, have
+$u_{k+1} - u_k > T$, i.e. where no trace has data. The left-out interval keeps a margin
+$m = 0.02$ of the gap on each side so the samples beside it stay visible:
+
+$$
+\left[\, u_k + m\,(u_{k+1}-u_k),\ \ u_{k+1} - m\,(u_{k+1}-u_k) \,\right]
+\;\to\; \text{Veusz \texttt{axis-broken} } \texttt{breakPoints}\ [43].
+$$
+
+Since $T \ge \max_j \tau_j$, an axis break always falls where every line is already broken (when
+line breaks are on). With **break_axis off** the axis stays continuous. The two options are
+independent: line breaks only, axis breaks only, both, or neither.
+
+**Axes that are not time (geometric test).** A log-spaced sweep $x_i = x_0 r^i$ has growing steps,
+
+$$
+\Delta x_i = x_0 (r-1)\, r^{i}, \qquad
+\operatorname{median}_i \Delta x_i = x_0 (r-1)\, r^{99}\,\frac{1+r}{2} \quad (N = 201),
+$$
+
+so the linear test $\Delta x_i > K \cdot \operatorname{median}$ holds for
+
+$$
+i > 99 + \log_r\!\left(K\,\frac{1+r}{2}\right).
+$$
+
+For 10 MHz - 10 GHz in 201 points, $r = 10^{3/200} = 1.035142\ldots$ and $K = 10$:
+$i > 99 + \dfrac{\ln(10 \cdot 1.017571)}{\ln 1.035142} = 99 + 67.17 = 166.17$, so the 33 steps
+$i = 167 \dots 199$ were called gaps - exactly the 33 false breaks the Plots tab 0.3.2 drew. On
+non-time axes a step must therefore also be large on a log scale (positive x only):
+
+$$
+\ln\frac{x_{i+1}}{x_i} > K \cdot \operatorname{median}_k \ln\frac{x_{k+1}}{x_k},
+$$
+
+and for the axis $\ln(u_{k+1}/u_k) > n \cdot \max_j \lambda_j$ with $\lambda_j$ the log threshold
+of trace $j$. For the log sweep $\ln(x_{i+1}/x_i) = \ln r$ for every $i$, so no step exceeds
+$K \ln r$ ($K \ge 1$): no false breaks. A real hole in a linear or a log sweep is large on both
+scales and is still found. Time axes (values far from zero, where the log test adds nothing) use
+the linear test only, as before. Unsorted traces (a loop, a polar trace), label axes and the
+hidden axes of Smith charts are never cut.
+
+### 13.3 Options
+
+| GUI (Gaps box; FITS / Franks gap controls) | Batch flag (ATR, CSV/TSV, R&S) | Plugin field | `TimeLayout` / `GapRule` | Default | Effect |
+|---|---|---|---|---|---|
+| Break the line / trace at small gaps | `--no-line-breaks` | `gap_break_lines` | `break_lines` | on | NaN rows in plot copies at small gaps |
+| Small gap K | `--gap-k K` | — (dialog) | `k` | 10 | $\tau = K \cdot \operatorname{median}(\Delta x)$; also scales the large gap |
+| Small gap fixed (time) | `--gap-small 90s` | `gap_string` | `manual_s` | none | fixed $\tau$ (time axes) |
+| Break the x axis at large gaps | `--no-axis-breaks` | `gap_break_axis` | `break_axis` | on | Veusz broken axis; Plots tab shades the interval |
+| Large gap n | `--gap-n N` | `gap_axis_n` | `n` | 100 | $T = n \cdot \max_j \tau_j$; 0 = no axis breaks |
+| Large gap fixed (time) | `--gap-large 12h` | `gap_axis_string` | `axis_manual_s` | none | fixed $T$ (time axes), never below $\max_j \tau_j$ |
+| Also on x axes that are not time | `--no-numeric-gaps` | `gap_numeric` | `numeric` | on | the rule on sorted frequency / angle / index axes, with the log test |
+
+Gap texts: `s`, `min`, `h`, `d`, `m` (months, 30.4375 d); a bare number is hours. The K and
+small-gap boxes stay enabled while either break is on (they set the scale of the large gap). Every
+control has a tool tip. Each graph's notes end with the rule in use, every number exact, e.g.
+`Gaps: lines drawn across gaps; x-axis break (large gap) where dt > 100 x the small-gap threshold.`
+Changing the options and saving again replaces that line and removes the plot copies of the old
+layout.
+
+### 13.4 Measured on real data (Python 3.12)
+
+| Data | Options | Broken axes (breaks) | Line-break copies | Notes |
+|---|---|---|---|---|
+| GBT SiteTime OnePpsDeltas, 30 days, 319 FITS files (40 195 datasets) | defaults | 2 (4) | 200 | 29.8 s |
+| same | line breaks off | 2 (4) | 0 | lines across, axis still cut |
+| same | axis breaks off | 0 | 200 | one continuous axis |
+| same | both off | 0 | 0 | |
+| UWBR Rcvr Temps, 15 files | defaults | 0 | 27 | no gap reaches 100 x the small gap |
+| same | n = 1 | 19 (1 431) | 27 | every small gap also cuts the axis |
+| R&S, 42 example `.sft` files | defaults | AllImported, Averages: `[288280000.0, 13621720000.0]` Hz | 0 | the ~10 MHz and ~14 GHz files no longer share 13.3 GHz of empty axis |
+| 201-point 10 MHz - 10 GHz log sweep | defaults | 0 | 0 | 0.3.2 Plots tab: 33 false breaks |
+| CSV, 1 s stamps with a 2 h hole | `--no-line-breaks` | 1 | 0 | note: "lines drawn across gaps" |
+
+With the default options every example project (FITS tack and Temps, Franks, ATR, R&S, CSV, TSV,
+223 Touchstone files) has the same datasets as 0.4.2, value for value; the scripts differ only by
+the "Gaps:" note now also written on numeric graphs and the R&S overlay break above. The four
+30-day variants load in Veusz 4.2.1 and their broken-axis pages render (axis kinds checked per page):
+
+![30-day OnePpsDeltas overlay, the four combinations](docs/gap_options_0.4.3_30d_overlay.png)
+
+*GBT SiteTime OnePpsDeltas, 30 days, overlay page rendered by Veusz 4.2.1. Top: the x axis is
+broken (zigzag marks) with and without line breaks; bottom: one continuous axis, with line breaks
+(left) and with every line drawn across its gaps (right).*
+
+### 13.5 vszh5_writer 0.0.30 and the registry
+
+The registry (RF project `claude/vszh5-writer-registry.md`) was read first: master 0.0.29, no newer
+copy in any chat. 0.0.30 takes the next patch number, is written back as the master
+(`claude/vszh5_writer.py`) with its notes (`claude/vszh5-writer-0.0.30-notes.md`), and the
+registry lists FitsAutoPlot 0.4.3 on 0.0.30. The MHM2010 / T4 Maser Timing Workbench (0.3.x, on
+0.0.29) can take 0.0.30 as a drop-in: nothing it calls changes, and `gap_plan()` / `x_breaks=`
+give its timing plots the same two options.
+
+### 13.6 Verification
+
+| Check | Python 3.8.20 | Python 3.12.3 | Python 3.13.18 |
+|---|---|---|---|
+| Unit tests (`python -m unittest discover -s tests`) | 109 OK (3 skipped: Veusz / OpenCL not installed) | 109 OK (3 skipped) | 109 OK (1 skipped; Veusz 4.2.1 renders broken axes) |
+| Headless GUI and real-data runs (`run_env_checks.sh`: date-time pages, FITS tack / Temps / Vacuum / 30-day 1PPS, ATR, CSV, R&S, Touchstone, Touchstone Plots tab and Smith, Plots tab, launcher) | 13 of 13 pass | 13 of 13 pass | 13 of 13 pass |
+| Format check (header, revision = version, Date lines, docstrings, 3.8 grammar) | every `.py` OK | | |
+| Tooltip audit | 0 missing | | |
+| Plots tab, two traces 13.6 GHz apart | | one shaded break region; y range covers both traces | |
+
+### 13.7 Data gaps and limits
+
+* The geometric test needs positive x; an axis with zero or negative values (e.g. a phase axis in
+  degrees from -180) uses the linear test only.
+* A fixed small or large gap is a time and applies to time axes only; non-time axes use K and n.
+* pyqtgraph has no broken axis: the Plots tab draws the full range with the left-out intervals
+  shaded grey.
+* The R&S overlay axis break leaves two 13.3 GHz-apart groups whose tick labels can crowd; turn
+  axis breaks off for one continuous axis.
+* Still no GPU here (section 11.7); the gap rule is NumPy work and needs none.
+* The suite's copy in `C:\Users\wwallace\Claude\Projects\GBO_PostProcessing\FitsAutoPlot` was
+  updated to 0.4.3 (92 files: every tracked file except `Example_Data_Files`, `Archive` and
+  `.idea`, as in the 0.4.0 sync), and the archive was placed beside it; the archive and three
+  program files read back from that computer match by SHA-256. Its old `__pycache__` folders were
+  left as they were (Python rebuilds them). The 0.4.1 and 0.4.2 archives were never copied there
+  (the computer was offline then); 0.4.3 contains all of their changes.
+
+### 13.8 References (round 13)
+
+| # | Reference (IEEE) |
+|---|---|
+| [43] | Veusz developers, `veusz/widgets/axisbroken.py` (class `AxisBroken`, `axis-broken`, setting `breakPoints`: "Pairs of values to start and stop breaks"), GitHub. [Online]. Available: https://github.com/veusz/veusz/blob/master/veusz/widgets/axisbroken.py |
+| [44] | pyqtgraph developers, "LinearRegionItem," *pyqtgraph documentation*. [Online]. Available: https://pyqtgraph.readthedocs.io/en/latest/api_reference/graphicsItems/linearregionitem.html |
+| [45] | W. S. Cleveland, *The Elements of Graphing Data*, rev. ed. Hobart Press, 1994, ISBN 978-0-9634884-1-1 (scale breaks). |
+| [46] | I. Sesia and P. Tavella, "Estimating the Allan variance in presence of long periods of missing data and outliers," *Metrologia*, vol. 45, pp. S134–S142, 2008. [Online]. Available: https://hdl.handle.net/11696/29548 |
+| [47] | L. Galleani and I. Sesia, "The corrected Allan variance: Stability analysis of frequency measurements with missing data," *IEEE Trans. Ultrason., Ferroelect., Freq. Control*, vol. 66, no. 10, pp. 1667–1683, Oct. 2019, doi: 10.1109/TUFFC.2019.2927424. |
+| [48] | *IEEE Standard Definitions of Physical Quantities for Fundamental Frequency and Time Metrology—Random Instabilities*, IEEE Std 1139-2022. [Online]. Available: https://standards.ieee.org/ieee/1139/7585/ |
+| [49] | W. W. Wallace, "vszh5_writer registry" and "vszh5_writer 0.0.30 notes," RF project documents, Nov. 16, 2026. |
+
+[46]-[48] concern *analysis* of timing data with missing samples (e.g. Allan variance of maser
+data); the suite only *plots* gaps and leaves the data unchanged, so those methods still apply to
+the stored datasets.

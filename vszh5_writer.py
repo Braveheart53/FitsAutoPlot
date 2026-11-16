@@ -13,12 +13,12 @@
 --------
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.29 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.30 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-11
- Modified       : 2026-11-10
+ Modified       : 2026-11-16
  Language       : Python 3.8 through 3.12 (3.12 primary; parses at 3.7)
  Requires       : numpy, h5py   (Veusz only to open or render the result;
                   pypdf only for PDF bookmarks)
@@ -40,7 +40,8 @@
                   settings checked in the 3.6.2 source; 0.0.27 gap rule:
                   4.2.1 with real GBT sampler2log files; 0.0.28 faster
                   save: files identical to 0.0.27; 0.0.29 exact ISO text:
-                  3.6.2, every other output identical to 0.0.28)
+                  3.6.2, every other output identical to 0.0.28; 0.0.30
+                  gap options: 4.2.1, every 0.0.29 call identical)
  Lineage        : 0.0.20 joins the two releases that were both numbered
                   0.0.18 - the R&S FSP logger 0.9.0 release (render fixes)
                   and the AB Power Meter Monitor 1.6.0 release (appender) -
@@ -64,7 +65,12 @@
                   AutoPlot 0.4.1) saves faster with identical files; 0.0.29
                   (MHM2010 / T4 Maser Timing Workbench 0.2.4) writes local
                   ISO-8601 text without dropping digits on request
-                  (iso_local_strings timespec="exact"). One master copy: the
+                  (iso_local_strings timespec="exact"); 0.0.30 (FitsAutoPlot
+                  suite 0.4.3, for every plot generator and the MHM2010 /
+                  T4 workbench) adds the gap options: GapRule (line breaks
+                  and / or x-axis breaks, either one off, a log-scale check
+                  for frequency sweeps), gap_plan, x_breaks= on the page
+                  helpers, local_veusz_exact. One master copy: the
                   RF project document
                   claude/vszh5_writer.py (see claude/vszh5-writer-registry.md).
 ===============================================================================
@@ -267,6 +273,15 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
   is never rounded or cut; ISO_TIMESPECS lists them. mjd_iso_local_strings:
   the same exact text straight from UTC MJD values, converted in decimal
   arithmetic (MJD 61234.10355 -> 22:29:06.72, not 06.7199999...).
+* (0.0.30) Gap options for any plotted series: GapRule (k, n, fixed small
+  and large gaps, break_lines and break_axis - either can be off - and a
+  geometric check so a log-spaced frequency sweep is not called gapped),
+  rule_gap_positions, rule_axis_break_pairs, gap_plan (gap rows for each
+  trace and the break points of the shared x axis in one call),
+  break_points; axis_break_pairs(log_threshold=); xy_page(x_breaks=),
+  Panel.x_breaks and time_pair_pages(mjd_breaks=, local_breaks=) draw a
+  Veusz axis-broken x axis; local_veusz_exact (UTC + offset in one step,
+  no round trip through Unix seconds).
 
 # %%% References
 [R1] Veusz Developers, Veusz 4.2.1 source: veusz/document/doc.py
@@ -288,6 +303,190 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.30: FitsAutoPlot suite 0.4.3 (operator request 2026-11-16: every plot
+Date: 2026-11-16
+#              generator gap aware, with options to break the line/trace
+#              and/or the x axis), for every program that uses the writer
+#              (MHM2010 / T4 Maser Timing Workbench included). Built on
+#              master 0.0.29 (SHA-256 50631331...a504f9d701), registry
+#              checked first. Additions only: every 0.0.29 call writes the
+#              same file.
+#              * NEW GapRule(k, n, manual, axis_manual, break_lines,
+#                break_axis, geometric, margin): the 0.0.27 small / large
+#                gap rule with either consequence optional - lines drawn
+#                across gaps (break_lines=False), one continuous axis
+#                (break_axis=False), both or neither - for any sorted x
+#                (time, frequency, angle, index); geometric=True also
+#                requires a step to be large on a log scale, so a
+#                log-spaced sweep is not called gapped (10 MHz - 10 GHz,
+#                201 points: 33 false line breaks with the linear rule,
+#                none with it) while a hole in a linear or log sweep is
+#                still found. describe() writes the rule with every digit.
+#              * NEW rule_gap_positions, rule_axis_break_pairs,
+#                break_points and gap_plan(x_series, rule): gap rows of
+#                every trace and the break points of their shared x axis in
+#                one call.
+#              * NEW x_breaks= on xy_page() and Panel (grid_page), and
+#                mjd_breaks= / local_breaks= on time_pair_pages(): a
+#                non-empty list makes x a Veusz axis-broken axis with those
+#                breakPoints; empty (the default) writes the 0.0.29 script.
+#              * axis_break_pairs(log_threshold=0.0): optional log-scale
+#                condition (default: the 0.0.27 result).
+#              * NEW local_veusz_exact(veusz_utc, axis): local Veusz date
+#                values as UTC + offset in one addition (the 2026-11-11
+#                registry note: local_time_from_veusz().veusz_seconds go
+#                through Unix seconds and move fractions by up to 1.2e-7 s).
+#              Checked: FitsAutoPlot tests/test_writer_0030.py (documents of
+#              every 0.0.29 helper identical object by object; the gap
+#              options; Veusz 4.2.1 loads and renders broken axes from
+#              xy_page / grid_page / time_pair_pages); Python 3.8, 3.12 and
+#              3.13.
+# %%%%% Function Descriptions
+        epoch_to_veusz: Unix epoch seconds -> Veusz date value (seconds since 2009-01-01).
+        local_utc_offsets: Local UTC offset in seconds for every timestamp, DST-aware.
+        _hour_offsets: UTC offset (s) at the middle of each UTC hour number in ``hours``.
+        vz_text: Escape Veusz text-markup characters so a string prints literally.
+        escape_hdf_name: Escape a dataset name for use as an HDF5 member name, as Veusz does.
+        widget_name: Any text -> a valid Veusz widget name (0.0.25).
+        unique_widget_name: ``name``, or ``name_2``, ``name_3`` ...
+        header_notes: Page notes text from a source-file header (0.0.25).
+        set_notes: Set the notes of the current widget (a page) when ``notes`` is not empty.
+        VszDoc (class): Builder for the Veusz command script stored in the document.
+        VeuszWriter (class): Write Veusz datasets and a document script to a .vszh5 file.
+        _default_file_mode: Mode a new file would get from open(): 0o666 minus the process umask.
+        _one_dimensional: ``values`` as a contiguous float64 1-D array, or ValueError (0.0.23).
+        _create_resizable_1d: Create ``group[key]``: a chunked, resizable, uncompressed float64 array.
+        _is_regular: True when the spacing of ``values`` is constant (relative 1e-6).
+        _image_axis: Choose and check the stored form of one image axis (see dataset_2d).
+        Trace (class): One line or marker series (Veusz 'xy' widget) for xy_page().
+        add_title: Centred title label near the top of the current page.
+        title_settings: Settings of add_title()'s page title label (0.0.26: shared with the widget-tree builders, same values and order as before).
+        _distance_cm: A physical Veusz distance ("15cm", "6in", "20pt") in cm; None otherwise.
+        _graph_name: (0.0.25) Explicit name, else "g_<y>" for one trace, else "g_<page>".
+        _open_page_and_graph: Add a page (sized, with notes), its title and a graph; leave the graph current.
+        _add_axes: The x and y axes of the current graph, with labels, scales and limits.
+        xy_page: A page with one graph of line/marker traces; returns the graph name.
+        _add_traces: Add the xy widgets of ``traces`` to the current graph (0.0.25: named after Trace.name or the y dataset, unique in the graph); returns the names.
+        _trace_settings: Settings of the xy widget that draws ``trace`` (relative paths, in the order Veusz receives them); shared by _add_traces and smith_graph_spec (0.0....
+        _add_key: Legend in the current graph: True, False or "auto" (more than one label).
+        image_page: A page with a 2-D dataset drawn as an image, and a colour bar; returns the graph name.
+        Panel (class): One graph of grid_page(): traces, axes and a small title (0.0.12).
+        grid_page: A page with several graphs in a Veusz grid (rows filled left to right).
+        linear_power_mean_dbm: Equal-weight power mean of finite dBm samples, returned in dBm.
+        frequency_ghz_text: Scale decimal Hz to GHz without coarse rounding/name collisions.
+        frequency_time_pages: Append one page per frequency and a combined page; preserve all raw data.
+        mjd_to_epoch: UTC Modified Julian Date (days) -> Unix epoch seconds.
+        mjd_to_veusz: UTC MJD -> Veusz date seconds; ``offset_s`` shifts to a local clock.
+        iso_offset_text: UTC offset in seconds -> ISO-8601 "+HH:MM" / "-HH:MM" (e.g.
+        _zone_from_text: "UTC"/"Z", "+HH:MM", "-5", "UTC-05:00" or an IANA name -> tzinfo.
+        iana_zone: An IANA zone ("America/New_York") as a tzinfo on every Python (0.0.27).
+        display_zone: Zone for local date-time axes (0.0.25): VSZH5_DISPLAY_TZ when set, else ``default`` (None = the time zone of this computer).
+        _zone_offsets: Per-sample UTC offset (s) in ``zone`` (None = VSZH5_DISPLAY_TZ, else this computer's zone).
+        LocalTimeAxis (class): A local wall-clock date axis for Veusz (0.0.24), see local_time_axis().
+        _offset_change_instant: First whole UTC minute in (before, after] whose offset is ``offset_after`` (bisection; the zone changes offset once between two samples) (0.0.27).
+        local_time_axis: Veusz date values and an ISO-8601 tick format on a local clock.
+        veusz_to_epoch: Veusz date seconds (since 2009-01-01, UTC) -> Unix epoch seconds (0.0.25).
+        local_time_from_veusz: local_time_axis() for UTC values already in Veusz date seconds (0.0.25).
+        style_datetime_axis: Make ``axis`` (path from the current widget, e.g.
+        iso_local_strings: ISO-8601 local date-times with offsets, e.g.
+        _exact_wall_text: (0.0.29) ISO text (no offset suffix) of an exact wall-clock time in Unix-style seconds (Decimal).
+        mjd_iso_local_strings: (0.0.29) ISO-8601 local date-times of UTC MJD values, every digit kept.
+        with_x: The same traces drawn against another x dataset (0.0.24).
+        time_pair_pages: Two xy pages from one set of traces: against MJD and against local time.
+        median_step: Median of the positive, finite steps of ``t`` (0.0 when there is none).
+        gap_threshold: Line-break threshold in the units of ``t``: ``manual`` when > 0, else ``k * median_step(t)`` (0.0 = no threshold, e.g.
+        gap_positions: Insertion indices of the gap rows: ``i + 1`` for every step ``t[i+1] - t[i] > threshold``.
+        insert_gaps: ``values`` (float) with a NaN inserted before each of ``positions`` (from gap_positions); the input is not changed.
+        axis_break_pairs: (start, end) intervals to leave out of a broken axis.
+        GapRule (class): What a gap in a plotted series does (0.0.30); see the section above.
+        rule_gap_positions: Gap-row positions of one trace under ``rule`` (0.0.30): gap_positions() of its small-gap threshold, kept only where the step is also large on a log scale when the rule is geometric; empty when break_lines is off.
+        rule_axis_break_pairs: Axis-break intervals of one x axis shared by ``series`` (the x values of each trace) under ``rule`` (0.0.30); [] when break_axis is off.
+        break_points: Veusz axis-broken ``breakPoints``: the pairs as one flat list.
+        gap_plan: Gap rows of every trace and the break points of their shared x axis (0.0.30), in one call.
+        local_veusz_exact: Local wall-clock Veusz date values of UTC Veusz date values, as one addition: UTC + the offsets of ``axis`` (0.0.30).
+        gamma_from_impedance: Reflection coefficient Gamma = (Z - Z0) / (Z + Z0) (complex array).
+        impedance_from_gamma: Impedance Z = Z0 (1 + Gamma) / (1 - Gamma); Gamma = 1 gives inf.
+        vswr_from_gamma: VSWR = (1 + |Gamma|) / (1 - |Gamma|); inf for |Gamma| >= 1.
+        _joined: Concatenate (x, y) curves with a NaN point between them (Veusz breaks an xy line at NaN, nanHandling 'break-on', its default).
+        SmithGrid (class): Datasets and widget specifications of a Smith-chart grid (0.0.26).
+        _grid_line_settings: xy settings of a grid line family: no markers, no legend entry.
+        _grid_label_settings: xy settings that print a text dataset at points (no line, no marker).
+        smith_grid: The grid of a Smith chart as Veusz datasets and xy widget settings.
+        smith_trace_datasets: Datasets of one Smith trace: "<stem>_re", "<stem>_im" and, when given, "<stem>_freq_Hz" (read by the suite's interactive Smith plot).
+        smith_trace: Trace of Im(Gamma) against Re(Gamma) for the datasets of smith_trace_datasets(stem, ...); keyword arguments go to Trace.
+        smith_has_key: True when a Smith graph gets a legend: key=True, or "auto" with more than one labelled trace (as xy_page).
+        smith_graph_spec: Settings of a Smith graph and its children, for any Veusz builder.
+        smith_page_layout: (page width, page height, graph top margin) of a Smith page: the chart about ``size`` across, 1 cm more height for the title, ``key_width`` more wi...
+        smith_page: A page with one Smith chart; returns the graph name (0.0.26).
+        text_page: Pages of plain text lines (escaped; monospaced by default) (0.0.12).
+        step_mask: (x, y) arrays of a stepped mask: one flat segment per band.
+        reference_line: (x, y) arrays of a straight threshold or marker line.
+        bar_page: A page with a vertical category bar chart (0.0.14); returns the graph name.
+        _reduce_axis: Reduce ``values`` along ``axis`` in groups of ``factor`` (see block_reduce).
+        _reduce_groups: Collapse ``axis`` of a grouped array with ``method``.
+        block_reduce: Decimate a 2-D array in blocks of ``row_factor`` x ``column_factor``.
+        regularize_rows: Image rows with (possibly uneven) centres -> an even grid for drawing.
+        dataset_names: Names of the datasets stored in a .vszh5 document (unescaped, sorted).
+        read_text_dataset: The strings of a text dataset written by dataset_text(), or None if absent.
+        page_names: Names of the pages of a written document, in page order (0.0.13).
+        AppendLockedError (class): The document is locked by another process (HDF5 file locking).
+        _is_lock_error: True for HDF5's "unable to lock file" open failure (any platform).
+        VeuszAppender (class): Grow an existing .vszh5 document in place, a few rows at a time.
+        _decode: bytes or numpy bytes -> str (UTF-8); anything else -> str().
+        find_veusz_exe: Locate the Veusz program: explicit path, env var, PATH, usual folders.
+        _popen_kwargs: Hide the console window of child processes on Windows.
+        _render_script: The script piped into `veusz --listen`.
+        _outline_parts: Split an outline entry into (title, page, children).
+        add_pdf_bookmarks: Write a bookmark (outline) hierarchy into an existing PDF, in place.
+        render_pages: Render a .vszh5 to one multipage PDF and per-page PNG files.
+        _page_names_from_log: Veusz page names from the VSZH5_PAGES line the render script prints.
+        _run_listen: Pipe a script into `veusz --listen --quiet` and wait for the marker.
+        _render_in_process: Fallback: render with the veusz Python package in this process.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VSZH5_FORMAT: Highest document format the Veusz 3.6 and 4.2 loaders accept.
+        VSZH5_LAYOUT_VERSION: Veusz release whose HDF5 layout this writer follows (written as vsz_version).
+        COMPRESS_MIN_ELEMENTS: Arrays at least this long are gzip+shuffle compressed when compress=True.
+        _VLEN_BYTES: text datasets
+        APPEND_CHUNK_ELEMENTS: (0.0.18) Rows per chunk of a resizable (appendable) 1-D or date dataset: : 1024 float64 = 8 KiB, at the low end of the 10 KiB - 1 MiB range h5py :...
+        PDF_DPI: Resolution passed to Veusz's Export() for PDF. Veusz 4.x lays a PDF page : out at the nearest resolution the Qt PDF engine supports (72) but sets t...
+        VEUSZ_EPOCH: Veusz date origin, and the offset that maps Unix seconds onto it.
+        UNIX_TO_VEUSZ_S: -1230768000
+        _HOUR_OFFSET_CACHE: 0.0.28: UTC offset of each whole UTC hour, per zone, kept between calls. A project with thousands of time traces asked the zone database for the sa...
+        _HOUR_OFFSET_CACHE_MAX: entries (about 114 years of hours)
+        WIDGET_NAME_MAX: Longest widget name the helpers make (Veusz has no limit; long names make : the widget tree and PDF bookmarks hard to read).
+        TRACE_COLOURS: 1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+        _CM_PER_UNIT: Centimetres per unit for the physical Veusz distance units.
+        MJD_UNIX_EPOCH: Modified Julian Date of the Unix epoch, 1970-01-01T00:00:00 UTC.
+        ISO_DATETIME_FORMAT: Veusz tick format of an ISO-8601 date-time without offset (Veusz %VD codes).
+        ISO_TIMESPECS: (0.0.29) timespec values of iso_local_strings(): seconds (default), milliseconds, microseconds, auto, exact.
+        _EXACT: (0.0.29) Decimal context (80 digits) of the exact ISO text.
+        DISPLAY_TZ_ENV: (0.0.25) Environment variable that overrides the computer's time zone for : local date-time axes: "UTC", a fixed offset such as "-05:00" or "+0530"...
+        _FIXED_OFFSET: fixed UTC offset text (-05:00, UTC-05:00, GMT+0100) for VSZH5_DISPLAY_TZ
+        LOCAL_DATETIME_ROTATE: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis; a : 25-character "2026-11-09T08:39:00-05:00" label needs it.
+        GAP_K: Default line-break multiplier K (gap when dt > K * median(dt)).
+        GAP_AXIS_N: Default axis-break multiple n (axis cut when dt > n * K * median(dt)); 0 = never.
+        GAP_AXIS_MARGIN: Fraction of a gap kept visible at each side of an axis break.
+        SMITH_RESISTANCES: Normalized resistance (conductance) circles and reactance (susceptance) : arcs drawn by default - the values of scikit-rf's and the Plots tab's chart.
+        SMITH_REACTANCES: normalised reactances of the Smith grid arcs
+        SMITH_VSWR: VSWR circles of scikit-rf's draw_vswr=True.
+        SMITH_GRID_COLOUR: a6a6a6"
+        SMITH_FRAME_COLOUR: 4d4d4d"
+        SMITH_LABEL_COLOUR: 595959"
+        SMITH_LIMIT: Half-width of the Re/Im Gamma axes: room outside |Gamma| = 1 for labels.
+        SMITH_NOTES_PREFIX: First words of the notes of every Smith graph (how readers recognise one).
+        VEUSZ_LINE_BREAK: Veusz text markup for a line break (two backslashes in the label text).
+        REDUCE_METHODS: Methods of block_reduce().
+        APPEND_META_GROUP: Top-level HDF5 group for the appender's private bookkeeping (e.g. a logger's : column index). Veusz reads only /Veusz [R1: loader.loadHDF5Doc], so...
+# %%%%% More Info
+    Master copy: RF project document claude/vszh5_writer.py (registry
+    claude/vszh5-writer-registry.md).  Needs numpy and h5py; Veusz only to open
+    or render; pypdf only for PDF bookmarks; on Python 3.8 backports.zoneinfo
+    or python-dateutil for IANA zone names (VSZH5_DISPLAY_TZ=America/New_York).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md of FitsAutoPlot (mamba:
+    environment-py38.yml, environment-py312.yml).  Release notes: RF project
+    claude/vszh5-writer-0.0.30-notes.md (0.0.29: claude/vszh5-writer-0.0.29-notes.md).
 # %%%% 0.0.29: MHM2010 / T4 Maser Timing Workbench 0.2.4 ("in all exports,
 Date: 2026-11-10
 #              all floats or numbers should never be rounded or trimmed"),
@@ -1273,7 +1472,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.29"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.30"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -2015,13 +2214,23 @@ def _open_page_and_graph(doc: VszDoc, page: str, title: str, width: str, height:
 
 def _add_axes(doc: VszDoc, xlabel: str, ylabel: str, xlog: bool, ylog: bool,
               xmin: Any, xmax: Any, ymin: Any, ymax: Any, xmode: str, escape: bool,
-              x_autorange: str = "next-tick", y_autorange: str = "next-tick") -> None:
+              x_autorange: str = "next-tick", y_autorange: str = "next-tick",
+              x_breaks: Sequence[float] = ()) -> None:
     """The x and y axes of the current graph, with labels, scales and limits.
 
     ``x_autorange``/``y_autorange`` are Veusz autoRange values used when the
     limit is "Auto": "next-tick" (Veusz default), "exact", "+5%", ...
+    ``x_breaks`` (0.0.30): flat (start, stop, start, stop, ...) intervals to
+    leave out; non-empty makes x a Veusz "axis-broken" axis.
     """
-    doc.add("axis", "x")
+    breaks = [float(value) for value in x_breaks]
+    if len(breaks) % 2:
+        raise ValueError("x_breaks needs (start, stop) pairs; got %d values" % len(breaks))
+    if breaks:
+        doc.add("axis-broken", "x")
+        doc.set("x/breakPoints", breaks)
+    else:
+        doc.add("axis", "x")
     doc.add("axis", "y")
     doc.set("y/direction", "vertical")
     doc.set("x/label", vz_text(xlabel) if escape else xlabel)
@@ -2044,7 +2253,8 @@ def xy_page(doc: VszDoc, page: str, traces: Sequence[Trace], title: str = "",
             key_position: tuple[str, str] = ("right", "top"),
             width: str = "25cm", height: str = "15cm", left_margin: str = "2.2cm",
             top_margin: str = "1.4cm", escape: bool = True,
-            datetime_format: str = "", graph_name: str = "", notes: Any = "") -> str:
+            datetime_format: str = "", graph_name: str = "", notes: Any = "",
+            x_breaks: Sequence[float] = ()) -> str:
     """A page with one graph of line/marker traces; returns the graph name.
 
     Parameters
@@ -2084,13 +2294,16 @@ def xy_page(doc: VszDoc, page: str, traces: Sequence[Trace], title: str = "",
         "g_<page>" ("graph" reproduces 0.0.24).
     notes:
         (0.0.25) Page notes, e.g. header_notes(source-file header).
+    x_breaks:
+        (0.0.30) Intervals left out of a broken x axis, flat (start, stop,
+        ...) in x units, e.g. gap_plan()[1]; empty = one continuous axis.
     """
     graph = _graph_name(graph_name, page, traces)
     _open_page_and_graph(doc, page, title, width, height,
                          {"leftMargin": left_margin, "topMargin": top_margin}, escape,
                          graph=graph, notes=notes)
     _add_axes(doc, xlabel, ylabel, xlog, ylog, xmin, xmax, ymin, ymax, xmode, escape,
-              x_autorange, y_autorange)
+              x_autorange, y_autorange, x_breaks=x_breaks)
     if xmode == "datetime" and datetime_format:
         doc.set("x/TickLabels/format", datetime_format)
     _add_traces(doc, traces, escape)
@@ -2273,6 +2486,7 @@ class Panel:
     key: Any = "auto"
     datetime_format: str = ""                    # 0.0.24: datetime x tick format
     name: str = ""                               # 0.0.25: graph name ("g_<first y>")
+    x_breaks: Sequence[float] = ()               # 0.0.30: broken x axis (gap_plan)
 
 
 def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", columns: int = 2,
@@ -2314,7 +2528,8 @@ def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", 
                             ("topMargin", "0.7cm"), ("bottomMargin", "1.3cm")):
             doc.set(side, value)
         _add_axes(doc, panel.xlabel, panel.ylabel, panel.xlog, panel.ylog, panel.xmin, panel.xmax,
-                  panel.ymin, panel.ymax, panel.xmode, escape, panel.x_autorange)
+                  panel.ymin, panel.ymax, panel.xmode, escape, panel.x_autorange,
+                  x_breaks=panel.x_breaks)
         if panel.xmode == "datetime" and panel.datetime_format:     # 0.0.24
             doc.set("x/TickLabels/format", panel.datetime_format)
         _add_traces(doc, panel.traces, escape)
@@ -2790,21 +3005,25 @@ def with_x(traces: Sequence[Trace], x: str) -> list[Trace]:
 
 def time_pair_pages(doc: VszDoc, page: str, traces: Sequence[Trace], mjd_x: str, local_x: str,
                     local_axis: LocalTimeAxis, title: str = "", ylabel: str = "",
-                    mjd_label: str = "MJD (UTC)", **xy_kwargs: Any) -> list[str]:
+                    mjd_label: str = "MJD (UTC)", mjd_breaks: Sequence[float] = (),
+                    local_breaks: Sequence[float] = (), **xy_kwargs: Any) -> list[str]:
     """Two xy pages from one set of traces: against MJD and against local time.
 
     ``mjd_x`` is a numeric dataset of MJD values; ``local_x`` a date dataset
     written from ``local_axis.veusz_seconds``. The trace x names are replaced
     per page. Returns ["<page>_mjd", "<page>_local"]. Extra keyword arguments
     go to xy_page() (xmode/datetime_format are set here).
+    (0.0.30) ``mjd_breaks`` / ``local_breaks``: x-axis breaks of each page
+    in its own units (MJD days / Veusz date seconds), e.g. from gap_plan().
     """
-    for key in ("xmode", "datetime_format", "xlabel"):
+    for key in ("xmode", "datetime_format", "xlabel", "x_breaks"):
         xy_kwargs.pop(key, None)
     xy_page(doc, page + "_mjd", with_x(traces, mjd_x), title=title, xlabel=mjd_label,
-            ylabel=ylabel, **xy_kwargs)
+            ylabel=ylabel, x_breaks=mjd_breaks, **xy_kwargs)
     xy_kwargs.setdefault("x_autorange", "exact")
     xy_page(doc, page + "_local", with_x(traces, local_x), title=title, xlabel=local_axis.label,
-            ylabel=ylabel, xmode="datetime", datetime_format=local_axis.datetime_format, **xy_kwargs)
+            ylabel=ylabel, xmode="datetime", datetime_format=local_axis.datetime_format,
+            x_breaks=local_breaks, **xy_kwargs)
     return [page + "_mjd", page + "_local"]
 
 
@@ -2885,7 +3104,8 @@ def insert_gaps(values: Any, positions: Any) -> np.ndarray:
 
 
 def axis_break_pairs(t: Any, threshold: float,
-                     margin: float = GAP_AXIS_MARGIN) -> list[tuple[float, float]]:
+                     margin: float = GAP_AXIS_MARGIN,
+                     log_threshold: float = 0.0) -> list[tuple[float, float]]:
     """(start, end) intervals to leave out of a broken axis.
 
     ``t`` holds the x values of every trace on the axis (any order, NaN
@@ -2895,6 +3115,10 @@ def axis_break_pairs(t: Any, threshold: float,
     0.0.27: the shrink is relative to the gap; an absolute 1e-9 x |t| (the
     FitsAutoPlot rule before) is about 5 s at MJD 61000, which swallowed
     short gaps on MJD axes.
+    0.0.30: ``log_threshold`` > 0 (natural-log units) also requires
+    log(stop / start) > log_threshold, so the long steps at the top of a
+    log-spaced frequency sweep are not cut out (only when every value is
+    positive; the default 0 keeps the 0.0.27 result).
     """
     if not threshold or threshold <= 0.0:
         return []
@@ -2903,12 +3127,200 @@ def axis_break_pairs(t: Any, threshold: float,
     if values.size < 2:
         return []
     steps = np.diff(values)
+    large = steps > threshold
+    if log_threshold and log_threshold > 0.0 and values[0] > 0.0:
+        large &= np.diff(np.log(values)) > float(log_threshold)
     pairs = []
-    for index in np.flatnonzero(steps > threshold):
+    for index in np.flatnonzero(large):
         start, stop = float(values[index]), float(values[index + 1])
         pad = float(margin) * (stop - start)
         pairs.append((start + pad, stop - pad))
     return pairs
+
+
+# %% ===========================================================================
+#    GAP OPTIONS FOR ANY PLOTTED SERIES (0.0.30)
+# =============================================================================
+# The 0.0.27 rule, with the two consequences of a gap made optional and the
+# rule usable for any sorted x - time, frequency, angle, index:
+#
+#   line break (small gap):  dx_i > tau = K * median(dx)  (or a fixed tau)
+#   axis break (large gap):  no trace has data for dx > tau_axis
+#                            tau_axis = n * max_j(tau_j)  (or a fixed one,
+#                            never below max_j(tau_j))
+#
+# break_lines=False draws the line across every gap (no NaN rows);
+# break_axis=False (or n = 0 with no fixed large gap) keeps one continuous
+# axis. Either can be used alone: a break in the axis with the line drawn
+# across it, or broken lines on a continuous axis, or both, or neither.
+#
+# geometric=True adds a second test for positive x: the step must also be
+# large on a logarithmic scale,
+#
+#   ln(x_{i+1} / x_i) > K * median(ln(x_{j+1} / x_j)),
+#
+# so a log-spaced sweep (equal ratios, growing steps) has no gaps while a
+# real hole in a linear or a log sweep is found on both scales. For time
+# axes (values far from zero) the second test changes nothing and is left
+# off; programs turn it on for non-time axes.
+
+
+@dataclass(frozen=True)
+class GapRule:
+    """What a gap in a plotted series does (0.0.30); see the section above.
+
+    Attributes
+    ----------
+    k:
+        Small-gap multiplier K: a trace's line breaks where its step
+        exceeds K x its median step (default GAP_K).
+    n:
+        Large-gap multiple n: the x axis breaks where no trace has data for
+        longer than n x the largest small-gap threshold; 0 = never.
+    manual:
+        Fixed small gap in the units of x (> 0 replaces K x median).
+    axis_manual:
+        Fixed large gap in the units of x (> 0 replaces n; never below the
+        small-gap threshold).
+    break_lines:
+        True: NaN rows at small gaps (the line stops and restarts).
+    break_axis:
+        True: Veusz axis-broken x axis at large gaps.
+    geometric:
+        True: a step must also be large on a log scale (positive x only).
+    margin:
+        Fraction of a gap kept visible at each side of an axis break.
+    """
+    k: float = GAP_K
+    n: float = GAP_AXIS_N
+    manual: float = 0.0
+    axis_manual: float = 0.0
+    break_lines: bool = True
+    break_axis: bool = True
+    geometric: bool = False
+    margin: float = GAP_AXIS_MARGIN
+
+    def line_threshold(self, t: Any) -> float:
+        """Small-gap threshold of one trace in the units of ``t`` (0.0 = none)."""
+        return gap_threshold(t, self.k, self.manual)
+
+    def log_threshold(self, t: Any) -> float:
+        """Small-gap threshold of ln(t) (0.0 when geometric is off, a fixed
+        small gap is set, or some value is not positive)."""
+        if not self.geometric or (self.manual and self.manual > 0.0):
+            return 0.0
+        values = np.asarray(t, dtype=float).ravel()
+        values = values[np.isfinite(values)]
+        if values.size < 2 or np.any(values <= 0.0):
+            return 0.0
+        return gap_threshold(np.log(values), self.k, 0.0)
+
+    def axis_threshold(self, line_threshold: float) -> float:
+        """Large-gap threshold for an axis whose largest small-gap threshold
+        is ``line_threshold``; 0.0 = no axis breaks."""
+        if not self.break_axis:
+            return 0.0
+        if self.axis_manual and self.axis_manual > 0.0:
+            return max(float(self.axis_manual), float(line_threshold))
+        if self.n > 0.0 and line_threshold > 0.0:
+            return max(float(self.n), 1.0) * float(line_threshold)
+        return 0.0
+
+    def axis_log_threshold(self, log_threshold: float) -> float:
+        """Large-gap threshold of ln(x) (0.0 = no log condition)."""
+        if (not self.break_axis or log_threshold <= 0.0
+                or (self.axis_manual and self.axis_manual > 0.0) or self.n <= 0.0):
+            return 0.0
+        return max(float(self.n), 1.0) * float(log_threshold)
+
+    def describe(self, unit: str = "") -> str:
+        """One line for graph notes, every number exact (repr)."""
+        def number(value: float) -> str:
+            """``value`` with every digit (repr), without a trailing '.0'."""
+            text = repr(float(value))
+            return text[:-2] if text.endswith(".0") else text
+        suffix = (" " + unit) if unit else ""
+        scale = " (and on a log scale)" if self.geometric else ""
+        if not self.break_lines:
+            line = "lines drawn across gaps"
+        elif self.manual and self.manual > 0.0:
+            line = "line break where dx > %s%s" % (number(self.manual), suffix)
+        else:
+            line = "line break where dx > %s x median(dx)%s" % (number(self.k), scale)
+        if not self.break_axis:
+            axis = "no x-axis breaks"
+        elif self.axis_manual and self.axis_manual > 0.0:
+            axis = "x-axis break where no data for dx > %s%s" % (number(self.axis_manual), suffix)
+        elif self.n > 0.0:
+            axis = "x-axis break where no data for dx > %s x the small-gap threshold%s" % (
+                number(self.n), scale)
+        else:
+            axis = "no x-axis breaks"
+        return "Gaps: %s; %s." % (line, axis)
+
+
+def rule_gap_positions(t: Any, rule: GapRule) -> np.ndarray:
+    """Gap-row positions of one trace under ``rule`` (0.0.30): gap_positions()
+    of its small-gap threshold, kept only where the step is also large on a
+    log scale when the rule is geometric; empty when break_lines is off."""
+    if not rule.break_lines:
+        return np.zeros(0, dtype=np.int64)
+    values = np.asarray(t, dtype=float).ravel()
+    cut = gap_positions(values, rule.line_threshold(values))
+    log_limit = rule.log_threshold(values)
+    if cut.size and log_limit > 0.0:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_steps = np.log(values[cut]) - np.log(values[cut - 1])
+        cut = cut[log_steps > log_limit]
+    return cut
+
+
+def rule_axis_break_pairs(series: Sequence[Any], rule: GapRule) -> list[tuple[float, float]]:
+    """Axis-break intervals of one x axis shared by ``series`` (the x values
+    of each trace) under ``rule`` (0.0.30); [] when break_axis is off."""
+    arrays = [np.asarray(s, dtype=float).ravel() for s in series]
+    arrays = [a for a in arrays if a.size]
+    if not arrays or not rule.break_axis:
+        return []
+    line = max(rule.line_threshold(a) for a in arrays)
+    logs = [rule.log_threshold(a) for a in arrays]
+    log_limit = rule.axis_log_threshold(max(logs)) if all(v > 0.0 for v in logs) else 0.0
+    return axis_break_pairs(np.concatenate(arrays), rule.axis_threshold(line), rule.margin,
+                            log_threshold=log_limit)
+
+
+def break_points(pairs: Sequence[tuple[float, float]]) -> list[float]:
+    """Veusz axis-broken ``breakPoints``: the pairs as one flat list."""
+    return [float(value) for pair in pairs for value in pair]
+
+
+def gap_plan(x_series: Sequence[Any], rule: GapRule = GapRule()) -> tuple[list[np.ndarray], list[float]]:
+    """Gap rows of every trace and the break points of their shared x axis
+    (0.0.30), in one call.
+
+    Returns (positions, x_breaks): ``positions[j]`` for insert_gaps() on the
+    x and y of trace j (empty when its line stays whole), and ``x_breaks``
+    for xy_page(x_breaks=) / Panel.x_breaks (empty = continuous axis).
+
+        positions, x_breaks = gap_plan([t1, t2], GapRule(n=0))
+        w.dataset_1d("t1_gaps", insert_gaps(t1, positions[0]))
+        w.dataset_1d("v1_gaps", insert_gaps(v1, positions[0]))
+    """
+    positions = [rule_gap_positions(x, rule) for x in x_series]
+    return positions, break_points(rule_axis_break_pairs(x_series, rule))
+
+
+def local_veusz_exact(veusz_utc: Any, axis: LocalTimeAxis) -> np.ndarray:
+    """Local wall-clock Veusz date values of UTC Veusz date values, as one
+    addition: UTC + the offsets of ``axis`` (0.0.30).
+
+    ``axis.veusz_seconds`` (local_time_from_veusz) goes through Unix epoch
+    seconds (about 1.8e9 s, float64 steps of 2.4e-7 s) and back, which moves
+    fractions of a second by up to about 1.2e-7 s; this sum keeps every
+    digit Veusz date values hold (steps of 6e-8 s near 2026). Whole
+    seconds are identical either way; NaN stays NaN.
+    """
+    return np.asarray(veusz_utc, dtype=float) + np.asarray(axis.offsets_s, dtype=float)
 
 
 # %% ===========================================================================

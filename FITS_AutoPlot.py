@@ -26,6 +26,74 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.3: Gap options: break the lines, break the x axis, either or both.
+Date: 2026-11-16
+#              * Processing tab, gap controls (_autoplot_common 0.4.3): "Break
+#                the line / trace at small gaps" and "Break the x axis at
+#                large gaps" are separate check boxes; "Also on x axes that
+#                are not time" applies the rule to sorted numeric x axes.
+#                The options reach the saved project, its graph notes and
+#                the Plots tab (_autoplot_native 0.5.3, _autoplot_pyqtgraph
+#                0.3.3, vszh5_writer 0.0.30).
+#              Checked on GBT data: 30 days (319 files, 40 195 datasets):
+#              defaults 2 broken axes (4 breaks) and 200 line-break copies;
+#              lines off 0 copies, the 2 axis breaks kept; axis off no broken
+#              axis, 200 copies; both off neither.  UWBR Temps (15 files):
+#              27 copies, no axis break at n = 100.
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        file_source_word: Source of a file's datasets for the ``source_*`` tag (0.4.2): the file name without its FITS extensions (data["base_name"] when present).
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Cross-file unit-overlay pages (see _build_unit_overlay_pages_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_unit_overlay_pages_body: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.3"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.2: Traces named after their data; source_/type_ tags; nothing cut.
 Date: 2026-11-10
 #              * Every dataset of a file is tagged source_<file> and
@@ -668,7 +736,7 @@ from astropy.table import QTable
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.4.3"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
