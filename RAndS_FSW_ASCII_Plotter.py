@@ -67,6 +67,74 @@ as one trace per y column.
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 1.1.6: Clear clears everything; added files keep the sweeps already read.
+Date: 2026-11-16
+#              * Clear removes the files, the sweeps read, the project (Save is
+#                disabled) and the Plots tab, then gives the memory back.
+#                Refused while reading.
+#              * Process reads only new or changed files (KeptReads) and builds
+#                the project from every listed file; a file that failed is
+#                read again next time.
+#              Checked: tests/test_clear_and_add.py (all at once == first
+#              half, then the second added; Clear leaves no project, plots,
+#              kept data or cache; the cleared files are not in the next
+#              project) on Python 3.8, 3.12 and 3.13.
+# %%%%% Function Descriptions
+        SFTFormatError (class): The file holds no trace this program can read.
+        SFTTrace (class): One sweep (section) of an R&S SFT file: its number, the instrument time stamp text and the trace values.
+        SFTFile (class): A parsed R&S FSP/FSW ASCII trace file (.sft).
+        _header: Parse the 'key;value;unit' header lines of an SFT file.
+        parse_sweep_time: FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime.
+        _float: float(text), or ``default`` (NaN) when text is not a number.
+        _text_tokens: Tokens of a section that is ASCII text but not numbers (1.1.4), or [] for a block that is not ASCII text.
+        _ascii_values: Values of an ASCII section, or None when the block is not ASCII numbers.
+        parse_sft_bytes: Parse one .sft file (see the file layout in the module header).
+        read_sft: Read and parse one SFT file (bytes, any encoding the parser accepts).
+        _read_worker: Process-pool worker: (path, SFTFile or None, error text).
+        read_files: Read in input order (a 'spawn' process pool when it pays off); (files, errors).
+        power_mean: Average of traces (rows) in their unit.
+        PlotOptions (class): Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and overlay, 2 = average only; ``use_gpu`` allows the GPU (NVIDIA or AMD) for...
+        RnSPlotter (class): Builds the project of a batch of .sft files.
+        build_project: RnSPlotter with every file of ``files`` added and finished.
+        batches: Split whole files into groups of at most ``plots_per_file`` sections (a file with more sections than that is a group of its own).
+        save_split: Write {base}_001.vszh5, {base}_002.vszh5 ...
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "R&S FSW / FSP Trace Plotter"
+        APP_VERSION = "1.1.6"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        MODE_NAMES: plot mode names (0 all, 1 average + overlay, 2 average only)
+        _SECTION: the 'Section<n>;<time stamp>' line that starts each sweep (bytes)
+        _NUMBER: one numeric token (inf, infinity and nan included)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python RAndS_FSW_ASCII_Plotter.py [files]   (GUI; View menu)
+          python RAndS_FSW_ASCII_Plotter.py *.sft --output rns.vszh5 [--split N]
+    Sweep averages are taken in the linear domain (10 log10 of the mean of
+    10^(P/10)); --gpu allows the GPU (NVIDIA or AMD, _autoplot_gpu) for
+    large stacks.  Files are read in a 'spawn' process pool when it pays off.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data; sections that are text or do not line up with
+    x are kept (_Section<n>_text, _Section<n>_unaligned).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 1.1.5: Gap options (line breaks, x-axis breaks) in the GUI and batch mode.
 Date: 2026-11-16
 #              * "Gaps" box (_suite_gui.GapOptionsBox) under the plot mode;
@@ -376,7 +444,7 @@ import _autoplot_gpu  # noqa: E402  (1.1.3: NVIDIA or AMD GPU, NumPy fallback)
 from _autoplot_native import exact_number_text, tag_data, trace_widget_name  # noqa: E402
 
 APP_NAME = "R&S FSW / FSP Trace Plotter"
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.1.6"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Rohde & Schwarz .sft trace files to native Veusz .vszh5 projects, "
                    "with averages and interactive pyqtgraph plots.")
@@ -1024,10 +1092,14 @@ def _build_gui_classes():
             self.plotter: Optional[RnSPlotter] = None
             self.last_saved: Optional[str] = None
             self.thread: Optional[FileProcessingThread] = None
+            # 1.1.6: sweeps read from the listed files, kept until Clear
+            from _autoplot_native import KeptReads
+            self.kept = KeptReads()
+            self._reading: List[str] = []
             self.theme = suite.apply_theme(suite.saved_theme(), persist=False)
             suite.add_file_menu(self, [
                 ("&Add SFT Files...", self._browse_files, "Ctrl+O"),
-                ("&Clear File List", self._clear_files, ""),
+                ("&Clear Files and Data", self._clear_files, ""),
                 ("&Process and Plot", self._process_and_plot, "F5"),
                 ("&Save Veusz Project (.vszh5)...", self._save_project, "Ctrl+S"),
                 ("Open Last Project in &Veusz", self._open_in_veusz, ""),
@@ -1060,8 +1132,7 @@ def _build_gui_classes():
             for text, slot, tip in (
                     ("Browse Files", self._browse_files,
                      "Add R&S FSP/FSW ASCII trace files (.sft) to the list."),
-                    ("Clear Files", self._clear_files,
-                     "Remove every file from the list (the files are not touched).")):
+                    ("Clear Files", self._clear_files, suite.CLEAR_TOOLTIP)):
                 button = QPushButton(text)
                 button.setToolTip(tip)
                 button.clicked.connect(slot)
@@ -1223,10 +1294,30 @@ def _build_gui_classes():
                 self._log_message("Added %d file(s)" % len(new))
 
         def _clear_files(self) -> None:
-            """Empty the file list."""
+            """Clear (1.1.6): the file list, the sweeps read from it, the project
+            (nothing cleared can be saved later) and the Plots tab; then the
+            memory goes back to the operating system.  Refused while reading.
+            """
+            if self.thread is not None and self.thread.isRunning():
+                QMessageBox.information(self, APP_NAME, "Wait for the files to be read, then Clear.")
+                return
+            count = len(self.selected_files)
             self.selected_files.clear()
             self.file_list_widget.clear()
-            self._log_message("File list cleared")
+            self.kept.clear()
+            self.files = []
+            self._drop_project()
+            self.save_button.setEnabled(False)
+            suite.release_after_clear(self._log_message)
+            self._log_message("Cleared %d file(s): file list, sweeps, project and plots" % count)
+
+        def _drop_project(self) -> None:
+            """Forget the project and empty the Plots tab."""
+            if self.plot_panel is not None:
+                self.plot_panel.clear()
+            plotter, self.plotter = self.plotter, None
+            if plotter is not None:
+                plotter.doc.release()
 
         # ----- processing -------------------------------------------------------
         def _process_and_plot(self) -> None:
@@ -1236,16 +1327,25 @@ def _build_gui_classes():
                 return
             if self.thread is not None and self.thread.isRunning():
                 return
+            # 1.1.6: only files not read yet (or changed on disk) are read; the
+            # project is built from every listed file
+            self._reading = self.kept.to_read(self.selected_files)
+            if not self._reading:
+                self._log_message("Rebuilding the project from the %d file(s) already read"
+                                  % len(self.kept))
+                self._on_processing_finished([], [])
+                return
             self.plot_button.setEnabled(False)
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
             workers = self.cpu_spinbox.value() if self.enable_mp_checkbox.isChecked() else 1
-            self.thread = FileProcessingThread(self.selected_files, workers)
+            self.thread = FileProcessingThread(self._reading, workers)
             self.thread.progress_updated.connect(self.progress_bar.setValue)
             self.thread.processing_finished.connect(self._on_processing_finished)
             self.thread.start()
-            self._log_message("Processing %d file(s), mode: %s"
-                              % (len(self.selected_files), MODE_NAMES[self.options().mode]))
+            self._log_message("Processing %d file(s) (%d already read), mode: %s"
+                              % (len(self._reading), len(self.selected_files) - len(self._reading),
+                                 MODE_NAMES[self.options().mode]))
 
         def _on_processing_finished(self, files: List[SFTFile], errors: List[str]) -> None:
             """Log errors and warnings, build the project and show it on the Plots
@@ -1255,9 +1355,17 @@ def _build_gui_classes():
             self.plot_button.setEnabled(True)
             for error in errors:
                 self._log_message("FAILED " + error)
+            # 1.1.6: keep what this batch read (a failed file is forgotten and
+            # read again next time), then build from every listed file
+            read = {sft.path: sft for sft in files}
+            for path in self._reading:
+                self.kept.keep(path, read.get(path))
+            self._reading = []
+            files = [sft for _path, sft in self.kept.items(self.selected_files)]
             if not files:
                 QMessageBox.warning(self, APP_NAME, "No file could be read. See the log.")
                 return
+            self._drop_project()
             try:
                 self.plotter = build_project(files, self.options())
             except Exception as exc:

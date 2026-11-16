@@ -33,6 +33,50 @@ Compatible with: Python 3.8+, qtpy (PySide6 preferred; PyQt5/PyQt6 work)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.1.3: release_after_clear() and the Clear tool tip for every program.
+Date: 2026-11-16
+#              * NEW release_after_clear(log): deletes the widgets and threads
+#                given to deleteLater(), then _autoplot_native.release_memory.
+#              * NEW CLEAR_TOOLTIP: what Clear removes, and that added files
+#                join the ones already read.
+# %%%%% Function Descriptions
+        saved_theme: The suite's stored theme ('light' or 'dark').
+        save_theme: Store the suite theme (shared with the launcher).
+        build_palette: Fusion palette for 'light' or 'dark' (the launcher's colours).
+        apply_theme: Fusion style and the theme's palette for the whole application.
+        dialog_stylesheet: Style sheet that themes ONE dialog and its children (plugins in Veusz).
+        add_view_menu: View > Light Mode / Dark Mode (exclusive); returns (light, dark) actions.
+        add_file_menu: File menu: the given (text, slot, shortcut) entries, then Exit (Ctrl+Q).
+        _module_version: ``__version__`` of module ``name``; 'installed' when it has none, 'not installed' when it cannot be imported.
+        about_details: Plain-text runtime details for the About dialog.
+        show_about: Help > About in the suite's common layout.
+        add_help_menu: Help > About <name> and About Qt.
+        make_plot_panel: (widget, panel): the pyqtgraph ProjectPlotPanel, or an explanation label (panel None) when pyqtgraph is missing; processing and saving still work.
+        find_veusz: Veusz program: VEUSZ_EXECUTABLE, then vszh5_writer.find_veusz_exe().
+        export_with_veusz: PDF (one bookmark per page) and per-page PNG files of a saved project, rendered by Veusz through vszh5_writer.render_pages; returns the files.
+        open_in_veusz: Open a saved project in the Veusz program (optional viewer).
+        release_after_clear: Finish a Clear (0.1.3): delete the widgets and threads already given to deleteLater() (the old plots) now, then give the freed memory back to the o...
+        GapOptionsBox (class): "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and Franks AutoPlot.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION = "0.1.3"
+        SUITE_ORG = "NRAO-GBO"
+        SUITE_APP = "GBO Electronics Scientific Plotting Suite"
+        THEME_KEY = "theme"
+        AUTHOR = "William W. Wallace"
+        EMAIL = "wwallace@nrao.edu"
+        COMPANY = "NRAO / Green Bank Observatory (GBO)"
+        LICENCE = "GPL-3.0-or-later"
+        COPYRIGHT = "Copyright (C) 2025-2026 William W. Wallace"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        CLEAR_TOOLTIP: tool tip of every program's Clear button
+# %%%%% More Info
+    Shared by the launcher and every program (theme, menus, About box, Veusz
+    helpers, GapOptionsBox, release_after_clear and CLEAR_TOOLTIP).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.1.2: GapOptionsBox for every plot generator.
 Date: 2026-11-16
 #              * NEW GapOptionsBox (QGroupBox "Gaps"): the FITS / Franks gap
@@ -134,7 +178,7 @@ from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
 
 os.environ.setdefault("QT_API", "pyside6")
 
-from qtpy.QtCore import QSettings, Qt  # noqa: E402
+from qtpy.QtCore import QCoreApplication, QEvent, QSettings, Qt  # noqa: E402
 from qtpy.QtGui import QColor, QKeySequence, QPalette  # noqa: E402
 try:
     from qtpy.QtGui import QAction, QActionGroup  # noqa: E402
@@ -143,7 +187,7 @@ except ImportError:  # pragma: no cover - qtpy 1.x with Qt5
 from qtpy.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFormLayout,  # noqa: E402
                             QGroupBox, QLabel, QLineEdit, QMessageBox)
 
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 __version__ = VERSION
 
 # %% Suite identity (same values as postProcessing_Launcher.py)
@@ -434,6 +478,26 @@ def open_in_veusz(parent: Any, path: str) -> bool:
 
 
 # %% Gap options box (0.1.2): every plot generator
+def release_after_clear(log: Optional[Callable[[str], None]] = None) -> dict:
+    """Finish a Clear (0.1.3): delete the widgets and threads already given
+    to deleteLater() (the old plots) now, then give the freed memory back to
+    the operating system (_autoplot_native.release_memory).  ``log`` gets the
+    RSS before and after; returns release_memory()'s result."""
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    from _autoplot_native import release_memory
+    return release_memory(log)
+
+
+CLEAR_TOOLTIP = ("Remove every file from the list together with its data: the project "
+                 "(nothing cleared is saved later), the Plots tab and the previews; the "
+                 "memory goes back to the operating system.  The files on disk are not "
+                 "touched.  Without Clear, added files are processed together with the "
+                 "ones already read.")
+
+
 class GapOptionsBox(QGroupBox):
     """
     "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and

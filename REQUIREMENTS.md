@@ -1,8 +1,10 @@
 # FitsAutoPlot suite — requirements and tested environments
 
-Revision 0.2.2 (2026-11-16). Applies to the 2026-11-16 suite (FITS / Franks AutoPlot 0.4.3,
-R&S 1.1.5, ATR 0.2.5, CSV/TSV 6.1.4, Touchstone 0.7.4, writer 0.0.30). 0.2.2: no new or changed
-packages for the gap options; 109 unit tests pass on Python 3.8.20, 3.12 and 3.13 (Veusz 4.2.1
+Revision 0.2.3 (2026-11-16). Applies to the 2026-11-16 suite (FITS / Franks AutoPlot 0.4.4,
+R&S 1.1.6, ATR 0.2.6, CSV/TSV 6.1.5, Touchstone 0.7.5, writer 0.0.30). 0.2.3: Clear gives the memory
+back to the operating system with the C library already present (glibc `malloc_trim` on Linux;
+`ucrtbase` / `kernel32` on Windows, through `ctypes`): no new packages; psutil, when installed,
+reads the RSS shown in the log. 0.2.2: no new or changed packages for the gap options; 109 unit tests pass on Python 3.8.20, 3.12 and 3.13 (Veusz 4.2.1
 render checks on 3.13). 0.2.1: mpld3 0.5.10 on
 Python 3.8 (0.5.11 and 0.5.12 call `Axis.get_converter`, which matplotlib 3.7.5 lacks), and the pandas parser note below. 0.2.0 added
 the GPU options for NVIDIA and AMD (section 2.4) and the process-pool rule (section 2.3).

@@ -1,6 +1,6 @@
 # FitsAutoPlot suite 2026-11-09 (full) - manifest
 
-Archive: FitsAutoPlot_suite_0.4.3_2026-11-16.7z. Local commit e6cec31 (not pushed). 537 files, 112.5 MB uncompressed.
+Archive: FitsAutoPlot_suite_0.4.4_2026-11-16.7z. Local commit 733a5f8 (not pushed). 538 files, 112.7 MB uncompressed.
 Every tracked file of the repository is included (nothing skipped, no placeholders).
 Check a file: `sha256sum <file>` (Windows: `certutil -hashfile <file> SHA256`).
 
@@ -17,7 +17,7 @@ Check a file: `sha256sum <file>` (Windows: `certutil -hashfile <file> SHA256`).
 | `.idea/modules.xml` | 276 |  | `33316a39537f62abe1d71014551e4fcf4bacd57cec620bd657a1d9349d2bf6d2` |
 | `.idea/runConfigurations/RAndS_FSW_ASCII_Plotter.xml` | 1376 |  | `022ef835b7058ebdfd3da7a2c529c9707a0d20e3c951834a985866ff0caa21d4` |
 | `.idea/vcs.xml` | 167 |  | `6323e12648862a0a96fc0d7877672817d6cd91e2c2a3c3d78f1090db23c6e88e` |
-| `ATR_AutoPlot.py` | 64510 | 0.2.5 | `b17febc5291ce35fe96f4c7338b8e39f7f9f2da89f52885487bf77f3a62660a5` |
+| `ATR_AutoPlot.py` | 70954 | 0.2.6 | `7b79005a5c31f5a6f4a37a90fe629478210a0c7d234cd55ee0ae7f3470754e7f` |
 | `Archive/.spyproject/config/backups/codestyle.ini.bak` | 96 |  | `f1f4eaec13386b173370c123303fdf1aef226e760d3a0caac4acb5bbd1eb09e7` |
 | `Archive/.spyproject/config/backups/desktop.ini` | 250 |  | `9af97c9a296906d62743fe9a9384a4db6ea44b94cd24134f1ae42b0078808e22` |
 | `Archive/.spyproject/config/backups/encoding.ini.bak` | 58 |  | `4f0931c18a38af8848b30387f67b4e36e954d42be16d7587348ad4a1d346b6f8` |
@@ -75,7 +75,7 @@ Check a file: `sha256sum <file>` (Windows: `certutil -hashfile <file> SHA256`).
 | `Archive/scikit-rf_play_4Veusz_consol_revG.py` | 12651 |  | `1266b6cae614f7b57b13bad7009b50e24ba0e0ff96e21838e51d9b5ca2738ff1` |
 | `CSV_AutoPlot_V6_Log_20260210_084844.txt` | 2773 |  | `d8578b1aee7085c79eb4ce783668b645950255089fa8bf4689738bb152759b72` |
 | `CSV_AutoPlot_V6_Log_20260210_092311.txt` | 3909 |  | `af20783e4e75bbd82e51e9799385a2f3764e7fb4273f343f7853eddd6a661914` |
-| `CSV_TSV_AutoPlot.py` | 72667 | 6.1.4 | `4d64ca7e784fd6d31e2f062b600444abeece3e20adcde4dacbf00014e7c83ee7` |
+| `CSV_TSV_AutoPlot.py` | 78748 | 6.1.5 | `fa2846d432e9405cbcc39958fa63c9e6e1c9f0da7f5406b8fedbd246148c54da` |
 | `Example_Data_Files/Touchstone/Beware_oldVersion/Import_smith_td_test_BEWARE.vsz` | 1840929 |  | `bc7e4f5cfda17f069509d0b1737e7b830c2cdd86c0197f48cbe4897ea300fb87` |
 | `Example_Data_Files/Touchstone/Beware_oldVersion/Touchstone_working_at_work_BEWARE.vsz` | 565876 |  | `f0669100835a2e45adb55384a3fea26772308ecdf903f993a6d4752a220744ea` |
 | `Example_Data_Files/Touchstone/Beware_oldVersion/snp_demo_BEWARE.vsz` | 514131 |  | `30274f25ace1b5ef5ce8ef6d29673cc207b542e7e4cc3e549cd8d148dbba75f5` |
@@ -455,33 +455,33 @@ Check a file: `sha256sum <file>` (Windows: `certutil -hashfile <file> SHA256`).
 | `Example_Data_Files/sft/desktop.ini` | 250 |  | `9af97c9a296906d62743fe9a9384a4db6ea44b94cd24134f1ae42b0078808e22` |
 | `Example_Data_Files/sft/new_gui_demo.vszh5` | 1571480 |  | `c7c93501ce9afd7c5449cd861afe8794960114558af5274cf64b8ba521fad86e` |
 | `Example_Data_Files/veusz_polar.vsz` | 2981 |  | `391af365ac5764ffdc0338bf29ab53af3529604055923de1c4e018935468dcde` |
-| `FITS_AutoPlot.py` | 187593 | 0.4.3 | `f8164af242e56c5a128d37b8b7e9980ace3d28bdca5467467f1258d73665164c` |
-| `FITS_AutoPlot_plugin.py` | 61551 | 0.3.3 | `9ea6698bb2400d7a3202aa589a58c4432caf0bee6fbe84441898a323134c271f` |
-| `Franks_AutoPlot.py` | 111694 | 0.4.3 | `ebbd57f74e10885f583e8de074070a3268db6d9cca56f64beca99bf1795219e6` |
-| `Franks_AutoPlot_plugin.py` | 55680 | 0.3.3 | `3d6034c79bc2203bdbb0b3d991e6d604bceb6a908d39d91a626ee3926cd5e64a` |
+| `FITS_AutoPlot.py` | 195180 | 0.4.4 | `3a49833f977b97b49da0a658d095afea7b5ce281cabc77f65a854b7018b08dbb` |
+| `FITS_AutoPlot_plugin.py` | 64177 | 0.3.4 | `d7150967fd72f64e5f0226d1b8bb5f8ac796c52f983c6ebf716c6272e9021f39` |
+| `Franks_AutoPlot.py` | 117746 | 0.4.4 | `fffd998915e6b0a5885ef5b1ea6824d34ea02440f16ac885094aec2755112715` |
+| `Franks_AutoPlot_plugin.py` | 58152 | 0.3.4 | `113c1e402de177a80ccd6e73bd76625bb0b9d6b41b0f421f1abab00ce3273a76` |
 | `Hanging_Threads.py` | 9645 | 0.0.4 | `9d102ab60b34f28d500dc66bad1175eea7dc41009787832cf4382fd535a6354c` |
 | `LICENSE` | 35149 |  | `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986` |
 | `ORBIT_FR/ORBIT_FR_API_REQUIREMENTS.md` | 6845 |  | `d892fb9db2d7b3fb3ba1aab194902ad380226450c62aff471f26fcc198f3cedd` |
 | `ORBIT_FR/orbitfr_com_probe.py` | 14413 | 0.0.2 | `5eb758a5e889882d173c7fc20c08b3b24e7b408c1cba1ef6677982b3c15fbb05` |
-| `RAndS_FSW_ASCII_Plotter.py` | 75607 | 1.1.5 | `7ffe8f7507f17627aaa0681db96e8e7e7ff7145f2c923f5c9c29942fc5e85701` |
-| `README.md` | 14097 |  | `ab8296791a29a4fbf20ec3d6ac46579578efa2bad9308d4ec7b41c1e58428281` |
+| `RAndS_FSW_ASCII_Plotter.py` | 82810 | 1.1.6 | `4826edfe2a6f46a9e269d5c9de23d6cef6aa7459643be296ecedd5b841a8a0aa` |
+| `README.md` | 15333 |  | `f2509a6b291e3d368afa3bc45c8df083a2dab4f36497a372dc38bb01b8783370` |
 | `README_native_vszh5.md` | 9636 |  | `9bc429620ed8b8dcbe20d26efdaee16011f693983750c584c733aa20864a693f` |
 | `RELEASE_fits-franks-0.2.0_pyqtgraph.md` | 5390 |  | `668585ccca4df451f64f505aa2216ca3edfde31eeb1ef715bec28fff9d2a26fc` |
 | `RELEASE_launcher-0.2.0_touchstone-0.5.0.md` | 12205 |  | `7fcc1c84643cb19415df79d6762e6477244da0a022b061508a3eabcdda627d07` |
-| `RELEASE_suite-2026-11-09.md` | 68273 |  | `5dbcb9dc22bf51e2e67c6e82cc093f7a731e506a5e815592034909cf993599d1` |
-| `REQUIREMENTS.md` | 12186 |  | `1278f2366dc86448262929545952e2fdce8172d8fa7ef8a7d8579bad9f15b844` |
-| `SHA256SUMS.txt` | 64522 |  | `b6f2f0dfef4bfe0f9c8e3b843d313e576e3d69fa02bc898a7b44c7b6f982081a` |
+| `RELEASE_suite-2026-11-09.md` | 78531 |  | `e52dab51f68b4cacbb1c808d5d02e37dfbecb561758a4b92f76fbe9844f33519` |
+| `REQUIREMENTS.md` | 12439 |  | `c91082209a09ffbc55179dddbf624e521c20828f14ff34266ea1a3b3c95c790f` |
+| `SHA256SUMS.txt` | 64616 |  | `d2e9a557f2b8ea491b175aabf20d20cb3f305204cca832ff4561a1f399434e07` |
 | `ToDo.txt` | 455 |  | `b04981e4e640e2f9902d112c07152fb748e0941cac42acc0642b9caf0cb4f459` |
-| `Touchstone_AutoPlot.py` | 146685 | 0.7.4 | `a7df83ab6a2844f113914f327664160337973df2584103c01fd6c541b7b70b06` |
+| `Touchstone_AutoPlot.py` | 156898 | 0.7.5 | `16b59bbdffddad94c0d39158a2e33443cc04bd79223f32d09f502480c544ea73` |
 | `VALIDATION_v0.1.0.md` | 5031 |  | `0f64b30d76ac083a061f1d0b4bee44ecc3d3a7ab761c18c4f662e4410428dbf2` |
 | `__pycache__/Hanging_Threads.cpython-38.pyc` | 3248 |  | `2107278c12d93a23b2599da5c54fc8efea7ce7df632a768640102c17468f075c` |
 | `__pycache__/fastest_ascii_import.cpython-38.pyc` | 4387 |  | `68155836aceecbbfeb3053da39b622d5272baf5767f370a5536c5088b9246dc5` |
-| `_autoplot_common.py` | 217435 | 0.4.3 | `2c75fe7ae8392da401260342b1fe9339a0a5366c5355fcfb52e78efe599de725` |
-| `_autoplot_gpu.py` | 31381 | 0.0.1 | `74972e54521eb249f6d3f97d48082710cc34af5c1d9005a03f4f2817e21b8d83` |
-| `_autoplot_native.py` | 92448 | 0.5.3 | `a55e07c6db69cba775f750c4c075f00b0e15415091b9f08ce3bae1b39cf30960` |
+| `_autoplot_common.py` | 236307 | 0.4.4 | `aa1f2b024bd80a6c5b39bf0e856cb3071afc25b2f767d326acb994a8b7ae5dc8` |
+| `_autoplot_gpu.py` | 37184 | 0.0.2 | `aca09e03c1d68825d692da44d3734097f5fca5866ba9610647ae4ee9d5ec30e1` |
+| `_autoplot_native.py` | 112328 | 0.5.4 | `ee03354121ae3c1326e81513f29c8389626f93755c77ea73fcd48606eb0b2a83` |
 | `_autoplot_parallel.py` | 9851 | 0.0.1 | `c1f5c46484a9aea2c24ff89cf7e9cc799f070a442d917b3790b99edb952f4c9a` |
-| `_autoplot_pyqtgraph.py` | 98712 | 0.3.3 | `b0e6929f7dd4e9552af9d2dff9a1b2b5c35caa1afa551d5cabed687e298a8b00` |
-| `_suite_gui.py` | 25804 | 0.1.2 | `6ad2668df47fb5c493bcffa92a07d468fb488206f16d14c1ce8acb77897ac172` |
+| `_autoplot_pyqtgraph.py` | 105085 | 0.3.4 | `cb835f6e1cf102417d17908a5d9e64035fe26c65d9a42d2861df77997183a043` |
+| `_suite_gui.py` | 29982 | 0.1.3 | `83de2e4d14bf7c2791d6dbcbf11e3d181783f2460e01bea8fbafc68411721e2f` |
 | `assets/GBT_1.ico` | 68734 |  | `637280966e97879db7dade339b10201d41aef631e10ae72f1fa3038f72524e8c` |
 | `assets/GBT_2.ico` | 4832170 |  | `0029f02dd667201143ef519d4ae158ead72aa7d85ff6135dae164bf57f5b18de` |
 | `assets/app_icon.png` | 119031 |  | `e7fe8a856d651b61f305217400bec061d307d0aeb78af42b127c3598d0139b66` |
@@ -529,6 +529,7 @@ Check a file: `sha256sum <file>` (Windows: `certutil -hashfile <file> SHA256`).
 | `requirements-py38.txt` | 2557 | 0.3.1 | `2532e7c1aa7792bb3888cebe23dba7de8407765af138afa040cf9c2c01250c87` |
 | `setup_py3p8_nrao.sh` | 15811 | 0.3.0 | `e0c40c3e5164c38a1fb8b0c22b5bffd8efd273564be7612c69d4aec2256a73f4` |
 | `tests/make_demo_projects.py` | 3082 | 0.1.1 | `c976576550ac0cf04cf102d616d9d62cf295a4ea27d00b8398d814c008b6828e` |
+| `tests/test_clear_and_add.py` | 19426 | 0.0.1 | `7c7420f926ffce41cfae33e940927adc72b8b48c2b3ec8ee4c996a3b856f381a` |
 | `tests/test_gap_options.py` | 17248 | 0.0.1 | `b371e1d1ab8c0016defa3800a52cb71830be08fb701ef31500da1bc36856930c` |
 | `tests/test_gui_close.py` | 11091 | 0.0.1 | `14b12dab3d53477e21fc8745f26b07011489cd51b1eaf639cb25d220ca579320` |
 | `tests/test_names_tags_precision.py` | 22532 | 0.0.1 | `5be1ea1131ce545753244f1832b77b09d53f0f01082a90512a351625826101d2` |

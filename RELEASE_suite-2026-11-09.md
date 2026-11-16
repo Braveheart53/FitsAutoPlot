@@ -931,3 +931,134 @@ give its timing plots the same two options.
 [46]-[48] concern *analysis* of timing data with missing samples (e.g. Allan variance of maser
 data); the suite only *plots* gaps and leaves the data unchanged, so those methods still apply to
 the stored datasets.
+
+## 14. Clear clears everything; added files join the data already read (2026-11-16)
+
+Request: *"ok, now for the fitsAutoPlot (and all others where this happens) ensure you clear all
+data from plots and memory when the clear files is pressed. This should mean that any data loaded
+from the those will not be saved into vuesz once they are cleared if a user adds more files after a
+clear. If a user does not clear, and then adds more files, it should not "forget" the data, but it
+should update the plots when processed. So to reiterate, clear should clear everything AND fully
+release the memory to windows or linux. But it should not clear if they add more data without
+pressing clear. Start with fitsAutoPlotter and then check all other plotters."*
+Archive: `FitsAutoPlot_suite_0.4.4_2026-11-16.7z` (every tracked file, assets included).
+
+### 14.1 What was wrong (measured before the change)
+
+| Program | Clear did | Adding files and processing again did |
+|---|---|---|
+| FITS AutoPlot 0.4.3 / Franks 0.4.3 | emptied the file list only. The project, the Plots tab and the cache kept the data; the next batch added its pages to the **old** project, so cleared files were saved again. GBT tack, 5 files, Clear, 5 other files: the project still had the 10 old pages and 340 datasets of the cleared files; RSS 306 MiB before and after Clear | re-read every file and pushed it into the same project: 17 pages instead of 11 (every page of the first files twice) |
+| ATR 0.2.5, R&S 1.1.5 | emptied the list; Save stayed enabled and wrote the old project; plots and data stayed | re-read every file, new project (correct, but all files read again) |
+| CSV/TSV 6.1.4 | forgot the loaded files, but the project, Plots tab and preview stayed; Save wrote the old project | correct (loaded files kept, new project) |
+| Touchstone 0.7.4 | forgot results and project, but the Plots tab and the time-domain / Smith previews still held the old data | re-read every file, new project |
+| FITS / Franks plugins | Clear empties the dialog's file list before anything is read: nothing else to clear | each run reads its files once; the data stayed in Veusz's memory after the run |
+| every Plots tab | a disposed plot's right-click menus waited for the event loop to be deleted (tack: +21 MiB RSS per process / Clear round) | |
+
+### 14.2 What Clear does now (every program)
+
+1. Refused while a batch reads files (Browse and Clear are also disabled during a FITS / Franks batch).
+2. The file list, the data read from it (`KeptReads`), the project (`NativeDocument.release()`; Save
+   is disabled, so **nothing cleared can be saved later**), the Plots tab and previews, the
+   cache and its spill files (deleted after their memmaps are closed, which Windows needs).
+3. Widgets given to `deleteLater()` are deleted at once, then `release_memory()`:
+
+$$
+\text{RSS}_\text{after} = \text{RSS}_\text{before} - \underbrace{\text{(freed by gc)}}_{\text{3 passes}} - \underbrace{\text{GPU pools}}_{\text{CuPy}} - \underbrace{\text{free heap pages}}_{\texttt{malloc\_trim} \,/\, \texttt{HeapCompact}}
+$$
+
+   * **Linux (glibc)**: `malloc_trim(0)`, which since glibc 2.8 "frees memory in all arenas and in
+     all chunks with whole free pages" [50]. glibc returns blocks of at least `M_MMAP_THRESHOLD`
+     (128 KiB at start) to the kernel as soon as they are freed, but the threshold rises to the size
+     of a freed mapped block (up to 32 MiB on 64-bit), and smaller freed blocks stay in the
+     heap [56]. Measured:
+     400 MB of freed 80 kB arrays stayed resident (1202 MiB) until `malloc_trim` returned them
+     (43 MiB).
+   * **Windows**: `_heapmin()` of the C runtime, which "releases unused heap memory to the
+     operating system" [51]; `HeapCompact()` on every process heap, which coalesces free blocks
+     (Windows normally does this at `HeapFree` already, so it is a safety step) [52]; then
+     `SetProcessWorkingSetSize(process, -1, -1)`, which "removes as many pages as possible from the
+     working set" - what Task Manager shows as memory [53].
+   * **macOS**: `malloc_zone_pressure_relief`.
+   * The log shows `Memory released: RSS a -> b MiB (...)`.
+
+### 14.3 What adding files does now (no Clear)
+
+Process reads only the files it has no data for - new files, files changed on disk (size or
+modification time), or files read with other read options - and **keeps** the data of the others,
+even if such a file has since been moved. Then a new project is built from **every listed file**,
+so the plots update and the project is the same as all files processed at once. A file that failed
+is read again next time. Pressing Process with nothing new rebuilds the project at once (useful
+after changing plot options).
+
+### 14.4 Measured (Python 3.12, Linux)
+
+| Data | Check | Result |
+|---|---|---|
+| FITS, GBT tack (10 files) | first 5, then 5 added, vs all 10 at once | identical: 792 HDF5 objects, same script; only the 5 new files read |
+| FITS, tack | Clear | project, Plots tab, kept data, cache: empty. RSS 278 -> 175 MiB (window open: 146 MiB) |
+| FITS, tack | Clear, then the second 5 only | 0 pages / datasets of the cleared files (before: 10 pages, 340 datasets) |
+| FITS, 30 days of 1PPS (319 files, 40 195 datasets) | Clear | RSS 651 -> 221 MiB (window open: 147 MiB) |
+| FITS, tack, 4 process / Clear rounds | Python objects left after Clear (tracemalloc) | 1.4 MiB every round (before the menu fix: +1.1 MiB per round) |
+| Franks (7 .t00new + time_gbt.dat) | half, then the rest added, vs all at once | identical (301 objects, same script) |
+| ATR (25 files) | the same | identical (133 objects); Clear: RSS 139 -> 135 MiB |
+| R&S (12 files, 2 unreadable) | the same | identical (454 objects); Clear: RSS 189 -> 156 MiB; the 2 bad files are tried again each time |
+| Touchstone (16 .s2p) | the same | identical (144 objects); Plots tab and previews empty after Clear |
+| CSV/TSV (2 files) | the same | identical; preview, project and plots empty after Clear |
+
+Repeated rounds (30-day set, process all 319 files then Clear, six times): RSS after Clear
+217, 301, 330, 314, 319, 322 MiB, against 652 to 675 MiB loaded - from the third round on it
+settles instead of growing.  Clearing the log text as well made no difference (215, 271, 271 MiB),
+and the Python objects left after Clear stay at 1.4 MiB, so what remains is native: libraries
+loaded by the first batch and heap pages that still hold a few live objects.
+
+### 14.5 Versions
+
+| File | Before | Now |
+|---|---|---|
+| `_autoplot_native.py` | 0.5.3 | **0.5.4** (`release_memory`, `process_rss_mb`, `KeptReads`, `file_stamp`, `NativeDocument.release`) |
+| `_autoplot_common.py` | 0.4.3 | **0.4.4** (Clear, kept data, new project per build, cache clear order) |
+| `_autoplot_pyqtgraph.py` | 0.3.3 | **0.3.4** (menus deleted at once) |
+| `_autoplot_gpu.py` | 0.0.1 | **0.0.2** (`release_memory`: CuPy pools) |
+| `_suite_gui.py` | 0.1.2 | **0.1.3** (`release_after_clear`, `CLEAR_TOOLTIP`) |
+| `FITS_AutoPlot.py` / `Franks_AutoPlot.py` | 0.4.3 | **0.4.4** |
+| `FITS_AutoPlot_plugin.py` / `Franks_AutoPlot_plugin.py` | 0.3.3 | **0.3.4** |
+| `ATR_AutoPlot.py` | 0.2.5 | **0.2.6** |
+| `CSV_TSV_AutoPlot.py` | 6.1.4 | **6.1.5** |
+| `RAndS_FSW_ASCII_Plotter.py` | 1.1.5 | **1.1.6** |
+| `Touchstone_AutoPlot.py` | 0.7.4 | **0.7.5** |
+| `tests/test_clear_and_add.py` | — | **0.0.1** (10 tests) |
+| `REQUIREMENTS.md` | 0.2.2 | **0.2.3** (no new packages) |
+| `vszh5_writer.py` | 0.0.30 | 0.0.30 (unchanged) |
+
+### 14.6 Verification
+
+| Check | Python 3.8.20 | Python 3.12.3 | Python 3.13.18 |
+|---|---|---|---|
+| Unit tests (`python -m unittest discover -s tests`) | 119 OK (3 skipped: Veusz / OpenCL not installed) | 119 OK (3 skipped) | 119 OK (1 skipped) |
+| Headless GUI and real-data runs (`run_env_checks.sh`, 13 runs) | 13 of 13 pass | 13 of 13 pass | 13 of 13 pass |
+| Format check (header, revision = version, Date lines, docstrings, 3.8 grammar) | every `.py` OK | | |
+| Tooltip audit | 0 missing | | |
+
+### 14.7 Data gaps and limits
+
+* **Windows**: the Windows release path (`_heapmin`, `HeapCompact`, working-set trim) is written to
+  the Win32 documentation [51]-[53] but was **not run on Windows** in this session (the computer was
+  reachable for file copies only, not for running programs). The Linux path was measured.
+* After Clear the RSS does not fall all the way to the window-open value: libraries loaded by the
+  first batch (astropy's FITS and units modules, scikit-rf, pyqtgraph's plot classes) stay loaded,
+  and heap pages that still hold a few live objects cannot be returned.
+* `SetProcessWorkingSetSize(-1, -1)` moves pages out of the working set; Windows brings back any
+  that are used again (a soft page fault), so a little of it returns as the program runs.
+* The plugins run inside Veusz: their release also returns Veusz's own freed memory, which is harmless.
+
+### 14.8 References (round 14)
+
+| # | Reference (IEEE) |
+|---|---|
+| [50] | M. Kerrisk (ed.), "malloc_trim(3)," *Linux man-pages*. [Online]. Available: https://man7.org/linux/man-pages/man3/malloc_trim.3.html |
+| [51] | Microsoft, "_heapmin," *Microsoft Learn: C runtime library reference*. [Online]. Available: https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/heapmin |
+| [52] | Microsoft, "HeapCompact function (heapapi.h)," *Microsoft Learn: Win32 API*. [Online]. Available: https://learn.microsoft.com/en-us/windows/win32/api/heapapi/nf-heapapi-heapcompact |
+| [53] | Microsoft, "SetProcessWorkingSetSize function (memoryapi.h)," *Microsoft Learn: Win32 API*. [Online]. Available: https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize |
+| [54] | Python Software Foundation, "tracemalloc - Trace memory allocations" and "gc - Garbage Collector interface," *Python 3 documentation*. [Online]. Available: https://docs.python.org/3/library/tracemalloc.html |
+| [55] | The Qt Company, "QObject::deleteLater()" and "QCoreApplication::sendPostedEvents()," *Qt 6 documentation*. [Online]. Available: https://doc.qt.io/qt-6/qobject.html#deleteLater |
+| [56] | M. Kerrisk (ed.), "mallopt(3)" (M_MMAP_THRESHOLD, dynamic threshold, DEFAULT_MMAP_THRESHOLD_MAX), *Linux man-pages*. [Online]. Available: https://man7.org/linux/man-pages/man3/mallopt.3.html |

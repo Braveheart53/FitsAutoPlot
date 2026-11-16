@@ -26,6 +26,34 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.4: The run's data and project are released when it ends.
+Date: 2026-11-16
+#              * After the project is written, the data parsed and the project
+#                are dropped and the memory is handed back to the operating
+#                system (Veusz keeps running).  The dialog's Clear holds file
+#                names only (nothing is read before Process).
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal qtpy dialog used by the plugin entry point.
+        FranksAutoPlotPlugin (class): Veusz menu entry for native ASCII project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Veusz 3.x's exec loader supplies its selected filename as local "plugin".
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> Franks AutoPlot (Batch).  Writes a
+    separate native .vszh5 project; the host Veusz document is not changed.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    The data of a run are released when the
+    project is written (release_memory).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.3: Gap options in the batch dialog and the plugin fields.
 Date: 2026-11-16
 #              * Dialog check boxes "Break the line / trace at small gaps",
@@ -350,7 +378,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.3.3"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.3.4"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -700,7 +728,9 @@ class _PluginBatchDialog(QDialog):
             self.file_list.addItem(os.path.basename(p))
 
     def _clear(self) -> None:
-        """Empty the file list."""
+        """Empty the file list (nothing is read before Process, so the file
+        names are all there is to clear; the data of a run are released when
+        it ends, 0.3.4)."""
         self.selected_files.clear()
         self.file_list.clear()
 
@@ -1077,6 +1107,16 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
         finish_native_plugin_export(interface, output_file, fields, dlg.append_log)
         if gpu_enabled():
             dlg.append_log("GPU use: %s" % gpu_usage_text())
+        # 0.3.4: the project is written; its data and the files read go now and
+        # the memory is handed back to the operating system (Veusz keeps
+        # running, and the dialog's Clear only ever held file names)
+        results = file_records = None
+        try:
+            interface.release()
+        except Exception:
+            pass
+        from _autoplot_native import release_memory
+        release_memory(dlg.append_log)
         dlg.append_log("Done.")
 
 

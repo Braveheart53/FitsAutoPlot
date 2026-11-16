@@ -32,6 +32,112 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.5.4: Clear gives memory back to the OS; data kept between batches.
+Date: 2026-11-16
+#              * NEW release_memory(log): three garbage-collection passes, the
+#                GPU pools (_autoplot_gpu.release_memory, only when that
+#                module is loaded), then the C heap back to the operating
+#                system (_release_os_heap: glibc malloc_trim on Linux, which
+#                frees whole free pages in every arena; on Windows _heapmin,
+#                HeapCompact of every process heap and
+#                SetProcessWorkingSetSize(-1, -1); macOS
+#                malloc_zone_pressure_relief); logs the RSS before and after.
+#                Measured: 400 MB of freed 80 kB arrays stayed resident
+#                (1202 MiB) until malloc_trim returned them (43 MiB).
+#              * NEW process_rss_mb(): psutil, /proc/self/statm or
+#                GetProcessMemoryInfo.
+#              * NEW KeptReads and file_stamp(): data read from the listed
+#                files, kept until Clear; to_read() names only new files,
+#                files changed on disk (size, mtime) or read with other
+#                options; a kept file gone from disk is not forgotten.
+#              * NEW NativeDocument.release(): empties the project at once
+#                (the widget tree's document / parent links are cut).
+#              Checked: tests/test_clear_and_add.py (all at once == first
+#              half, then the second added; Clear leaves no project, plots,
+#              kept data or cache; the cleared files are not in the next
+#              project) on Python 3.8, 3.12 and 3.13.
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        add_gap_arguments: Add the gap options to an argparse parser (0.5.3): --gap-k, --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks, --no-numeric-gap...
+        layout_from_args: The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3).
+        TimeLayout (class): Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any sorted x, and the two consequences of a gap made optional), see vszh5_writer T...
+        _number_text: A setting for the notes with every digit (repr), without a trailing ".0" (0.5.3; %g cut 12.3456789 to 12.3457).
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0).
+        _set_gap_note: Put the gap-rule line ``note`` into the graph notes (0.5.3: a line from an earlier layout is replaced, so the notes state the rule in use).
+        _sorted_finite: True when the finite values of ``values`` never decrease (at least 3).
+        _layout_numeric_axis: Gap options on an x axis that is not time (0.5.3): frequency, angle, index ...
+        _undo_numeric_layout: Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the gap options of a project turn non-time axes off between two saves, the traces d...
+        _drop_unused_plot_copies: Remove line-break plot copies no widget draws any more (0.5.3): when the gap options change between two saves, copies of the old layout would other...
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        process_rss_mb: Resident set size of this process in MiB (NaN when it cannot be read).
+        _release_os_heap: Hand freed heap memory back to the operating system; returns the steps that ran (names), [] when nothing applies.
+        release_memory: Give the memory of dropped data back to the operating system (0.5.4).
+        file_stamp: (size, mtime_ns, options) of ``path``: the data read from it are still good while this is unchanged; None when the file cannot be read.
+        KeptReads (class): Data read from the listed files, kept until the user clears them (0.5.4).
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        _GAP_TOKEN_REGEX: one number and unit of a gap text (s, min, h, d, m; bare = hours)
+        GAP_STRING_HELP: tool tip of the gap text boxes
+        _DAYS_PER_MONTH: average Gregorian month (365.25 / 12 days) for 'm' in gap texts
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 1 / 1440 (gap text parsing)
+        _DAYS_PER_SECOND: 1 / 86400 (gap text parsing)
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    TimeLayout holds the options; finalize() lays out time axes
+    (_layout_time_axis), then other x axes (_layout_numeric_axis), then drops
+    plot copies no widget draws (_drop_unused_plot_copies).
+    Memory: release_memory() after
+    the last reference to dropped data is gone (gc, GPU pools, malloc_trim /
+    HeapCompact + working-set trim); KeptReads keeps per-file data until Clear.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.5.3: Gap options: line breaks and x-axis breaks each optional, on any sorted x.
 Date: 2026-11-16
 #              * TimeLayout gains break_lines, break_axis and numeric (all
@@ -387,7 +493,7 @@ import numpy as np
 import vszh5_writer
 from vszh5_writer import VeuszWriter, VszDoc, vz_text
 
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 WRITER_VERSION = vszh5_writer.__version__
 DATASET_SETTINGS = frozenset((
     "xData", "yData", "labels", "scalePoints", "yDataLow", "yDataHigh",
@@ -1426,6 +1532,238 @@ def float_loses_text(texts, values):
 NUMERIC_TICK_FORMAT = "%.12Vg"
 
 
+# %% Memory release (0.5.4): Clear gives the memory back to the OS
+def process_rss_mb():
+    """Resident set size of this process in MiB (NaN when it cannot be read).
+
+    psutil when installed; otherwise /proc/self/statm (Linux) or
+    GetProcessMemoryInfo (Windows) through ctypes.
+    """
+    try:
+        import psutil  # type: ignore
+        return psutil.Process(os.getpid()).memory_info().rss / 1048576.0
+    except Exception:
+        pass
+    try:
+        with open("/proc/self/statm") as handle:
+            pages = int(handle.read().split()[1])
+        return pages * os.sysconf("SC_PAGE_SIZE") / 1048576.0
+    except Exception:
+        pass
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _Counters(ctypes.Structure):
+                """PROCESS_MEMORY_COUNTERS (psapi)."""
+                _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                            ("PeakWorkingSetSize", ctypes.c_size_t),
+                            ("WorkingSetSize", ctypes.c_size_t),
+                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                            ("PagefileUsage", ctypes.c_size_t),
+                            ("PeakPagefileUsage", ctypes.c_size_t)]
+
+            counters = _Counters()
+            counters.cb = ctypes.sizeof(counters)
+            # private library objects: argtypes set here do not change the
+            # shared ctypes.windll function objects other code may use
+            kernel32 = ctypes.WinDLL("kernel32")
+            psapi = ctypes.WinDLL("psapi")
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            psapi.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                                   wintypes.DWORD]
+            if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(),
+                                          ctypes.byref(counters), counters.cb):
+                return counters.WorkingSetSize / 1048576.0
+        except Exception:
+            pass
+    return float("nan")
+
+
+def _release_os_heap():
+    """Hand freed heap memory back to the operating system; returns the steps
+    that ran (names), [] when nothing applies.
+
+    * Linux (glibc): malloc_trim(0) - free pages at the top of the heap and
+      in every arena go back to the kernel (glibc keeps them otherwise once
+      its mmap threshold has grown).  musl and others have no malloc_trim.
+    * Windows: _heapmin() of the C runtime ("releases unused heap memory to
+      the operating system"), HeapCompact() of every process heap (it
+      coalesces free blocks; Windows normally does that at HeapFree
+      already), then SetProcessWorkingSetSize(-1, -1), which removes as many
+      pages as possible from the working set (what Task Manager shows as
+      memory in use).
+    * macOS: malloc_zone_pressure_relief(NULL, 0).
+    """
+    import ctypes
+    import ctypes.util
+    import sys as _sys
+    steps = []
+    if _sys.platform.startswith("linux"):
+        try:
+            libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+            if hasattr(libc, "malloc_trim"):
+                libc.malloc_trim(ctypes.c_size_t(0))
+                steps.append("malloc_trim")
+        except Exception:
+            pass
+    elif os.name == "nt":
+        try:
+            for crt in ("ucrtbase", "msvcrt"):
+                try:
+                    getattr(ctypes.cdll, crt)._heapmin()
+                    steps.append("_heapmin")
+                    break
+                except Exception:
+                    continue
+            # a private kernel32 object: the argtypes set below do not change
+            # the shared ctypes.windll function objects other code may use
+            kernel32 = ctypes.WinDLL("kernel32")
+            kernel32.GetProcessHeaps.restype = ctypes.c_uint32
+            kernel32.GetProcessHeaps.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+            count = kernel32.GetProcessHeaps(0, None)
+            if count:
+                heaps = (ctypes.c_void_p * count)()
+                count = kernel32.GetProcessHeaps(count, heaps)
+                kernel32.HeapCompact.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+                for index in range(count):
+                    kernel32.HeapCompact(heaps[index], 0)
+                steps.append("HeapCompact x%d" % count)
+            kernel32.SetProcessWorkingSetSize.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
+                                                          ctypes.c_size_t]
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            minus_one = ctypes.c_size_t(-1).value
+            if kernel32.SetProcessWorkingSetSize(kernel32.GetCurrentProcess(),
+                                                 minus_one, minus_one):
+                steps.append("working set trimmed")
+        except Exception:
+            pass
+    elif _sys.platform == "darwin":
+        try:
+            libsystem = ctypes.CDLL(ctypes.util.find_library("System"))
+            libsystem.malloc_zone_pressure_relief(None, ctypes.c_size_t(0))
+            steps.append("malloc_zone_pressure_relief")
+        except Exception:
+            pass
+    return steps
+
+
+def release_memory(log=None):
+    """Give the memory of dropped data back to the operating system (0.5.4).
+
+    Call it after the last reference to the data is gone (project, plots,
+    caches): a full garbage collection (three passes: widget trees and
+    documents form reference cycles), the GPU memory pools when the GPU
+    module is loaded (_autoplot_gpu.release_memory), then the C heap
+    (_release_os_heap).  numpy buffers of 128 KiB or more are mapped
+    separately and go back as soon as they are freed; the heap step returns
+    the smaller ones.  ``log`` (optional) gets one line with the RSS before
+    and after.  Returns {"before_mb", "after_mb", "collected", "steps"}.
+    """
+    import gc
+    import sys as _sys
+    before = process_rss_mb()
+    collected = 0
+    for _ in range(3):
+        collected += gc.collect()
+    steps = []
+    gpu = _sys.modules.get("_autoplot_gpu")
+    if gpu is not None and hasattr(gpu, "release_memory"):
+        try:
+            text = gpu.release_memory()
+            if text:
+                steps.append(text)
+        except Exception:
+            pass
+    steps.extend(_release_os_heap())
+    after = process_rss_mb()
+    if log is not None:
+        try:
+            log("Memory released: RSS %.1f -> %.1f MiB (%s)"
+                % (before, after, ", ".join(["gc %d objects" % collected] + steps)))
+        except Exception:
+            pass
+    return {"before_mb": before, "after_mb": after, "collected": collected, "steps": steps}
+
+
+# %% Data kept between batches (0.5.4)
+def file_stamp(path, options=()):
+    """(size, mtime_ns, options) of ``path``: the data read from it are still
+    good while this is unchanged; None when the file cannot be read."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return (info.st_size, info.st_mtime_ns, tuple(options))
+
+
+class KeptReads(object):
+    """Data read from the listed files, kept until the user clears them (0.5.4).
+
+    A program reads only the files it has no data for (to_read: new files,
+    files changed on disk, files read with other read ``options``) and builds
+    its project from every listed file (items).  A kept file that is gone
+    from disk keeps its data: adding files never makes the program forget
+    the ones it already has.  clear() forgets everything (the Clear button).
+    """
+
+    def __init__(self):
+        """Nothing kept yet."""
+        self._data = {}
+        self._stamps = {}
+
+    def __len__(self):
+        """Number of files with kept data."""
+        return len(self._data)
+
+    def __contains__(self, path):
+        """True when data of ``path`` are kept."""
+        return path in self._data
+
+    def to_read(self, paths, options=()):
+        """The ``paths`` that must be read (in order, each once)."""
+        todo = []
+        for path in dict.fromkeys(paths):
+            if path not in self._data:
+                todo.append(path)
+                continue
+            stamp = file_stamp(path, options)
+            if stamp is not None and stamp != self._stamps.get(path):
+                todo.append(path)
+        return todo
+
+    def keep(self, path, data, options=()):
+        """Keep ``data`` read from ``path`` (None forgets the file, so the next
+        batch reads it again)."""
+        if data is None:
+            self.forget(path)
+            return
+        self._data[path] = data
+        self._stamps[path] = file_stamp(path, options)
+
+    def forget(self, path):
+        """Drop the data of ``path``."""
+        self._data.pop(path, None)
+        self._stamps.pop(path, None)
+
+    def get(self, path, default=None):
+        """Kept data of ``path`` (``default`` when none)."""
+        return self._data.get(path, default)
+
+    def items(self, paths):
+        """(path, data) of every listed path with kept data, in list order."""
+        return [(path, self._data[path]) for path in dict.fromkeys(paths) if path in self._data]
+
+    def clear(self):
+        """Forget every file's data."""
+        self._data = {}
+        self._stamps = {}
+
+
 # %% Dataset model and file output
 class NativeDocument:
     """Build and atomically save a self-contained Veusz format-1 document."""
@@ -1448,6 +1786,32 @@ class NativeDocument:
         # line break when dt > k * median(dt) (or > manual_s seconds),
         # axis break when dt > n * k * median(dt); n = 0: one axis.
         self.time_layout = TimeLayout()
+
+    def release(self):
+        """Drop every dataset, widget and tag of the project (0.5.4).
+
+        Used when the user clears the files: the widget tree's links (each
+        widget points to its document and parent) are cut so the arrays are
+        freed at once, without waiting for the garbage collector, and the
+        document is left empty and usable.
+        """
+        def cut(widget):
+            """Unlink ``widget`` and everything below it."""
+            for child in list(widget.children):
+                cut(child)
+            widget.children = []
+            widget.settings = OrderedDict()
+            widget.parent = None
+            widget.time_source = widget.gap_source = None
+        cut(self.Root)
+        self.Root = NativeWidget(self, "document", "")
+        self.datasets = OrderedDict()
+        self.tags = {}
+        self.local_axes = {}
+        self.local_of = {}
+        self.utc_of = {}
+        if hasattr(self, "_plot_copies"):
+            self._plot_copies = {}
 
     def _put(self, name, kind, parts):
         """Store dataset ``name`` of ``kind`` ('1d', 'date', 'text', '2d') with its
@@ -1810,4 +2174,5 @@ class NativeDocument:
         return self.save(filename)
 
     def Close(self):
-        """No external process to close; keep data alive until object disposal."""
+        """No external process to close; keep data alive until object disposal
+        (release() empties the project at once)."""

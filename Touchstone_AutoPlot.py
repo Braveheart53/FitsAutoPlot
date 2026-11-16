@@ -40,6 +40,108 @@ Optional: cupy (NVIDIA CUDA or AMD ROCm) or pyopencl + pyvkfft (any OpenCL
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.7.5: Clear also empties the Plots tab and previews; kept networks.
+Date: 2026-11-16
+#              * Clear forgot the results and the project but the Plots tab and
+#                the time-domain / Smith previews still held the old data; now
+#                they are emptied, the memory is given back, and Clear is
+#                refused while a worker runs.
+#              * Process reads only new or changed files (KeptReads) and builds
+#                the pages from every listed file (display names from
+#                unique_keys over the whole list); the reading thread reports
+#                results by path.
+#              Checked: tests/test_clear_and_add.py (all at once == first
+#              half, then the second added; Clear leaves no project, plots,
+#              kept data or cache; the cleared files are not in the next
+#              project) on Python 3.8, 3.12 and 3.13.
+# %%%%% Function Descriptions
+        is_windows: True on Windows.
+        get_extended_path: Convert a path to Windows extended-length form (\\\\?\\) if needed.
+        normalize_path: Resolved path; extended-length form on Windows.
+        validate_path_length: Check a path against the classic Windows MAX_PATH limit.
+        truncate_filename: Shorten a file name to ``max_length`` keeping the extension.
+        ProcessingConfig (class): File processing options.
+        TimeDomainConfig (class): Time-domain transform and gate settings.
+        SmithChartConfig (class): Smith chart options.
+        get_sparam_color: Consistent colour for an S-parameter across every plot.
+        _num: A number for page notes and titles with every digit (0.7.3): the shortest text that gives back the same float64 (repr), an integer as is; 0.7.2 use...
+        sanitize_name: Veusz-safe dataset / widget / tag stem (letters, digits, '_').
+        s_param_names: [(i, j, 'S<i+1><j+1>'), ...] in row-major order.
+        to_db: 20*log10|x| with a floor so silence never becomes -inf; inf/NaN -> NaN.
+        td_axis_floor: Lower y limit (dB) for time-domain plots: peak minus TD_DISPLAY_RANGE_DB, rounded down to 10 dB.
+        read_touchstone_header: Comment ('!') and option ('#') lines, plus any keyword lines, up to the first numeric data line.
+        ensure_uniform_network: Return a network on an exactly uniform frequency grid.
+        resolve_window: scipy.signal.get_window specification for a GUI window choice.
+        time_domain_vectorized: Windowed band-pass time-domain response of every S-parameter at once.
+        one_port: S_ij of ``network`` as a one-port (scikit-rf gates one-ports only).
+        call_time_gate: ``skrf.time.time_gate`` with only the arguments this scikit-rf supports.
+        compute_time_domain: Time-domain response and time gating of every (or selected) S-parameter.
+        _td_worker: Process-pool entry point: (key, network, config, gpu) -> (key, result).
+        run_time_domain_batch: Time domain + gating for many files.
+        TimeDomainProcessor (class): Thin object wrapper over ``compute_time_domain`` (kept for 0.4.0 users).
+        make_smith_figure: Smith chart of a one-port with scikit-rf.
+        export_smith_worker: Process-pool entry point that writes one Smith chart file.
+        SmithChartPlottermpld3 (class): Smith chart export helpers (name kept from 0.4.0).
+        TouchstonePlotter (class): Builds the Veusz project for the processed Touchstone files.
+        _matplotlib_canvas: Fallback matplotlib Qt canvas (imported only when needed).
+        TouchstonePlotCanvas (class): Time-domain and Smith chart previews.
+        process_single_touchstone_file: Read one Touchstone file (process-pool entry point).
+        unique_keys: Map each path to a unique display key (file name, then ' (2)', ...).
+        TouchstoneProcessingThread (class): Reads the selected files (process pool for several files).
+        FunctionWorker (class): Run ``func(progress_callback)`` off the GUI thread.
+        _module_version: Installed version of a module, or 'not installed'.
+        build_about_content: Rich text and runtime details for Help > About.
+        TouchstoneMainWindow (class): Main window: processing, time domain and Smith chart tabs.
+        main: Start the GUI.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "Touchstone AutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        DB_FLOOR: |x| floor before 20*log10 (-240 dB)
+        TD_DISPLAY_RANGE_DB: time-domain y axis spans peak - 120 dB .. Auto
+        UNIFORM_RTOL: steps within this are taken as exactly uniform
+        NONUNIFORM_NOTE_RTOL: above this the re-gridding is reported
+        CPU_COUNT: logical CPUs of this computer
+        MAX_PATH_WINDOWS: classic Windows MAX_PATH (260 characters)
+        PATH_WARNING_THRESHOLD: warn when a path is longer than this
+        EXTENDED_PATH_PREFIX: Windows extended-length path prefix
+        GATING_MODES: gating combo box text -> gating mode
+        WINDOW_TYPES: transform / gate window choices
+        _NUMERIC_START: line starting with a number (Touchstone data line)
+        _TIME_GATE_PARAMS: parameters accepted by skrf.time.time_gate (they differ between scikit-rf versions)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+        QT_BINDING = "PySide6"
+        PYQTGRAPH_ERROR = ""
+        MPLD3_AVAILABLE = True
+        PDF_LIBRARY = "pypdf"
+        VEUSZ_BACKEND = "native"
+# %%%%% More Info
+    Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
+    scikit-rf reads the .sNp files; time domain and gating, Smith charts
+    (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
+    'spawn' start method on every platform and is used only when it pays off
+    (_autoplot_parallel); GPU optional for large transforms (NVIDIA or AMD,
+    _autoplot_gpu).
+    Every dataset carries the Veusz tags source_<file>, source_<run> and
+    type_<kind>; traces are named after their data; notes and titles give
+    every digit.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.7.4: Gap options for segmented sweeps (line breaks, x-axis breaks).
 Date: 2026-11-16
 #              * "Gaps" box (_suite_gui.GapOptionsBox) in the side panel; the
@@ -554,7 +656,7 @@ from skrf import time as skrf_time
 
 # %%% Qt (qtpy first so matplotlib's Qt backend picks the same binding)
 if getattr(sys, "frozen", False):
-    from PySide6.QtCore import Qt, QThread, Signal, qVersion
+    from PySide6.QtCore import Qt, QThread, Signal, qVersion, QCoreApplication, QEvent
     from PySide6.QtGui import QAction, QActionGroup, QKeySequence
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
@@ -564,7 +666,7 @@ if getattr(sys, "frozen", False):
     QT_BINDING = "PySide6"
 else:
     import qtpy
-    from qtpy.QtCore import Qt, QThread, Signal, qVersion
+    from qtpy.QtCore import Qt, QThread, Signal, qVersion, QCoreApplication, QEvent
     from qtpy.QtGui import QKeySequence
     try:
         from qtpy.QtGui import QAction, QActionGroup
@@ -654,7 +756,7 @@ except ImportError:  # pragma: no cover - script copied without the module
 
 # %% Application identity
 APP_NAME = "Touchstone AutoPlot"
-__version__ = "0.7.4"
+__version__ = "0.7.5"
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO / Green Bank Observatory (GBO)"
@@ -1663,6 +1765,16 @@ class TouchstonePlotCanvas(QWidget):
             self._layout.addWidget(self._canvas)
 
     # ----- helpers -----------------------------------------------------------
+    def clear(self) -> None:
+        """Empty the preview (0.7.5, Clear): every plot is disposed and deleted
+        now, and a matplotlib figure is cleared."""
+        self._clear()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        if self.fig is not None:
+            self.fig.clear()
+            if self._canvas is not None:
+                self._canvas.draw_idle()
+
     def _clear(self) -> None:
         """Dispose of and remove every preview plot."""
         for plot in self._plots:
@@ -1825,7 +1937,7 @@ class TouchstoneProcessingThread(QThread):
         self.config = config
 
     def run(self):
-        """Read every file; emit {key: data or {'error': ...}} in list order."""
+        """Read every file; emit {path: data or {'error': ...}} in list order."""
         try:
             # 0.7.2: adaptive pool - timed first files decide (see
             # run_time_domain_batch); 220 files read in 0.9 s in one process.
@@ -1835,8 +1947,9 @@ class TouchstoneProcessingThread(QThread):
                 progress=lambda d, t: self.progress_updated.emit(int(100 * d / max(t, 1))),
                 start_s=POOL_START_S)
             raw: Dict[str, dict] = dict(outcome)
-            keys = unique_keys(self.file_list)
-            self.processing_finished.emit({keys[p]: raw[p] for p in self.file_list})
+            # 0.7.5: keyed by path; the window adds them to the files it keeps
+            # and names every listed file (unique_keys) itself
+            self.processing_finished.emit({p: raw[p] for p in self.file_list})
         except Exception as exc:
             self.error_occurred.emit("%s: %s" % (type(exc).__name__, exc))
 
@@ -1929,6 +2042,10 @@ class TouchstoneMainWindow(QMainWindow):
         self.td_results: Dict[str, dict] = {}
         self.smith_networks: Dict[str, dict] = {}
         self._worker: Optional[QThread] = None
+        # 0.7.5: networks read from the listed files, kept until Clear
+        from _autoplot_native import KeptReads
+        self.kept = KeptReads()
+        self._reading: List[str] = []
         self.theme_mode = suite.saved_theme()     # shared with the launcher and tools
 
         self._build_menu()
@@ -1949,7 +2066,7 @@ class TouchstoneMainWindow(QMainWindow):
         file_menu = bar.addMenu("&File")
         for text, slot, shortcut in (
                 ("&Open Touchstone Files...", self._browse_files, "Ctrl+O"),
-                ("&Clear File List", self._clear_files, ""),
+                ("&Clear Files and Data", self._clear_files, ""),
                 ("&Save Veusz Project (.vszh5)...", self._save_project, "Ctrl+S"),
                 ("Open Last Project in &Veusz", self._open_last_in_veusz, ""),
                 ("&Export Last Project to PDF / PNG (Veusz)", self._export_pages, "")):
@@ -2063,7 +2180,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.browse_button.setToolTip("Add Touchstone files (.s1p, .s2p, ... .sNp) to the list.")
         self.browse_button.clicked.connect(self._browse_files)
         self.clear_button = QPushButton("Clear Files")
-        self.clear_button.setToolTip("Remove every file from the list (the files are not touched).")
+        self.clear_button.setToolTip(suite.CLEAR_TOOLTIP)
         self.clear_button.clicked.connect(self._clear_files)
         row.addWidget(self.browse_button)
         row.addWidget(self.clear_button)
@@ -2487,20 +2604,41 @@ class TouchstoneMainWindow(QMainWindow):
             self._log_message("Added %d file(s)" % len(new))
 
     def _clear_files(self):
-        """Forget files, results and the Veusz document; release memory."""
+        """Clear: files, networks read, results, the Veusz document (nothing
+        cleared can be saved later), the Plots tab and the time-domain / Smith
+        previews; then the memory goes back to the operating system (0.7.5:
+        the Plots tab and previews held the old data before).  Refused while
+        a worker runs."""
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, APP_NAME, "Wait for the worker to finish, then Clear.")
+            return
+        count = len(self.selected_files)
         self.selected_files.clear()
+        self.kept.clear()
         self.processed_data.clear()
         self.td_results.clear()
         self.smith_networks.clear()
-        self.touchstone_plotter = None
+        self._drop_project()
+        for canvas in (self.td_plot_canvas, self.smith_plot_canvas):
+            canvas.clear()
         self._update_file_list()
         self._refresh_combos()
         self.save_button.setEnabled(False)
         self.smith_process_button.setEnabled(False)
         self.smith_export_button.setEnabled(False)
         self._update_timegated_button_state()
-        gc.collect()
-        self._log_message("File list cleared (memory released)")
+        suite.release_after_clear(self._log_message)
+        self._log_message("Cleared %d file(s): files, networks, results, project, plots "
+                          "and previews" % count)
+
+    def _drop_project(self):
+        """Forget the Veusz document and empty the Plots tab."""
+        if self.plot_panel is not None:
+            self.plot_panel.clear()
+        plotter, self.touchstone_plotter = self.touchstone_plotter, None
+        doc = getattr(plotter, "doc", None)
+        if doc is not None and hasattr(doc, "release"):
+            doc.release()
 
     def _update_file_list(self):
         """Show the full paths of the selected files."""
@@ -2631,6 +2769,7 @@ class TouchstoneMainWindow(QMainWindow):
         if not self.selected_files:
             QMessageBox.warning(self, "No Files", "Please select Touchstone files first.")
             return
+        self._drop_project()                  # 0.7.5: the old project goes first
         try:
             self.touchstone_plotter = TouchstonePlotter(
                 plot_title=self.plot_title_edit.text(),
@@ -2640,19 +2779,39 @@ class TouchstoneMainWindow(QMainWindow):
             QMessageBox.critical(self, "Veusz Output Unavailable", str(exc))
             return
         self.touchstone_plotter.doc.time_layout = self.gap_box.time_layout()   # 0.7.4
-        thread = TouchstoneProcessingThread(self.selected_files, self.config)
+        # 0.7.5: only files not read yet (or changed on disk) are read; the
+        # pages are built from every listed file
+        self._reading = self.kept.to_read(self.selected_files)
+        if not self._reading:
+            self._log_message("Rebuilding the pages from the %d file(s) already read"
+                              % len(self.kept))
+            self._on_processing_finished({})
+            return
+        thread = TouchstoneProcessingThread(self._reading, self.config)
         thread.progress_updated.connect(self.progress_bar.setValue)
         thread.processing_finished.connect(self._on_processing_finished)
         thread.error_occurred.connect(self._on_processing_error)
         self._worker = thread
-        self._set_busy(True, "Reading %d Touchstone file(s)..." % len(self.selected_files))
+        self._set_busy(True, "Reading %d Touchstone file(s), %d already read..."
+                       % (len(self._reading), len(self.selected_files) - len(self._reading)))
         thread.start()
 
     def _on_processing_finished(self, results: Dict[str, dict]):
-        """Keep good files, report failures, build the frequency pages."""
+        """Keep good files, report failures, build the frequency pages.
+
+        0.7.5: ``results`` ({path: data}) holds the files this batch read;
+        good ones join the kept networks (failed ones are read again next
+        time) and the pages are built from every listed file, named by
+        unique_keys() over the whole list."""
         self._worker = None
-        good = {k: v for k, v in results.items() if v and not v.get('error')}
-        bad = {k: v for k, v in results.items() if not v or v.get('error')}
+        for path in self._reading:
+            data = results.get(path)
+            self.kept.keep(path, data if data and not data.get('error') else None)
+        self._reading = []
+        keys = unique_keys(list(dict.fromkeys(self.selected_files)))
+        good = {keys[path]: data for path, data in self.kept.items(self.selected_files)}
+        bad = {keys.get(path, os.path.basename(path)): data for path, data in results.items()
+               if not data or data.get('error')}
         self.processed_data = good
         self.td_results.clear()
         self.smith_networks.clear()

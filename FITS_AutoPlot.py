@@ -26,6 +26,82 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.4: Clear clears everything; added files keep the data already read.
+Date: 2026-11-16
+#              * Clear removes the files, their data, the project (nothing
+#                cleared is saved later), the Plots tab, the cache and its
+#                spill files, and gives the memory back to the operating
+#                system (_autoplot_common 0.4.4).  Before, it emptied the list
+#                only and the next batch's project still held the cleared
+#                files.
+#              * Process reads only new or changed files and builds a new
+#                project from every listed file: adding files without Clear
+#                no longer puts the first files' pages in twice.  A batch
+#                with nothing new rebuilds the project at once (options).
+#              * The worker thread is deleted when it has finished (one was
+#                left per batch).
+#              Measured (GBT tack, 10 files): first half, then second added:
+#              project identical to all files at once (792 objects, same
+#              script), only the 5 new files read; Clear: RSS 278 -> 175 MiB
+#              (window open: 146 MiB).  30 days, 319 files: 651 -> 221 MiB.
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        file_source_word: Source of a file's datasets for the ``source_*`` tag (0.4.2): the file name without its FITS extensions (data["base_name"] when present).
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Cross-file unit-overlay pages (see _build_unit_overlay_pages_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_unit_overlay_pages_body: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.4"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.3: Gap options: break the lines, break the x axis, either or both.
 Date: 2026-11-16
 #              * Processing tab, gap controls (_autoplot_common 0.4.3): "Break
@@ -736,7 +812,7 @@ from astropy.table import QTable
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.4.3"
+APP_VERSION = "0.4.4"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -3380,16 +3456,24 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
             return
         backend = "astropy"
         self.cache.cfg.rss_high_water_mb = int(self.rss_spin.value())
-
-        if self.veusz_doc is None:
-            self.veusz_doc = NativeDocument("FITS_AutoPlot")
+        # 0.4.4: only files not read yet (or changed on disk, or read with
+        # other options) are read; the data of the others are kept since
+        # they were added (Clear forgets them).  The project is built anew
+        # from every listed file when the batch is done.
+        self._read_options = (backend, bool(self.skip_images_cb.isChecked()))
+        to_read = self.files_to_read(self._read_options)
 
         self.process_button.setEnabled(False)
         self.save_button.setEnabled(False)
-        self.show_progress_bars(len(self.selected_files))
+        self.show_progress_bars(max(1, len(to_read)))
+        kept = len(self.selected_files) - len(to_read)
+        if not to_read:
+            self.log("Rebuilding the project from the %d file(s) already read." % kept)
+            self._on_worker_done({})
+            return
 
         self.worker = FITSBatchWorker(
-            self.selected_files, backend, int(self.thread_spin.value()),
+            to_read, backend, int(self.thread_spin.value()),
             self.cache, parent=self,
             skip_images=bool(self.skip_images_cb.isChecked()),
             use_processes=bool(self.process_reader_cb.isChecked()),
@@ -3399,8 +3483,11 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.worker.log.connect(self.log)
         self.worker.finished_ok.connect(self._on_worker_done)
         self.worker.failed.connect(self._on_worker_failed)
-        self.log("Starting batch: %d file(s), backend=%s, threads=%d" %
-                 (len(self.selected_files), backend, int(self.thread_spin.value())))
+        # 0.4.4: the thread object goes once run() has returned (one was
+        # left per batch before)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.log("Starting batch: %d file(s) to read, %d already read, backend=%s, threads=%d" %
+                 (len(to_read), kept, backend, int(self.thread_spin.value())))
         self.worker.start()
 
     def _on_worker_progress(self, done: int, total: int, key: str) -> None:
@@ -3416,16 +3503,27 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.log("Batch failed: %s" % msg)
         QMessageBox.critical(self, "Batch failed", msg)
         self.process_button.setEnabled(True)
+        self.save_button.setEnabled(self.veusz_doc is not None)   # 0.4.4: the old project stays
         self.hide_progress_bars()
 
     def _on_worker_done(self, results: Dict[str, Any]) -> None:
         """Turn the batch results into project pages.
+
+        0.4.4: ``results`` holds the files this batch read; they join the
+        data kept from earlier batches (keep_read_results), and a new project
+        is built from every listed file (batch_results, new_project), so the
+        project and the Plots tab show exactly the files in the list - no
+        page twice, nothing that was cleared.
 
         Files are taken in time order (first valid DMJD, then name); each is
         pushed with push_to_veusz (per-file pages), then the unit overlay pages
         are built.  The gap settings of the GUI become the project's TimeLayout;
         dropped padding rows and errors are logged.
         """
+        self.keep_read_results(results, getattr(self, "_read_options", ()))
+        results = self.batch_results(results)
+        self.veusz_doc = self.new_project("FITS_AutoPlot")
+        self.parse_progress_bar.setRange(0, max(1, len(results)))
         backend = "astropy"
         emit_datestr = bool(self.datestr_cb.isChecked())
         skip_images = bool(self.skip_images_cb.isChecked())

@@ -61,6 +61,69 @@ frequency; this program assumes lower -> upper (see DATA_GAPS).
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.6: Clear clears everything; added files keep the patterns already read.
+Date: 2026-11-16
+#              * Clear removes the files, the patterns read, the project
+#                (Save is disabled; before, Save after Clear wrote the old
+#                project) and the Plots tab, then gives the memory back
+#                (_suite_gui.release_after_clear).  Refused while reading.
+#              * Process reads only new or changed files (KeptReads) and builds
+#                the project from every listed file.
+#              Checked: tests/test_clear_and_add.py (all at once == first
+#              half, then the second added; Clear leaves no project, plots,
+#              kept data or cache; the cleared files are not in the next
+#              project) on Python 3.8, 3.12 and 3.13.
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _mhz_text: A frequency (MHz) as exact text (0.2.4): every digit of the float64 (repr), without a trailing ".0" - 2700.0 -> "2700", 1420.40575 -> "1420.40575".
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.2.6"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.5: Gap options (line breaks, x-axis breaks) in the GUI and batch mode.
 Date: 2026-11-16
 #              * "Gaps" box (_suite_gui.GapOptionsBox) under the options;
@@ -332,7 +395,7 @@ from _autoplot_native import (exact_number_text, tag_data,   # noqa: E402
 from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (0.x adaptive pool)
 
 APP_NAME = "ATR AutoPlot"
-APP_VERSION = "0.2.5"
+APP_VERSION = "0.2.6"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
                    ".vszh5 projects, with interactive pyqtgraph plots.")
@@ -924,10 +987,14 @@ def _build_gui_classes():
             self.plotter: Optional[ATRPlotter] = None
             self.last_saved: Optional[str] = None
             self.thread: Optional[ATRProcessingThread] = None
+            # 0.2.6: patterns read from the listed files, kept until Clear
+            from _autoplot_native import KeptReads
+            self.kept = KeptReads()
+            self._reading: List[str] = []
             self.theme = suite.apply_theme(suite.saved_theme(), persist=False)
             suite.add_file_menu(self, [
                 ("&Add ATR Files...", self._browse_files, "Ctrl+O"),
-                ("&Clear File List", self._clear_files, ""),
+                ("&Clear Files and Data", self._clear_files, ""),
                 ("&Process Files", self._process, "F5"),
                 ("&Save Veusz Project (.vszh5)...", self._save_project, "Ctrl+S"),
                 ("Open Last Project in &Veusz", self._open_in_veusz, ""),
@@ -963,8 +1030,7 @@ def _build_gui_classes():
             for text, slot, tip in (
                     ("Browse ATR Files...", self._browse_files,
                      "Add GBO outdoor range pattern files (.atr) to the list."),
-                    ("Clear Files", self._clear_files,
-                     "Remove every file from the list (the files are not touched).")):
+                    ("Clear Files", self._clear_files, suite.CLEAR_TOOLTIP)):
                 button = QPushButton(text)
                 button.setToolTip(tip)
                 button.clicked.connect(slot)
@@ -1083,10 +1149,29 @@ def _build_gui_classes():
                 self._log("Added %d file(s); %d in the list" % (len(new), len(self.selected_files)))
 
         def _clear_files(self) -> None:
-            """Empty the file list."""
+            """Clear (0.2.6): the file list, the patterns read from it, the project
+            (nothing cleared can be saved later) and the Plots tab; then the
+            memory goes back to the operating system.  Refused while reading.
+            """
+            if self.thread is not None and self.thread.isRunning():
+                QMessageBox.information(self, APP_NAME, "Wait for the files to be read, then Clear.")
+                return
+            count = len(self.selected_files)
             self.selected_files.clear()
             self.file_list.clear()
-            self._log("File list cleared")
+            self.kept.clear()
+            self._drop_project()
+            self.save_button.setEnabled(False)
+            suite.release_after_clear(self._log)
+            self._log("Cleared %d file(s): file list, patterns, project and plots" % count)
+
+        def _drop_project(self) -> None:
+            """Forget the project and empty the Plots tab."""
+            if self.plot_panel is not None:
+                self.plot_panel.clear()
+            plotter, self.plotter = self.plotter, None
+            if plotter is not None:
+                plotter.doc.release()
 
         def options(self) -> PlotOptions:
             """PlotOptions from the GUI (an inverted magnitude range is widened to
@@ -1107,15 +1192,23 @@ def _build_gui_classes():
                 return
             if self.thread is not None and self.thread.isRunning():
                 return
+            # 0.2.6: only files not read yet (or changed on disk) are read; the
+            # project is built from every listed file
+            self._reading = self.kept.to_read(self.selected_files)
+            if not self._reading:
+                self._log("Rebuilding the project from the %d file(s) already read" % len(self.kept))
+                self._finished([], [])
+                return
             self.process_button.setEnabled(False)
             self.progress.setValue(0)
             self.progress.setVisible(True)
             workers = self.cpu_spin.value() if self.mp_box.isChecked() else 1
-            self.thread = ATRProcessingThread(self.selected_files, workers)
+            self.thread = ATRProcessingThread(self._reading, workers)
             self.thread.progress_updated.connect(self.progress.setValue)
             self.thread.processing_finished.connect(self._finished)
             self.thread.start()
-            self._log("Reading %d file(s)..." % len(self.selected_files))
+            self._log("Reading %d file(s), %d already read..."
+                      % (len(self._reading), len(self.selected_files) - len(self._reading)))
 
         def _finished(self, patterns: List[ATRPattern], errors: List[str]) -> None:
             """Log errors and warnings, build the project from the patterns read and
@@ -1128,9 +1221,17 @@ def _build_gui_classes():
             for pattern in patterns:
                 for warning in pattern.warnings:
                     self._log("%s: %s" % (pattern.name, warning))
+            # 0.2.6: keep what this batch read (a failed file is forgotten and
+            # read again next time), then build from every listed file
+            read = {pattern.path: pattern for pattern in patterns}
+            for path in self._reading:
+                self.kept.keep(path, read.get(path))
+            self._reading = []
+            patterns = [pattern for _path, pattern in self.kept.items(self.selected_files)]
             if not patterns:
                 QMessageBox.warning(self, APP_NAME, "No file could be read. See the log.")
                 return
+            self._drop_project()
             try:
                 self.plotter = build_project(patterns, self.options())
             except Exception as exc:

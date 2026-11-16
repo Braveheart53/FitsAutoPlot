@@ -78,6 +78,80 @@ Compatible with: Python 3.8+ (pyqtgraph 0.13.3) and 3.12+ (pyqtgraph 0.14),
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.4: A disposed plot's right-click menus are deleted at once.
+Date: 2026-11-16
+#              * TracePlot.dispose(): the parentless pyqtgraph menus given to
+#                deleteLater() are deleted now (DeferredDelete sent).  They
+#                stayed alive until control returned to the event loop; a
+#                Clear that measured the memory right away, and every page
+#                change in a script, kept them (tack: +21 MiB RSS and +1.1 MiB
+#                of Python objects per process / Clear round; now +3 to 5 MiB
+#                RSS and no Python growth).
+# %%%%% Function Descriptions
+        exact_cell_text: A CSV cell with every digit: text as is, an integer as is, a float as repr() (the shortest text that gives back the same float64).
+        install_exact_csv_export: Replace pyqtgraph's "CSV of original plot data" exporter (right-click > Export...) with one that writes every digit (0.3.2).
+        _ctrl_pressed: True when Ctrl is held during a (scene) wheel event.
+        _utc_text: Wall-clock text of a Unix time ('-' when unknown).
+        _value_text: Compact number; '-' for None/NaN.
+        _align_right: Right-align a table cell (Qt.Alignment on new PySide6, int on old).
+        _swatch: Small square icon in a trace colour (legend column).
+        break_gaps: Insert one NaN after every step longer than ``factor`` x the median step.
+        _scroll_enclosing_area: Scroll the nearest QScrollArea around the plot by the wheel's steps.
+        _wheel_passes_through: True when the wheel must NOT zoom: scroll the page instead.
+        _ViewBox (class): ViewBox whose wheel zoom needs Ctrl.
+        _AxisItem (class): Value axis with the same wheel rule.
+        _DateAxisItem (class): UTC date axis with the same wheel rule.
+        _PlotWidget (class): PlotWidget that reports when the mouse leaves it (to clear the crosshair).
+        configure: Global pyqtgraph options and the wheel rule (call before plots exist).
+        _setting: A NativeWidget setting ('PlotLine/color', 'label', ...).
+        _children: Child widgets of ``widget`` whose kind is one of ``kinds``, in order.
+        _graphs_of: Graphs of a page in drawing order (directly or inside grids).
+        _numeric: (array, kind) of a numeric 1-D or date dataset, else (None, kind).
+        _looks_like_mjd: MJD axis: 'MJD' in the dataset name or axis label and plausible values.
+        document_pages: Pages of a NativeDocument as plain descriptions (no Qt objects).
+        _axis_offset: UTC offset ("-05:00") of a local ISO date-time axis, "local" when the data cross offsets, "" for UTC / not a local axis (0.2.1).
+        _axis_range: (min, max) fixed in the project, None where the limit is Auto.
+        _smith_graph: Description of a Smith chart written by vszh5_writer 0.0.26 (0.3.0).
+        _polar_graph: Description of a Veusz polar graph and its nonorthpoint traces.
+        trace_arrays: (x, y, x_is_unix_time) of one trace, converted for display.
+        plot_gap_rule: The writer GapRule the Plots tab uses for one graph (0.3.3): the project's TimeLayout (its defaults when the project has none) for time traces, its...
+        axis_break_regions: (start, stop) x intervals where the Veusz project breaks the x axis of a graph whose traces have the x values ``xs`` (display units), by the projec...
+        TracePlot (class): A pyqtgraph plot with its legend-and-values column beside it (same layout and behaviour as the AB monitor's TracePlot).
+        ImagePlot (class): A 2-D dataset (FITS image HDU) with a colour bar.
+        _nice_ticks: About ``count`` round tick values from low to high.
+        _GridPlot (class): Common base of PolarPlot and SmithPlot: an aspect-locked plot with a drawn grid, and the same legend-and-values column as TracePlot.
+        PolarPlot (class): Veusz-style polar plot of r(theta) traces (e.g.
+        SmithPlot (class): Smith chart (impedance grid "z" or admittance grid "y") of reflection coefficients, with f, Gamma, Z and VSWR of the nearest point under the mouse.
+        html_escape: Minimal HTML escaping for header labels.
+        ProjectPlotPanel (class): The "Plots" tab.
+        self_test: Build and delete one plot; None when pyqtgraph works, else the reason (needs a QApplication).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        COLOURS: 4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+        THEMES: 1e1e2e", "#cdd6f4", "#9399b2"),
+        PLOT_HEIGHT: px per plot row
+        LEGEND_WIDTH: px of the legend column (user can drag the splitter)
+        SYMBOL_MAX_POINTS: point symbols only up to this many points per trace
+        GAP_FACTOR: a step > GAP_FACTOR x median step breaks the line
+        WHEEL_NEEDS_CTRL: plain wheel scrolls the page, Ctrl+wheel zooms
+        VEUSZ_EPOCH_UNIX: 2009-01-01T00:00:00Z: Veusz datetime zero
+        MJD_UNIX_EPOCH: MJD of 1970-01-01T00:00:00Z
+        MJD_PLAUSIBLE: values outside are not treated as MJD
+        SMITH_NOTES_PREFIX: (0.3.0) How a Smith chart graph of vszh5_writer 0.0.26 is recognised (its : notes) and how its trace datasets are named (same values as the writer).
+        _LINE_STYLES: Veusz line style -> Qt pen style
+        _MARKERS: Veusz marker -> pyqtgraph symbol
+# %%%%% More Info
+    The Plots tab of every program (pyqtgraph 0.13 on Python 3.8, 0.14 on
+    3.12, through qtpy/PySide6).  Ctrl + wheel zooms; the wheel alone scrolls.
+    Right-click > Export > "CSV of original plot data (every digit)" writes
+    repr() of every value.
+    Gaps: the Plots tab breaks lines by the project's options and shades the
+    x intervals the Veusz project leaves out of a broken axis (pyqtgraph has
+    no broken axis).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.3: Plots tab follows the project's gap options; axis breaks shaded.
 Date: 2026-11-16
 #              * trace_arrays(): line breaks only when the project's
@@ -352,7 +426,7 @@ from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from qtpy.QtCore import Qt, Signal  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 __version__ = VERSION
 
 # %% Settings
@@ -1100,6 +1174,12 @@ class TracePlot(QtWidgets.QWidget):
             if isinstance(menu, QtWidgets.QMenu):
                 try:
                     menu.deleteLater()
+                    # 0.3.4: deleted now, not when control returns to the event
+                    # loop: a Clear that measures the memory right away (or a
+                    # script without an event loop) found every page's menus
+                    # still alive (about 20 MiB per 30-plot page set).
+                    QtCore.QCoreApplication.sendPostedEvents(
+                        menu, QtCore.QEvent.Type.DeferredDelete)
                 except RuntimeError:
                     pass
 

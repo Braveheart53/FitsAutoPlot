@@ -31,6 +31,66 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.4: Clear clears everything; added files keep the data already parsed.
+Date: 2026-11-16
+#              * Clear removes the files, their data, the project, the Plots
+#                tab and the cache and gives the memory back (_autoplot_common
+#                0.4.4).  Process parses only new or changed files and builds
+#                a new project from every listed file (no page twice).
+#              * The worker thread is deleted when it has finished.
+#              Checked: 7 .t00new + time_gbt.dat, half then the rest added:
+#              the same project as all at once (301 objects, same script).
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model (_push_franks_body), then tag every new dataset (0.4.2) with ``source_<file>`` and th...
+        _push_franks_body: Add parsed Franks columns to a native in-memory project model.
+        build_unit_overlay_pages_franks: Cross-file column overlay pages (_build_overlay_pages_franks_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_overlay_pages_franks_body: Build one overlay page per **shared column name** across the loaded batch.
+        _parse_franks_isolated: Process-pool entry point (0.4.1): parse one Franks file on its own.
+        store_parse_result: Put the arrays of a _parse_franks_isolated() result into ``cache`` under the keys parse_franks_file() uses (numeric "<base>.<col>", text "<base>.<c...
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.4"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        _OVERLAY_COLORS: overlay trace colours
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept.  Time axes and gaps
+    as in FITS AutoPlot; the time_gbt.dat comment text is the COMMENTS column.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.3: Gap options: break the lines, break the x axis, either or both.
 Date: 2026-11-16
 #              * Gap controls (_autoplot_common 0.4.3): separate check boxes
@@ -580,7 +640,7 @@ import numpy as np
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'Franks AutoPlot'
-APP_VERSION = "0.4.3"
+APP_VERSION = "0.4.4"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -2044,16 +2104,23 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
                                     "Select one or more Franks data files first.")
             return
         self.cache.cfg.rss_high_water_mb = int(self.rss_spin.value())
-
-        if self.veusz_doc is None:
-            self.veusz_doc = NativeDocument("Franks_AutoPlot")
+        # 0.4.4: only files not read yet (or changed on disk) are parsed; the
+        # data of the others are kept since they were added (Clear forgets
+        # them).  The project is built anew from every listed file.
+        self._read_options = ()
+        to_read = self.files_to_read(self._read_options)
 
         self.process_button.setEnabled(False)
         self.save_button.setEnabled(False)
-        self.show_progress_bars(len(self.selected_files))
+        self.show_progress_bars(max(1, len(to_read)))
+        kept = len(self.selected_files) - len(to_read)
+        if not to_read:
+            self.log("Rebuilding the project from the %d file(s) already parsed." % kept)
+            self._on_done({})
+            return
 
         self.worker = FranksBatchWorker(
-            self.selected_files, int(self.thread_spin.value()),
+            to_read, int(self.thread_spin.value()),
             self.cache, parent=self,
             use_processes=bool(self.process_reader_cb.isChecked()),
             max_processes=default_workers(),
@@ -2062,8 +2129,11 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.worker.progress_log.connect(self.log)
         self.worker.finished_ok.connect(self._on_done)
         self.worker.failed.connect(self._on_failed)
-        self.log("Starting batch: %d file(s), threads=%d" %
-                 (len(self.selected_files), int(self.thread_spin.value())))
+        # 0.4.4: the thread object goes once run() has returned (one was
+        # left per batch before)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.log("Starting batch: %d file(s) to parse, %d already parsed, threads=%d" %
+                 (len(to_read), kept, int(self.thread_spin.value())))
         self.worker.start()
 
     def _on_progress(self, done: int, total: int, key: str) -> None:
@@ -2079,10 +2149,16 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.log("Batch failed: %s" % msg)
         QMessageBox.critical(self, "Batch failed", msg)
         self.process_button.setEnabled(True)
+        self.save_button.setEnabled(self.veusz_doc is not None)   # 0.4.4: the old project stays
         self.hide_progress_bars()
 
     def _on_done(self, results: Dict[str, Any]) -> None:
         """Turn the batch results into project pages.
+
+        0.4.4: ``results`` holds the files this batch parsed; they join the
+        data kept from earlier batches and a new project is built from every
+        listed file (keep_read_results, batch_results, new_project), so the
+        project and the Plots tab show exactly the files in the list.
 
         Files are taken in file-name order; each is pushed with
         push_franks_to_veusz (per-file pages), then the overlay pages are built.
@@ -2096,6 +2172,10 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         # is laid out by the document's TimeLayout (line breaks at
         # dt > K x median(dt), axis breaks at n x that, local ISO 8601).
         gap_absolute = self.gap_manual_days()
+        self.keep_read_results(results, getattr(self, "_read_options", ()))
+        results = self.batch_results(results)
+        self.veusz_doc = self.new_project("Franks_AutoPlot")
+        self.parse_progress_bar.setRange(0, max(1, len(results)))
         self.veusz_doc.time_layout = self.time_layout()
         self.log(self.veusz_doc.time_layout.describe())
         # v0.0.19: hide-legend-keys checkbox

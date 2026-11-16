@@ -48,6 +48,77 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.2: release_memory(): the GPU pools are emptied on Clear.
+Date: 2026-11-16
+#              * NEW release_memory(): CuPy's device and pinned-host pools
+#                freed when CuPy is loaded (never imports a GPU library);
+#                called by _autoplot_native.release_memory.
+# %%%%% Function Descriptions
+        GpuInfo (class): The GPU back end found by detect().
+        _short_vendor: 'Advanced Micro Devices, Inc.' -> 'AMD', and so on.
+        _detect_cupy: CuPy on CUDA (NVIDIA) or ROCm (AMD), or None with a note.
+        _detect_opencl: The OpenCL GPU with the most memory (any OpenCL device when ``explicit``).
+        detect: Find the GPU back end once (AUTOPLOT_GPU decides which); never raises.
+        available: True when a GPU back end was found.
+        describe: One line for logs and tooltips: the device in use, or why there is none.
+        enable: Switch the GPU on or off for calls that pass use_gpu=None.
+        enabled: True when the GPU is switched on and available.
+        set_threshold: Smallest array (elements) for which ``operation`` uses the GPU.
+        threshold: Current size threshold of ``operation`` (elements).
+        usage: Calls per operation so far: {"argsort": {"gpu": n, "cpu": m}, ...}.
+        usage_text: usage() as one line for the log, e.g.
+        reset_usage: Set the usage counters to zero.
+        _count: Add one call of ``operation`` on ``where`` ("gpu" or "cpu").
+        _cupy: The CuPy module (only called once detect() found it).
+        _cl_queue: (pyopencl, context, queue) of the detected OpenCL device, made once.
+        _free_cupy: Return CuPy's cached device memory, so the next file does not run out.
+        release_memory: Return the GPU memory the suite's pools keep (0.0.2): CuPy's device and pinned-host pools when CuPy is loaded (OpenCL buffers are freed with their...
+        _supported: True when ``operation`` has a GPU version for this back end.
+        _use_gpu: Decide whether one call runs on the GPU.
+        _fail: Use NumPy for ``operation`` from now on (logged through describe()).
+        sort_keys: Unsigned 64-bit keys whose ascending order is NumPy's sort order.
+        _cl_argsort: Stable argsort on an OpenCL device (radix sort of the 64-bit keys).
+        _cupy_argsort: Stable argsort with CuPy (CUDA or ROCm) on the 64-bit keys.
+        argsort: Stable ascending sort order (int64), the same as np.argsort(kind="stable").
+        _quiet: np.errstate(all="ignore") for NumPy; nothing for CuPy (it does not warn).
+        power_mean_db_xp: power_mean_db for one array module ``xp`` (numpy or cupy); averages axis 0.
+        _cl_power_mean: power_mean_db on an OpenCL device (double precision when it has fp64).
+        power_mean_db: Mean of dB values taken in the linear domain, returned in dB.
+        _numpy_ifft_centered: fftshift(ifft(ifftshift(x))) along ``axis`` with NumPy (the reference).
+        _cl_ifft_centered: The same with pyvkfft on the OpenCL device (shifts on the host).
+        ifft_centered: fftshift(ifft(ifftshift(x))) along ``axis``: t = 0 at the centre sample.
+        _test_values: Random values with ties, NaN, +-inf and both zeros (the hard cases).
+        _self_test: Run ``operation`` on the GPU with a small input and compare with NumPy.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        GPU_ENV: environment variable that selects the back end (auto, cuda, rocm, opencl, off)
+        BACKEND_CHOICES: accepted values of AUTOPLOT_GPU
+        THRESHOLDS: smallest array (elements) per operation for which the GPU is used (estimates)
+        MEMORY_FRACTION: largest share of the GPU memory one call may use
+        CHUNK_ROWS: rows per block in power_mean_db (bounds the temporary memory)
+        SIGN_BIT: 64-bit sign bit of the sort keys
+        ALL_ONES: largest 64-bit key (NaN sorts last)
+        _LOCK: one GPU call at a time (GUI and worker threads)
+        _STATE: detected GpuInfo and the on/off switch
+        _FAILED: operation -> why it fell back to NumPy for good
+        _TESTED: operation -> self-test result
+        _USAGE: GPU / CPU calls per operation
+        _CL: OpenCL device, context, queue and compiled kernels
+        _CL_RADIX_ARGS: argument list of the OpenCL radix sort
+        _CL_POWER_MEAN: OpenCL C source of the linear-domain dB mean kernel
+# %%%%% More Info
+    Install one of (see REQUIREMENTS.md section 2.2):
+        NVIDIA:              pip install cupy-cuda12x        (or cupy-cuda13x)
+        AMD on Linux:        pip install cupy-rocm-7-0       (Python 3.10+)
+        AMD / any, Windows:  pip install pyopencl            (+ the GPU driver's OpenCL)
+        optional FFT on OpenCL: pyvkfft (not tested on hardware: the self-test
+        decides whether it is used)
+    Python 3.8 to 3.13; no Qt.  Thread-safe (one lock around GPU calls).
+    release_memory() empties CuPy's
+    pools (Clear in every program).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.1: First version - one GPU layer for NVIDIA and AMD.
 Date: 2026-11-09
 #              CuPy on CUDA (NVIDIA), CuPy on ROCm (AMD) and PyOpenCL (any
@@ -121,9 +192,10 @@ Date: 2026-11-09
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.0.1"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.0.2"          # Semantic Versioning: see the Revisions entries above
 
 import os
+import sys
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -375,6 +447,25 @@ def _free_cupy() -> None:
         _cupy().get_default_memory_pool().free_all_blocks()
     except Exception:
         pass
+
+
+def release_memory() -> str:
+    """Return the GPU memory the suite's pools keep (0.0.2): CuPy's device and
+    pinned-host pools when CuPy is loaded (OpenCL buffers are freed with
+    their Python objects).  Never imports a GPU library; '' when none is
+    loaded or nothing was held."""
+    cupy = sys.modules.get("cupy")
+    if cupy is None:
+        return ""
+    held = 0
+    try:
+        pool = cupy.get_default_memory_pool()
+        held = int(pool.total_bytes())
+        pool.free_all_blocks()
+        cupy.get_default_pinned_memory_pool().free_all_blocks()
+    except Exception:
+        return ""
+    return "GPU pools freed (%.1f MiB held)" % (held / 1048576.0)
 
 
 def _supported(operation: str, info: GpuInfo) -> bool:

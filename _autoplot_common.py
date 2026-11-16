@@ -32,6 +32,141 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.4: Clear forgets everything; added files join the kept data.
+Date: 2026-11-16
+#              * Clear (button and File menu) used to empty the file list
+#                only: the project, the Plots tab and the cache kept the
+#                data, and the next batch added its pages to the old project,
+#                so cleared files were saved again (FITS tack: after Clear and
+#                5 new files the project still had the 10 old pages and 340
+#                datasets of the cleared files; RSS stayed at 306 MiB).  Now
+#                it forgets the list, the kept read data, the project
+#                (NativeDocument.release), the Plots tab, the cache and its
+#                spill files, deletes the widgets given to deleteLater() and
+#                hands the memory back (release_memory).  Refused while a
+#                batch runs; Browse and Clear are disabled during a batch.
+#              * Processing again without Clear built every listed file into
+#                the old project once more (17 pages instead of 11, every
+#                page of the first files twice).  NEW files_to_read,
+#                keep_read_results, batch_results, new_project: only new or
+#                changed files are read, the others' data are kept (KeptReads),
+#                and a new project is built from every listed file.
+#              * MemoryAwareCache.clear(): entries dropped and collected before
+#                their spill files are deleted (Windows cannot delete a mapped
+#                file); a file still in use is tried again later.
+#              Checked: tests/test_clear_and_add.py (all at once == first
+#              half, then the second added; Clear leaves no project, plots,
+#              kept data or cache; the cleared files are not in the next
+#              project) on Python 3.8, 3.12 and 3.13.
+# %%%%% Function Descriptions
+        make_dark_palette: Return a Fusion-style dark palette.
+        make_light_palette: Return a default light palette (style standard).
+        apply_theme: Apply the suite's 'dark' or 'light' palette to the running QApplication (standalone windows only - plugins style their own dialog instead).
+        suite_theme: Theme stored for the whole suite (launcher and tools).
+        store_suite_theme: Save ``mode`` ('dark' or 'light') as the suite-wide theme.
+        MemoryMonitorConfig (class): Configuration knobs for the memory monitor.
+        MemoryAwareCache (class): Memory-aware data cache that spills large numpy arrays to disk via ``numpy.memmap``.
+        MemoryMonitor (class): Background thread that publishes a callback whenever process RSS crosses the high-water mark.
+        run_in_threadpool: Submit ``work_items`` -- ``(key, fn, args)`` triplets -- to a ``ThreadPoolExecutor`` and collect results keyed by ``key``.
+        open_embedded: Legacy function name; return a native model, never launch Veusz.
+        begin_native_plugin_export: Pick an output file before parsing; never modify the host document.
+        finish_native_plugin_export: Same HDF5 writer for both plugin entry points and standalone GUIs.
+        save_vszh5: Atomically write the native model with h5py; no Veusz runtime needed.
+        _walk_widget_tree: Recursive sibling of ``Root.WalkWidgets``.
+        _collect_referenced_dataset_names_via_walk: Original (v0.0.17) WalkWidgets-based traversal.
+        _collect_referenced_dataset_names_via_text: v0.0.19 authoritative collector: dump the document via Veusz's own text serialization and regex out every ``Set('xData', 'name')``-style binding.
+        _collect_referenced_dataset_names: v0.0.19: combine WalkWidgets-based traversal AND a document-text scan, returning the UNION of both whitelists.
+        save_vszh5_minimized: Save exactly the referenced native datasets without deleting anything.
+        _norm_tag_token: Lower-cased, stripped string form of a tag-tuple element.
+        is_sentinel_tag_tuple: Return True iff ``tup`` is a placeholder/catch-all channel-tag tuple that should be EXCLUDED from dt-overlay datetime emission.
+        is_delta_column: Deprecated stub kept for v0.0.17 back-compat.
+        open_in_veusz_app: Launch an optional external Veusz GUI and load ``filename`` (typically a .vszh5 project just written by save_vszh5).
+        detect_time_breaks: Detect large gaps in a 1-D monotonic-ish array of time samples and return a list of (start, end) pairs suitable for Veusz's ``axis-broken`` widget.
+        column_unit_factor_from_day: Return the multiplier that converts a day-scale threshold into the units of the column named ``col_name``.
+        detect_time_breaks_unit_aware: Unit-aware wrapper around ``detect_time_breaks``.
+        break_pairs_to_breakpoints: Flatten a list of (start, end) tuples to Veusz's flat-list format [s1, e1, s2, e2, ...] as expected by the ``breakPoints`` setting of the ``axis-br...
+        make_broken_x_axis: Add an ``axis-broken`` widget named ``x`` to ``graph`` with the given list of (start, end) break pairs, after removing the default ``x`` axis that...
+        mjd_to_veusz_seconds: Convert an array of Modified Julian Dates (UTC) to the float-seconds units Veusz uses internally for date-time datasets.
+        _coerce_axis_setting_to_str: Some Veusz axis settings (rotate, in particular) are documented as accepting either an int or its string form.
+        style_datetime_x_axis: Apply the standard datetime tick-label format and angled rotation to an axis widget.
+        is_gpu_available: True when a GPU back end (CuPy CUDA/ROCm or PyOpenCL) found a device.
+        gpu_backend_name: Short string describing the GPU back end (or why there is none) for the GUI/log.
+        enable_gpu: Toggle the process-wide GPU acceleration flag.
+        gpu_enabled: Return the current global GPU-enabled state.
+        set_gpu_argsort_threshold: Set the minimum array size (samples) at which the GPU sort is used.
+        get_gpu_argsort_threshold: Minimum array size (samples) for the GPU argsort path.
+        gpu_tooltip: Tooltip of a GPU checkbox: the device found (or why none), the size threshold of ``operation`` and the install hints for NVIDIA and AMD.
+        gpu_usage_text: GPU and CPU calls of each GPU-capable operation since reset_gpu_usage().
+        reset_gpu_usage: Start counting GPU and CPU calls again (at the start of a batch).
+        gpu_argsort: Return ``np.argsort(arr, kind="stable")`` (ascending, int64) with optional GPU acceleration (NVIDIA or AMD; see _autoplot_gpu).
+        ProgressThrottle (class): Rate limit for progress-bar updates (0.4.1).
+        AutoPlotMainWindow (class): Base main window mirroring the layout used by Touchstone_AutoPlot.py:
+        open_maybe_gzipped: Return a binary file handle for ``path``; transparently gunzip *.gz.
+        mjd_to_datestr: Convert an array of Modified Julian Dates (UTC, double precision) into an array of formatted timestamp strings, with every digit of the time.
+        dataset_kinds: Type kinds of a FITS / Franks AutoPlot dataset, read from its name.
+        document_dataset_names: Every dataset name of a NativeDocument or a Veusz document.
+        tag_named_datasets: Tag FITS / Franks datasets: ``sources`` plus the kinds of each name (dataset_kinds); text datasets also get ``type_text``.
+        register_nrao_fits_units: Register the non-standard NRAO FITS unit aliases with astropy.units so that ``QTable.read`` / ``Table.read`` no longer emit a UnitsWarning.
+        suppress_fits_unit_warnings: Context manager that filters the harmless FITS unit-related warnings emitted by ``astropy.io.fits`` and ``astropy.table`` when reading NRAO 1PPS-de...
+        set_datetime_dataset: Push a Veusz datetime dataset, coercing values to plain floats.
+        safe_dsname: Sanitize an arbitrary string for use as a Veusz dataset name.
+        _stable_index: Deterministic non-negative index in ``[0, modulus)``.
+        trace_style_for: Return ``(color_hex, line_style_str)`` for an identity key.
+        apply_trace_style: Apply identity-stable color + line style + markers to a Veusz xy.
+        build_sparse_datestr_dataset: Push a same-length sparse date-string text dataset to Veusz.
+        build_full_datestr_dataset: Push a same-length per-point date-string text dataset to Veusz.
+        style_xy_datetime_labels: Apply rotated, compact text formatting to an xy widget's labels.
+        build_density_datestr_dataset: Push a same-length date-string text dataset with continuous density.
+        build_textx_dataset: Push a same-length per-point date-string text dataset for use as xData.
+        configure_axis_labels_mode: Switch a Veusz axis to ``mode='labels'`` with sensible defaults.
+        build_dtnum_dataset: Push a numeric Veusz-datetime-seconds dataset for use as xData.
+        configure_axis_datetime_mode: Switch a Veusz x axis to ``mode='datetime'`` and style its ticks.
+        mjd_break_pairs_to_dtsec: Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _DATASET_REF_SETTINGS: v0.0.19: trimmed the tuple to entries that *actually* hold dataset names.  ``posn`` is a position rectangle, ``key`` is a legend-label STRING -- ne...
+        _DOC_DATASET_REF_REGEX: v0.0.19: regex used to extract dataset references from the document's own saved-text representation.  This is the AUTHORITATIVE source of truth --...
+        SENTINEL_TAG_TOKENS: The user can extend the sentinel set in place; the predicate is case-insensitive and trims whitespace before matching.
+        DELTA_COLUMN_NAME_PATTERNS: Deprecated column-name predicate -- retained as a no-op for any external script that may have imported it.  v0.0.17 superseded this with the tuple-...
+        DAY_SCALE_COLUMN_NAMES: Unknown column names default to 1.0 (i.e. assume MJD-day units), which is the safe choice when the column appears to be a generic time axis: a too-...
+        SECOND_SCALE_COLUMN_NAMES: column names whose values are seconds (time axes)
+        MJD_VEUSZ_EPOCH_MJD: MJD that corresponds to Veusz's internal date-time zero (2009-01-01 UTC).
+        DEFAULT_DATETIME_TICK_FORMAT: 0.3.0: ISO 8601
+        LOCAL_TIME_AXIS_LABEL: 0.3.0: label of a local date-time axis (the offset is appended on save).
+        DEFAULT_DATETIME_TICK_ROTATE_DEG: Default tick label rotation -- 45 degrees keeps a 19-character label readable at typical cadences.  Veusz accepts integer or stringified integer de...
+        DEFAULT_DATETIME_MAJOR_TICKS_TARGET: Target number of major ticks along the x axis.  Veusz auto-picks the spacing to satisfy roughly this many major ticks; we keep it modest so the rot...
+        QUEUED_CONNECTION: queued signal connection, valid for PySide6, PyQt5 and PyQt6
+        MJD_EPOCH_JD_OFFSET: Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC. JD = MJD + 2400000.5  -- we implement the conversion directly without astropy.time...
+        _NAME_KINDS: (name suffix, type kinds) of FITS / Franks dataset names, longest first
+        _NRAO_UNITS_REGISTERED: NRAO 1PPS-delta FITS files use non-standard FITS unit strings: * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit) * DELTAT  carr...
+        TRACE_COLOR_PALETTE: trace colours, cycled
+        TRACE_LINE_STYLES: line styles cycled after the colours
+        TRACE_STYLE_VARY_THRESHOLD: 16
+        DEFAULT_DATETIME_LABEL_ANCHORS: legacy date-label pages: labels per trace
+        DEFAULT_DATETIME_LABEL_ANGLE: legacy date-label pages: label angle (degrees)
+        DEFAULT_DATETIME_LABEL_SIZE: legacy date-label pages: label font size
+        DEFAULT_DATETIME_LABEL_FMT: legacy date-label pages: strftime format
+        PYQTGRAPH_ERROR = None
+        _PSUTIL_AVAILABLE = True
+# %%%%% More Info
+    Shared by FITS and Franks AutoPlot and their plugins.  numpy.memmap is
+    the RAM -> disk transport of MemoryAwareCache (no pickling, the kernel page
+    cache does the writing).  The memory monitor runs in its own thread: its
+    callback must not touch Qt widgets (log() is safe).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.3: Gap controls: break lines, break the x axis, non-time axes.
 Date: 2026-11-16
 #              * add_gap_controls(): check boxes "Break the line / trace at
@@ -1090,7 +1225,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.4.3"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.4.4"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -1112,7 +1247,7 @@ import warnings
 import contextlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 # %%% IMPORTS - Scientific
 import numpy as np
@@ -1130,7 +1265,7 @@ from _autoplot_native import (parse_gap_string, GAP_STRING_HELP,   # noqa: E402,
 # pattern used elsewhere in the FitsAutoPlot repo).
 # ---------------------------------------------------------------------------
 if getattr(sys, "frozen", False):
-    from PySide6.QtCore import Qt, QThread, Signal, QObject  # noqa: F401
+    from PySide6.QtCore import Qt, QThread, Signal, QObject, QCoreApplication, QEvent  # noqa: F401
     from PySide6.QtGui import QPalette, QColor, QAction      # noqa: F401
     from PySide6.QtWidgets import (                          # noqa: F401
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -1141,7 +1276,7 @@ if getattr(sys, "frozen", False):
         QTabWidget, QRadioButton, QButtonGroup,
     )
 else:
-    from qtpy.QtCore import Qt, QThread, Signal, QObject      # noqa: F401
+    from qtpy.QtCore import Qt, QThread, Signal, QObject, QCoreApplication, QEvent  # noqa: F401
     from qtpy.QtGui import QPalette, QColor                   # noqa: F401
     try:
         # qtpy maps QAction onto QtGui on Qt6 and QtWidgets on Qt5.
@@ -1330,18 +1465,26 @@ class MemoryAwareCache:
     def clear(self) -> None:
         """Drop every cached entry and delete the spill files from disk.
 
-        Call it after a batch (or let the GUI's "Flush RAM" do it) to release both
-        RAM and temporary disk space.
+        Call it after a batch (or let Clear do it) to release both RAM and
+        temporary disk space.  0.4.4: the entries are dropped and collected
+        first, so the memmaps are closed before their files are deleted
+        (Windows refuses to delete a mapped file); a file still in use is
+        tried again by the next clear() or cleanup().
         """
         with self._lock:
             self._cache.clear()
-            for path in list(self._spilled.values()):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+            paths = list(self._spilled.values()) + list(getattr(self, "_undeleted", []))
             self._spilled.clear()
-            gc.collect()
+        gc.collect()
+        left = []
+        for path in paths:
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                left.append(path)
+        self._undeleted = left
 
     def cleanup(self) -> None:
         """Remove the on-disk cache directory completely."""
@@ -2555,6 +2698,10 @@ class AutoPlotMainWindow(QMainWindow):
         self.setWindowTitle(title)
         self.resize(1100, 800)
         self.selected_files: List[str] = []
+        # 0.4.4: data read from the listed files, kept until Clear so adding
+        # files and processing again does not forget (or re-read) them
+        from _autoplot_native import KeptReads
+        self.kept_reads = KeptReads()
         self._theme_mode = suite_theme(default_mode)   # shared with the launcher
         # Path of the most recently saved .vszh5 project (None until
         # mark_project_saved() is called by a subclass _save_project()).
@@ -2575,7 +2722,9 @@ class AutoPlotMainWindow(QMainWindow):
         act_open = QAction("&Open Files...", self)
         act_open.triggered.connect(self._browse_files)
         file_menu.addAction(act_open)
-        act_clear = QAction("&Clear List", self)
+        act_clear = QAction("&Clear Files and Data", self)
+        act_clear.setToolTip("Remove every file, its data, the project and the plots, "
+                             "and give the memory back to the operating system.")
         act_clear.triggered.connect(self._clear_files)
         file_menu.addAction(act_clear)
         file_menu.addSeparator()
@@ -2638,7 +2787,12 @@ class AutoPlotMainWindow(QMainWindow):
         self.browse_button.clicked.connect(self._browse_files)
         row.addWidget(self.browse_button)
         self.clear_button = QPushButton("Clear")
-        self.clear_button.setToolTip("Remove every file from the list (the files are not touched).")
+        self.clear_button.setToolTip(
+            "Remove every file from the list together with its data: the project "
+            "(nothing cleared is saved later), the Plots tab, the caches and spill "
+            "files; the memory goes back to the operating system.  The files on disk "
+            "are not touched.  Without Clear, added files are processed together "
+            "with the ones already read.")
         self.clear_button.clicked.connect(self._clear_files)
         row.addWidget(self.clear_button)
         flay.addLayout(row)
@@ -2778,10 +2932,106 @@ class AutoPlotMainWindow(QMainWindow):
                      (len(files), len(self.selected_files)))
 
     def _clear_files(self) -> None:
-        """Empty the input file list."""
+        """Clear: the file list and everything read from it (0.4.4).
+
+        The kept read results, the project (so nothing cleared can be saved
+        later), the Plots tab, the cache and its spill files go, then the
+        memory is handed back to the operating system (release_memory).
+        Refused while a batch is running.
+        """
+        if self._batch_running():
+            QMessageBox.information(self, "Batch running",
+                                    "Wait for the batch to finish, then Clear.")
+            return
+        count = len(self.selected_files)
         self.selected_files.clear()
         self._refresh_file_list()
-        self.log("File list cleared.")
+        self.kept_reads.clear()
+        self._drop_project()
+        worker = getattr(self, "worker", None)
+        self.worker = None
+        if worker is not None:
+            try:
+                worker.deleteLater()
+            except RuntimeError:
+                pass
+        cache = getattr(self, "cache", None)
+        if cache is not None:
+            cache.clear()
+        save_button = getattr(self, "save_button", None)
+        if save_button is not None:
+            save_button.setEnabled(False)
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+            # widgets and threads given to deleteLater() go now, not when the
+            # click handler returns, so their memory is released below
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        from _autoplot_native import release_memory
+        result = release_memory(self.log)
+        self.log("Cleared %d file(s): file list, read data, project, plots and caches." % count)
+        try:
+            self.update_mem_label(result["after_mb"])
+        except Exception:
+            pass
+
+    # ----- kept read results (0.4.4) ---------------------------------------
+    def _batch_running(self) -> bool:
+        """True while the reading worker of a batch runs."""
+        worker = getattr(self, "worker", None)
+        try:
+            return worker is not None and worker.isRunning()
+        except RuntimeError:                  # the C++ object is already gone
+            return False
+
+    def files_to_read(self, options: Sequence[Any]) -> List[str]:
+        """Listed files whose data must be read: not read yet, changed on disk,
+        or read with other ``options`` (KeptReads.to_read).  A kept file that
+        is gone from disk keeps its data (it is not forgotten)."""
+        return self.kept_reads.to_read(self.selected_files, options)
+
+    def keep_read_results(self, results: Dict[str, Any], options: Sequence[Any]) -> None:
+        """Keep the data of every file this batch read (a failed file is
+        forgotten, so the next batch tries it again)."""
+        for path, data in results.items():
+            self.kept_reads.keep(path, data if isinstance(data, dict) else None, options)
+
+    def batch_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Data of every listed file for one project build: the kept results
+        (shallow copies without the page builders' '_' keys, so a rebuild
+        starts from the data as read) and this batch's errors."""
+        merged: Dict[str, Any] = {}
+        for path in dict.fromkeys(self.selected_files):
+            data = results.get(path)
+            if isinstance(data, Exception):
+                merged[path] = data
+            elif path in self.kept_reads:
+                merged[path] = {key: value for key, value in self.kept_reads.get(path).items()
+                                if not str(key).startswith("_")}
+        return merged
+
+    def new_project(self, name: str) -> NativeDocument:
+        """An empty project for the next build; the previous project and the
+        plots that show it are released first, so every build holds exactly
+        the listed files (no page twice, nothing cleared)."""
+        self._drop_project()
+        return NativeDocument(name)
+
+    def _drop_project(self) -> None:
+        """Forget the project: Plots tab emptied, document released."""
+        panel = getattr(self, "plot_panel", None)
+        if panel is not None:
+            try:
+                panel.clear()
+            except Exception:
+                pass
+        doc = getattr(self, "veusz_doc", None)
+        self.veusz_doc = None
+        if doc is not None and hasattr(doc, "release"):
+            try:
+                doc.release()
+            except Exception:
+                pass
 
     def _refresh_file_list(self) -> None:
         """Show the base names of the selected files in the list widget."""
@@ -2851,6 +3101,8 @@ class AutoPlotMainWindow(QMainWindow):
         self.parse_progress_bar.setValue(0)
         self.column_progress_bar.setRange(0, 1)
         self.column_progress_bar.setValue(0)
+        for button in (self.browse_button, self.clear_button):   # 0.4.4: not during a batch
+            button.setEnabled(False)
 
     def hide_progress_bars(self) -> None:
         """Hide all three progress bars and their labels (batch finished)."""
@@ -2858,6 +3110,8 @@ class AutoPlotMainWindow(QMainWindow):
                   self.parse_progress_label, self.parse_progress_bar,
                   self.column_progress_label, self.column_progress_bar):
             w.setVisible(False)
+        for button in (self.browse_button, self.clear_button):
+            button.setEnabled(True)
 
     def begin_column_progress(self, file_label: str, n_cols: int) -> None:
         """Reset the column bar at the start of pushing one file."""
