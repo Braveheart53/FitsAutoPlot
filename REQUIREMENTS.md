@@ -1,8 +1,17 @@
 # FitsAutoPlot suite — requirements and tested environments
 
-Revision 0.2.4 (2026-11-16). Applies to the 2026-11-16 suite 0.4.5 (FITS / Franks AutoPlot 0.4.4,
-R&S 1.1.6, ATR 0.2.6, CSV/TSV 6.1.6, Touchstone 0.7.5, writer 0.0.31, `_autoplot_native` 0.5.5,
-`_autoplot_common` 0.4.5, `_autoplot_pyqtgraph` 0.3.5). 0.2.4: the vertical tick labels need no new
+Revision 0.2.6 (2026-11-17). Applies to the 2026-11-17 suite 0.4.7 (FITS / Franks AutoPlot 0.4.6,
+R&S 1.1.7, ATR 0.2.7, CSV/TSV 6.1.8, Touchstone 0.7.6, writer 0.0.31, `_autoplot_native` 0.5.7,
+`_autoplot_common` 0.4.7, `_autoplot_pyqtgraph` 0.3.6, `_suite_gui` 0.1.5, plugins 0.3.6). 0.2.6:
+the RAM limit (offload to disk) needs no new packages: the computer's RAM use is read with psutil
+when installed, else `/proc/meminfo` (Linux) or `GlobalMemoryStatusEx` (Windows, `ctypes`); the
+offload file is written with the standard library (`pickle`, `tempfile`); tested on Python 3.12.3
+only (164 unit tests). 0.2.5:
+the Local time / UTC / MJD time axes need no new or changed packages (the zone comes from the
+operating system through the standard library: `datetime.astimezone()`; `zoneinfo` or
+`python-dateutil` only for `VSZH5_DISPLAY_TZ` names); tested on Python 3.12.3 only, as asked
+(148 unit tests; Veusz 4.2.1 built for 3.12 with PyQt6 6.12 - start it with PyQt6's own Qt
+libraries first on `LD_LIBRARY_PATH` on Linux when the system has an older Qt 6). 0.2.4: the vertical tick labels need no new
 or changed packages (the label sizes are worked out without Qt or Veusz; Veusz 4.2.1 only for the
 render checks); 133 unit tests pass on Python 3.8.20, 3.12.3 and 3.13.18. The Plots tab's
 two-line date ticks were checked with pyqtgraph 0.13.3 (Python 3.8) and 0.14.0 (3.12, 3.13). 0.2.3: Clear gives the memory
@@ -50,7 +59,7 @@ Update an environment after a new release:
 | numpy | 1.24.4 | 2.5.4 | all | arrays |
 | h5py | 3.11.0 | 3.16.0 | all (vszh5_writer) | writes the `.vszh5` HDF5 projects; Veusz is not needed to write them |
 | astropy (+ pyerfa) | 5.2.2 (2.0.0.3) | 8.0.2 (2.0.1.5) | FITS AutoPlot and plugin | FITS reader, MJD conversion |
-| psutil | 7.2.2 | 7.2.2 | FITS / Franks | RSS memory monitor; arrays spill to disk above the threshold |
+| psutil | 7.2.2 | 7.2.2 | FITS / Franks; every tool (RAM limit) | RSS memory monitor; arrays spill to disk above the threshold; the computer's RAM in use for the RAM limit (without psutil: `/proc/meminfo` or `GlobalMemoryStatusEx`) |
 | qtpy | 2.4.3 | 2.4.3 | every GUI | Qt abstraction layer |
 | PySide6 | 6.6.3.1 | 6.12.0 | every GUI | Qt 6 binding used through qtpy |
 | pyqtgraph | 0.13.3 | 0.14.0 | every GUI (Plots tab) | interactive plots; 0.13.3 is the last release for 3.8 |

@@ -26,6 +26,159 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.6: RAM limit - plot data offloaded to disk above it.
+Date: 2026-11-17
+#              * Options: "Offload plot data to disk above RAM use of" (shared
+#                RamLimitBox, default 80 %) under the RSS spill threshold; the
+#                project's datasets and the kept file data go to a pickle file
+#                when the computer's RAM use reaches it; Save writes the
+#                .vszh5 from it.
+#              Checked (Python 3.12.3): tests/test_offload.py (16 tests) and the
+#              whole suite; every program's real files (FITS GBT tack, UWBR
+#              Temps / Vacuum, ATR, R&S, CSV, Touchstone) saved with every
+#              dataset offloaded: identical to the in-RAM save in every
+#              dataset, attribute and script line; Plots tab identical.
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        file_source_word: Source of a file's datasets for the ``source_*`` tag (0.4.2): the file name without its FITS extensions (data["base_name"] when present).
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Cross-file unit-overlay pages (see _build_unit_overlay_pages_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_unit_overlay_pages_body: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.6"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.4.5: Time axes in local time (this computer's zone), UTC and MJD.
+Date: 2026-11-17
+#              * Options: "Time axes" tick boxes Local time (default), UTC,
+#                MJD and the zone line (_autoplot_common 0.4.6); one set of
+#                pages per ticked clock in the Plots tab and the .vszh5; the
+#                log lists the clocks.
+#              * The UTC dataset of the time column is stored with its exact
+#                MJD (SetDataDateTime(mjd=raw MJD dataset)).
+#              Checked (Python 3.12.3, Veusz 4.2.1): tests/test_time_clocks.py
+#              (15 tests) and the whole suite; FITS GBT tack / UWBR Temps /
+#              30-day 1PPS, synthetic FITS / Franks and CSV projects with
+#              all three clocks rendered in Veusz with every tick label
+#              drawn; local-only projects identical to 0.4.5 in every
+#              dataset (only the axis label and graph notes changed).
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        file_source_word: Source of a file's datasets for the ``source_*`` tag (0.4.2): the file name without its FITS extensions (data["base_name"] when present).
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Cross-file unit-overlay pages (see _build_unit_overlay_pages_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_unit_overlay_pages_body: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.5"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.4: Clear clears everything; added files keep the data already read.
 Date: 2026-11-16
 #              * Clear removes the files, their data, the project (nothing
@@ -812,7 +965,7 @@ from astropy.table import QTable
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.4.4"
+APP_VERSION = "0.4.6"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -1350,7 +1503,8 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             mjd = np.asarray(array, dtype=float)
             utc = (mjd - MJD_VEUSZ_EPOCH_MJD) * 86400.0
             utc[~(np.isfinite(mjd) & (mjd > 0.0))] = np.nan
-            doc.SetDataDateTime(utc_name, utc)
+            # 0.4.5: the MJD clock draws the stored MJD dataset (exact)
+            doc.SetDataDateTime(utc_name, utc, mjd=raw_name)
             raw_names.append(utc_name)
         _tick()
     if log_cb:
@@ -3290,6 +3444,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         self.rss_spin.setSingleStep(128)
         self.rss_spin.setValue(DEFAULT_RSS_HIGH_WATER_MB)
         form.addRow(QLabel("RSS spill threshold (MiB):"), self.rss_spin)
+        self.add_memory_controls(form)     # 0.4.6: offload plot data above a RAM limit
 
         self.show_embed_cb = QCheckBox("Native build: use Open in Veusz after saving")
         self.show_embed_cb.setToolTip(("Not available in the native build: use 'Open in Veusz' after"
@@ -3536,6 +3691,7 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         gap_absolute = self.gap_manual_days()
         self.veusz_doc.time_layout = self.time_layout()
         self.log(self.veusz_doc.time_layout.describe())
+        self.log(self.veusz_doc.time_layout.describe_clocks())   # 0.4.5
         # v0.0.19: hide-legend-keys checkbox
         hide_keys = bool(self.hide_keys_cb.isChecked())
         plot_individual = not bool(self.combined_only_cb.isChecked())

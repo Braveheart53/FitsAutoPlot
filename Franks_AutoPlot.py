@@ -31,6 +31,139 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.6: RAM limit - plot data offloaded to disk above it.
+Date: 2026-11-17
+#              * Options: "Offload plot data to disk above RAM use of" (shared
+#                RamLimitBox, default 80 %), as FITS AutoPlot 0.4.6.
+#              Checked (Python 3.12.3): tests/test_offload.py (16 tests) and the
+#              whole suite; every program's real files (FITS GBT tack, UWBR
+#              Temps / Vacuum, ATR, R&S, CSV, Touchstone) saved with every
+#              dataset offloaded: identical to the in-RAM save in every
+#              dataset, attribute and script line; Plots tab identical.
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model (_push_franks_body), then tag every new dataset (0.4.2) with ``source_<file>`` and th...
+        _push_franks_body: Add parsed Franks columns to a native in-memory project model.
+        build_unit_overlay_pages_franks: Cross-file column overlay pages (_build_overlay_pages_franks_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_overlay_pages_franks_body: Build one overlay page per **shared column name** across the loaded batch.
+        _parse_franks_isolated: Process-pool entry point (0.4.1): parse one Franks file on its own.
+        store_parse_result: Put the arrays of a _parse_franks_isolated() result into ``cache`` under the keys parse_franks_file() uses (numeric "<base>.<col>", text "<base>.<c...
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.6"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        _OVERLAY_COLORS: overlay trace colours
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept.  Time axes and gaps
+    as in FITS AutoPlot; the time_gbt.dat comment text is the COMMENTS column.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.4.5: Time axes in local time (this computer's zone), UTC and MJD.
+Date: 2026-11-17
+#              * Options: "Time axes" tick boxes Local time (default), UTC,
+#                MJD and the zone line (_autoplot_common 0.4.6); one set of
+#                pages per ticked clock; the log lists the clocks.
+#              Checked (Python 3.12.3, Veusz 4.2.1): tests/test_time_clocks.py
+#              (15 tests) and the whole suite; FITS GBT tack / UWBR Temps /
+#              30-day 1PPS, synthetic FITS / Franks and CSV projects with
+#              all three clocks rendered in Veusz with every tick label
+#              drawn; local-only projects identical to 0.4.5 in every
+#              dataset (only the axis label and graph notes changed).
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model (_push_franks_body), then tag every new dataset (0.4.2) with ``source_<file>`` and th...
+        _push_franks_body: Add parsed Franks columns to a native in-memory project model.
+        build_unit_overlay_pages_franks: Cross-file column overlay pages (_build_overlay_pages_franks_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_overlay_pages_franks_body: Build one overlay page per **shared column name** across the loaded batch.
+        _parse_franks_isolated: Process-pool entry point (0.4.1): parse one Franks file on its own.
+        store_parse_result: Put the arrays of a _parse_franks_isolated() result into ``cache`` under the keys parse_franks_file() uses (numeric "<base>.<col>", text "<base>.<c...
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.5"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        _OVERLAY_COLORS: overlay trace colours
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept.  Time axes and gaps
+    as in FITS AutoPlot; the time_gbt.dat comment text is the COMMENTS column.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.4: Clear clears everything; added files keep the data already parsed.
 Date: 2026-11-16
 #              * Clear removes the files, their data, the project, the Plots
@@ -640,7 +773,7 @@ import numpy as np
 from _autoplot_native import NativeDocument
 
 APP_NAME = 'Franks AutoPlot'
-APP_VERSION = "0.4.4"
+APP_VERSION = "0.4.6"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -1955,6 +2088,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.rss_spin.setSingleStep(128)
         self.rss_spin.setValue(DEFAULT_RSS_HIGH_WATER_MB)
         form.addRow(QLabel("RSS spill threshold (MiB):"), self.rss_spin)
+        self.add_memory_controls(form)     # 0.4.6: offload plot data above a RAM limit
 
         self.show_embed_cb = QCheckBox("Native build: use Open in Veusz after saving")
         self.show_embed_cb.setToolTip(("Not available in the native build: use 'Open in Veusz' after"
@@ -2178,6 +2312,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.parse_progress_bar.setRange(0, max(1, len(results)))
         self.veusz_doc.time_layout = self.time_layout()
         self.log(self.veusz_doc.time_layout.describe())
+        self.log(self.veusz_doc.time_layout.describe_clocks())   # 0.4.5
         # v0.0.19: hide-legend-keys checkbox
         hide_keys = bool(self.hide_keys_cb.isChecked())
         plot_individual = not bool(self.combined_only_cb.isChecked())

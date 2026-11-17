@@ -78,6 +78,93 @@ Compatible with: Python 3.8+ (pyqtgraph 0.13.3) and 3.12+ (pyqtgraph 0.14),
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.6: Plots tab: UTC and MJD clock pages; numbers keep their digits.
+Date: 2026-11-17
+#              * document_pages(): "x_clock" of every graph; an MJD clock page
+#                stays numeric (not turned into dates by "MJD as UTC date");
+#                a UTC page reads "...Z" at the cursor (_axis_offset "Z").
+#              * NEW tick_texts(): pyqtgraph wrote every tick from 10 000 up
+#                with six significant digits (MJD 61150.07 ... 61150.11 all
+#                "61150.1"; a 100 Hz span at 10 MHz one label); now each tick
+#                has the decimals its spacing needs.  The cursor read-out
+#                shows 12 significant digits from 10 000 up.
+#              * trace_arrays() / axis_break_regions(days=True): an MJD page
+#                uses the time gap rule on seconds, as the saved project.
+#              Checked (Python 3.12.3, Veusz 4.2.1): tests/test_time_clocks.py
+#              (15 tests) and the whole suite; FITS GBT tack / UWBR Temps /
+#              30-day 1PPS, synthetic FITS / Franks and CSV projects with
+#              all three clocks rendered in Veusz with every tick label
+#              drawn; local-only projects identical to 0.4.5 in every
+#              dataset (only the axis label and graph notes changed).
+# %%%%% Function Descriptions
+        exact_cell_text: A CSV cell with every digit: text as is, an integer as is, a float as repr() (the shortest text that gives back the same float64).
+        install_exact_csv_export: Replace pyqtgraph's "CSV of original plot data" exporter (right-click > Export...) with one that writes every digit (0.3.2).
+        _ctrl_pressed: True when Ctrl is held during a (scene) wheel event.
+        _utc_text: Wall-clock text of a Unix time ('-' when unknown).
+        _value_text: Compact number; '-' for None/NaN (0.3.6: 12 significant digits from 10 000 up, so an MJD or a frequency reads to the second / hertz).
+        _align_right: Right-align a table cell (Qt.Alignment on new PySide6, int on old).
+        _swatch: Small square icon in a trace colour (legend column).
+        break_gaps: Insert one NaN after every step longer than ``factor`` x the median step.
+        _scroll_enclosing_area: Scroll the nearest QScrollArea around the plot by the wheel's steps.
+        _wheel_passes_through: True when the wheel must NOT zoom: scroll the page instead.
+        _ViewBox (class): ViewBox whose wheel zoom needs Ctrl.
+        tick_texts: Tick texts for numbers that pyqtgraph would cut (0.3.6), or None.
+        _AxisItem (class): Value axis with the same wheel rule; 0.3.6: large numbers (MJD, Hz) keep the digits their tick spacing needs (tick_texts).
+        _DateAxisItem (class): UTC date axis with the same wheel rule; below one day per tick the labels are two lines, the date above "T" + the time (0.3.5), like the vertical t...
+        _PlotWidget (class): PlotWidget that reports when the mouse leaves it (to clear the crosshair).
+        configure: Global pyqtgraph options and the wheel rule (call before plots exist).
+        _setting: A NativeWidget setting ('PlotLine/color', 'label', ...).
+        _children: Child widgets of ``widget`` whose kind is one of ``kinds``, in order.
+        _graphs_of: Graphs of a page in drawing order (directly or inside grids).
+        _numeric: (array, kind) of a numeric 1-D or date dataset, else (None, kind).
+        _looks_like_mjd: MJD axis: 'MJD' in the dataset name or axis label and plausible values.
+        document_pages: Pages of a NativeDocument as plain descriptions (no Qt objects).
+        _axis_offset: UTC offset ("-05:00") of a local ISO date-time axis, "local" when the data cross offsets, "Z" for a UTC axis (0.3.6), "" when not a date-time axis...
+        _axis_range: (min, max) fixed in the project, None where the limit is Auto.
+        _smith_graph: Description of a Smith chart written by vszh5_writer 0.0.26 (0.3.0).
+        _polar_graph: Description of a Veusz polar graph and its nonorthpoint traces.
+        trace_arrays: (x, y, x_is_unix_time) of one trace, converted for display.
+        plot_gap_rule: The writer GapRule the Plots tab uses for one graph (0.3.3): the project's TimeLayout (its defaults when the project has none) for time traces, its...
+        axis_break_regions: (start, stop) x intervals where the Veusz project breaks the x axis of a graph whose traces have the x values ``xs`` (display units), by the projec...
+        TracePlot (class): A pyqtgraph plot with its legend-and-values column beside it (same layout and behaviour as the AB monitor's TracePlot).
+        ImagePlot (class): A 2-D dataset (FITS image HDU) with a colour bar.
+        _nice_ticks: About ``count`` round tick values from low to high.
+        _GridPlot (class): Common base of PolarPlot and SmithPlot: an aspect-locked plot with a drawn grid, and the same legend-and-values column as TracePlot.
+        PolarPlot (class): Veusz-style polar plot of r(theta) traces (e.g.
+        SmithPlot (class): Smith chart (impedance grid "z" or admittance grid "y") of reflection coefficients, with f, Gamma, Z and VSWR of the nearest point under the mouse.
+        html_escape: Minimal HTML escaping for header labels.
+        ProjectPlotPanel (class): The "Plots" tab.
+        self_test: Build and delete one plot; None when pyqtgraph works, else the reason (needs a QApplication).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        COLOURS: 4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+        THEMES: 1e1e2e", "#cdd6f4", "#9399b2"),
+        PLOT_HEIGHT: px per plot row
+        LEGEND_WIDTH: px of the legend column (user can drag the splitter)
+        SYMBOL_MAX_POINTS: point symbols only up to this many points per trace
+        GAP_FACTOR: a step > GAP_FACTOR x median step breaks the line
+        WHEEL_NEEDS_CTRL: plain wheel scrolls the page, Ctrl+wheel zooms
+        VEUSZ_EPOCH_UNIX: 2009-01-01T00:00:00Z: Veusz datetime zero
+        MJD_UNIX_EPOCH: MJD of 1970-01-01T00:00:00Z
+        MJD_PLAUSIBLE: values outside are not treated as MJD
+        SMITH_NOTES_PREFIX: (0.3.0) How a Smith chart graph of vszh5_writer 0.0.26 is recognised (its : notes) and how its trace datasets are named (same values as the writer).
+        _LINE_STYLES: Veusz line style -> Qt pen style
+        _MARKERS: Veusz marker -> pyqtgraph symbol
+# %%%%% More Info
+    The Plots tab of every program (pyqtgraph 0.13 on Python 3.8, 0.14 on
+    3.12, through qtpy/PySide6).  Ctrl + wheel zooms; the wheel alone scrolls.
+    Right-click > Export > "CSV of original plot data (every digit)" writes
+    repr() of every value.
+    Gaps: the Plots tab breaks lines by the project's options and shades the
+    x intervals the Veusz project leaves out of a broken axis (pyqtgraph has
+    no broken axis).
+    Clocks: UTC pages read "Z",
+    MJD pages stay numbers; large numbers keep the digits their tick spacing
+    needs (tick_texts).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.5: Plots tab date axes: the date above the time below one day per tick.
 Date: 2026-11-16
 #              * _DateAxisItem.tickStrings(): below one day per tick the
@@ -500,7 +587,7 @@ from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from qtpy.QtCore import Qt, Signal  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 __version__ = VERSION
 
 # %% Settings
@@ -626,7 +713,7 @@ def _ctrl_pressed(event: Any) -> bool:
 def _utc_text(epoch: Optional[float], tz: str = "") -> str:
     """Wall-clock text of a Unix time ('-' when unknown).  ``tz`` "" = UTC;
     "-05:00" or "local" = the values are already local (ISO 8601 with the
-    offset, as the Veusz axis shows it)."""
+    offset, as the Veusz axis shows it); "Z" = UTC in ISO 8601 (0.3.6)."""
     if epoch is None or not np.isfinite(epoch):
         return "-"
     try:
@@ -639,10 +726,11 @@ def _utc_text(epoch: Optional[float], tz: str = "") -> str:
 
 
 def _value_text(value: Optional[float]) -> str:
-    """Compact number; '-' for None/NaN."""
+    """Compact number; '-' for None/NaN (0.3.6: 12 significant digits from
+    10 000 up, so an MJD or a frequency reads to the second / hertz)."""
     if value is None or not np.isfinite(value):
         return "-"
-    return "{0:.7g}".format(float(value))
+    return ("{0:.12g}" if abs(float(value)) >= 10000.0 else "{0:.7g}").format(float(value))
 
 
 def _align_right(item: Any) -> None:
@@ -725,13 +813,56 @@ class _ViewBox(pg.ViewBox):
             super().wheelEvent(ev, axis)
 
 
+def tick_texts(values: Sequence[float], step: float) -> Optional[List[str]]:
+    """
+    Tick texts for numbers that pyqtgraph would cut (0.3.6), or None.
+
+    pyqtgraph writes a tick of 10 000 or more (or below 0.001) with "%g",
+    six significant digits: MJD 61150.07, 61150.08 ... all read "61150.1"
+    and a 100 Hz span at 10 MHz repeats one label.  Here every tick gets the
+    digit its spacing ``step`` needs: from 10 000 up to 1e15 in fixed
+    notation with
+
+        decimals = max(0, ceil(-log10(step)))
+
+    ("61150.075", "10000020"); otherwise (tiny or huge numbers) with the
+    significant digits ceil(log10(max|v| / step)) + 1 (at least 6, at most
+    15) in "%g" form.  None when no tick is in those ranges (pyqtgraph's
+    fixed decimals are right there).
+    """
+    finite = [abs(float(v)) for v in values if np.isfinite(v)]
+    if not finite or not (step > 0) or not any(v >= 10000.0 or 0.0 < v < 0.001
+                                                for v in finite):
+        return None
+    big = max(finite)
+    if 10000.0 <= big < 1e15:
+        decimals = max(0, int(np.ceil(-np.log10(float(step)) - 1e-9)))
+        if decimals <= 9:
+            return ["%.*f" % (decimals, float(v)) for v in values]
+    digits = 6 if big <= 0.0 else int(np.ceil(np.log10(big / float(step)))) + 1
+    digits = min(max(digits, 6), 15)
+    return ["%.*g" % (digits, float(v)) for v in values]
+
+
 class _AxisItem(pg.AxisItem):
-    """Value axis with the same wheel rule."""
+    """Value axis with the same wheel rule; 0.3.6: large numbers (MJD, Hz)
+    keep the digits their tick spacing needs (tick_texts)."""
 
     def wheelEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
         """Same wheel rule as _ViewBox for wheel events over an axis."""
         if not _wheel_passes_through(event):
             super().wheelEvent(event)
+
+    def tickStrings(self, values: Any, scale: Any, spacing: Any) -> List[str]:  # noqa: N802
+        """pyqtgraph's texts, or every digit the spacing needs (tick_texts)."""
+        if not self.logMode and values:
+            try:
+                texts = tick_texts([v * scale for v in values], abs(spacing * scale))
+            except (TypeError, ValueError, OverflowError):
+                texts = None
+            if texts is not None:
+                return texts
+        return super().tickStrings(values, scale, spacing)
 
 
 class _DateAxisItem(pg.DateAxisItem):
@@ -874,6 +1005,9 @@ def document_pages(doc: Any) -> List[Dict[str, Any]]:
             x_label = str(_setting(x_axis, "label", "") or "") if x_axis else ""
             y_label = str(_setting(y_axis, "label", "") or "") if y_axis else ""
             x_mode = str(_setting(x_axis, "mode", "numeric") or "numeric") if x_axis else "numeric"
+            # 0.3.6: the clock the project drew this axis in (local, utc,
+            # mjd; None = not a date-time axis): an MJD page stays numeric.
+            x_clock = getattr(x_axis, "time_clock", None) if x_axis is not None else None
             title_widget = next((c for c in _children(graph, ("label",))
                                  if c.name == "plotTitle"), None)
             title = str(_setting(title_widget, "label", "") or "") if title_widget else ""
@@ -886,6 +1020,8 @@ def document_pages(doc: Any) -> List[Dict[str, Any]]:
                     continue
                 if x_mode == "datetime" or x_kind == "date":
                     x_kinds.add("veusz_date")
+                elif x_clock == "mjd":                      # 0.3.6: MJD as numbers
+                    x_kinds.add("numeric")
                 elif _looks_like_mjd(str(x_name), x_label, x):
                     x_kinds.add("mjd")
                 else:
@@ -913,7 +1049,7 @@ def document_pages(doc: Any) -> List[Dict[str, Any]]:
                            "x_log": bool(_setting(x_axis, "log", False)) if x_axis else False,
                            "y_log": bool(_setting(y_axis, "log", False)) if y_axis else False,
                            "x_range": _axis_range(x_axis), "y_range": _axis_range(y_axis),
-                           "x_tz": _axis_offset(x_axis)})
+                           "x_tz": _axis_offset(x_axis), "x_clock": x_clock})
         if graphs:
             pages.append({"name": page.name, "graphs": graphs})
     return pages
@@ -921,10 +1057,13 @@ def document_pages(doc: Any) -> List[Dict[str, Any]]:
 
 def _axis_offset(axis: Any) -> str:
     """UTC offset ("-05:00") of a local ISO date-time axis, "local" when the
-    data cross offsets, "" for UTC / not a local axis (0.2.1)."""
+    data cross offsets, "Z" for a UTC axis (0.3.6), "" when not a date-time
+    axis of the project (0.2.1)."""
     if axis is None:
         return ""
     fmt = str(_setting(axis, "TickLabels/format", "") or "")
+    if getattr(axis, "time_clock", None) == "utc" or re.search(r"%VDS(\\\\)?Z$", fmt):
+        return "Z"                                   # 0.3.6: UTC clock
     match = re.search(r"([+-]\d{2}:\d{2})$", fmt)
     if match:
         return match.group(1)
@@ -1019,12 +1158,13 @@ def _polar_graph(doc: Any, graph: Any, page_title: str = "") -> Optional[Dict[st
 
 
 def trace_arrays(doc: Any, trace: Dict[str, Any], x_kind: str,
-                 mjd_as_date: bool) -> Tuple[np.ndarray, np.ndarray, bool]:
+                 mjd_as_date: bool, days: bool = False) -> Tuple[np.ndarray, np.ndarray, bool]:
     """
     (x, y, x_is_unix_time) of one trace, converted for display.
 
     Veusz datetime seconds -> Unix seconds; MJD -> Unix seconds when
-    ``mjd_as_date``; gaps broken with NaN.
+    ``mjd_as_date``; gaps broken with NaN.  0.3.6: ``days`` - x is an MJD
+    clock axis (numbers, in days): the time gap rule is used, on seconds.
     """
     x, _k = _numeric(doc, trace["x_name"])
     y, _k = _numeric(doc, trace["y_name"])
@@ -1046,10 +1186,10 @@ def trace_arrays(doc: Any, trace: Dict[str, Any], x_kind: str,
     import vszh5_writer
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
-    rule = plot_gap_rule(doc, is_time)
+    rule = plot_gap_rule(doc, is_time or days)
     if rule is None:
         return x, y, is_time
-    cut = vszh5_writer.rule_gap_positions(x, rule)
+    cut = vszh5_writer.rule_gap_positions(x * 86400.0 if days else x, rule)
     return vszh5_writer.insert_gaps(x, cut), vszh5_writer.insert_gaps(y, cut), is_time
 
 
@@ -1069,15 +1209,20 @@ def plot_gap_rule(doc: Any, is_time: bool) -> Any:
     return layout.gap_rule(geometric=not is_time)
 
 
-def axis_break_regions(doc: Any, xs: Sequence[np.ndarray], is_time: bool) -> List[Tuple[float, float]]:
+def axis_break_regions(doc: Any, xs: Sequence[np.ndarray], is_time: bool,
+                       days: bool = False) -> List[Tuple[float, float]]:
     """(start, stop) x intervals where the Veusz project breaks the x axis
     of a graph whose traces have the x values ``xs`` (display units), by the
-    project's gap options (0.3.3); [] when axis breaks are off."""
+    project's gap options (0.3.3); [] when axis breaks are off.  0.3.6:
+    ``days`` - an MJD clock axis: the time rule on seconds, shown in days."""
     import vszh5_writer
-    rule = plot_gap_rule(doc, is_time)
+    rule = plot_gap_rule(doc, is_time or days)
     if rule is None or not rule.break_axis:
         return []
-    return vszh5_writer.rule_axis_break_pairs([np.asarray(x, dtype=float) for x in xs], rule)
+    scale = 86400.0 if days else 1.0
+    pairs = vszh5_writer.rule_axis_break_pairs(
+        [np.asarray(x, dtype=float) * scale for x in xs], rule)
+    return [(a / scale, b / scale) for a, b in pairs] if days else pairs
 
 
 # %% One plot: all traces of one graph
@@ -2054,15 +2199,16 @@ class ProjectPlotPanel(QtWidgets.QWidget):
                                  date_axis, dark=self.dark)
                 plot.tz_text = graph.get("x_tz", "") if graph["x_kind"] == "veusz_date" else ""
                 xs, is_time = [], False
+                days = graph.get("x_clock") == "mjd"             # 0.3.6
                 for trace in graph["traces"]:
                     x, y, is_time = trace_arrays(self.doc, trace, graph["x_kind"],
-                                                 mjd_as_date)
+                                                 mjd_as_date, days)
                     plot.add_trace(trace["label"], x, y, trace["colour"], trace["style"],
                                    trace["marker"], trace["line"])
                     xs.append(x[np.isfinite(x)])
                 # 0.3.3: where the project breaks the x axis (gap options)
                 if not graph.get("x_log", False):
-                    plot.mark_axis_breaks(axis_break_regions(self.doc, xs, is_time))
+                    plot.mark_axis_breaks(axis_break_regions(self.doc, xs, is_time, days))
                 plot._set_header(None)
                 plot.apply_axes(graph.get("x_log", False), graph.get("y_log", False),
                                 graph.get("x_range", (None, None)) if not date_axis

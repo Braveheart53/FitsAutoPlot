@@ -26,6 +26,81 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.6: RAM limit - plot data offloaded to disk above it.
+Date: 2026-11-17
+#              * Dialog: the RamLimitBox (shared value, default 80 %); offload
+#                messages in the dialog's log.
+#              Checked (Python 3.12.3): tests/test_offload.py (16 tests) and the
+#              whole suite; every program's real files (FITS GBT tack, UWBR
+#              Temps / Vacuum, ATR, R&S, CSV, Touchstone) saved with every
+#              dataset offloaded: identical to the in-RAM save in every
+#              dataset, attribute and script line; Plots tab identical.
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal qtpy dialog used by the plugin entry point.
+        FranksAutoPlotPlugin (class): Veusz menu entry for native ASCII project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Veusz 3.x's exec loader supplies its selected filename as local "plugin".
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> Franks AutoPlot (Batch).  Writes a
+    separate native .vszh5 project; the host Veusz document is not changed.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    The data of a run are released when the
+    project is written (release_memory).
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.3.5: Time axes in local time (this computer's zone), UTC and MJD.
+Date: 2026-11-17
+#              * Dialog: the TimeAxesBox (Local time default, UTC, MJD, zone
+#                line); fields time_local, time_utc, time_mjd; the log lists
+#                the clocks.
+#              Checked (Python 3.12.3, Veusz 4.2.1): tests/test_time_clocks.py
+#              (15 tests) and the whole suite; FITS GBT tack / UWBR Temps /
+#              30-day 1PPS, synthetic FITS / Franks and CSV projects with
+#              all three clocks rendered in Veusz with every tick label
+#              drawn; local-only projects identical to 0.4.5 in every
+#              dataset (only the axis label and graph notes changed).
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal qtpy dialog used by the plugin entry point.
+        FranksAutoPlotPlugin (class): Veusz menu entry for native ASCII project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Veusz 3.x's exec loader supplies its selected filename as local "plugin".
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> Franks AutoPlot (Batch).  Writes a
+    separate native .vszh5 project; the host Veusz document is not changed.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    The data of a run are released when the
+    project is written (release_memory).
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.4: The run's data and project are released when it ends.
 Date: 2026-11-16
 #              * After the project is written, the data parsed and the project
@@ -378,7 +453,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.3.4"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.3.6"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -562,6 +637,25 @@ class _PluginBatchDialog(QDialog):
             "On: sorted non-time x data (frequency, index ...) get the same K / n "
             "rule, with the step also large on a log scale.  Off: time axes only.")
         form2.addRow(self.gap_numeric_cb)
+        # 0.3.5: Local time / UTC / MJD time axes - one set of pages per
+        # ticked clock (Local only by default); the zone line names this
+        # computer's time zone
+        self.time_axes_box = None
+        try:
+            from _suite_gui import TimeAxesBox
+            self.time_axes_box = TimeAxesBox()
+            form2.addRow(self.time_axes_box)
+        except Exception:  # pragma: no cover - _suite_gui missing: local only
+            self.time_axes_box = None
+        # 0.3.6: offload plot data to disk above this computer's RAM limit
+        # (shared with the suite's tools; 0 = never)
+        self.ram_limit_box = None
+        try:
+            from _suite_gui import RamLimitBox
+            self.ram_limit_box = RamLimitBox()
+            form2.addRow(self.ram_limit_box)
+        except Exception:  # pragma: no cover - _suite_gui missing: default limit
+            self.ram_limit_box = None
 
         self.gap_abs_spin = QDoubleSpinBox()
         self.gap_abs_spin.setToolTip(
@@ -848,6 +942,11 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                           descr="Break the x axis at large gaps", default=True),
             vzp.FieldBool("gap_numeric",
                           descr="Gap rule also on x axes that are not time", default=True),
+            # 0.3.5: time-axis clocks (one set of pages per clock)
+            vzp.FieldBool("time_local",
+                          descr="Time axes in local time (this computer's zone)", default=True),
+            vzp.FieldBool("time_utc", descr="Time axes in UTC too", default=False),
+            vzp.FieldBool("time_mjd", descr="Time axes in MJD too", default=False),
         ]
 
     # ------------------------------------------------------------------
@@ -902,6 +1001,12 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                            ("gap_break_axis", dlg.gap_axis_cb),
                            ("gap_numeric", dlg.gap_numeric_cb)):
             _box.setChecked(bool(fields.get(_key, True)))
+        if dlg.time_axes_box is not None:        # 0.3.5: Local / UTC / MJD
+            dlg.time_axes_box.set_clocks(
+                [_clock for _clock, _key, _default in (("local", "time_local", True),
+                                                       ("utc", "time_utc", False),
+                                                       ("mjd", "time_mjd", False))
+                 if bool(fields.get(_key, _default))])
         dlg.combined_only_cb.setChecked(bool(fields.get("combined_only") or False))
         # v0.0.11: pre-seed the datetime-duplicate checkbox
         dlg.datetime_dup_cb.setChecked(
@@ -953,6 +1058,7 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
         interface, output_file = begin_native_plugin_export(fields)
         if interface is None:
             return
+        interface.offload_log = dlg.append_log         # 0.3.6: offload messages
         cache = MemoryAwareCache(MemoryMonitorConfig(
             rss_high_water_mb=int(dlg.rss_spin.value())
         ))
@@ -1102,8 +1208,10 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
             axis_manual_s=(parse_gap_string(_axis_text, log_cb=dlg.append_log) * 86400.0
                            if _axis_text else 0.0),
             break_lines=dlg.gap_lines_cb.isChecked(), break_axis=dlg.gap_axis_cb.isChecked(),
-            numeric=dlg.gap_numeric_cb.isChecked())
+            numeric=dlg.gap_numeric_cb.isChecked(),
+            clocks=dlg.time_axes_box.clocks() if dlg.time_axes_box is not None else None)
         dlg.append_log(interface.time_layout.describe())
+        dlg.append_log(interface.time_layout.describe_clocks())          # 0.3.5
         finish_native_plugin_export(interface, output_file, fields, dlg.append_log)
         if gpu_enabled():
             dlg.append_log("GPU use: %s" % gpu_usage_text())

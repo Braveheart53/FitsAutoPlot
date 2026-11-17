@@ -1228,3 +1228,300 @@ deterministic, and saving a project twice writes the same script. The fit of all
 | [57] | Veusz developers, *Veusz 4.2.1* source code: `veusz/widgets/axis.py` (`_drawTickLabels`, `_drawAxisLabel`, `_drawTextWithoutOverlap`, `computeTicks`), `veusz/widgets/axisticks.py` (`AxisTicks`, `DateTicks`), `veusz/widgets/axisbroken.py`, `veusz/widgets/grid.py` (`_gridengine`, `_drawChild`), `veusz/utils/formatting.py` (`formatNumber`), `veusz/utils/textrender.py` (`\\` line end), `veusz/utils/dates.py`. [Online]. Available: https://pypi.org/project/veusz/4.2.1/ |
 | [58] | *Date and time — Representations for information interchange — Part 1: Basic rules*, ISO 8601-1:2019, International Organization for Standardization, Geneva, 2019. [Online]. Available: https://www.iso.org/standard/70907.html |
 | [59] | pyqtgraph developers, *pyqtgraph 0.14.0* source code: `pyqtgraph/graphicsItems/AxisItem.py` (`textFillLimits`, `generateDrawSpecs`) and `DateAxisItem.py` (`tickStrings`, `setZoomLevelForDensity`). [Online]. Available: https://github.com/pyqtgraph/pyqtgraph |
+
+## 16. Time axes: local time from this computer's zone, UTC and MJD (2026-11-17)
+
+Request (task 1 of 2): *"The local time plots should not be set to -5:00 UTC, but they should read
+the time zone from the current machine processing the data and set the UTC offset accordingly. Also
+add an option to generate both at MJD, UTC and, local times both in the GUI plots and the exported
+vszh5 files. For example if a user wanted all plots in all types of time axis labels, there should be
+tick boxes to select to do so, but default to Local time only"*; then *"ALL SHOULD BE RUN ON PYTHON
+3.12!!!"*. Archive: `FitsAutoPlot_suite_0.4.6_2026-11-17.7z` (every tracked file, assets included).
+
+![Options: the Time axes tick boxes and the zone of this computer](docs/time_axes_0.4.6_options.png)
+
+### 16.1 Where the -05:00 comes from
+
+Nothing in the suite fixes the offset. Every local time is the UTC instant plus the offset the
+operating system gives for *that instant* in the zone of the computer running the program:
+`datetime.astimezone()` without a zone uses "the system local time zone ... with the zone name and
+offset obtained from the OS" [60] (cached per UTC hour, writer 0.0.28). In New York January data read
+`-05:00` and July data `-04:00`; a project that crosses a daylight-saving change gets offset-free
+ticks and an axis label that lists each offset and the minute it starts. Veusz date formats cannot
+show a zone, so the offset is written into the tick format as text (`...%VDS-05:00`) - that literal is
+what looked fixed. `VSZH5_DISPLAY_TZ` overrides the computer's zone only when it is set (a fixed
+offset, `UTC`, or an IANA zone name such as `America/New_York` [64]).
+
+Shown by the new tests (`tests/test_time_clocks.py`, a child Python per zone with `TZ` set and
+`VSZH5_DISPLAY_TZ` unset - the way the operating system sets the computer's zone on Linux [61]):
+
+| Computer's zone (`TZ`) | Same data, 2026-11-16 12:00 UTC: axis label | Tick format ends |
+|---|---|---|
+| America/New_York | `Local time (ISO 8601, EST, UTC-05:00)` | `-05:00` |
+| America/Los_Angeles | `Local time (ISO 8601, PST, UTC-08:00)` | `-08:00` |
+| Europe/Berlin | `Local time (ISO 8601, CET, UTC+01:00)` | `+01:00` |
+| Asia/Kolkata | `Local time (ISO 8601, IST, UTC+05:30)` | `+05:30` |
+| UTC | `Local time (ISO 8601, UTC+00:00)` | `+00:00` |
+| America/New_York, July data | `Local time (ISO 8601, EDT, UTC-04:00)` | `-04:00` |
+| America/New_York, 2026-10-31 .. 11-02 | `Local time (ISO 8601; UTC-04:00 EDT, UTC-05:00 EST from 2026-11-01T01:00)` | `%VDS` (no offset) |
+
+What changed: the label now **names the zone** (the name the operating system gives: `EST`, `EDT`;
+on Windows the long name, e.g. "Pacific Standard Time" [62]) and each graph's notes say where it came
+from ("local time in the time zone of the computer that made this project (EST = UTC-05:00); every
+sample has the UTC offset of its own date"). Across a change the names are listed when they are
+abbreviations (6 characters or fewer, no space); long Windows names stay in the notes, so the label
+does not grow past its plot. A time-axis label never runs past its plot now: the page fit makes the
+plot at least as wide as the label (`_time_label_cm`).
+
+### 16.2 The Local time / UTC / MJD tick boxes
+
+| Where | Control | Default |
+|---|---|---|
+| FITS AutoPlot 0.4.5, Franks AutoPlot 0.4.5 | Processing options, under the gap controls: "Time axes - one set of pages per ticked clock" Local time / UTC / MJD, and a line naming this computer's zone and its offset now | Local time |
+| CSV/TSV AutoPlot 6.1.7 | "Gaps and time axes" box, the same boxes; batch `--time-axes local,utc,mjd` or `all` | `local` |
+| FITS / Franks Veusz plugins 0.3.5 | the same boxes in the dialog; saved fields `time_local`, `time_utc`, `time_mjd` | Local time |
+| ATR, R&S, Touchstone | no date-time x axes: no boxes (their `--time-axes` is not offered) | - |
+
+At least one box stays ticked. Each ticked clock draws every page that has date-time x axes once:
+the first ticked clock keeps the page and its name, the others follow it as `<page>_utc` and
+`<page>_mjd` - in the Plots tab and in the saved `.vszh5`. Pages without date-time axes (spectra,
+images) are not copied. Changing the boxes and saving again adds or removes those pages and their
+plot copies; the copies are rebuilt on every save, so they always show their page as it is.
+
+| Clock | x data drawn | Ticks | Axis label |
+|---|---|---|---|
+| Local time | `<utc>_local` - UTC plus the computer's offset for each sample | `2026-04-19` / `T21:40:00-04:00` | `Local time (ISO 8601, EDT, UTC-04:00)` |
+| UTC | the stored UTC date dataset (`<utc>_gaps` when the line breaks) | `2026-04-20` / `T01:40:00Z` (ISO 8601 "Z" = UTC [58]) | `UTC (ISO 8601)` |
+| MJD | the exact MJD of the data (the stored MJD column; else UTC seconds / 86400 + 54832, within one float64 step) | `61150.07` (12 significant digits, `%.12Vg`) | `MJD (UTC)` |
+
+MJD = JD - 2400000.5, days from 1858-11-17 00:00 UTC [63]; Veusz's date origin 2009-01-01 is MJD
+54832 [57]. Line breaks and axis breaks are found in UTC seconds for every clock, so all three pages
+break at the same samples; on the MJD page the breaks are drawn in days. The plot copies carry the
+tags `type_time_utc` / `type_time_mjd` (and `type_gap_rows` when they hold gap rows).
+
+![One panel of a GBT tack page in each clock (Veusz 4.2.1)](docs/time_clocks_0.4.6_veusz.png)
+
+The Plots tab (`_autoplot_pyqtgraph` 0.3.6) shows the same pages: UTC pages read `...Z` at the
+cursor; MJD pages stay numbers (the "MJD as UTC date" box does not turn them into dates) and use the
+time gap rule on seconds, as the project. Found while checking: pyqtgraph writes a tick of 10 000 or
+more with `%g`, six significant digits [59], so MJD ticks 61150.07 ... 61150.11 all read `61150.1`
+(and a 100 Hz span at 10 MHz repeats one label). Every tick now gets the decimals its spacing needs
+(`tick_texts`), and the cursor read-out shows 12 significant digits from 10 000 up.
+
+![Plots tab: the same page in local time, UTC and MJD](docs/time_clocks_0.4.6_plots_tab.png)
+
+### 16.3 Measured (Python 3.12.3, Veusz 4.2.1)
+
+Default (Local time only) against the 0.4.5 projects of the same files:
+
+| Project | HDF5 objects | Identical | Script lines changed |
+|---|---|---|---|
+| FITS, GBT tack azServo1Hz (10 files, 11 pages) | 1573 | 1572 (the `Veusz` group's writer stamp differs) | 642 axis labels (zone name added) and 642 graph notes ("Time axis:" line) |
+| FITS, GBT 30-day OnePpsDeltas (319 files, 320 pages) | 80 722 | 80 721 (the same stamp) | 640 axis labels and 640 graph notes |
+
+Every dataset, its values, attributes and tags are the same; page sizes and margins too.
+
+All three clocks, every page rendered in Veusz and every tick label counted (`label_check.py`):
+
+| Project, all clocks | Pages | x tick labels drawn | y tick labels drawn | Outside cell or page |
+|---|---|---|---|---|
+| FITS, GBT tack (10 files) | 33 (11 per clock) | 5970 of 5970 | 6051 of 6051 | 0 |
+| FITS, GBT UWBR Temps (15 files) | 48 | 2483 of 2483 | 2439 of 2439 | 0 |
+| FITS, GBT 30-day OnePpsDeltas (319 files) | 960 (counted as three 320-page projects, see below) | 6154 of 6154 (local 2162, UTC 2161, MJD 1831) | 3858 of 3858 | 0 |
+| FITS, synthetic 1PPS, tagged / untagged | 13 each | 101 of 101 each | 73 of 73 each | 0 |
+| Franks, synthetic time_gbt | 30 | 368 of 368 | 336 of 336 | 0 |
+| CSV/TSV, temps.tsv (`--time-axes all`) | 6 | 42 of 42 | 30 of 30 | 0 |
+
+The 960-page 30-day project (326 MB, 53 195 datasets) did not fit in Veusz with the label recorder in
+this 8 GB container, so the local-only, UTC-only and MJD-only projects of the same files were counted
+(320 pages each). Each of their pages and datasets is identical, byte for byte, to the same page and
+dataset of the all-clocks project (`compare_pages.py`: 320 of 320 pages and 40 195 / 40 195 / 27 595
+of the datasets).
+
+30-day 1PPS project: Plots-tab processing 10.0 s (local) and 14.6 s (all clocks); save 13.5 s and
+24.4 s; file 259.1 MB and 325.9 MB (the UTC and MJD copies with gap rows).
+
+### 16.4 Versions
+
+| File | Version |
+|---|---|
+| `_autoplot_native.py` | 0.5.6 |
+| `_autoplot_common.py` | 0.4.6 |
+| `_autoplot_pyqtgraph.py` | 0.3.6 |
+| `_suite_gui.py` | 0.1.4 |
+| `FITS_AutoPlot.py`, `Franks_AutoPlot.py` | 0.4.5 |
+| `CSV_TSV_AutoPlot.py` | 6.1.7 |
+| `FITS_AutoPlot_plugin.py`, `Franks_AutoPlot_plugin.py` | 0.3.5 |
+| `tests/test_time_clocks.py` | 0.0.1 (new, 15 tests) |
+| `vszh5_writer.py` | 0.0.31 (unchanged; registry master) |
+| `REQUIREMENTS.md` | 0.2.5 |
+
+ATR 0.2.6, R&S 1.1.6 and Touchstone 0.7.5 are unchanged.
+
+### 16.5 Verification (Python 3.12.3 only, as asked)
+
+| Check | Result |
+|---|---|
+| Unit tests (`python -m unittest discover -s tests`) | 148 OK (6 skipped: 2 need PyOpenCL; 4 need Veusz, which `test_native_export` blocks in a full run) |
+| Veusz tests alone (`python -m unittest tests.test_writer_0031 tests.test_writer_0030 tests.test_time_clocks`, Veusz 4.2.1 built for Python 3.12) | 43 OK |
+| Headless GUI and real-data runs (`run_env_checks.sh`: every program's GUI, FITS tack / Temps / Vacuum / 30-day 1PPS, Touchstone, Plots tab, launcher) | 13 of 13 pass |
+| GUI: FITS options and both plugin dialogs show the boxes (Local only), tool tips on every new widget | checked (screenshots; tooltip audit: 0 missing) |
+| Format check (header, revision = version, Date lines, docstrings) | every `.py` OK |
+
+### 16.6 Data gaps and limits
+
+* Windows was not run here. There the zone comes from the Windows time-zone setting through the C
+  runtime (`_tzset` uses "the time zone information specified by the operating system" when `TZ`
+  is not set [62]); the names are long ("Eastern Standard Time"), so the label is wider - the page
+  fit leaves room for it.
+* Every extra clock adds pages and plot copies: the 30-day 1PPS project grows from 320 pages and
+  259 MB (local) to 960 pages and 326 MB (all three); rendering all 960 pages in one Veusz 4.2.1
+  process (with the label recorder) ran out of this container's 8 GB. Tick only the clocks a large
+  set needs, or open it on a computer with more memory.
+* The zone is read when the plots are made or saved; a project made in New York shows New York
+  times wherever it is opened later (the label and notes say so). To show another zone, set
+  `VSZH5_DISPLAY_TZ` before processing.
+* Times before 1970-01-01 (MJD 40587) were not checked on Windows, where Python's
+  `datetime.fromtimestamp` does not take negative times; FITS AutoPlot drops the DMJD <= 0 padding
+  rows before any time axis is made.
+* The MJD page uses exact MJD where the program has it (FITS raw DMJD, Franks MJD arrays); CSV/TSV
+  time stamps are converted from UTC seconds (UTC / 86400 + 54832), within one float64 step
+  (about 0.6 microseconds at MJD 61000).
+
+### 16.7 References (round 16)
+
+| # | Reference (IEEE) |
+|---|---|
+| [60] | Python Software Foundation, "datetime - Basic date and time types," *Python 3.12 Documentation* (`datetime.astimezone`, `tzinfo.tzname`). [Online]. Available: https://docs.python.org/3.12/library/datetime.html |
+| [61] | Python Software Foundation, "time - Time access and conversions," *Python 3.12 Documentation* (`time.tzname`, `time.tzset`, the `TZ` variable). [Online]. Available: https://docs.python.org/3.12/library/time.html |
+| [62] | Microsoft, "_tzset," *C runtime library reference*, Microsoft Learn. [Online]. Available: https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/tzset |
+| [63] | R. Ray, "Modified Julian Dates," NASA Goddard Space Flight Center. [Online]. Available: https://core2.gsfc.nasa.gov/time/ |
+| [64] | Internet Assigned Numbers Authority, "Time Zone Database." [Online]. Available: https://www.iana.org/time-zones |
+| [57]-[59] | as in section 15: Veusz 4.2.1 source (date origin 2009-01-01, `%VD` formats), ISO 8601-1:2019, pyqtgraph source (`AxisItem.tickStrings`: `%g` from 10 000 up) |
+
+## 17. RAM limit: plot data offloaded to disk above it (2026-11-17)
+
+Request (task 2 of 2): *"take a look at offloading to disk if more a user value for RAM usage is
+met when plotting if possible. Ensure everything plots correctly, quadruple check there are no
+issues using this method. Offload likely to pickle file is best, then convert that pickle file to
+the vszh5 file when the user saves it. ONLY do this when it exceeds the stated RAM usage (full
+computer or system use, not just this program)"*. Run on Python 3.12 only. Archive:
+`FitsAutoPlot_suite_0.4.7_2026-11-17.7z` (every tracked file, assets included).
+
+![Options: the RAM limit under the RSS spill threshold](docs/ram_limit_0.4.7_options.png)
+
+### 17.1 What it does
+
+| | |
+|---|---|
+| Control | *Offload plot data to disk above RAM use of* 0 (never) .. 99 %, default **80 %**; one value for every tool of the suite and both plugins (saved like the theme); beside it this computer's RAM and the share in use now (every 2 s). Batch: `--ram-limit PERCENT` (ATR, R&S, CSV/TSV) |
+| What is compared with the limit | the RAM in use on the **computer**, all programs together: (total - available) / total [65]-[67] (psutil when installed [65]; else `/proc/meminfo` MemAvailable on Linux [66] or `GlobalMemoryStatusEx` on Windows [67]) - not this program's own memory |
+| When it is read | after each dataset is stored (at most every 0.2 s), at the end of every layout (`finalize`), on Save, and each time a file's data are kept |
+| Below the limit | nothing is written; no file is made |
+| At or above the limit | every dataset of 512 bytes or more, the exact MJD arrays and the data kept from the files read go to a pickle file [68] and are dropped from RAM; freed heap is handed back to the system |
+| The file | one per project and one for the kept file data, made with `tempfile.mkstemp` (readable and writable only by your user [69]) in `AUTOPLOT_OFFLOAD_DIR`, else the system's temporary folder; deleted by Clear, when the project is replaced and when the program ends |
+| Plots | the Plots tab, the time and gap layouts and `GetData` read the data back from the file (a fresh copy each time; nothing is changed in place) |
+| Save | the `.vszh5` is written from the pickle file, one dataset at a time |
+| Disk space | nothing moves when the disk has less free space than the data plus a fifth and 64 MB (a log line says so) |
+| Log | the first move at once, then at most one line every 10 s with the totals so far, and the last totals when the batch ends (the 30-day set: 3 lines) |
+
+### 17.2 Quadruple check (Python 3.12.3)
+
+**1. Unit tests** (`tests/test_offload.py`, 16 tests; the whole suite 164 OK): the RAM reading (psutil
+and `/proc/meminfo` agree within 5 points) and the limit (clamped 0..100, 0 / None / NaN = never);
+no file below the limit; above it every dataset kind comes back **bit for bit** (1-D with
+symmetric / negative / positive errors, dates with their exact MJD, text with "µs", "naïve", "日本"
+and empty strings, 2-D with ranges and with edges; NaN, inf, -0.0, the subnormal 5e-324,
+2^53 + 1); saved projects identical with every dataset offloaded (random datasets, local / UTC /
+MJD clock pages, the synthetic FITS tagged / untagged and Franks projects); the Plots tab identical;
+overwrite, drop, release; kept file data (unpicklable data stay in RAM and are reported); 8 threads
+writing and reading 320 values at once; the folder variable; too little disk; a dropped store
+deletes its file; 200 offloads in 10 s give 2 log lines; the GUI control (in a test settings file,
+never yours) and `--ram-limit`.
+
+**2. Every program's real files, saved in RAM and with every dataset offloaded** (minimum 0 bytes, so
+even the smallest dataset went through the file); the two `.vszh5` compared object by object
+(data bytes and attributes; only the save time stamp left out) and line by line:
+
+| Program and files | Datasets offloaded | Kept files offloaded | HDF5 objects identical | Script lines identical |
+|---|---|---|---|---|
+| FITS, GBT tack azServo1Hz (10 files; local, UTC and MJD pages) | 818 of 818 | 10 | 1657 of 1657 | 37 911 of 37 911 |
+| FITS, GBT UWBR Temps (15 files) | 419 of 419 | 15 | 866 of 866 | 16 190 of 16 190 |
+| FITS, GBT UWBR Vacuum (15 files) | 113 of 113 | 15 | 254 of 254 | 2264 of 2264 |
+| FITS, GBT 30-day OnePpsDeltas (319 files; limit 1 %, normal 512-byte minimum) | 39 115 (1080 small stay) | 319 | 80 722 of 80 722 | 192 000 of 192 000 |
+| ATR (25 example files) | 133 of 133 | - (batch) | 303 of 303 | 6134 of 6134 |
+| R&S (20 example `.sft` files, folder Processed) | 642 of 642 | - (batch) | 1316 of 1316 | 40 821 of 40 821 |
+| CSV/TSV temps.tsv (`--time-axes all`) | 6 of 6 | - (batch) | 28 of 28 | 416 of 416 |
+| Touchstone (223 example `.s2p`; 3 are malformed and fail either way) | 5940 of 5940 | 220 | 12 120 of 12 120 | 174 682 of 174 682 |
+
+Because the files are identical, Veusz draws them identically (sections 15 and 16 counted every
+tick label of these projects).
+
+**3. The Plots tab**: `document_pages()` and the SHA-256 of every trace array (x and y, with
+"MJD as UTC date" on and off), and of every dataset a trace or image names, in RAM and offloaded:
+
+| Project | Pages identical | Trace fingerprints identical |
+|---|---|---|
+| FITS tack (all clocks) | 33 of 33 | 2112 of 2112 |
+| FITS Temps | 48 of 48 | 864 of 864 |
+| FITS Vacuum | 48 of 48 | 192 of 192 |
+| R&S | 584 of 584 | 4656 of 4656 |
+| ATR (Cartesian and polar) | 102 of 102 | 540 of 540 |
+| Touchstone (frequency and time-gated pages) | 1100 of 1100 | 21 120 of 21 120 |
+
+**4. Only above the limit, and what it saves** - FITS AutoPlot GUI, GBT 30-day OnePpsDeltas (319
+files), this computer at 8-15 % RAM in use (8.4 GB):
+
+| RAM limit | Offloaded | RSS after the batch | Peak during the batch | Batch | Save | Files on disk | Log lines |
+|---|---|---|---|---|---|---|---|
+| 80 % (default; not reached) | nothing | 599 MB | 648 MB | 10.8 s | 13.4 s | none made | 0 |
+| 0 (never) | nothing | 600 MB | 649 MB | 10.9 s | 13.9 s | none made | 0 |
+| 1 % (below the computer's use) | 39 115 datasets, 319 files | **377 MB (-37 %)** | 541 MB | 12.6-13.4 s | 15.6-17.2 s | 119 MB + 101 MB, both deleted by Clear | 3 |
+
+The 80 % and 0 projects are identical to the offloaded one (object for object; the 80 % file only
+carries the older writer stamp 0.5.6, made before the version was raised).
+
+The 13 headless GUI and real-data runs pass on Python 3.12 (`run_env_checks.sh`), the RAM control
+shows in every tool and in both plugin dialogs (default 80 %), and every new widget has a tool tip.
+
+### 17.3 Versions
+
+| File | Version |
+|---|---|
+| `_autoplot_native.py` | 0.5.7 |
+| `_autoplot_common.py` | 0.4.7 |
+| `_suite_gui.py` | 0.1.5 |
+| `FITS_AutoPlot.py`, `Franks_AutoPlot.py` | 0.4.6 |
+| `CSV_TSV_AutoPlot.py` | 6.1.8 |
+| `ATR_AutoPlot.py` | 0.2.7 |
+| `RAndS_FSW_ASCII_Plotter.py` | 1.1.7 |
+| `Touchstone_AutoPlot.py` | 0.7.6 |
+| `FITS_AutoPlot_plugin.py`, `Franks_AutoPlot_plugin.py` | 0.3.6 |
+| `tests/test_offload.py` | 0.0.1 (new, 16 tests) |
+| `REQUIREMENTS.md` | 0.2.6 |
+| `_autoplot_pyqtgraph.py` 0.3.6, `vszh5_writer.py` 0.0.31 | unchanged |
+
+### 17.4 Data gaps and limits
+
+* Windows was not run here: the `GlobalMemoryStatusEx` path is used only without psutil (psutil
+  7.2.2 is in the requirements), and Windows deletes the file when the program closes it.
+* A file left by a program that was killed (power loss) stays in the temporary folder as
+  `autoplot_project_*.pkl` / `autoplot_kept_*.pkl`; it can be deleted by hand. Never load such a file
+  from elsewhere: unpickling can run code [68] - the suite only reads back the files it wrote itself.
+* The file only grows: a dataset made again (UTC / MJD pages are rebuilt on every save) is written
+  again; the file is emptied on Clear.
+* The RAM use is read at most every 0.2 s while datasets are added: one dataset larger than the RAM
+  still free is made in RAM before it can move. Veusz's own memory when it opens a large project is
+  not affected (section 16.6).
+* psutil 8 renamed `virtual_memory()` to `memory_physical()` (the old name stays, soft-deprecated
+  [65]); the suite uses `memory_physical()` when it exists.
+
+### 17.5 References (round 17)
+
+| # | Reference (IEEE) |
+|---|---|
+| [65] | G. Rodola, "psutil API: memory_physical() / virtual_memory()," *psutil documentation*. [Online]. Available: https://psutil.io/api/#memory |
+| [66] | The Linux kernel documentation, "The /proc Filesystem: /proc/meminfo, MemAvailable." [Online]. Available: https://docs.kernel.org/filesystems/proc.html |
+| [67] | Microsoft, "GlobalMemoryStatusEx function (sysinfoapi.h)," *Win32 API*, Microsoft Learn. [Online]. Available: https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex |
+| [68] | Python Software Foundation, "pickle - Python object serialization," *Python 3.12 Documentation* (protocol 5, PEP 574; security warning). [Online]. Available: https://docs.python.org/3.12/library/pickle.html |
+| [69] | Python Software Foundation, "tempfile - Generate temporary files and directories," *Python 3.12 Documentation* (`mkstemp`, `gettempdir`). [Online]. Available: https://docs.python.org/3.12/library/tempfile.html |

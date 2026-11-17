@@ -61,6 +61,70 @@ frequency; this program assumes lower -> upper (see DATA_GAPS).
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.2.7: RAM limit - plot data offloaded to disk above it.
+Date: 2026-11-17
+#              * RamLimitBox under the gap options; the project's datasets and
+#                the kept patterns go to a pickle file above the limit; offload
+#                messages in the log; batch --ram-limit PERCENT.
+#              Checked (Python 3.12.3): tests/test_offload.py (16 tests) and the
+#              whole suite; every program's real files (FITS GBT tack, UWBR
+#              Temps / Vacuum, ATR, R&S, CSV, Touchstone) saved with every
+#              dataset offloaded: identical to the in-RAM save in every
+#              dataset, attribute and script line; Plots tab identical.
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _mhz_text: A frequency (MHz) as exact text (0.2.4): every digit of the float64 (repr), without a trailing ".0" - 2700.0 -> "2700", 1420.40575 -> "1420.40575".
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.2.7"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.6: Clear clears everything; added files keep the patterns already read.
 Date: 2026-11-16
 #              * Clear removes the files, the patterns read, the project
@@ -395,7 +459,7 @@ from _autoplot_native import (exact_number_text, tag_data,   # noqa: E402
 from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (0.x adaptive pool)
 
 APP_NAME = "ATR AutoPlot"
-APP_VERSION = "0.2.6"
+APP_VERSION = "0.2.7"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
                    ".vszh5 projects, with interactive pyqtgraph plots.")
@@ -990,6 +1054,7 @@ def _build_gui_classes():
             # 0.2.6: patterns read from the listed files, kept until Clear
             from _autoplot_native import KeptReads
             self.kept = KeptReads()
+            self.kept.offload_log = self._log          # 0.2.7: offload messages in the log
             self._reading: List[str] = []
             self.theme = suite.apply_theme(suite.saved_theme(), persist=False)
             suite.add_file_menu(self, [
@@ -1082,6 +1147,9 @@ def _build_gui_classes():
             # 0.2.5: gaps (missing azimuths, time breaks): line / axis breaks
             self.gap_box = suite.GapOptionsBox()
             layout.addWidget(self.gap_box)
+            # 0.2.7: offload plot data to disk above this computer's RAM limit
+            self.ram_box = suite.RamLimitBox()
+            layout.addWidget(self.ram_box)
 
             self.status_text = QTextEdit()
             self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
@@ -1238,6 +1306,9 @@ def _build_gui_classes():
                 self._log("Project build failed: %s" % exc)
                 QMessageBox.critical(self, APP_NAME, "Project build failed:\n%s" % exc)
                 return
+            for text in self.plotter.doc.offload_messages:     # 0.2.7
+                self._log(text)
+            self.plotter.doc.offload_log = self._log
             n_traces = sum(p.frequencies_mhz.size for p in patterns)
             self._log("Project ready: %d file(s), %d trace(s), %d page(s)." % (
                 len(patterns), n_traces, len(self.plotter.doc.Root.children)))
@@ -1327,9 +1398,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--fit-azimuth", action="store_true")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
-    from _autoplot_native import add_gap_arguments, layout_from_args
+    from _autoplot_native import (add_gap_arguments, add_memory_arguments, layout_from_args,
+                                  ram_limit_from_args)
     add_gap_arguments(parser)                  # 0.2.5: --gap-k ... --no-axis-breaks
+    add_memory_arguments(parser)               # 0.2.7: --ram-limit
     args = parser.parse_args(argv)
+    ram_limit_from_args(args)
     if args.output:
         return batch(args.files, args.output,
                      PlotOptions(args.title, tuple(args.mag_range), args.fit_azimuth,

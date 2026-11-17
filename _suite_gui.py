@@ -33,6 +33,118 @@ Compatible with: Python 3.8+, qtpy (PySide6 preferred; PyQt5/PyQt6 work)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.1.5: RamLimitBox - offload plot data to disk above a RAM limit.
+Date: 2026-11-17
+#              * NEW RamLimitBox: "Offload plot data to disk above RAM use of"
+#                0 (never) .. 99 %, default 80 %, saved for every tool of the
+#                suite (key ram_limit_percent, like the theme), sets
+#                _autoplot_native.set_ram_limit(); a line with this computer's
+#                RAM and the share in use now (every 2 s while shown).
+#              * NEW suite_settings() (one place for the suite's QSettings, so
+#                tests use their own file), saved_ram_limit(), RAM_LIMIT_KEY.
+#              Checked (Python 3.12.3): tests/test_offload.py (16 tests) and the
+#              whole suite; every program's real files (FITS GBT tack, UWBR
+#              Temps / Vacuum, ATR, R&S, CSV, Touchstone) saved with every
+#              dataset offloaded: identical to the in-RAM save in every
+#              dataset, attribute and script line; Plots tab identical.
+# %%%%% Function Descriptions
+        saved_theme: The suite's stored theme ('light' or 'dark').
+        save_theme: Store the suite theme (shared with the launcher).
+        build_palette: Fusion palette for 'light' or 'dark' (the launcher's colours).
+        apply_theme: Fusion style and the theme's palette for the whole application.
+        dialog_stylesheet: Style sheet that themes ONE dialog and its children (plugins in Veusz).
+        add_view_menu: View > Light Mode / Dark Mode (exclusive); returns (light, dark) actions.
+        add_file_menu: File menu: the given (text, slot, shortcut) entries, then Exit (Ctrl+Q).
+        _module_version: ``__version__`` of module ``name``; 'installed' when it has none, 'not installed' when it cannot be imported.
+        about_details: Plain-text runtime details for the About dialog.
+        show_about: Help > About in the suite's common layout.
+        add_help_menu: Help > About <name> and About Qt.
+        make_plot_panel: (widget, panel): the pyqtgraph ProjectPlotPanel, or an explanation label (panel None) when pyqtgraph is missing; processing and saving still work.
+        find_veusz: Veusz program: VEUSZ_EXECUTABLE, then vszh5_writer.find_veusz_exe().
+        export_with_veusz: PDF (one bookmark per page) and per-page PNG files of a saved project, rendered by Veusz through vszh5_writer.render_pages; returns the files.
+        open_in_veusz: Open a saved project in the Veusz program (optional viewer).
+        release_after_clear: Finish a Clear (0.1.3): delete the widgets and threads already given to deleteLater() (the old plots) now, then give the freed memory back to the o...
+        suite_settings: The suite's settings (0.1.5): QSettings(SUITE_ORG, SUITE_APP), the store the theme uses.
+        saved_ram_limit: The RAM limit (%) saved by any tool of the suite (0.1.5); ``default`` (None: _autoplot_native.DEFAULT_RAM_LIMIT_PERCENT) when none is saved.
+        RamLimitBox (class): "RAM limit" control (0.1.5): offload plot data to disk when this computer's RAM in use (every program, not only this one) reaches the percentage se...
+        TimeAxesBox (class): "Time axes" check boxes (0.1.4): Local time, UTC and MJD.
+        GapOptionsBox (class): "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and Franks AutoPlot.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION = "0.1.5"
+        SUITE_ORG = "NRAO-GBO"
+        SUITE_APP = "GBO Electronics Scientific Plotting Suite"
+        THEME_KEY = "theme"
+        AUTHOR = "William W. Wallace"
+        EMAIL = "wwallace@nrao.edu"
+        COMPANY = "NRAO / Green Bank Observatory (GBO)"
+        LICENCE = "GPL-3.0-or-later"
+        COPYRIGHT = "Copyright (C) 2025-2026 William W. Wallace"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        CLEAR_TOOLTIP: tool tip of every program's Clear button
+        RAM_LIMIT_KEY: QSettings key of the RAM limit shared by every tool of the suite
+# %%%%% More Info
+    Shared by the launcher and every program (theme, menus, About box, Veusz
+    helpers, GapOptionsBox, TimeAxesBox, RamLimitBox, release_after_clear and
+    CLEAR_TOOLTIP).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.1.4: TimeAxesBox - Local time / UTC / MJD time-axis tick boxes.
+Date: 2026-11-17
+#              * NEW TimeAxesBox: three check boxes (Local time ticked), at
+#                least one stays ticked, a line naming this computer's time
+#                zone and offset now; clocks() / set_clocks(); the signal
+#                clocks_changed(tuple) after every change.
+#              * GapOptionsBox(time_axes=True) adds it (CSV/TSV); its
+#                time_layout() hands the clocks to the TimeLayout.
+#              Checked (Python 3.12.3, Veusz 4.2.1): tests/test_time_clocks.py
+#              (15 tests) and the whole suite; FITS GBT tack / UWBR Temps /
+#              30-day 1PPS, synthetic FITS / Franks and CSV projects with
+#              all three clocks rendered in Veusz with every tick label
+#              drawn; local-only projects identical to 0.4.5 in every
+#              dataset (only the axis label and graph notes changed).
+# %%%%% Function Descriptions
+        saved_theme: The suite's stored theme ('light' or 'dark').
+        save_theme: Store the suite theme (shared with the launcher).
+        build_palette: Fusion palette for 'light' or 'dark' (the launcher's colours).
+        apply_theme: Fusion style and the theme's palette for the whole application.
+        dialog_stylesheet: Style sheet that themes ONE dialog and its children (plugins in Veusz).
+        add_view_menu: View > Light Mode / Dark Mode (exclusive); returns (light, dark) actions.
+        add_file_menu: File menu: the given (text, slot, shortcut) entries, then Exit (Ctrl+Q).
+        _module_version: ``__version__`` of module ``name``; 'installed' when it has none, 'not installed' when it cannot be imported.
+        about_details: Plain-text runtime details for the About dialog.
+        show_about: Help > About in the suite's common layout.
+        add_help_menu: Help > About <name> and About Qt.
+        make_plot_panel: (widget, panel): the pyqtgraph ProjectPlotPanel, or an explanation label (panel None) when pyqtgraph is missing; processing and saving still work.
+        find_veusz: Veusz program: VEUSZ_EXECUTABLE, then vszh5_writer.find_veusz_exe().
+        export_with_veusz: PDF (one bookmark per page) and per-page PNG files of a saved project, rendered by Veusz through vszh5_writer.render_pages; returns the files.
+        open_in_veusz: Open a saved project in the Veusz program (optional viewer).
+        release_after_clear: Finish a Clear (0.1.3): delete the widgets and threads already given to deleteLater() (the old plots) now, then give the freed memory back to the o...
+        TimeAxesBox (class): "Time axes" check boxes (0.1.4): Local time, UTC and MJD.
+        GapOptionsBox (class): "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and Franks AutoPlot.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION = "0.1.4"
+        SUITE_ORG = "NRAO-GBO"
+        SUITE_APP = "GBO Electronics Scientific Plotting Suite"
+        THEME_KEY = "theme"
+        AUTHOR = "William W. Wallace"
+        EMAIL = "wwallace@nrao.edu"
+        COMPANY = "NRAO / Green Bank Observatory (GBO)"
+        LICENCE = "GPL-3.0-or-later"
+        COPYRIGHT = "Copyright (C) 2025-2026 William W. Wallace"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        CLEAR_TOOLTIP: tool tip of every program's Clear button
+# %%%%% More Info
+    Shared by the launcher and every program (theme, menus, About box, Veusz
+    helpers, GapOptionsBox, TimeAxesBox, release_after_clear and
+    CLEAR_TOOLTIP).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.1.3: release_after_clear() and the Clear tool tip for every program.
 Date: 2026-11-16
 #              * NEW release_after_clear(log): deletes the widgets and threads
@@ -178,16 +290,17 @@ from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
 
 os.environ.setdefault("QT_API", "pyside6")
 
-from qtpy.QtCore import QCoreApplication, QEvent, QSettings, Qt  # noqa: E402
+from qtpy.QtCore import QCoreApplication, QEvent, QSettings, Qt, QTimer, Signal  # noqa: E402
 from qtpy.QtGui import QColor, QKeySequence, QPalette  # noqa: E402
 try:
     from qtpy.QtGui import QAction, QActionGroup  # noqa: E402
 except ImportError:  # pragma: no cover - qtpy 1.x with Qt5
     from qtpy.QtWidgets import QAction, QActionGroup  # type: ignore  # noqa: E402
 from qtpy.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFormLayout,  # noqa: E402
-                            QGroupBox, QLabel, QLineEdit, QMessageBox)
+                            QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+                            QSpinBox, QVBoxLayout, QWidget)
 
-VERSION = "0.1.3"
+VERSION = "0.1.5"
 __version__ = VERSION
 
 # %% Suite identity (same values as postProcessing_Launcher.py)
@@ -498,6 +611,198 @@ CLEAR_TOOLTIP = ("Remove every file from the list together with its data: the pr
                  "ones already read.")
 
 
+#: (0.1.5) QSettings key of the RAM limit shared by every tool of the suite.
+RAM_LIMIT_KEY = "ram_limit_percent"
+
+
+def suite_settings() -> QSettings:
+    """The suite's settings (0.1.5): QSettings(SUITE_ORG, SUITE_APP), the
+    store the theme uses.  One function so a test can point it elsewhere
+    (QSettings(org, app) always uses the native store: the registry on
+    Windows)."""
+    return QSettings(SUITE_ORG, SUITE_APP)
+
+
+def saved_ram_limit(default: Optional[float] = None) -> float:
+    """The RAM limit (%) saved by any tool of the suite (0.1.5); ``default``
+    (None: _autoplot_native.DEFAULT_RAM_LIMIT_PERCENT) when none is saved."""
+    if default is None:
+        from _autoplot_native import DEFAULT_RAM_LIMIT_PERCENT
+        default = DEFAULT_RAM_LIMIT_PERCENT
+    try:
+        value = float(suite_settings().value(RAM_LIMIT_KEY, default))
+    except (TypeError, ValueError):
+        value = float(default)
+    return min(max(value, 0.0), 99.0)
+
+
+class RamLimitBox(QWidget):
+    """
+    "RAM limit" control (0.1.5): offload plot data to disk when this
+    computer's RAM in use (every program, not only this one) reaches the
+    percentage set here; 0 = never.  The value is shared by every tool of
+    the suite (QSettings, like the theme) and set for this program with
+    _autoplot_native.set_ram_limit(); a line beside it shows the computer's
+    RAM and how much is in use now (updated every 2 s while shown).
+    """
+
+    limit_changed = Signal(float)
+
+    def __init__(self, parent: Any = None) -> None:
+        """Spin box (0 = never .. 99 %) with the saved value, and the RAM line."""
+        super().__init__(parent)
+        from _autoplot_native import memory_text, set_ram_limit
+        self._memory_text = memory_text
+        self._set_ram_limit = set_ram_limit
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        label = QLabel("Offload plot data to disk above RAM use of:")
+        tip = ("When the RAM in use on this computer (all programs together) reaches this "
+               "share, the project's datasets and the data kept from the files read are "
+               "moved to a temporary pickle file and dropped from RAM; the plots and the "
+               "saved .vszh5 read them back (the .vszh5 is written from that file on "
+               "Save).  Below the limit nothing is written to disk.  0 = never.  Shared by "
+               "every tool of the suite.  Folder: AUTOPLOT_OFFLOAD_DIR, else the system's "
+               "temporary folder; the file is deleted on Clear and when the program ends.")
+        label.setToolTip(tip)
+        row.addWidget(label)
+        self.spin = QSpinBox()
+        self.spin.setRange(0, 99)
+        self.spin.setSuffix(" %")
+        self.spin.setSpecialValueText("never")
+        self.spin.setToolTip(tip)
+        self.spin.setValue(int(round(saved_ram_limit())))
+        row.addWidget(self.spin)
+        self.ram_label = QLabel()
+        self.ram_label.setToolTip("This computer's RAM and the share in use now by all programs "
+                                  "(psutil; /proc/meminfo or GlobalMemoryStatusEx without it).")
+        row.addWidget(self.ram_label, 1)
+        self._set_ram_limit(self.spin.value())
+        self.spin.valueChanged.connect(self._changed)
+        self._timer = QTimer(self)
+        self._timer.setInterval(2000)
+        self._timer.timeout.connect(self._refresh)
+        self._refresh()
+
+    def showEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+        """Update the RAM line every 2 s while the control is shown."""
+        self._refresh()
+        self._timer.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+        """Stop updating the RAM line while hidden."""
+        self._timer.stop()
+        super().hideEvent(event)
+
+    def _refresh(self) -> None:
+        """Show this computer's RAM and the share in use now."""
+        try:
+            self.ram_label.setText(self._memory_text())
+        except Exception:  # pragma: no cover - never stop the GUI for a read-out
+            pass
+
+    def _changed(self, value: int) -> None:
+        """Set and save the new limit; tell listeners."""
+        limit = self._set_ram_limit(value)
+        try:
+            suite_settings().setValue(RAM_LIMIT_KEY, float(limit))
+        except Exception:  # pragma: no cover - settings not writable
+            pass
+        self.limit_changed.emit(float(limit))
+
+    def limit_percent(self) -> float:
+        """The limit in force (%; 0 = never)."""
+        return float(self.spin.value())
+
+
+class TimeAxesBox(QWidget):
+    """
+    "Time axes" check boxes (0.1.4): Local time, UTC and MJD.
+
+    Each ticked clock gives every page with date-time x axes its own set of
+    pages (_autoplot_native TimeLayout.clocks): the first ticked clock keeps
+    the page, UTC adds "<page>_utc", MJD "<page>_mjd".  Default: Local time
+    only.  Local time is the time zone of the computer running the program,
+    read from the operating system for every sample (daylight saving
+    included); the line under the boxes names it.  At least one box stays
+    ticked.  clocks() gives the tuple for TimeLayout(clocks=...);
+    clocks_changed(tuple) is sent after a box changes (the tools redraw
+    their Plots tab with it).
+    """
+
+    clocks_changed = Signal(object)
+
+    def __init__(self, parent: Any = None) -> None:
+        """Build the three check boxes and the zone line (Local only ticked)."""
+        super().__init__(parent)
+        from _autoplot_native import local_zone_description
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        heading = QLabel("Time axes - one set of pages per ticked clock:")
+        heading.setToolTip("Pages with date-time x axes are drawn once for every ticked "
+                           "clock, in the Plots tab and in the saved .vszh5.")
+        outer.addWidget(heading)
+        row = QHBoxLayout()
+        zone = local_zone_description()
+        self.local_cb = QCheckBox("Local time")
+        self.local_cb.setChecked(True)
+        self.local_cb.setToolTip(
+            "Date-time x axes in local time: %s.  ISO 8601 ticks with the UTC "
+            "offset; the axis label names the zone.  The page keeps its own name." % zone)
+        self.utc_cb = QCheckBox("UTC")
+        self.utc_cb.setToolTip(
+            "Date-time x axes in UTC (ISO 8601 ticks ending in 'Z').  With Local time "
+            "ticked too, every such page gets a copy named '<page>_utc'.")
+        self.mjd_cb = QCheckBox("MJD")
+        self.mjd_cb.setToolTip(
+            "Date-time x axes in Modified Julian Date (UTC days, the exact MJD of the "
+            "data, 12 significant digits on the ticks).  A copy of every such page "
+            "named '<page>_mjd' when another clock is ticked.")
+        for box in (self.local_cb, self.utc_cb, self.mjd_cb):
+            row.addWidget(box)
+            box.toggled.connect(self._keep_one)
+        row.addStretch(1)
+        outer.addLayout(row)
+        self.zone_label = QLabel("Local time = " + zone)
+        self.zone_label.setWordWrap(True)
+        self.zone_label.setToolTip(
+            "Read from this computer's operating system when the plots are made; the "
+            "environment variable VSZH5_DISPLAY_TZ (e.g. America/New_York, -05:00, "
+            "UTC) overrides it.")
+        outer.addWidget(self.zone_label)
+
+    def _keep_one(self, checked: bool) -> None:
+        """Tick the box again when it was the last one ticked (a project
+        needs at least one clock for its date-time axes)."""
+        if checked or self.clocks(fallback=False):
+            self.clocks_changed.emit(self.clocks())
+            return
+        box = self.sender()
+        target = box if isinstance(box, QCheckBox) else self.local_cb
+        target.blockSignals(True)
+        target.setChecked(True)
+        target.blockSignals(False)
+
+    def clocks(self, fallback: bool = True) -> Tuple[str, ...]:
+        """The ticked clocks in page order ("local", "utc", "mjd"); with
+        ``fallback`` ("local",) when none is ticked."""
+        found = tuple(name for name, box in (("local", self.local_cb), ("utc", self.utc_cb),
+                                             ("mjd", self.mjd_cb)) if box.isChecked())
+        return found or (("local",) if fallback else ())
+
+    def set_clocks(self, clocks: Iterable[str]) -> None:
+        """Tick exactly ``clocks`` (any of local, utc, mjd; none = Local)."""
+        wanted = set(str(c).lower() for c in clocks) or {"local"}
+        for name, box in (("local", self.local_cb), ("utc", self.utc_cb), ("mjd", self.mjd_cb)):
+            box.blockSignals(True)
+            box.setChecked(name in wanted)
+            box.blockSignals(False)
+        if not self.clocks(fallback=False):
+            self.local_cb.setChecked(True)
+        self.clocks_changed.emit(self.clocks())
+
+
 class GapOptionsBox(QGroupBox):
     """
     "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and
@@ -511,12 +816,16 @@ class GapOptionsBox(QGroupBox):
     angle, index), with the step also large on a log scale so a log-spaced
     sweep is not cut. time_layout() gives the _autoplot_native TimeLayout
     that the project (and its Plots tab) uses.
+
+    0.1.4: ``time_axes`` True adds the "Time axes" boxes (TimeAxesBox:
+    Local time / UTC / MJD) for tools that draw date-time x axes.
     """
 
-    def __init__(self, parent: Any = None) -> None:
+    def __init__(self, parent: Any = None, time_axes: bool = False) -> None:
         """Build the check boxes, spin boxes and text boxes (defaults: both
-        breaks on, K = 10, n = 100, non-time axes included)."""
-        super().__init__("Gaps", parent)
+        breaks on, K = 10, n = 100, non-time axes included; with
+        ``time_axes`` the Local time / UTC / MJD boxes, Local only)."""
+        super().__init__("Gaps and time axes" if time_axes else "Gaps", parent)
         from _autoplot_native import GAP_STRING_HELP
         form = QFormLayout(self)
         self.lines_cb = QCheckBox("Break the line / trace at small gaps")
@@ -563,6 +872,9 @@ class GapOptionsBox(QGroupBox):
             "On: sorted non-time x data get the same K / n rule, with the step also "
             "large on a log scale (a log-spaced sweep is not cut).  Off: time axes only.")
         form.addRow(self.numeric_cb)
+        self.time_axes_box = TimeAxesBox(self) if time_axes else None     # 0.1.4
+        if self.time_axes_box is not None:
+            form.addRow(self.time_axes_box)
         # K and the fixed small gap also set the scale of the large gap
         # (n x small gap), so they stay enabled while either break is on
         self.lines_cb.toggled.connect(self._enable_values)
@@ -578,11 +890,13 @@ class GapOptionsBox(QGroupBox):
         self.large_text.setEnabled(self.axis_cb.isChecked())
 
     def time_layout(self) -> Any:
-        """The _autoplot_native TimeLayout of the current settings."""
+        """The _autoplot_native TimeLayout of the current settings (0.1.4:
+        with the ticked time-axis clocks; Local only without the boxes)."""
         from _autoplot_native import TimeLayout, parse_gap_string
         return TimeLayout(k=float(self.k_spin.value()), n=float(self.n_spin.value()),
                           manual_s=parse_gap_string(self.small_text.text()) * 86400.0,
                           axis_manual_s=parse_gap_string(self.large_text.text()) * 86400.0,
                           break_lines=self.lines_cb.isChecked(),
                           break_axis=self.axis_cb.isChecked(),
-                          numeric=self.numeric_cb.isChecked())
+                          numeric=self.numeric_cb.isChecked(),
+                          clocks=self.time_axes_box.clocks() if self.time_axes_box else None)

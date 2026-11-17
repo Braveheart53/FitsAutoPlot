@@ -32,6 +32,347 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.5.7: Plot data offloaded to disk when this computer's RAM use passes a limit.
+Date: 2026-11-17
+#              Operator request 2026-11-17: offload to disk (pickle) when a
+#              user value for RAM use - of the whole computer, not only this
+#              program - is exceeded, and convert to the .vszh5 on save; only
+#              above that value.
+#              * NEW set_ram_limit() / ram_limit() (default 80 %, 0 = never),
+#                system_memory() (psutil; /proc/meminfo; GlobalMemoryStatusEx),
+#                memory_text(), payload_bytes(); OffloadStore (one append-only
+#                pickle file, thread-safe, deleted on close or exit),
+#                OffloadedValue, OffloadedParts (a read-only mapping in place
+#                of a dataset's parts), loaded_parts().
+#              * NativeDocument: after each dataset is stored (at most every
+#                0.2 s), at the end of finalize() and on save, the RAM in use
+#                on the computer is read; at or above the limit every dataset
+#                of 512 bytes or more and the exact MJD arrays move to the
+#                file (offload(); not when the disk lacks room), with a
+#                message (offload_log, offload_messages).  Layouts, the Plots
+#                tab and GetData read them back; save() writes each from the
+#                file into the .vszh5; release() deletes the file.
+#              * KeptReads: keep() offloads the kept file data above the limit;
+#                get() / items() read them back; data that cannot be pickled
+#                stay in RAM; clear() deletes the file.
+#              * NEW add_memory_arguments() / ram_limit_from_args(): --ram-limit.
+#              Checked (Python 3.12.3): tests/test_offload.py (16 tests) and the
+#              whole suite; every program's real files (FITS GBT tack, UWBR
+#              Temps / Vacuum, ATR, R&S, CSV, Touchstone) saved with every
+#              dataset offloaded: identical to the in-RAM save in every
+#              dataset, attribute and script line; Plots tab identical.
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        add_gap_arguments: Add the gap options to an argparse parser (0.5.3): --gap-k, --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks, --no-numeric-gap...
+        add_memory_arguments: Add --ram-limit to an argparse parser (0.5.7): offload plot data to disk when this computer's RAM in use (all programs) reaches PERCENT (0 = never;...
+        ram_limit_from_args: Set the program's RAM limit from add_memory_arguments() (0.5.7); returns it.
+        layout_from_args: The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3; 0.5.6: --time-axes).
+        time_clocks: The clocks of ``value`` as a tuple in TIME_CLOCKS order (0.5.6).
+        _zone_of: The tzinfo of ``zone`` (None = VSZH5_DISPLAY_TZ, else None = this computer's zone; a text is read as by the writer) (0.5.6).
+        zone_name_at: Name of the time zone at the UTC instant ``epoch_s`` (Unix seconds) (0.5.6): what the operating system calls this computer's zone then ("EST", "EDT...
+        label_zone_name: ``name`` as the axis label shows it, or "" for a name that only repeats the offset or says UTC (0.5.6).
+        local_zone_description: One line naming the zone local time axes use (0.5.6), for the GUI and the logs: this computer's zone (or VSZH5_DISPLAY_TZ) with its name and UTC of...
+        TimeLayout (class): Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any sorted x, and the two consequences of a gap made optional), see vszh5_writer T...
+        _number_text: A setting for the notes with every digit (repr), without a trailing ".0" (0.5.3; %g cut 12.3456789 to 12.3457).
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _page_of: The page widget ``widget`` is on, or None (0.5.6).
+        _clock_of: The time-axis clock of the page ``widget`` is on ("local" when the page has none yet, or the widget is on no page) (0.5.6).
+        _same_values: True when two arrays hold the same numbers, NaN where the other has NaN (0.5.6; numpy.array_equal(equal_nan=...) needs numpy >= 1.19).
+        _mjd_name: Name of the MJD plot copy of the UTC date dataset ``utc_name`` (0.5.6): "<x>__utc" -> "<x>__mjd", "<x>_utc" -> "<x>_mjd", else "<x>_mjd".
+        _exact_mjd: (MJD values, name of a stored dataset holding exactly them or None) of one time x (0.5.6).
+        _clock_dataset: Plot x dataset of one trace on the UTC or MJD clock (0.5.6).
+        _time_note: The "Time axis:" line of the graph notes for ``clock`` (0.5.6).
+        _set_note_line: Put ``line`` into the graph notes, replacing a line that starts with ``prefix`` (0.5.6; _set_gap_note for any prefix).
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0; 0.5.6 clocks).
+        _set_gap_note: Put the gap-rule line ``note`` into the graph notes (0.5.3: a line from an earlier layout is replaced, so the notes state the rule in use).
+        _sorted_finite: True when the finite values of ``values`` never decrease (at least 3).
+        _layout_numeric_axis: Gap options on an x axis that is not time (0.5.3): frequency, angle, index ...
+        _undo_numeric_layout: Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the gap options of a project turn non-time axes off between two saves, the traces d...
+        _drop_unused_plot_copies: Remove line-break plot copies no widget draws any more (0.5.3): when the gap options change between two saves, copies of the old layout would other...
+        _has_clock_axis: True when ``page`` draws a date-time x axis laid out on a clock.
+        _free_page_name: ``wanted``, or wanted_2, wanted_3 ...
+        _copy_setting: A setting value for a page copy: lists and dicts copied, the rest (text, numbers, booleans) shared.
+        _clone_widget: Copy of ``widget`` and every widget below it, under ``parent`` (0.5.6).
+        _remove_clock_pages: Take the clock copies of the last finalize out of the project (0.5.6); finalize makes them again from their pages, so a copy always shows its page...
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        _fit_set: Set ``key`` on ``widget`` for the tick-label fit, remembering the value it had before (0.5.5).
+        _fit_restore: Undo the previous tick-label fit on ``widget`` (0.5.5): a setting the fit wrote and nobody changed since gets its earlier value back.
+        _cm: A Veusz distance setting in cm (``default`` when unset or not physical).
+        _pt: A Veusz font size setting in points (``default`` when unset).
+        _finite_range: (min, max) of the finite values of dataset ``name`` (1-D or date), or None; cached per finalize in ``cache``.
+        _axis_data_range: (min, max) of the data a graph draws on ``axis`` (xy traces and images), or None when it draws nothing known (0.5.5).
+        _axis_room: vszh5_writer.TickRoom of one axis as it is set now (0.5.5); None for a hidden axis, a label axis or an axis without known data.
+        _time_label_cm: Width (cm) a date-time x axis's label needs (0.5.6), 0 for other axes.
+        _dated_page_size: (width, height) cm the 0.5.0 rule gives a page with date-time axes and no size of its own: 13 cm a column and 8 cm a row (at least 16 cm) for a gri...
+        _fit_page: Fit the tick labels of every graph on ``page`` (0.5.5): vertical labels where they belong, the margins every label needs and a page large enough (s...
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        process_rss_mb: Resident set size of this process in MiB (NaN when it cannot be read).
+        _release_os_heap: Hand freed heap memory back to the operating system; returns the steps that ran (names), [] when nothing applies.
+        release_memory: Give the memory of dropped data back to the operating system (0.5.4).
+        _OffloadNotes (class): Throttled offload messages (0.5.7): the first at once, then at most one every _NOTE_S with the totals so far; flush() logs the last one held back (...
+        set_ram_limit: Set the RAM limit (% of this computer's RAM in use, every program) above which plot data are offloaded to disk (0.5.7); 0 or None = never.
+        ram_limit: The RAM limit in force (%; 0 = never offload) (0.5.7).
+        system_memory: (percent in use, total bytes, available bytes) of this computer's RAM (0.5.7), all programs together; None when it cannot be read.
+        memory_text: One line for the GUI (0.5.7), e.g.
+        payload_bytes: Bytes of the values in ``value`` (0.5.7): numpy arrays by nbytes, text and lists estimated, dicts / lists / tuples summed (nested to 4 levels).
+        OffloadStore (class): One append-only pickle file of offloaded values (0.5.7).
+        OffloadedValue (class): A value in an OffloadStore (0.5.7); load() reads it back (a new copy every time; nothing is kept in RAM).
+        OffloadedParts (class): The arrays of a dataset kept in an OffloadStore (0.5.7): a read-only mapping like the dict it replaces ({"data": ..., "serr": ...}).
+        loaded_parts: ``parts`` as a plain dict of arrays (0.5.7): offloaded parts are read back once; parts in RAM are returned as they are.
+        _over_ram_limit: (percent in use, limit) when this computer's RAM use is at or above ``limit`` (%), else None; None too when the limit is 0 or the use is unknown (0...
+        file_stamp: (size, mtime_ns, options) of ``path``: the data read from it are still good while this is unchanged; None when the file cannot be read.
+        KeptReads (class): Data read from the listed files, kept until the user clears them (0.5.4).
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        _GAP_TOKEN_REGEX: one number and unit of a gap text (s, min, h, d, m; bare = hours)
+        GAP_STRING_HELP: tool tip of the gap text boxes
+        _DAYS_PER_MONTH: average Gregorian month (365.25 / 12 days) for 'm' in gap texts
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 1 / 1440 (gap text parsing)
+        _DAYS_PER_SECOND: 1 / 86400 (gap text parsing)
+        TIME_CLOCKS: the clocks of date-time x axes, in page order (local, utc, mjd)
+        DEFAULT_TIME_CLOCKS: default clocks: local time only
+        CLOCK_PAGE_SUFFIX: page-name suffix of each clock ('' for local)
+        CLOCK_TITLES: clock names for people (GUI, logs, notes)
+        UTC_AXIS_LABEL: axis label of a UTC clock axis
+        MJD_AXIS_LABEL: axis label of an MJD clock axis
+        UTC_DATETIME_FORMAT: tick format of a UTC date-time axis (ISO 8601, 'Z')
+        _OFFSET_ONLY_NAME: zone names that only repeat the offset or say UTC (left off labels)
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _TIME_NOTE: start of the graph-notes line written by the time layout
+        _MISSING: Every page is fitted on save, after the time and gap layouts: each axis's tick labels are worked out the way Veusz will draw them (vszh5_writer.axi...
+        _LABEL_PAD_CM: room kept beside a time-axis label that sets the plot width (cm)
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+        DEFAULT_RAM_LIMIT_PERCENT: default RAM limit: offload above this much of the computer's RAM in use (%)
+        OFFLOAD_DIR_ENV: environment variable naming the folder for offload files
+        OFFLOAD_MIN_BYTES: datasets smaller than this (bytes of values) stay in RAM
+        _RAM_CHECK_S: RAM use is read at most this often while datasets are added (s)
+        _HEAP_TRIM_S: freed heap is handed back to the system at most this often (s)
+        _RAM_LIMIT: the program-wide RAM limit (set_ram_limit)
+        _NOTE_S: (0.5.7) Offload messages are logged at most this often (s), with totals.
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    TimeLayout holds the options; finalize() lays out time axes
+    (_layout_time_axis), then other x axes (_layout_numeric_axis), then drops
+    plot copies no widget draws (_drop_unused_plot_copies).
+    Memory: release_memory() after
+    the last reference to dropped data is gone (gc, GPU pools, malloc_trim /
+    HeapCompact + working-set trim); KeptReads keeps per-file data until Clear.
+    Tick labels: finalize() fits every page
+    (_fit_page): vertical two-line date labels and long numbers, margins and
+    page sizes so Veusz draws every major tick label; undone before the next fit.
+    Clocks: TimeLayout(clocks=...)
+    draws date-time x axes in local time, UTC and / or MJD, one set of pages per
+    clock, rebuilt on every save (see "Time-axis clocks").
+    Offload: above the RAM limit
+    (set_ram_limit) datasets and kept file data go to a pickle file
+    (OffloadStore) and are read back where used (see "Offloading").
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.5.6: Time-axis clocks: Local time (this computer's zone), UTC and MJD.
+Date: 2026-11-17
+#              Operator request 2026-11-17: local time read from the time
+#              zone of the computer processing the data (not -05:00), and
+#              tick boxes for MJD, UTC and local time axes in the GUI plots
+#              and the .vszh5 (default local only).
+#              * The local offset was and is read from the operating system
+#                for every sample (datetime.astimezone(), DST-aware); the
+#                "-05:00" in a tick format is text, because a Veusz date
+#                format cannot show a zone.  NOW the axis label names the
+#                zone ("Local time (ISO 8601, EST, UTC-05:00)"; across a DST
+#                change "UTC-04:00 EDT, UTC-05:00 EST from ..."), the graph
+#                notes say where it came from, local_zone_description() /
+#                zone_name_at() give the GUI its zone line.
+#              * NEW TimeLayout(clocks=...) (TIME_CLOCKS local, utc, mjd;
+#                time_clocks(); describe_clocks()); finalize() draws a page
+#                with date-time x axes once per clock: the first keeps the
+#                page, copies "<page>_utc" / "<page>_mjd" follow it
+#                (_clone_widget, _remove_clock_pages, _free_page_name);
+#                rebuilt on every save, so they always match their page.
+#              * NEW UTC clock: the stored UTC date dataset (a "<utc>_gaps"
+#                copy with gap rows), ticks ISO 8601 ending in "Z"; MJD
+#                clock: the exact MJD (SetDataDateTime(mjd=...): a dataset
+#                name or array; else UTC / 86400 + 54832) on a numeric axis,
+#                12 significant digits.  Gaps and axis breaks are found in
+#                UTC seconds for every clock (the same samples).
+#              * NEW _fit_page keeps a time-axis label inside its plot
+#                (_time_label_cm); tags type_time_utc / type_time_mjd;
+#                add_gap_arguments(time_axes=True) adds --time-axes.
+#              Checked (Python 3.12.3, Veusz 4.2.1): tests/test_time_clocks.py
+#              (15 tests) and the whole suite; FITS GBT tack / UWBR Temps /
+#              30-day 1PPS, synthetic FITS / Franks and CSV projects with
+#              all three clocks rendered in Veusz with every tick label
+#              drawn; local-only projects identical to 0.4.5 in every
+#              dataset (only the axis label and graph notes changed).
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        add_gap_arguments: Add the gap options to an argparse parser (0.5.3): --gap-k, --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks, --no-numeric-gap...
+        layout_from_args: The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3; 0.5.6: --time-axes).
+        time_clocks: The clocks of ``value`` as a tuple in TIME_CLOCKS order (0.5.6).
+        _zone_of: The tzinfo of ``zone`` (None = VSZH5_DISPLAY_TZ, else None = this computer's zone; a text is read as by the writer) (0.5.6).
+        zone_name_at: Name of the time zone at the UTC instant ``epoch_s`` (Unix seconds) (0.5.6): what the operating system calls this computer's zone then ("EST", "EDT...
+        label_zone_name: ``name`` as the axis label shows it, or "" for a name that only repeats the offset or says UTC (0.5.6).
+        local_zone_description: One line naming the zone local time axes use (0.5.6), for the GUI and the logs: this computer's zone (or VSZH5_DISPLAY_TZ) with its name and UTC of...
+        TimeLayout (class): Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any sorted x, and the two consequences of a gap made optional), see vszh5_writer T...
+        _number_text: A setting for the notes with every digit (repr), without a trailing ".0" (0.5.3; %g cut 12.3456789 to 12.3457).
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _page_of: The page widget ``widget`` is on, or None (0.5.6).
+        _clock_of: The time-axis clock of the page ``widget`` is on ("local" when the page has none yet, or the widget is on no page) (0.5.6).
+        _same_values: True when two arrays hold the same numbers, NaN where the other has NaN (0.5.6; numpy.array_equal(equal_nan=...) needs numpy >= 1.19).
+        _mjd_name: Name of the MJD plot copy of the UTC date dataset ``utc_name`` (0.5.6): "<x>__utc" -> "<x>__mjd", "<x>_utc" -> "<x>_mjd", else "<x>_mjd".
+        _exact_mjd: (MJD values, name of a stored dataset holding exactly them or None) of one time x (0.5.6).
+        _clock_dataset: Plot x dataset of one trace on the UTC or MJD clock (0.5.6).
+        _time_note: The "Time axis:" line of the graph notes for ``clock`` (0.5.6).
+        _set_note_line: Put ``line`` into the graph notes, replacing a line that starts with ``prefix`` (0.5.6; _set_gap_note for any prefix).
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0; 0.5.6 clocks).
+        _set_gap_note: Put the gap-rule line ``note`` into the graph notes (0.5.3: a line from an earlier layout is replaced, so the notes state the rule in use).
+        _sorted_finite: True when the finite values of ``values`` never decrease (at least 3).
+        _layout_numeric_axis: Gap options on an x axis that is not time (0.5.3): frequency, angle, index ...
+        _undo_numeric_layout: Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the gap options of a project turn non-time axes off between two saves, the traces d...
+        _drop_unused_plot_copies: Remove line-break plot copies no widget draws any more (0.5.3): when the gap options change between two saves, copies of the old layout would other...
+        _has_clock_axis: True when ``page`` draws a date-time x axis laid out on a clock.
+        _free_page_name: ``wanted``, or wanted_2, wanted_3 ...
+        _copy_setting: A setting value for a page copy: lists and dicts copied, the rest (text, numbers, booleans) shared.
+        _clone_widget: Copy of ``widget`` and every widget below it, under ``parent`` (0.5.6).
+        _remove_clock_pages: Take the clock copies of the last finalize out of the project (0.5.6); finalize makes them again from their pages, so a copy always shows its page...
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        _fit_set: Set ``key`` on ``widget`` for the tick-label fit, remembering the value it had before (0.5.5).
+        _fit_restore: Undo the previous tick-label fit on ``widget`` (0.5.5): a setting the fit wrote and nobody changed since gets its earlier value back.
+        _cm: A Veusz distance setting in cm (``default`` when unset or not physical).
+        _pt: A Veusz font size setting in points (``default`` when unset).
+        _finite_range: (min, max) of the finite values of dataset ``name`` (1-D or date), or None; cached per finalize in ``cache``.
+        _axis_data_range: (min, max) of the data a graph draws on ``axis`` (xy traces and images), or None when it draws nothing known (0.5.5).
+        _axis_room: vszh5_writer.TickRoom of one axis as it is set now (0.5.5); None for a hidden axis, a label axis or an axis without known data.
+        _time_label_cm: Width (cm) a date-time x axis's label needs (0.5.6), 0 for other axes.
+        _dated_page_size: (width, height) cm the 0.5.0 rule gives a page with date-time axes and no size of its own: 13 cm a column and 8 cm a row (at least 16 cm) for a gri...
+        _fit_page: Fit the tick labels of every graph on ``page`` (0.5.5): vertical labels where they belong, the margins every label needs and a page large enough (s...
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        process_rss_mb: Resident set size of this process in MiB (NaN when it cannot be read).
+        _release_os_heap: Hand freed heap memory back to the operating system; returns the steps that ran (names), [] when nothing applies.
+        release_memory: Give the memory of dropped data back to the operating system (0.5.4).
+        file_stamp: (size, mtime_ns, options) of ``path``: the data read from it are still good while this is unchanged; None when the file cannot be read.
+        KeptReads (class): Data read from the listed files, kept until the user clears them (0.5.4).
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        _GAP_TOKEN_REGEX: one number and unit of a gap text (s, min, h, d, m; bare = hours)
+        GAP_STRING_HELP: tool tip of the gap text boxes
+        _DAYS_PER_MONTH: average Gregorian month (365.25 / 12 days) for 'm' in gap texts
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 1 / 1440 (gap text parsing)
+        _DAYS_PER_SECOND: 1 / 86400 (gap text parsing)
+        TIME_CLOCKS: the clocks of date-time x axes, in page order (local, utc, mjd)
+        DEFAULT_TIME_CLOCKS: default clocks: local time only
+        CLOCK_PAGE_SUFFIX: page-name suffix of each clock ('' for local)
+        CLOCK_TITLES: clock names for people (GUI, logs, notes)
+        UTC_AXIS_LABEL: axis label of a UTC clock axis
+        MJD_AXIS_LABEL: axis label of an MJD clock axis
+        UTC_DATETIME_FORMAT: tick format of a UTC date-time axis (ISO 8601, 'Z')
+        _OFFSET_ONLY_NAME: zone names that only repeat the offset or say UTC (left off labels)
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _TIME_NOTE: start of the graph-notes line written by the time layout
+        _MISSING: Every page is fitted on save, after the time and gap layouts: each axis's tick labels are worked out the way Veusz will draw them (vszh5_writer.axi...
+        _LABEL_PAD_CM: room kept beside a time-axis label that sets the plot width (cm)
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    TimeLayout holds the options; finalize() lays out time axes
+    (_layout_time_axis), then other x axes (_layout_numeric_axis), then drops
+    plot copies no widget draws (_drop_unused_plot_copies).
+    Memory: release_memory() after
+    the last reference to dropped data is gone (gc, GPU pools, malloc_trim /
+    HeapCompact + working-set trim); KeptReads keeps per-file data until Clear.
+    Tick labels: finalize() fits every page
+    (_fit_page): vertical two-line date labels and long numbers, margins and
+    page sizes so Veusz draws every major tick label; undone before the next fit.
+    Clocks: TimeLayout(clocks=...)
+    draws date-time x axes in local time, UTC and / or MJD, one set of pages per
+    clock, rebuilt on every save (see "Time-axis clocks").
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.5.5: Every major tick label shows: vertical date and long-number x labels.
 Date: 2026-11-16
 #              * NEW _fit_page (run by finalize() for every page, after the
@@ -606,17 +947,29 @@ Date: 2026-10-11
 """
 from __future__ import annotations
 
+import copy
+import datetime
 import math
 import os
+import pickle
 import re
+import shutil
+import tempfile
+import threading
+import time
+import weakref
 from collections import OrderedDict
+try:
+    from collections.abc import Mapping
+except ImportError:  # pragma: no cover - Python 2 era
+    from collections import Mapping  # type: ignore
 
 import numpy as np
 
 import vszh5_writer
 from vszh5_writer import VeuszWriter, VszDoc, vz_text
 
-VERSION = "0.5.5"
+VERSION = "0.5.7"
 WRITER_VERSION = vszh5_writer.__version__
 DATASET_SETTINGS = frozenset((
     "xData", "yData", "labels", "scalePoints", "yDataLow", "yDataHigh",
@@ -718,6 +1071,12 @@ class NativeWidget:
         self.local_time = None        # 0.3.0: label prefix of a local date-time axis
         self.fit_base = {}            # 0.5.5: settings before the tick-label fit
         self.fit_written = {}         # 0.5.5: settings the tick-label fit wrote
+        # 0.5.6: time-axis clocks (TimeLayout.clocks).  A page: the clock its
+        # date-time axes are drawn in; an axis: the clock it was laid out in
+        # (None = not a date-time axis).
+        self.time_clock = None
+        self.time_base_name = None    # 0.5.6: a page's own name (no clock suffix)
+        self.time_clone_of = None     # 0.5.6: the page a clock copy was made from
 
     @property
     def typename(self):
@@ -960,10 +1319,12 @@ def parse_gap_string(text, log_cb=None):
         return 0.0
     return total_days
 
-def add_gap_arguments(parser):
+def add_gap_arguments(parser, time_axes=False):
     """Add the gap options to an argparse parser (0.5.3): --gap-k,
     --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks,
-    --no-numeric-gaps; layout_from_args() turns them into a TimeLayout."""
+    --no-numeric-gaps; layout_from_args() turns them into a TimeLayout.
+    0.5.6: ``time_axes`` also adds --time-axes (local, utc, mjd, all) for a
+    tool that draws date-time x axes."""
     group = parser.add_argument_group(
         "gaps", "A small gap breaks the line, a large gap breaks the x axis; either can be "
         "turned off. Time axes and (unless --no-numeric-gaps) any sorted x.")
@@ -982,16 +1343,162 @@ def add_gap_arguments(parser):
                        help="never break the x axis")
     group.add_argument("--no-numeric-gaps", action="store_true",
                        help="gap rule on time axes only (not frequency, angle, index ...)")
+    if not time_axes:
+        return group
+    # 0.5.6: the clocks of the date-time x axes, one set of pages per clock
+    group.add_argument("--time-axes", type=time_clocks, default=DEFAULT_TIME_CLOCKS,
+                       help="clocks of the date-time x axes, comma separated: local (this "
+                            "computer's time zone), utc, mjd, or all; one set of pages per "
+                            "clock (default: local)")
     return group
 
 
+def add_memory_arguments(parser):
+    """Add --ram-limit to an argparse parser (0.5.7): offload plot data to
+    disk when this computer's RAM in use (all programs) reaches PERCENT (0 =
+    never; default DEFAULT_RAM_LIMIT_PERCENT); ram_limit_from_args() sets it."""
+    parser.add_argument("--ram-limit", type=float, default=DEFAULT_RAM_LIMIT_PERCENT,
+                        metavar="PERCENT",
+                        help="offload plot data to a temporary pickle file when this computer's "
+                             "RAM in use (all programs) reaches PERCENT; 0 = never "
+                             "(default %(default)s)")
+    return parser
+
+
+def ram_limit_from_args(args):
+    """Set the program's RAM limit from add_memory_arguments() (0.5.7); returns it."""
+    return set_ram_limit(getattr(args, "ram_limit", DEFAULT_RAM_LIMIT_PERCENT))
+
+
 def layout_from_args(args):
-    """The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3)."""
+    """The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3;
+    0.5.6: --time-axes)."""
     return TimeLayout(k=args.gap_k, n=args.gap_n,
                       manual_s=parse_gap_string(args.gap_small) * 86400.0,
                       axis_manual_s=parse_gap_string(args.gap_large) * 86400.0,
                       break_lines=not args.no_line_breaks, break_axis=not args.no_axis_breaks,
-                      numeric=not args.no_numeric_gaps)
+                      numeric=not args.no_numeric_gaps,
+                      clocks=getattr(args, "time_axes", None))
+
+
+# %% Time-axis clocks (0.5.6)
+# A date-time x axis can be drawn in three clocks; TimeLayout.clocks picks
+# any of them (default: local time only, the 0.5.5 pages).  A page with
+# date-time x axes is drawn once per chosen clock: the first chosen clock
+# keeps the page, every other one gets a copy of the page right after it
+# ("<page>_utc", "<page>_mjd").  The stored data are the same for every
+# clock; each clock draws plot copies of them:
+#   local - "<utc>_local": the UTC instant plus the UTC offset of the zone
+#           of the computer running the program at that instant (DST-aware,
+#           read from the operating system for every sample; nothing is
+#           fixed), ISO 8601 ticks with the offset, the zone named on the
+#           axis label.  VSZH5_DISPLAY_TZ overrides the computer's zone.
+#   utc   - the UTC date dataset itself (a "<utc>_gaps" copy with gap rows),
+#           ISO 8601 ticks ending in "Z".
+#   mjd   - the exact MJD values (the MJD dataset or the MJD the program
+#           gave SetDataDateTime(mjd=...); else UTC seconds / 86400 + 54832)
+#           on a numeric axis with 12 significant digits.
+#: (0.5.6) The clocks of date-time x axes, in page order.
+TIME_CLOCKS = ("local", "utc", "mjd")
+#: (0.5.6) Default clocks: local time only.
+DEFAULT_TIME_CLOCKS = ("local",)
+#: (0.5.6) Page-name suffix of each clock ("" keeps the 0.5.5 page names).
+CLOCK_PAGE_SUFFIX = {"local": "", "utc": "_utc", "mjd": "_mjd"}
+#: (0.5.6) Words for people (GUI, logs, notes).
+CLOCK_TITLES = {"local": "Local time", "utc": "UTC", "mjd": "MJD"}
+#: (0.5.6) Axis labels of the UTC and MJD clocks.
+UTC_AXIS_LABEL = "UTC (ISO 8601)"
+MJD_AXIS_LABEL = "MJD (UTC)"
+#: (0.5.6) Tick format of a UTC date-time axis (ISO 8601, "Z" = UTC).
+UTC_DATETIME_FORMAT = vszh5_writer.ISO_DATETIME_FORMAT + "Z"
+#: (0.5.6) A zone name that only repeats the offset ("UTC-05:00", "+0530",
+#: "GMT+1", "-03") or says "UTC" is left off the axis label.
+_OFFSET_ONLY_NAME = re.compile(r"^(?:(?:UTC|GMT)?[+-]\d.*|UTC|Z)$", re.IGNORECASE)
+
+
+def time_clocks(value=None):
+    """
+    The clocks of ``value`` as a tuple in TIME_CLOCKS order (0.5.6).
+
+    ``value``: None (the default, local only), a text such as "local,utc"
+    or "all", or an iterable of clock names (case and spaces ignored).
+    Unknown names or no clock at all raise ValueError.
+    """
+    if value is None:
+        return DEFAULT_TIME_CLOCKS
+    if isinstance(value, str):
+        items = [part for part in re.split(r"[\s,;+]+", value) if part]
+    else:
+        items = list(value)
+    names = set()
+    for item in items:
+        word = str(item).strip().lower()
+        if word == "all":
+            names.update(TIME_CLOCKS)
+        elif word in TIME_CLOCKS:
+            names.add(word)
+        elif word:
+            raise ValueError("unknown time-axis clock %r (use local, utc, mjd or all)" % item)
+    if not names:
+        raise ValueError("at least one time-axis clock is needed (local, utc or mjd)")
+    return tuple(clock for clock in TIME_CLOCKS if clock in names)
+
+
+def _zone_of(zone):
+    """The tzinfo of ``zone`` (None = VSZH5_DISPLAY_TZ, else None = this
+    computer's zone; a text is read as by the writer) (0.5.6)."""
+    if zone is None:
+        zone = vszh5_writer.display_zone()
+    if isinstance(zone, str):
+        zone = vszh5_writer._zone_from_text(zone)
+    return zone
+
+
+def zone_name_at(epoch_s, zone=None):
+    """
+    Name of the time zone at the UTC instant ``epoch_s`` (Unix seconds)
+    (0.5.6): what the operating system calls this computer's zone then
+    ("EST", "EDT"; on Windows "Eastern Standard Time"), or the name of
+    ``zone`` / VSZH5_DISPLAY_TZ.  "" when unknown.
+    """
+    try:
+        when = datetime.datetime.fromtimestamp(float(epoch_s), datetime.timezone.utc)
+        tz = _zone_of(zone)
+        local = when.astimezone() if tz is None else when.astimezone(tz)
+        return str(local.tzname() or "").strip()
+    except (OverflowError, OSError, ValueError, TypeError):
+        return ""
+
+
+def label_zone_name(name):
+    """``name`` as the axis label shows it, or "" for a name that only
+    repeats the offset or says UTC (0.5.6)."""
+    name = str(name or "").strip()
+    return "" if not name or _OFFSET_ONLY_NAME.match(name) else name
+
+
+def local_zone_description(now=None):
+    """
+    One line naming the zone local time axes use (0.5.6), for the GUI and
+    the logs: this computer's zone (or VSZH5_DISPLAY_TZ) with its name and
+    UTC offset at ``now`` (Unix seconds; default the current time), e.g.
+    "this computer's time zone: EST (UTC-05:00 now; each sample gets the
+    offset of its own date, daylight saving included)".
+    """
+    now = time.time() if now is None else float(now)
+    text = os.environ.get(vszh5_writer.DISPLAY_TZ_ENV, "").strip()
+    try:
+        offset = float(vszh5_writer._zone_offsets(np.array([now]), None)[0])
+    except Exception:                       # an unusable zone: no offset known
+        offset = None
+    name = zone_name_at(now)
+    where = ("%s=%s" % (vszh5_writer.DISPLAY_TZ_ENV, text)
+             if text and vszh5_writer.display_zone() is not None else "this computer's time zone")
+    parts = [part for part in (label_zone_name(name),
+                               "UTC%s now" % vszh5_writer.iso_offset_text(offset)
+                               if offset is not None else "") if part]
+    return "%s: %s (each sample gets the offset of its own date, daylight saving " \
+           "included)" % (where, ", ".join(parts) or "unknown")
 
 
 # %% Time axes: local ISO 8601, line breaks and axis breaks (0.5.0)
@@ -1019,10 +1526,16 @@ class TimeLayout(object):
                       cut; the fixed gaps (seconds) apply to time axes only.
     Either break can be used alone or both together (the 0.5.2 behaviour,
     which every default keeps).
+
+    0.5.6 option:
+        clocks      - the clocks the date-time x axes are drawn in, any of
+                      TIME_CLOCKS ("local", "utc", "mjd"); one set of pages
+                      per clock (see "Time-axis clocks"); default local only.
     """
 
     def __init__(self, k=vszh5_writer.GAP_K, n=vszh5_writer.GAP_AXIS_N, manual_s=0.0,
-                 axis_manual_s=0.0, break_lines=True, break_axis=True, numeric=True):
+                 axis_manual_s=0.0, break_lines=True, break_axis=True, numeric=True,
+                 clocks=None):
         """Store the gap settings (negative values are clamped to 0).
 
         k: small-gap factor - a trace's line breaks where its step dt exceeds
@@ -1032,6 +1545,7 @@ class TimeLayout(object):
         manual_s / axis_manual_s: fixed small / large gap in seconds; > 0
         overrides k / n (time axes).
         break_lines / break_axis / numeric: the 0.5.3 options (class text).
+        clocks: the 0.5.6 time-axis clocks (time_clocks(); None = local only).
         """
         self.k = float(k)
         self.n = max(0.0, float(n))
@@ -1040,11 +1554,20 @@ class TimeLayout(object):
         self.break_lines = bool(break_lines)
         self.break_axis = bool(break_axis)
         self.numeric = bool(numeric)
+        self.clocks = time_clocks(clocks)
 
     def key(self):
-        """Tuple of the settings; a change re-lays out the axes on save."""
+        """Tuple of the gap settings; a change re-lays out the axes on save
+        (the clocks are compared per axis, 0.5.6)."""
         return (self.k, self.n, self.manual_s, self.axis_manual_s, self.break_lines,
                 self.break_axis, self.numeric)
+
+    def describe_clocks(self):
+        """The chosen clocks for people (0.5.6), e.g. "Time axes: local time
+        (this computer's time zone), UTC, MJD"."""
+        words = [CLOCK_TITLES[c] + (" (this computer's time zone)" if c == "local" else "")
+                 for c in self.clocks]
+        return "Time axes: %s." % ", ".join(words)
 
     def gap_rule(self, geometric=False):
         """The writer's GapRule of these settings (0.5.3): for a time axis
@@ -1167,25 +1690,161 @@ def _plot_name(doc, wanted, owner):
     return name
 
 
+def _page_of(widget):
+    """The page widget ``widget`` is on, or None (0.5.6)."""
+    while widget is not None and widget.kind != "page":
+        widget = widget.parent
+    return widget
+
+
+def _clock_of(widget):
+    """The time-axis clock of the page ``widget`` is on ("local" when the
+    page has none yet, or the widget is on no page) (0.5.6)."""
+    page = _page_of(widget)
+    clock = getattr(page, "time_clock", None) if page is not None else None
+    return clock if clock in TIME_CLOCKS else "local"
+
+
+def _same_values(a, b):
+    """True when two arrays hold the same numbers, NaN where the other has
+    NaN (0.5.6; numpy.array_equal(equal_nan=...) needs numpy >= 1.19)."""
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    return a.shape == b.shape and bool(np.all((a == b) | (np.isnan(a) & np.isnan(b))))
+
+
+def _mjd_name(utc_name):
+    """Name of the MJD plot copy of the UTC date dataset ``utc_name`` (0.5.6):
+    "<x>__utc" -> "<x>__mjd", "<x>_utc" -> "<x>_mjd", else "<x>_mjd"."""
+    for suffix in ("__utc", "_utc"):
+        if utc_name.endswith(suffix):
+            return utc_name[:-len(suffix)] + suffix[:-3] + "mjd"
+    return utc_name + "_mjd"
+
+
+def _exact_mjd(doc, x_name, kind, values, utc):
+    """
+    (MJD values, name of a stored dataset holding exactly them or None) of
+    one time x (0.5.6).
+
+    An MJD x is its own exact MJD.  A UTC date dataset uses the MJD its
+    program gave SetDataDateTime(mjd=...) (a dataset name or an array of
+    the same length); without one, UTC seconds / 86400 + 54832 (within an
+    ulp of the MJD).  Samples without a UTC time (padding rows, NaN) are
+    NaN, so the MJD axis draws exactly the samples the other clocks draw.
+    """
+    exact, source = None, None
+    if kind == "mjd":
+        exact, source = np.array(values, dtype=float), x_name
+    else:
+        given = getattr(doc, "mjd_of", {}).get(x_name)
+        if isinstance(given, OffloadedValue):          # 0.5.7: read back from disk
+            given = given.load()
+        if isinstance(given, str) and given in doc.datasets and doc.datasets[given][0] == "1d":
+            candidate, source = doc.datasets[given][1]["data"], given
+        else:
+            candidate = given
+        if candidate is not None and np.asarray(candidate).shape == np.asarray(utc).shape:
+            exact = np.array(candidate, dtype=float)
+        else:
+            source = None
+    if exact is None:
+        exact = np.asarray(utc, dtype=float) / 86400.0 + MJD_VEUSZ_EPOCH
+    exact[~np.isfinite(np.asarray(utc, dtype=float))] = np.nan
+    if source is not None and not _same_values(exact, doc.datasets[source][1]["data"]):
+        source = None
+    return exact, source
+
+
+def _clock_dataset(doc, clock, x_name, utc_name, kind, values, utc, cut, gapped):
+    """
+    Plot x dataset of one trace on the UTC or MJD clock (0.5.6).
+
+    ``gapped`` - the trace's y gets gap rows too, so x needs them as well
+    (with no cut nothing changes).  The stored dataset itself is drawn when
+    it already holds the values; otherwise a plot copy (_plot_name) is
+    written: UTC "<x>_utc" (of an MJD x) / "<utc>_gaps", MJD "<utc
+    stem>__mjd" / "<...>_gaps".  Copies are listed in doc._clock_copies.
+    """
+    if clock == "utc":
+        display, is_date = np.asarray(utc, dtype=float), True
+        base = utc_name if kind == "date" else None
+        stem = utc_name if kind == "date" else x_name + "_utc"
+    else:
+        display, base = _exact_mjd(doc, x_name, kind, values, utc)
+        is_date = False
+        stem = base or _mjd_name(utc_name)
+    with_gaps = bool(gapped and cut.size)
+    if base is not None and not with_gaps:
+        return base
+    name = _plot_name(doc, stem + "_gaps" if with_gaps else stem, (clock, x_name))
+    data = vszh5_writer.insert_gaps(display, cut) if with_gaps else display
+    if is_date:
+        doc.SetDataDateTime(name, data)
+    else:
+        doc.SetData(name, data)
+    if not hasattr(doc, "_clock_copies"):
+        doc._clock_copies = {}
+    doc._clock_copies[name] = "type_time_" + clock
+    return name
+
+
+#: (0.5.6) Lines of the graph notes written by the time layout.
+_TIME_NOTE = "Time axis: "
+
+
+def _time_note(doc, clock, local_names):
+    """The "Time axis:" line of the graph notes for ``clock`` (0.5.6)."""
+    if clock == "utc":
+        return _TIME_NOTE + "UTC, ISO 8601 (the 'Z' ends every tick)."
+    if clock == "mjd":
+        return (_TIME_NOTE + "Modified Julian Date, UTC days (MJD 54832 = "
+                "2009-01-01T00:00:00Z), 12 significant digits on the ticks.")
+    zones = doc.local_zone_names(local_names)
+    where = ("the zone %s=%s" % (vszh5_writer.DISPLAY_TZ_ENV,
+                                 os.environ.get(vszh5_writer.DISPLAY_TZ_ENV, "").strip())
+             if vszh5_writer.display_zone() is not None
+             else "the time zone of the computer that made this project")
+    found = ", ".join("%s = UTC%s" % (name, offset) if name else "UTC%s" % offset
+                      for offset, name in zones)
+    return (_TIME_NOTE + "local time in %s%s; every sample has the UTC offset of its own "
+            "date (daylight saving included); the stored data are UTC." % (
+                where, (" (%s)" % found) if found else ""))
+
+
+def _set_note_line(graph, prefix, line):
+    """Put ``line`` into the graph notes, replacing a line that starts with
+    ``prefix`` (0.5.6; _set_gap_note for any prefix)."""
+    lines = [old for old in str(graph.settings.get("notes", "")).split("\n")
+             if not old.startswith(prefix)]
+    lines.append(line)
+    graph.settings["notes"] = "\n".join(old for old in lines if old).strip()
+
+
 def _layout_time_axis(doc, graph, axis):
     """
-    Lay out one x axis whose traces are against time (0.5.0).
+    Lay out one x axis whose traces are against time (0.5.0; 0.5.6 clocks).
 
-    MJD or Veusz-date x data are stored once as a UTC date dataset
-    ("<x>_utc" for MJD) and drawn from a local copy "<utc>_local" (this
-    computer's clock, DST-aware, ISO 8601 ticks with the UTC offset). A
-    trace whose step exceeds the line-break threshold gets NaN rows there
-    (plot copies "<utc>_local" and "<y>_gaps"; the stored data stay
-    unchanged). The axis becomes axis-broken only for large gaps (n > 0).
+    MJD or Veusz-date x data are stored once (MJD, or a UTC date dataset)
+    and drawn on the clock of the axis's page (TimeLayout.clocks, see
+    "Time-axis clocks"): local - a local copy "<utc>_local" (the computer's
+    clock, DST-aware, ISO 8601 ticks with the UTC offset and the zone
+    name); utc - the UTC dataset (ISO 8601 ticks ending in "Z"); mjd - the
+    exact MJD on a numeric axis.  A trace whose step exceeds the line-break
+    threshold gets NaN rows in its plot copies ("<utc>_local", "<x>_gaps",
+    "<y>_gaps"; the stored data stay unchanged). The axis becomes
+    axis-broken only for large gaps (n > 0); the gaps are found in UTC
+    seconds, so every clock breaks at the same samples.
     """
     layout = getattr(doc, "time_layout", None) or TimeLayout()
+    clock = _clock_of(graph)
     if not hasattr(doc, "_plot_copies"):
         doc._plot_copies = {}
     xys = [c for c in graph.WalkWidgets()
            if c.kind == "xy" and c.settings.get("xAxis", "x") == axis.name]
     if not xys:
         return False
-    if (axis.time_layout_key == layout.key()
+    if (axis.time_layout_key == (layout.key(), clock)
             and all(xy.time_source is not None for xy in xys)):
         return True
     # 0.5.1: the document keeps the reverse map (local copy -> UTC dataset);
@@ -1207,6 +1866,8 @@ def _layout_time_axis(doc, graph, axis):
         return False
     kinds = set(p[3] for p in timed)
     dated = kinds <= set(("date", "mjd"))
+    if not dated:
+        clock = None                          # elapsed seconds: no clock
     local_names, union, thresholds = [], [], []
     for xy, x_name, y_name, kind in timed:
         values = np.asarray(doc.datasets[x_name][1]["data"], dtype=float)
@@ -1228,39 +1889,42 @@ def _layout_time_axis(doc, graph, axis):
         if not layout.break_lines:                     # 0.5.3: lines across gaps
             cut = cut[:0]
         thresholds.append(threshold)
-        if dated:
+        y_values = doc.datasets[y_name][1]["data"]
+        lined_up = np.asarray(y_values).shape == values.shape
+        if clock == "local":
             local = vszh5_writer.local_time_from_veusz(utc)
             local_values = local_veusz_seconds(utc, local)      # 0.5.2: exact sum
             local_name = utc_name + "_local"
             doc.SetDataDateTime(local_name, vszh5_writer.insert_gaps(local_values, cut))
             doc.local_axes[local_name] = local
+            doc.local_zones[local_name] = None                   # 0.5.6
             doc.local_of[utc_name] = local_name
             doc.utc_of[local_name] = utc_name
             plot_x = local_name
             union.append(local_values)
             if local_name not in local_names:
                 local_names.append(local_name)
+            if cut.size and not lined_up:
+                # y does not line up with x: draw it unbroken against a
+                # local copy without gap rows (never misalign the points).
+                plot_x = _plot_name(doc, utc_name + "_local_nogaps", utc_name)
+                doc.SetDataDateTime(plot_x, local_values)
+                doc.local_axes[plot_x] = local
+                doc.local_zones[plot_x] = None
+        elif clock in ("utc", "mjd"):                  # 0.5.6
+            plot_x = _clock_dataset(doc, clock, x_name, utc_name, kind, values, utc, cut,
+                                    gapped=lined_up)
+            union.append(utc)                          # breaks found in UTC seconds
         else:
             plot_x = x_name
-            if cut.size:
+            if cut.size and lined_up:
                 plot_x = _plot_name(doc, x_name + "_gaps", x_name)
                 doc.SetData(plot_x, vszh5_writer.insert_gaps(values, cut))
             union.append(values)
         plot_y = y_name
-        if cut.size:
-            y_values = doc.datasets[y_name][1]["data"]
-            if np.asarray(y_values).shape == values.shape:
-                plot_y = _plot_name(doc, y_name + "_gaps", (x_name, y_name))
-                doc.SetData(plot_y, vszh5_writer.insert_gaps(y_values, cut))
-            else:
-                # y does not line up with x: draw it unbroken against a
-                # local copy without gap rows (never misalign the points).
-                if dated:
-                    plot_x = _plot_name(doc, utc_name + "_local_nogaps", utc_name)
-                    doc.SetDataDateTime(plot_x, local_values)
-                    doc.local_axes[plot_x] = local
-                else:
-                    plot_x = x_name
+        if cut.size and lined_up:
+            plot_y = _plot_name(doc, y_name + "_gaps", (x_name, y_name))
+            doc.SetData(plot_y, vszh5_writer.insert_gaps(y_values, cut))
         xy.time_source = (x_name, y_name)
         xy.settings["xData"] = plot_x
         xy.settings["yData"] = plot_y
@@ -1271,20 +1935,35 @@ def _layout_time_axis(doc, graph, axis):
     axis_threshold = layout.axis_threshold(max(thresholds) if thresholds else 0.0)
     if axis_threshold > 0:
         pairs = vszh5_writer.axis_break_pairs(np.concatenate(union), axis_threshold)
+    if pairs and clock == "mjd":
+        # 0.5.6: found in UTC seconds (the same samples as the other
+        # clocks), drawn in MJD days; the breaks lie inside the gaps (a
+        # margin of the gap is kept at each end), far from any sample.
+        pairs = [(a / 86400.0 + MJD_VEUSZ_EPOCH, b / 86400.0 + MJD_VEUSZ_EPOCH)
+                 for a, b in pairs]
     if pairs:
         axis.kind = "axis-broken"
         axis.settings["breakPoints"] = [float(v) for pair in pairs for v in pair]
     else:
         axis.kind = "axis"
         axis.settings.pop("breakPoints", None)
-    if dated:
+    if clock == "local":
         fmt, text = doc.local_axis_text(local_names, "Local time")
         axis.settings["mode"] = "datetime"
+    elif clock == "utc":
+        fmt, text = UTC_DATETIME_FORMAT, UTC_AXIS_LABEL
+        axis.settings["mode"] = "datetime"
+    elif clock == "mjd":
+        fmt, text = NUMERIC_TICK_FORMAT, MJD_AXIS_LABEL
+        axis.settings["mode"] = "numeric"
+    if clock is not None:
         axis.settings["TickLabels/format"] = fmt
         axis.settings.setdefault("TickLabels/rotate", str(vszh5_writer.LOCAL_DATETIME_ROTATE))
         axis.settings["label"] = text
         axis.settings.setdefault("autoRange", "exact")
-    axis.time_layout_key = layout.key()
+        _set_note_line(graph, _TIME_NOTE, _time_note(doc, clock, local_names))
+    axis.time_clock = clock
+    axis.time_layout_key = (layout.key(), _clock_of(graph))
     _set_gap_note(graph, layout.describe())
     return True
 
@@ -1401,13 +2080,79 @@ def _drop_unused_plot_copies(doc):
             value = widget.settings.get(key)
             if isinstance(value, str):
                 used.add(value)
+    clock_copies = getattr(doc, "_clock_copies", {})
     for name in [n for n in copies if n not in used and n in doc.datasets]:
-        if name.endswith("_gaps") or "_gaps_" in name or name.endswith("_local_nogaps"):
+        if (name.endswith("_gaps") or "_gaps_" in name or name.endswith("_local_nogaps")
+                or name in clock_copies):              # 0.5.6: UTC / MJD copies
             del doc.datasets[name]
             for members in getattr(doc, "tags", {}).values():
                 if name in members:
                     members.remove(name)
             del copies[name]
+            clock_copies.pop(name, None)
+            getattr(doc, "local_axes", {}).pop(name, None)
+            getattr(doc, "local_zones", {}).pop(name, None)
+
+
+# %% Pages per clock (0.5.6)
+def _has_clock_axis(page):
+    """True when ``page`` draws a date-time x axis laid out on a clock."""
+    return any(w.kind in ("axis", "axis-broken") and w.time_clock in TIME_CLOCKS
+               for w in page.WalkWidgets())
+
+
+def _free_page_name(root, wanted, page):
+    """``wanted``, or wanted_2, wanted_3 ... when another page of ``root``
+    already has that name (``page`` itself does not count)."""
+    taken = set(c.name for c in root.children if c is not page)
+    name, number = wanted, 2
+    while name in taken:
+        name = "%s_%d" % (wanted, number)
+        number += 1
+    return name
+
+
+def _copy_setting(value):
+    """A setting value for a page copy: lists and dicts copied, the rest
+    (text, numbers, booleans) shared."""
+    return copy.deepcopy(value) if isinstance(value, (list, dict, tuple)) else value
+
+
+def _clone_widget(widget, parent):
+    """
+    Copy of ``widget`` and every widget below it, under ``parent`` (0.5.6).
+
+    The copy has the settings, the data sources of the layouts (time_source,
+    gap_source and the numeric gap key) and the tick-label fit records of
+    the original; its time axes are laid out again (time_layout_key None).
+    Datasets are shared, never copied.
+    """
+    twin = NativeWidget(widget.document, widget.kind, widget.name, parent)
+    twin.auto_named = False
+    twin.settings = OrderedDict((key, _copy_setting(value))
+                                for key, value in widget.settings.items())
+    twin.time_source = widget.time_source
+    twin.gap_source = widget.gap_source
+    twin.gap_layout_key = widget.gap_layout_key
+    twin.time_layout_key = None
+    twin.time_clock = widget.time_clock if widget.kind != "page" else None
+    twin.local_time = widget.local_time
+    twin.fit_base = dict((k, _copy_setting(v)) for k, v in widget.fit_base.items())
+    twin.fit_written = dict((k, _copy_setting(v)) for k, v in widget.fit_written.items())
+    twin.children = [_clone_widget(child, twin) for child in widget.children]
+    return twin
+
+
+def _remove_clock_pages(doc):
+    """Take the clock copies of the last finalize out of the project (0.5.6);
+    finalize makes them again from their pages, so a copy always shows its
+    page as it is now.  Their plot copies go with _drop_unused_plot_copies
+    when no page draws them any more."""
+    for page in [c for c in doc.Root.children if c.kind == "page" and c.time_clone_of is not None]:
+        doc.Root.children.remove(page)
+        for widget in page.WalkWidgets():
+            widget.time_clone_of = None
+        page.parent = None
 
 
 def _size_dated_page(page):
@@ -1580,6 +2325,30 @@ def _axis_room(doc, graph, axis, length_cm, cache):
         major_ticks=major, rotate=rotate)
 
 
+#: (0.5.6) Room kept beside a date-time axis label that sets the plot width.
+_LABEL_PAD_CM = 0.4
+
+
+def _time_label_cm(axis):
+    """
+    Width (cm) a date-time x axis's label needs (0.5.6), 0 for other axes.
+
+    The label of a time axis names the clock, the offset(s) and the zone
+    ("Local time (ISO 8601, EST, UTC-05:00)", "... from 2026-11-01T01:00");
+    the plot is made at least that wide, so the label never runs past its
+    graph into the next one.  Widths as for tick labels (tick_text_width_em).
+    """
+    settings = axis.settings
+    if axis.time_clock not in TIME_CLOCKS and settings.get("mode") != "datetime":
+        return 0.0
+    label = str(settings.get("label", "") or "")
+    if not label or settings.get("hide", False):
+        return 0.0
+    dated = settings.get("mode") == "datetime"
+    size = _pt(settings.get("Label/size"), 10.0 if dated else vszh5_writer.VEUSZ_TEXT_PT)
+    return vszh5_writer.tick_text_width_em(label) * size * (2.54 / 72.0) + _LABEL_PAD_CM
+
+
 def _dated_page_size(page, graphs, columns):
     """(width, height) cm the 0.5.0 rule gives a page with date-time axes and
     no size of its own: 13 cm a column and 8 cm a row (at least 16 cm) for a
@@ -1676,7 +2445,8 @@ def _fit_page(doc, page, cache=None):
         for graph, rooms in plans.items():
             margin = need[graph]
             plot_w = max([vszh5_writer.MIN_PLOT_CM[0]] +
-                         [r.min_length_cm for _a, h, r in rooms if h and r.vertical])
+                         [r.min_length_cm for _a, h, r in rooms if h and r.vertical] +
+                         [_time_label_cm(a) for a, h, _r in rooms if h])     # 0.5.6
             plot_h = max([vszh5_writer.MIN_PLOT_CM[1]] + [r.min_length_cm for _a, h, r in rooms if not h])
             w_cm = margin["leftMargin"] + plot_w + margin["rightMargin"]
             h_cm = margin["topMargin"] + plot_h + margin["bottomMargin"]
@@ -2087,6 +2857,341 @@ def release_memory(log=None):
     return {"before_mb": before, "after_mb": after, "collected": collected, "steps": steps}
 
 
+# %% Offloading plot data to disk above a RAM limit (0.5.7)
+# When the RAM in use on this computer - every program, not only this one -
+# reaches the limit the user set (ram_limit(): % of the computer's RAM;
+# default 80 %; 0 = never), the project's datasets (NativeDocument) and the
+# data kept from the files read (KeptReads) are written to a pickle file and
+# dropped from RAM.  Below the limit nothing is written.  The data are read
+# back from the file wherever they are used (time and gap layout, the Plots
+# tab) and are converted into the .vszh5 when the project is saved, one
+# dataset at a time.  Values come back exactly as they were (pickle stores
+# float64 arrays and text bit for bit).  The file is deleted when the
+# project is cleared or released, or when the program ends.
+#: (0.5.7) Default RAM limit: offload above this much of the computer's RAM in use (%).
+DEFAULT_RAM_LIMIT_PERCENT = 80.0
+#: (0.5.7) Folder for the offload files (default: the system's temporary folder).
+OFFLOAD_DIR_ENV = "AUTOPLOT_OFFLOAD_DIR"
+#: (0.5.7) Datasets smaller than this (bytes of values) stay in RAM.
+OFFLOAD_MIN_BYTES = 512
+#: (0.5.7) RAM use is read at most this often while datasets are added (s).
+_RAM_CHECK_S = 0.2
+#: (0.5.7) Freed heap is handed back to the system at most this often (s).
+_HEAP_TRIM_S = 2.0
+#: (0.5.7) The program-wide RAM limit (set_ram_limit; one per process).
+_RAM_LIMIT = {"percent": DEFAULT_RAM_LIMIT_PERCENT}
+#: (0.5.7) Offload messages are logged at most this often (s), with totals.
+_NOTE_S = 10.0
+
+
+class _OffloadNotes(object):
+    """Throttled offload messages (0.5.7): the first at once, then at most one
+    every _NOTE_S with the totals so far; flush() logs the last one held back
+    (the end of a batch).  A thousand small offloads make a few log lines."""
+
+    def __init__(self):
+        """Nothing logged yet."""
+        self.last = None
+        self.pending = None
+
+    def add(self, text, log, messages, now=None):
+        """Log ``text`` now, or hold it until _NOTE_S has passed."""
+        now = time.monotonic() if now is None else now
+        if self.last is None or now - self.last >= _NOTE_S:
+            self._emit(text, log, messages, now)
+        else:
+            self.pending = text
+
+    def flush(self, log, messages):
+        """Log the message held back, if any."""
+        if self.pending is not None:
+            self._emit(self.pending, log, messages, time.monotonic())
+
+    def _emit(self, text, log, messages, now):
+        """Keep ``text`` in ``messages`` and give it to ``log``."""
+        self.last, self.pending = now, None
+        if messages is not None:
+            messages.append(text)
+        if log is not None:
+            try:
+                log(text)
+            except Exception:
+                pass
+
+
+def set_ram_limit(percent):
+    """Set the RAM limit (% of this computer's RAM in use, every program)
+    above which plot data are offloaded to disk (0.5.7); 0 or None = never.
+    Values are clamped to 0 .. 100.  Returns the limit now in force."""
+    value = 0.0 if percent is None else float(percent)
+    if not math.isfinite(value):
+        value = 0.0
+    _RAM_LIMIT["percent"] = min(max(value, 0.0), 100.0)
+    return _RAM_LIMIT["percent"]
+
+
+def ram_limit():
+    """The RAM limit in force (%; 0 = never offload) (0.5.7)."""
+    return _RAM_LIMIT["percent"]
+
+
+def system_memory():
+    """
+    (percent in use, total bytes, available bytes) of this computer's RAM
+    (0.5.7), all programs together; None when it cannot be read.
+
+    psutil.memory_physical() (psutil 8; virtual_memory() before) when
+    installed; otherwise /proc/meminfo (Linux:
+    MemTotal and MemAvailable) or GlobalMemoryStatusEx (Windows) through
+    ctypes.  "In use" = total - available, as psutil computes its percent.
+    """
+    try:
+        import psutil  # type: ignore
+        # psutil 8 names it memory_physical(); virtual_memory() stays as an alias
+        reader = getattr(psutil, "memory_physical", None) or psutil.virtual_memory
+        found = reader()
+        return float(found.percent), float(found.total), float(found.available)
+    except Exception:
+        pass
+    try:
+        info = {}
+        with open("/proc/meminfo") as handle:
+            for line in handle:
+                key, _sep, value = line.partition(":")
+                parts = value.split()
+                if parts:
+                    info[key.strip()] = float(parts[0]) * 1024.0
+        total = info["MemTotal"]
+        available = info.get("MemAvailable", info.get("MemFree", 0.0))
+        return 100.0 * (total - available) / total, total, available
+    except Exception:
+        pass
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class _Status(ctypes.Structure):
+                """MEMORYSTATUSEX (kernel32)."""
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            status = _Status()
+            status.dwLength = ctypes.sizeof(_Status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                total = float(status.ullTotalPhys)
+                available = float(status.ullAvailPhys)
+                return 100.0 * (total - available) / total, total, available
+        except Exception:
+            pass
+    return None
+
+
+def memory_text():
+    """One line for the GUI (0.5.7), e.g. "this computer: 31.7 GB of RAM,
+    42 % in use now (all programs)"; "RAM use unknown" when unreadable."""
+    found = system_memory()
+    if found is None:
+        return "RAM use of this computer unknown (psutil not installed?)"
+    return ("this computer: %.1f GB of RAM, %.0f %% in use now (all programs)"
+            % (found[1] / 1e9, found[0]))
+
+
+def payload_bytes(value, _depth=0):
+    """Bytes of the values in ``value`` (0.5.7): numpy arrays by nbytes,
+    text and lists estimated, dicts / lists / tuples summed (nested to 4
+    levels).  Used to choose what is worth offloading and to report it."""
+    if isinstance(value, np.ndarray):
+        return int(value.nbytes) if value.dtype.kind != "O" else int(value.size) * 64
+    if isinstance(value, (bytes, str)):
+        return len(value)
+    if _depth > 4:
+        return 0
+    if isinstance(value, dict):
+        return sum(payload_bytes(v, _depth + 1) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        if len(value) > 256:               # a text dataset: estimate, do not walk
+            return 56 * len(value)
+        return sum(payload_bytes(v, _depth + 1) for v in value)
+    return 0
+
+
+class OffloadStore(object):
+    """
+    One append-only pickle file of offloaded values (0.5.7).
+
+    put() pickles a value (protocol HIGHEST_PROTOCOL) to the end of the file
+    and returns (offset, length); get() reads it back.  The file is made in
+    AUTOPLOT_OFFLOAD_DIR (or the system's temporary folder) on the first
+    put(); close() - or the program ending - deletes it.  A value that is
+    replaced stays in the file until then (the file only grows).  Safe to use
+    from several threads.
+    """
+
+    def __init__(self, prefix="autoplot_offload_", folder=None):
+        """No file yet; ``prefix`` starts its name, ``folder`` overrides the
+        environment variable and the temporary folder."""
+        self.prefix = prefix
+        self.folder = folder or os.environ.get(OFFLOAD_DIR_ENV) or None
+        self.path = None
+        self.size = 0
+        self.count = 0
+        self._handle = None
+        self._finalizer = None
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _remove(handle, path):
+        """Close and delete an offload file (finalizer: no reference to the store)."""
+        try:
+            handle.close()
+        except Exception:
+            pass
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    def _open(self):
+        """Make the file on first use (private: mkstemp gives the owner only access)."""
+        if self._handle is None:
+            descriptor, path = tempfile.mkstemp(prefix=self.prefix, suffix=".pkl", dir=self.folder)
+            self._handle = os.fdopen(descriptor, "w+b")
+            self.path = path
+            self._finalizer = weakref.finalize(self, OffloadStore._remove, self._handle, path)
+
+    def free_bytes(self):
+        """Free space (bytes) where the file is or will be; None when unknown."""
+        try:
+            return float(shutil.disk_usage(self.folder or tempfile.gettempdir()).free)
+        except OSError:
+            return None
+
+    def put(self, value):
+        """Write ``value`` to the end of the file; (offset, length)."""
+        blob = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        with self._lock:
+            self._open()
+            self._handle.seek(0, os.SEEK_END)
+            offset = self._handle.tell()
+            self._handle.write(blob)
+            self._handle.flush()
+            self.size = offset + len(blob)
+            self.count += 1
+        return offset, len(blob)
+
+    def get(self, offset, length):
+        """The value written at ``offset`` (``length`` bytes), unpickled."""
+        with self._lock:
+            if self._handle is None:
+                raise IOError("the offload file was closed (project cleared)")
+            self._handle.seek(offset)
+            blob = self._handle.read(length)
+        if len(blob) != length:
+            raise IOError("offload file %s: %d of %d bytes at %d" % (self.path, len(blob),
+                                                                     length, offset))
+        return pickle.loads(blob)
+
+    def close(self):
+        """Close and delete the file; the store can be used again (new file)."""
+        with self._lock:
+            if self._finalizer is not None:
+                self._finalizer()
+            self._handle = None
+            self._finalizer = None
+            self.path = None
+            self.size = 0
+            self.count = 0
+
+
+class OffloadedValue(object):
+    """A value in an OffloadStore (0.5.7); load() reads it back (a new copy
+    every time; nothing is kept in RAM)."""
+    __slots__ = ("store", "offset", "length", "nbytes")
+
+    def __init__(self, store, offset, length, nbytes):
+        """Where the value is: ``store``, ``offset``, ``length``; ``nbytes`` of values."""
+        self.store, self.offset, self.length, self.nbytes = store, offset, length, nbytes
+
+    def load(self):
+        """The value, unpickled from the file."""
+        return self.store.get(self.offset, self.length)
+
+
+class OffloadedParts(Mapping):
+    """
+    The arrays of a dataset kept in an OffloadStore (0.5.7): a read-only
+    mapping like the dict it replaces ({"data": ..., "serr": ...}).  Asking
+    for a part reads the dataset back from the file; load() gives every
+    part at once.  The key names are kept in RAM, so ``"serr" in parts`` and
+    ``parts.get("serr")`` (None when absent) need no read when absent.
+    """
+    __slots__ = ("_value", "_keys")
+
+    def __init__(self, value, keys):
+        """``value``: the OffloadedValue of the parts dict; ``keys``: its keys."""
+        self._value = value
+        self._keys = tuple(keys)
+
+    @property
+    def nbytes(self):
+        """Bytes of the values (as when they were in RAM)."""
+        return self._value.nbytes
+
+    def load(self):
+        """Every part (a new dict of new arrays)."""
+        return self._value.load()
+
+    def __getitem__(self, key):
+        """One part, read from the file."""
+        if key not in self._keys:
+            raise KeyError(key)
+        return self.load()[key]
+
+    def __contains__(self, key):
+        """True when the dataset has the part ``key`` (no read)."""
+        return key in self._keys
+
+    def get(self, key, default=None):
+        """The part ``key`` read from the file, ``default`` when absent."""
+        return self.load()[key] if key in self._keys else default
+
+    def __iter__(self):
+        """The part names."""
+        return iter(self._keys)
+
+    def __len__(self):
+        """Number of parts."""
+        return len(self._keys)
+
+    def __repr__(self):
+        """Short description (no read)."""
+        return "OffloadedParts(%s, %d bytes in %s)" % (
+            ", ".join(self._keys), self.nbytes, self._value.store.path)
+
+
+def loaded_parts(parts):
+    """``parts`` as a plain dict of arrays (0.5.7): offloaded parts are read
+    back once; parts in RAM are returned as they are."""
+    return parts.load() if isinstance(parts, OffloadedParts) else parts
+
+
+def _over_ram_limit(limit):
+    """(percent in use, limit) when this computer's RAM use is at or above
+    ``limit`` (%), else None; None too when the limit is 0 or the use is
+    unknown (0.5.7)."""
+    if not limit or limit <= 0.0:
+        return None
+    found = system_memory()
+    if found is None or found[0] < limit:
+        return None
+    return found[0], limit
+
+
 # %% Data kept between batches (0.5.4)
 def file_stamp(path, options=()):
     """(size, mtime_ns, options) of ``path``: the data read from it are still
@@ -2106,12 +3211,60 @@ class KeptReads(object):
     its project from every listed file (items).  A kept file that is gone
     from disk keeps its data: adding files never makes the program forget
     the ones it already has.  clear() forgets everything (the Clear button).
+
+    0.5.7: when this computer's RAM use reaches the limit (ram_limit(), or
+    ``ram_limit_percent``), keep() moves the kept data to a pickle file
+    (OffloadStore); get() and items() read them back (new copies each time).
+    Data that cannot be pickled stay in RAM.
     """
 
     def __init__(self):
         """Nothing kept yet."""
         self._data = {}
         self._stamps = {}
+        self.ram_limit_percent = None     # 0.5.7: None = the program's limit
+        self.offload_log = None           # 0.5.7: callable(text)
+        self._offload = None
+        self._offload_totals = [0, 0]     # 0.5.7: files and bytes moved so far
+        self._notes = _OffloadNotes()
+
+    def _value(self, path, default=None):
+        """Kept data of ``path``, read back from disk when offloaded."""
+        value = self._data.get(path, default)
+        return value.load() if isinstance(value, OffloadedValue) else value
+
+    def offload(self, percent=None, limit=None):
+        """Move every kept file's data held in RAM to the offload file (0.5.7);
+        returns how many files moved."""
+        if self._offload is None:
+            self._offload = OffloadStore("autoplot_kept_")
+        moved, total, failed = 0, 0, []
+        for path, value in list(self._data.items()):
+            if isinstance(value, OffloadedValue):
+                continue
+            try:
+                offset, length = self._offload.put(value)
+            except Exception as exc:          # not picklable (a file handle ...): keep it
+                failed.append("%s (%s)" % (os.path.basename(str(path)), type(exc).__name__))
+                continue
+            size = payload_bytes(value)
+            self._data[path] = OffloadedValue(self._offload, offset, length, size)
+            moved += 1
+            total += size
+        value = None
+        self._offload_totals[0] += moved
+        self._offload_totals[1] += total
+        why = ("RAM in use on this computer %.1f %% >= limit %g %%" % (percent, limit)
+               if percent is not None else "offload asked for")
+        if failed:                                # always at once
+            self._notes._emit("%s: kept in RAM (cannot be written to disk): %s"
+                              % (why, ", ".join(failed)), self.offload_log, None,
+                              time.monotonic())
+        if moved:
+            self._notes.add("%s: data of %d file(s) read, %.1f MB, moved to disk so far (%s)"
+                            % (why, self._offload_totals[0], self._offload_totals[1] / 1e6,
+                               self._offload.path), self.offload_log, None)
+        return moved
 
     def __len__(self):
         """Number of files with kept data."""
@@ -2141,6 +3294,10 @@ class KeptReads(object):
             return
         self._data[path] = data
         self._stamps[path] = file_stamp(path, options)
+        limit = self.ram_limit_percent if self.ram_limit_percent is not None else ram_limit()
+        found = _over_ram_limit(limit)                  # 0.5.7
+        if found is not None:
+            self.offload(found[0], found[1])
 
     def forget(self, path):
         """Drop the data of ``path``."""
@@ -2148,17 +3305,26 @@ class KeptReads(object):
         self._stamps.pop(path, None)
 
     def get(self, path, default=None):
-        """Kept data of ``path`` (``default`` when none)."""
-        return self._data.get(path, default)
+        """Kept data of ``path`` (``default`` when none; 0.5.7: read back from
+        disk when offloaded)."""
+        return self._value(path, default)
 
     def items(self, paths):
-        """(path, data) of every listed path with kept data, in list order."""
-        return [(path, self._data[path]) for path in dict.fromkeys(paths) if path in self._data]
+        """(path, data) of every listed path with kept data, in list order
+        (0.5.7: offloaded data read back; the last offload message held back
+        is logged - items() follows a batch)."""
+        self._notes.flush(self.offload_log, None)
+        return [(path, self._value(path)) for path in dict.fromkeys(paths) if path in self._data]
 
     def clear(self):
-        """Forget every file's data."""
+        """Forget every file's data (0.5.7: and delete the offload file)."""
         self._data = {}
         self._stamps = {}
+        if self._offload is not None:
+            self._offload.close()
+            self._offload = None
+        self._offload_totals = [0, 0]
+        self._notes = _OffloadNotes()
 
 
 # %% Dataset model and file output
@@ -2179,6 +3345,18 @@ class NativeDocument:
         self.local_axes = {}          # local dataset name -> vszh5_writer.LocalTimeAxis
         self.local_of = {}            # UTC date dataset name -> its local copy
         self.utc_of = {}              # 0.5.1: the reverse map, local copy -> UTC name
+        self.local_zones = {}         # 0.5.6: local dataset name -> its zone (None = computer)
+        self.mjd_of = {}              # 0.5.6: UTC date dataset -> exact MJD (name or array)
+        self._clock_copies = {}       # 0.5.6: UTC / MJD plot copy -> its type tag
+        # 0.5.7: offloading to disk above the RAM limit (see "Offloading")
+        self.ram_limit_percent = None  # None = the program's limit (ram_limit())
+        self.offload_log = None        # callable(text) for the offload messages
+        self.offload_messages = []     # every offload message of this project
+        self._offload = None           # OffloadStore (made on the first offload)
+        self._ram_checked = 0.0        # time.monotonic() of the last RAM reading
+        self._heap_trimmed = 0.0       # time.monotonic() of the last heap trim
+        self._offload_totals = [0, 0]  # datasets and bytes moved to disk so far
+        self._notes = _OffloadNotes()  # throttled offload messages
         # 0.5.0: gap rule of the time axes resolved by finalize():
         # line break when dt > k * median(dt) (or > manual_s seconds),
         # axis break when dt > n * k * median(dt); n = 0: one axis.
@@ -2200,6 +3378,7 @@ class NativeDocument:
             widget.settings = OrderedDict()
             widget.parent = None
             widget.time_source = widget.gap_source = None
+            widget.time_clone_of = None            # 0.5.6
         cut(self.Root)
         self.Root = NativeWidget(self, "document", "")
         self.datasets = OrderedDict()
@@ -2207,8 +3386,14 @@ class NativeDocument:
         self.local_axes = {}
         self.local_of = {}
         self.utc_of = {}
+        self.local_zones = {}                      # 0.5.6
+        self.mjd_of = {}
+        self._clock_copies = {}
         if hasattr(self, "_plot_copies"):
             self._plot_copies = {}
+        if getattr(self, "_offload", None) is not None:   # 0.5.7: the file goes too
+            self._offload.close()
+            self._offload = None
 
     def _put(self, name, kind, parts):
         """Store dataset ``name`` of ``kind`` ('1d', 'date', 'text', '2d') with its
@@ -2219,6 +3404,93 @@ class NativeDocument:
         if name in (".", ".."):
             raise ValueError("Dataset name cannot be '.' or '..'")
         self.datasets[name] = (kind, parts)
+        self._ram_guard()                          # 0.5.7: offload above the RAM limit
+
+    # ----- 0.5.7: offloading to disk above the RAM limit ------------------------
+    def _ram_guard(self, force=False):
+        """Read this computer's RAM use (at most every _RAM_CHECK_S, every
+        time with ``force``) and offload the datasets held in RAM when it is
+        at or above the limit; True when datasets were offloaded."""
+        limit = self.ram_limit_percent if self.ram_limit_percent is not None else ram_limit()
+        if not limit or limit <= 0.0:
+            return False
+        now = time.monotonic()
+        if not force and now - self._ram_checked < _RAM_CHECK_S:
+            return False
+        self._ram_checked = now
+        found = _over_ram_limit(limit)
+        if found is None:
+            return False
+        return self.offload(found[0], found[1]) > 0
+
+    def offload(self, percent=None, limit=None):
+        """
+        Move every dataset held in RAM (OFFLOAD_MIN_BYTES or more) and the
+        exact MJD arrays to this project's offload file (0.5.7); returns how
+        many datasets moved.
+
+        Called by _ram_guard when this computer's RAM use reaches the limit
+        (``percent`` / ``limit`` are logged); can be called directly (tests,
+        a program that wants the data on disk).  Nothing moves when the disk
+        has less free space than the data plus a fifth and 64 MB.
+        """
+        if self._offload is None:
+            self._offload = OffloadStore("autoplot_project_")
+        store = self._offload
+        names = []
+        total = 0
+        for name, (_kind, parts) in self.datasets.items():
+            if isinstance(parts, OffloadedParts):
+                continue
+            size = payload_bytes(parts)
+            if size >= OFFLOAD_MIN_BYTES:
+                names.append(name)
+                total += size
+        mjd_keys = [k for k, v in self.mjd_of.items()
+                    if isinstance(v, np.ndarray) and v.nbytes >= OFFLOAD_MIN_BYTES]
+        total += sum(self.mjd_of[k].nbytes for k in mjd_keys)
+        if not names and not mjd_keys:
+            return 0
+        free = store.free_bytes()
+        if free is not None and free < total * 1.2 + 64e6:
+            self._offload_note("RAM limit reached but only %.1f MB free on disk for %.1f MB of "
+                               "plot data: kept in RAM" % (free / 1e6, total / 1e6))
+            return 0
+        for name in names:
+            kind, parts = self.datasets[name]
+            offset, length = store.put(dict(parts))
+            value = OffloadedValue(store, offset, length, payload_bytes(parts))
+            self.datasets[name] = (kind, OffloadedParts(value, parts.keys()))
+        for key in mjd_keys:
+            array = self.mjd_of[key]
+            offset, length = store.put(array)
+            self.mjd_of[key] = OffloadedValue(store, offset, length, int(array.nbytes))
+        parts = array = None                       # the last references to the RAM copies
+        now = time.monotonic()
+        if now - self._heap_trimmed >= _HEAP_TRIM_S:     # freed numpy buffers back to the OS
+            self._heap_trimmed = now
+            _release_os_heap()
+        if percent is not None:
+            why = "RAM in use on this computer %.1f %% >= limit %g %%" % (percent, limit)
+        else:
+            why = "offload asked for"
+        self._offload_totals[0] += len(names) + len(mjd_keys)
+        self._offload_totals[1] += total
+        self._notes.add("%s: %d dataset(s), %.1f MB of plot data moved to disk so far (%s, "
+                        "%.1f MB)" % (why, self._offload_totals[0], self._offload_totals[1] / 1e6,
+                                      store.path, store.size / 1e6),
+                        self.offload_log, self.offload_messages)
+        return len(names) + len(mjd_keys)
+
+    def _offload_note(self, text):
+        """Log ``text`` at once (warnings) and keep it in offload_messages."""
+        self._notes._emit(text, self.offload_log, self.offload_messages, time.monotonic())
+
+    def offloaded(self):
+        """(datasets on disk, datasets in RAM, file size in bytes) (0.5.7)."""
+        on_disk = sum(1 for _k, parts in self.datasets.values() if isinstance(parts, OffloadedParts))
+        size = self._offload.size if self._offload is not None else 0
+        return on_disk, len(self.datasets) - on_disk, size
 
     def SetData(self, name, data=None, symerr=None, negerr=None, poserr=None, val=None):
         """1-D numeric dataset (``val=`` accepted as veusz.embed spells it)."""
@@ -2276,10 +3548,20 @@ class NativeDocument:
                 parts[key] = np.array(value, dtype=np.float64, copy=True)
         self._put(name, "2d", parts)
 
-    def SetDataDateTime(self, name, seconds):
-        """Date dataset: seconds since 2009-01-01 00:00:00 UTC (Veusz date-time)."""
+    def SetDataDateTime(self, name, seconds, mjd=None):
+        """Date dataset: seconds since 2009-01-01 00:00:00 UTC (Veusz date-time).
+
+        0.5.6: ``mjd`` - the exact MJD of the same instants, as the name of
+        a stored 1-D dataset or an array of the same length; the MJD clock
+        draws it (else UTC seconds / 86400 + 54832).  It is not saved as a
+        dataset of its own.
+        """
         self.SetData(name, seconds)
         self.datasets[name] = ("date", self.datasets[name][1])
+        if mjd is not None:
+            self.mjd_of[name] = mjd if isinstance(mjd, str) else np.asarray(mjd, dtype=float)
+        else:
+            self.mjd_of.pop(name, None)
 
     def SetDataLocalTime(self, utc_name, local_name=None, zone=None, label="Local time"):
         """
@@ -2299,12 +3581,49 @@ class NativeDocument:
         # writer's round trip through Unix epoch seconds.
         self.SetDataDateTime(local_name, local_veusz_seconds(parts["data"], axis))
         self.local_axes[local_name] = axis
+        self.local_zones[local_name] = zone                  # 0.5.6: names on the label
         self.local_of[utc_name] = local_name
         self.utc_of[local_name] = utc_name
         return local_name
 
+    def local_zone_names(self, dataset_names):
+        """
+        [(offset "+HH:MM", zone name), ...] of the local datasets
+        ``dataset_names`` (0.5.6), in the order the offsets first occur: the
+        name the operating system gives the zone at the first sample with
+        that offset ("EST", "EDT"; Windows "Eastern Standard Time"), "" when
+        it only repeats the offset or says UTC (label_zone_name).
+        """
+        found = OrderedDict()
+        for name in dataset_names:
+            axis = self.local_axes.get(name)
+            if axis is None:
+                continue
+            zone = self.local_zones.get(name)
+            local = np.asarray(axis.veusz_seconds, dtype=float)
+            offsets = np.asarray(axis.offsets_s, dtype=float)
+            good = np.flatnonzero(np.isfinite(local) & np.isfinite(offsets))
+            if not good.size:
+                continue
+            # first sample of every offset (offsets change rarely: DST)
+            starts = good[np.r_[True, np.diff(offsets[good]) != 0]]
+            for index in starts.tolist():
+                text = vszh5_writer.iso_offset_text(offsets[index])
+                if text in found:
+                    continue
+                epoch = float(vszh5_writer.veusz_to_epoch(local[index] - offsets[index]))
+                found[text] = label_zone_name(zone_name_at(epoch, zone))
+        return list(found.items())
+
     def local_axis_text(self, dataset_names, label="Local time"):
-        """(tick format, axis label) of an axis showing these local datasets."""
+        """(tick format, axis label) of an axis showing these local datasets.
+
+        0.5.6: the label names the zone as well, e.g. "Local time (ISO 8601,
+        EST, UTC-05:00)"; across offsets "UTC-04:00 EDT, UTC-05:00 EST from
+        ..." when every name is an abbreviation (at most 6 characters, no
+        space), else the offsets alone (a long Windows name would make the
+        label too wide; the graph notes name the zone).
+        """
         axes = [self.local_axes[n] for n in dataset_names if n in self.local_axes]
         if not axes:
             return vszh5_writer.ISO_DATETIME_FORMAT, label
@@ -2316,10 +3635,13 @@ class NativeDocument:
                 if value not in offsets:
                     offsets.append(value)
         offsets = offsets or [0.0]
+        names = dict(self.local_zone_names(dataset_names))
         if len(offsets) == 1:
             text = vszh5_writer.iso_offset_text(offsets[0])
+            zone = names.get(text, "")
             return (vszh5_writer.ISO_DATETIME_FORMAT + text,
-                    "%s (ISO 8601, UTC%s)" % (label, text))
+                    "%s (ISO 8601, %sUTC%s)" % (label, (zone + ", ") if zone else "", text))
+        short = all(name and len(name) <= 6 and " " not in name for name in names.values())
         changes = []
         for axis in axes:
             for instant, offset in axis.changes:
@@ -2333,8 +3655,9 @@ class NativeDocument:
         for instant, offset in changes:
             if offset == current:
                 continue
-            parts.append("UTC%s" % offset if current is None
-                         else "UTC%s from %s" % (offset, instant[:16]))
+            word = "UTC%s" % offset + ((" " + names[offset]) if short and names.get(offset)
+                                       else "")
+            parts.append(word if current is None else "%s from %s" % (word, instant[:16]))
             current = offset
         return (vszh5_writer.ISO_DATETIME_FORMAT,
                 "%s (ISO 8601; %s)" % (label, ", ".join(parts)))
@@ -2342,17 +3665,40 @@ class NativeDocument:
     def finalize(self):
         """Name unnamed widgets, then lay out every time axis: local ISO 8601
         date-times, line breaks at gaps and (optionally) axis breaks (0.5.0;
-        0.3.0 resolved marked local-time axes only)."""
+        0.3.0 resolved marked local-time axes only); 0.5.6: a page with
+        date-time x axes once per chosen clock (TimeLayout.clocks)."""
         for widget in list(self.Root.WalkWidgets()):
             if widget.auto_named:
                 _rename_from_data(widget)
-        for graph in [w for w in self.Root.WalkWidgets() if w.kind == "graph"]:
-            for axis in [c for c in graph.children if c.kind in ("axis", "axis-broken")]:
-                if axis.settings.get("direction", "horizontal") != "vertical":
-                    # 0.5.3: an x axis that is not time gets the gap options
-                    # too (TimeLayout.numeric)
-                    if not _layout_time_axis(self, graph, axis):
-                        _layout_numeric_axis(self, graph, axis)
+        clocks = (getattr(self, "time_layout", None) or TimeLayout()).clocks
+        # 0.5.6: the clock copies of the last finalize go; each page gets its
+        # own name back and the first chosen clock, and is laid out in it.
+        _remove_clock_pages(self)
+        pages = [w for w in self.Root.children if w.kind == "page"]
+        for page in pages:
+            if page.time_base_name is None:
+                page.time_base_name = page.name
+            page.name = page.time_base_name
+            page.time_clock = clocks[0]
+        self._layout_axes(self.Root)
+        # 0.5.6: a page drawing date-time x axes gets the suffix of its clock
+        # and a copy for every other chosen clock, right after it.
+        for page in pages:
+            if not _has_clock_axis(page):
+                continue
+            page.name = _free_page_name(self.Root, page.time_base_name +
+                                        CLOCK_PAGE_SUFFIX[clocks[0]], page)
+            at = self.Root.children.index(page)
+            for clock in clocks[1:]:
+                twin = _clone_widget(page, self.Root)
+                twin.time_clone_of = page
+                twin.time_clock = clock
+                twin.time_base_name = page.time_base_name
+                at += 1
+                self.Root.children.insert(at, twin)
+                twin.name = _free_page_name(self.Root, page.time_base_name +
+                                            CLOCK_PAGE_SUFFIX[clock], twin)
+                self._layout_axes(twin)
         _drop_unused_plot_copies(self)
         for widget in self.Root.WalkWidgets():
             label = widget.local_time
@@ -2393,6 +3739,20 @@ class NativeDocument:
         for page in [w for w in self.Root.children if w.kind == "page"]:
             _fit_page(self, page, ranges)
         self._tag_untagged()
+        self._ram_guard(force=True)            # 0.5.7: the plot copies made above
+        self._notes.flush(self.offload_log, self.offload_messages)   # the last totals
+
+    def _layout_axes(self, top):
+        """Lay out every x axis below the widget ``top`` (0.5.6: was part of
+        finalize): time axes on their page's clock, other x axes with the
+        numeric gap options."""
+        for graph in [w for w in top.WalkWidgets() if w.kind == "graph"]:
+            for axis in [c for c in graph.children if c.kind in ("axis", "axis-broken")]:
+                if axis.settings.get("direction", "horizontal") != "vertical":
+                    # 0.5.3: an x axis that is not time gets the gap options
+                    # too (TimeLayout.numeric)
+                    if not _layout_time_axis(self, graph, axis):
+                        _layout_numeric_axis(self, graph, axis)
 
     def GetDataType(self, name):
         """veusz.embed-compatible data type of dataset ``name`` (0.5.2):
@@ -2440,19 +3800,27 @@ class NativeDocument:
         copies = {}
         for local, utc in self.utc_of.items():
             copies[local] = (utc, "type_time_local")
+        clock_copies = getattr(self, "_clock_copies", {})
         for name, owner in getattr(self, "_plot_copies", {}).items():
             origin = owner if isinstance(owner, str) else owner[-1]
-            extra = "type_time_local" if "_local" in name else "type_gap_rows"
+            if name in clock_copies:                   # 0.5.6: type_time_utc / _mjd
+                extra = clock_copies[name]
+            else:
+                extra = "type_time_local" if "_local" in name else "type_gap_rows"
             copies.setdefault(name, (origin, extra))
         for name, (origin, extra) in copies.items():
             if name not in self.datasets:
                 continue
+            # A copy on another clock (local, UTC, MJD) does not keep the
+            # time tags of its origin; it gets its own.
+            retimed = extra.startswith("type_time")
             for tag in tags_of.get(origin, ()):
                 if tag.startswith("source_") or (
-                        tag.startswith("type_") and not (
-                            extra == "type_time_local" and tag.startswith("type_time"))):
+                        tag.startswith("type_") and not (retimed and tag.startswith("type_time"))):
                     self.tags[tag].add(name)
             self.tags.setdefault(extra, set()).add(name)
+            if retimed and name.endswith("_gaps"):
+                self.tags.setdefault("type_gap_rows", set()).add(name)
 
     def TagDatasets(self, tag, names):
         """Attach ``tag`` to the existing datasets ``names`` (Veusz dataset tags).
@@ -2479,6 +3847,7 @@ class NativeDocument:
         date datasets, (data,) for text and 2-D datasets.
         """
         kind, parts = self.datasets[name]
+        parts = loaded_parts(parts)                   # 0.5.7: read once when offloaded
         if kind in ("1d", "date"):
             return tuple(parts.get(k) for k in ("data", "serr", "nerr", "perr"))
         return (parts["data"],)
@@ -2537,7 +3906,7 @@ class NativeDocument:
         filename = os.fspath(filename)
         if not filename.lower().endswith(".vszh5"):
             filename = os.path.splitext(filename)[0] + ".vszh5"
-        self.finalize()
+        self.finalize()                        # 0.5.7: ends with a RAM check (offload)
         used = self.referenced_datasets()  # validate even a full save
         names = used if minimized else set(self.datasets)
         script = self.SaveToString()
@@ -2549,6 +3918,9 @@ class NativeDocument:
                          writer_tag="AutoPlot _autoplot_native %s" % VERSION) as writer:
             for name in sorted(names):
                 kind, parts = self.datasets[name]
+                # 0.5.7: an offloaded dataset is read back from the offload
+                # file (pickle) and written into the .vszh5, one at a time
+                parts = loaded_parts(parts)
                 tags = sorted(tags_of.get(name, ()))
                 if kind == "1d":
                     writer.dataset_1d(name, parts["data"], serr=parts.get("serr"),

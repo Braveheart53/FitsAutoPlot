@@ -49,6 +49,148 @@ Compatible with: Python 3.8+ (pandas >= 1.3, qtpy with PySide6 or PyQt5)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 6.1.8: RAM limit - plot data offloaded to disk above it.
+Date: 2026-11-17
+#              * RamLimitBox under the gap and time-axis options; offload
+#                messages in the log; batch --ram-limit PERCENT.
+#              Checked (Python 3.12.3): tests/test_offload.py (16 tests) and the
+#              whole suite; every program's real files (FITS GBT tack, UWBR
+#              Temps / Vacuum, ATR, R&S, CSV, Touchstone) saved with every
+#              dataset offloaded: identical to the in-RAM save in every
+#              dataset, attribute and script line; Plots tab identical.
+# %%%%% Function Descriptions
+        _default_parser_is_exact: True when pandas' default C float parser reads _PARSER_PROBE exactly.
+        scan_number_forms: (long digit run, exponent notation) found in the file (6.1.3); read in 4 MiB blocks, a run across two blocks included; (True, True) when the file c...
+        CSVProcessingConfig (class): How the files are read.
+        PlotConfig (class): Plot formatting.
+        LoadedFile (class): One delimited file in memory.
+        exact_cell_texts: {column: every cell as text} for the numeric ``columns`` whose float64 ``values`` cannot hold the cells exactly (6.1.3): integers beyond +/-2**53,...
+        delimiter_from_text: GUI text -> delimiter ('\\t' typed as two characters means a tab).
+        detect_delimiter: Most frequent of , TAB ; | in the first non-comment lines.
+        read_file_metadata: The lines before the header line.
+        load_csv_file: (LoadedFile or None, status message) of one file.
+        load_files: Load files in parallel threads; (files in input order, messages).
+        get_common_columns: Columns in ALL files (intersection).
+        get_all_columns: Columns of ANY file (union).
+        _naive_zone: Zone of time stamps written without one, when they are local time.
+        column_values: ('numeric' | 'date' | 'text', values) of one column, rows kept.
+        VeuszPlotter (class): Builds the project: one overlay page and one page per file.
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "CSV/TSV AutoPlot"
+        APP_VERSION = "6.1.8"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        VEUSZ_EPOCH: Veusz datetime zero (UTC)
+        MIN_PARSED_FRACTION: a column is numeric / date when >= 80 % of its cells parse
+        _PARSER_PROBE: numbers the inexact pandas parsers read wrongly (checked once at import)
+        PANDAS_NEEDS_ROUND_TRIP: True when pandas' default C parser is not exact (pandas 2.0.3 / 3.0.5 measured; 3.1.1 is exact)
+        _FORM_TABLE: byte map d = digit or point, e = e/E, s = sign, x = other (scan_number_forms)
+        COLOURS: trace colours (Tableau 10, hex, the same in Veusz and the Plots tab)
+# %%%%% More Info
+    Run:  python CSV_TSV_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python CSV_TSV_AutoPlot.py a.csv --x Time --y V --output out.vszh5
+    Date-time columns are stored as Veusz date-times (UTC) and drawn in local
+    ISO 8601 (VSZH5_DISPLAY_TZ overrides the computer's zone); the stamps as
+    written are kept as text.  Numbers are read exactly (PANDAS_NEEDS_ROUND_TRIP).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 6.1.7: Time axes in local time (this computer's zone), UTC and MJD.
+Date: 2026-11-17
+#              * "Gaps and time axes" box: Local time (default), UTC, MJD and
+#                the zone line (_suite_gui 0.1.4); command line --time-axes
+#                local,utc,mjd or all.  Changing the boxes after a run
+#                redraws the Plots tab at once (_time_axes_changed).
+#              Checked (Python 3.12.3, Veusz 4.2.1): tests/test_time_clocks.py
+#              (15 tests) and the whole suite; FITS GBT tack / UWBR Temps /
+#              30-day 1PPS, synthetic FITS / Franks and CSV projects with
+#              all three clocks rendered in Veusz with every tick label
+#              drawn; local-only projects identical to 0.4.5 in every
+#              dataset (only the axis label and graph notes changed).
+# %%%%% Function Descriptions
+        _default_parser_is_exact: True when pandas' default C float parser reads _PARSER_PROBE exactly.
+        scan_number_forms: (long digit run, exponent notation) found in the file (6.1.3); read in 4 MiB blocks, a run across two blocks included; (True, True) when the file c...
+        CSVProcessingConfig (class): How the files are read.
+        PlotConfig (class): Plot formatting.
+        LoadedFile (class): One delimited file in memory.
+        exact_cell_texts: {column: every cell as text} for the numeric ``columns`` whose float64 ``values`` cannot hold the cells exactly (6.1.3): integers beyond +/-2**53,...
+        delimiter_from_text: GUI text -> delimiter ('\\t' typed as two characters means a tab).
+        detect_delimiter: Most frequent of , TAB ; | in the first non-comment lines.
+        read_file_metadata: The lines before the header line.
+        load_csv_file: (LoadedFile or None, status message) of one file.
+        load_files: Load files in parallel threads; (files in input order, messages).
+        get_common_columns: Columns in ALL files (intersection).
+        get_all_columns: Columns of ANY file (union).
+        _naive_zone: Zone of time stamps written without one, when they are local time.
+        column_values: ('numeric' | 'date' | 'text', values) of one column, rows kept.
+        VeuszPlotter (class): Builds the project: one overlay page and one page per file.
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "CSV/TSV AutoPlot"
+        APP_VERSION = "6.1.7"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        VEUSZ_EPOCH: Veusz datetime zero (UTC)
+        MIN_PARSED_FRACTION: a column is numeric / date when >= 80 % of its cells parse
+        _PARSER_PROBE: numbers the inexact pandas parsers read wrongly (checked once at import)
+        PANDAS_NEEDS_ROUND_TRIP: True when pandas' default C parser is not exact (pandas 2.0.3 / 3.0.5 measured; 3.1.1 is exact)
+        _FORM_TABLE: byte map d = digit or point, e = e/E, s = sign, x = other (scan_number_forms)
+        COLOURS: trace colours (Tableau 10, hex, the same in Veusz and the Plots tab)
+# %%%%% More Info
+    Run:  python CSV_TSV_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python CSV_TSV_AutoPlot.py a.csv --x Time --y V --output out.vszh5
+    Date-time columns are stored as Veusz date-times (UTC) and drawn in local
+    ISO 8601 (VSZH5_DISPLAY_TZ overrides the computer's zone); the stamps as
+    written are kept as text.  Numbers are read exactly (PANDAS_NEEDS_ROUND_TRIP).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 6.1.6: Date-time x axis vertical (reading downwards), on two lines.
 Date: 2026-11-16
 #              * The date x axis was set to 45 degrees; now -90
@@ -417,7 +559,7 @@ from _autoplot_native import (float_loses_text, tag_data,  # noqa: E402
                               trace_widget_name)
 
 APP_NAME = "CSV/TSV AutoPlot"
-APP_VERSION = "6.1.6"
+APP_VERSION = "6.1.8"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Delimited text files (CSV, TSV, custom) to native Veusz .vszh5 "
                    "projects, with interactive pyqtgraph plots.")
@@ -1169,8 +1311,12 @@ def _build_gui_classes():
             plot_form.addRow(toggles)
             main_layout.addWidget(plot_group)
             # 6.1.4: gaps in the x data (time stamps or numbers): line / axis breaks
-            self.gap_box = suite.GapOptionsBox()
+            self.gap_box = suite.GapOptionsBox(time_axes=True)      # 6.1.7: + Local / UTC / MJD
+            self.gap_box.time_axes_box.clocks_changed.connect(self._time_axes_changed)
             main_layout.addWidget(self.gap_box)
+            # 6.1.8: offload plot data to disk above this computer's RAM limit
+            self.ram_box = suite.RamLimitBox()
+            main_layout.addWidget(self.ram_box)
 
             self.status_text = QTextEdit()
             self.status_text.setToolTip("Progress and messages of this session, with time stamps.")
@@ -1426,6 +1572,7 @@ def _build_gui_classes():
             self.save_btn.setEnabled(False)
             plotter = VeuszPlotter(config.title)
             plotter.doc.time_layout = config.gaps
+            plotter.doc.offload_log = self.log_message           # 6.1.8
             try:
                 n_traces = plotter.create_overlay_and_individual_plots(
                     self._files(), self.x_column_combo.currentText(), y_columns, config)
@@ -1445,6 +1592,22 @@ def _build_gui_classes():
                     self.tabs.setCurrentIndex(1)
                 except Exception as exc:
                     self.log_message("Plots tab could not draw the project: %s" % exc)
+
+        def _time_axes_changed(self, _clocks: Any) -> None:
+            """6.1.7: a time-axis box changed - a processed project gets the
+            new clocks and the Plots tab is drawn again (nothing during a run;
+            the save reads the boxes itself)."""
+            plotter = getattr(self, "plotter", None)
+            if plotter is None or self.plot_panel is None or not self.save_btn.isEnabled():
+                return
+            try:
+                plotter.doc.time_layout = self.gap_box.time_layout()
+                pages = self.plot_panel.set_document(plotter.doc)
+            except Exception as exc:
+                self.log_message("Plots tab could not redraw for the time axes: %s" % exc)
+                return
+            self.log_message("%s Plots tab: %d page(s)."
+                             % (plotter.doc.time_layout.describe_clocks(), pages))
 
         def save_to_veusz(self) -> None:
             """Ask for a file name and save the .vszh5 project."""
@@ -1510,9 +1673,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--naive-time", choices=("utc", "local"), default="utc",
                         help="date-times written without a zone are UTC or local time")
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
-    from _autoplot_native import add_gap_arguments, layout_from_args
-    add_gap_arguments(parser)                  # 6.1.4: --gap-k ... --no-axis-breaks
+    from _autoplot_native import (add_gap_arguments, add_memory_arguments, layout_from_args,
+                                  ram_limit_from_args)
+    add_gap_arguments(parser, time_axes=True)  # 6.1.4: --gap-k ...; 6.1.7: --time-axes
+    add_memory_arguments(parser)               # 6.1.8: --ram-limit
     args = parser.parse_args(argv)
+    ram_limit_from_args(args)
     if args.output:
         if not args.x or not args.y:
             parser.error("--output needs --x and at least one --y")
