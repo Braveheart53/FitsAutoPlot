@@ -1062,3 +1062,169 @@ loaded by the first batch and heap pages that still hold a few live objects.
 | [54] | Python Software Foundation, "tracemalloc - Trace memory allocations" and "gc - Garbage Collector interface," *Python 3 documentation*. [Online]. Available: https://docs.python.org/3/library/tracemalloc.html |
 | [55] | The Qt Company, "QObject::deleteLater()" and "QCoreApplication::sendPostedEvents()," *Qt 6 documentation*. [Online]. Available: https://doc.qt.io/qt-6/qobject.html#deleteLater |
 | [56] | M. Kerrisk (ed.), "mallopt(3)" (M_MMAP_THRESHOLD, dynamic threshold, DEFAULT_MMAP_THRESHOLD_MAX), *Linux man-pages*. [Online]. Available: https://man7.org/linux/man-pages/man3/mallopt.3.html |
+
+## 15. Vertical tick labels: every major tick value shows (2026-11-16)
+
+Request: *"Now, go through all writer calls that use dates or long numbers on the X-axis and rotate
+them -90 so they are vertical and reading downwards like the attached screen shot. Change the writer
+to do this in all plotters within this repo. Ensure you resize any axis in the grids to show all the
+major tick mark values. Reducing the text size of the tick label or actually making them two lines
+with the date and time split would be a better way to use the room"*; then *"Make sure you put the
+date labels on two lines as I suggested and have shown, this just requires a "\\\\" where you want the
+line break in the format string"* and *"I am mainly referring to the generated vszh5 file, not so
+much the qt plots, but that would be nice as well"*.
+Archive: `FitsAutoPlot_suite_0.4.5_2026-11-16.7z` (every tracked file, assets included).
+
+![GBT UWBR Temps page, Veusz 4.2.1: vertical two-line date labels, every tick shown](docs/tick_labels_0.4.5_temps.png)
+
+### 15.1 What was wrong (measured before the change)
+
+Veusz draws an axis's label first and then each tick label only if it does not overlap one already
+drawn (`Axis._drawTextWithoutOverlap`); the axis label is kept inside the graph's cell
+(`ensureInBox`), so a margin too small for the tick labels pushes the axis label over them and they
+are dropped [57]. 45-degree 25-character ISO labels also overlapped each other. Every page of the
+0.4.4 example projects was rendered in Veusz 4.2.1 and every tick label counted
+(`label_check.py`, which replays Veusz's own overlap test):
+
+| Project (0.4.4) | x tick labels drawn | y tick labels drawn | Why |
+|---|---|---|---|
+| FITS, GBT tack azServo1Hz (10 files, 321 grid panels) | 723 of 1925 (37.6 %): 2 of 6 per panel | 1979 of 2017 (98.1 %) | 45-degree 25-character ISO labels overlap; 1.7 cm left margin too narrow for `-0.225` at 14 pt |
+| FITS, GBT UWBR Temps (15 files) | 403 of 788 (51.1 %) | 813 of 813 | 45-degree ISO labels overlap |
+| FITS, synthetic 1PPS (test file) | 44 of 46 (95.7 %) | 37 of 37 | one overlay page, 45 degrees |
+| R&S FSW/FSP (12 files) | 2130 of 2563 (83.1 %) | 2618 of 2618 | level 7-digit Hz labels (`9999940`) at 14 pt overlap |
+| CSV/TSV (2 files) | 15 of 18 (83.3 %) | 16 of 16 | level 10-digit Hz labels (`1000000000`) |
+| FITS, GBT 30-day OnePpsDeltas (319 files) | 2162 of 2162 | 1284 of 1286 (99.8 %) | Overlay_NanoSeconds: 10-digit y labels (`-250000000`, 2.63 cm at 14 pt) in a 1.7 cm margin ran 1.07 cm off the page's left edge and 2 were dropped |
+
+### 15.2 What the files show now
+
+* **Date-time x axes**: `-90` degrees (Veusz draws a horizontal axis's label at 360 - rotate degrees,
+  so -90 turns it clockwise: it reads downwards; checked by rendering, +90 reads upwards), 8 pt, on
+  two lines: the format `%VDY-%VDm-%VDd\\T%VDH:%VDM:%VDS-05:00` - Veusz text markup `\\` ends a
+  line [57], the way Veusz's own automatic date formats split date and time - so the label reads
+  `2026-11-09` / `T13:50:00-05:00`, the date on the right of the turned text and the time on the left,
+  as in the screenshot. The offset keeps its colon (ISO 8601 extended format, matching the date part
+  and the axis label `UTC-05:00`) [58].
+* **Long numbers on x**: a numeric label longer than 6 characters (`9999940` Hz, `1000000000` Hz,
+  MJD `61349.25`) - or a level label wider than 80 % of the tick spacing - is turned the same way at
+  8 pt. Short labels (`-150`, `2.5`, `0`) stay level at 14 pt.
+* **Margins and page sizes**: every graph gets the bottom margin its tick labels and axis label need
+  and the left margin its y labels need - the largest of a grid for all of its graphs, so the plots
+  line up - and a page grows (never shrinks) until each plot keeps at least 6 x 4 cm and room for all
+  of its labels. The room below an x axis follows Veusz's layout (`_drawTickLabels`,
+  `_drawAxisLabel`):
+
+$$
+\text{room} = 2\,s_t + E + s_l + H_l + 0.15\ \text{cm},\qquad
+E = \begin{cases} w_{\max} & \text{vertical labels} \\ n_{\text{lines}}\,h_t & \text{level labels} \end{cases}
+$$
+
+  with $s_t = 0.3\,\text{em}_t$ and $s_l = 0.3\,\text{em}_l$ the spacings of the tick and axis-label
+  fonts, $H_l = 1.2\,\text{em}_l$ the axis label's height, $h_t = 1.15\,\text{em}_t$ a line of tick
+  text and $w_{\max}$ the widest line of any label. Widths are sums of per-character advance widths -
+  the larger of Arial/Helvetica and Times for each character - so the estimate is never below the
+  drawn width (Veusz 4.2.1 at 8 pt: `T00:00:00-04:00` 2.07 cm estimated, 2.00 cm drawn;
+  `1000000000` 1.57 cm estimated, 1.49 cm drawn). The labels themselves
+  are the ones Veusz will draw: `veusz_ticks`, `veusz_date_ticks` and `veusz_number_text` are ports of
+  Veusz 4.2.1's `AxisTicks`, `DateTicks` and `formatNumber` [57] and gave the same ticks, ranges and
+  texts in every case compared (27 105 numeric tick sets, linear and log, with their texts in eight
+  formats; 8 000 date tick sets, extended or not).
+* **A plot must keep room for every y label**: $L_y \ge 1.2\,(n-1)\,h + h$ for $n$ labels of height
+  $h$; along a vertical x axis the same with the two-line label's width.
+* **Broken axes**: each part of a Veusz broken axis gets its own ticks; a part too short for them
+  gets fewer major ticks (`MajorTicks/number`) until its labels fit.
+* **Writer 0.0.31** does this in its page helpers (`xy_page`, `grid_page`, `image_page`,
+  `frequency_time_pages`, `time_pair_pages`, `style_datetime_axis`) for every program that uses it;
+  pages without a date axis or data ranges are written exactly as by 0.0.30 (checked object by
+  object). The MJD page of `time_pair_pages` now shows 12 significant digits (Veusz's automatic
+  format wrote `6.1349x10^4`). **`_autoplot_native` 0.5.5** does it for every page of every program in
+  this repository on save (`_fit_page`), from the data ranges of the traces; saving twice writes the
+  same file.
+* **Plots tab** (pyqtgraph): below one day per tick the date sits above the time
+  (`2026-11-09` / `T04:15`); the ticks are spaced for the wider date line (pyqtgraph stops drawing
+  tick text that would fill more than 80 % of the axis) [59].
+
+### 15.3 Measured after the change (Veusz 4.2.1)
+
+![x tick labels drawn, 0.4.4 and 0.4.5](docs/tick_labels_0.4.5_drawn.png)
+
+| Project | x axes | x labels drawn, 0.4.4 | x labels drawn, 0.4.5 | y labels drawn, 0.4.4 | y labels drawn, 0.4.5 |
+|---|---|---|---|---|---|
+| FITS, GBT tack azServo1Hz (10 files) | 321 | 723 of 1925 (37.6 %) | **1925 of 1925 (100 %)** | 1979 of 2017 (98.1 %) | **2017 of 2017 (100 %)** |
+| FITS, GBT UWBR Temps (15 files) | 136 | 403 of 788 (51.1 %) | **788 of 788 (100 %)** | 813 of 813 (100 %) | **813 of 813 (100 %)** |
+| FITS, GBT 30-day OnePpsDeltas (319 files) | 320 | 2162 of 2162 (100 %) | **2162 of 2162 (100 %)** | 1284 of 1286 (99.8 %) | **1286 of 1286 (100 %)** |
+| FITS, synthetic 1PPS (test file) | 5 | 44 of 46 (95.7 %) | **46 of 46 (100 %)** | 37 of 37 (100 %) | **37 of 37 (100 %)** |
+| Franks (time_gbt.dat test files) | 6 | 24 of 24 (100 %) | **24 of 24 (100 %)** | 38 of 38 (100 %) | **38 of 38 (100 %)** |
+| R&S FSW/FSP (12 files) | 426 | 2130 of 2563 (83.1 %) | **2563 of 2563 (100 %)** | 2618 of 2618 (100 %) | **2618 of 2618 (100 %)** |
+| CSV/TSV (2 files) | 3 | 15 of 18 (83.3 %) | **18 of 18 (100 %)** | 16 of 16 (100 %) | **16 of 16 (100 %)** |
+| ATR (25 files) | 52 | 364 of 364 (100 %) | **364 of 364 (100 %)** | 312 of 312 (100 %) | **312 of 312 (100 %)** |
+| Touchstone (16 .s2p) | 70 | 398 of 398 (100 %) | **398 of 398 (100 %)** | 428 of 428 (100 %) | **428 of 428 (100 %)** |
+| **All** | 1339 | 6263 of 8288 (75.6 %) | **8288 of 8288 (100 %)** | 7525 of 7565 (99.47 %) | **7565 of 7565 (100 %)** |
+
+Also with 0.4.5: the FITS and Franks date-label test projects (21 x axes, 174 labels) and the
+Touchstone clear / add project (32 x axes, 174 labels) - every label drawn; the writer's own page
+helpers (21 x axes: `xy_page`, `grid_page` 2 and 3 columns, `time_pair_pages` with and without
+`mjd_range`, `image_page`, `frequency_time_pages`) - every label drawn. No drawn label reaches past
+its graph's cell (Veusz's own outer bounds) or the page edge on any of them. Which x axes turned:
+every date-time axis (FITS, Franks) and the long Hz axes (R&S, CSV/TSV); ATR (`-150` ... `150`),
+Touchstone (`0`, `2.5`, `5` ...) and short FITS index axes stay level at 14 pt.
+
+Clear / add (section 14) still gives the same project for all files at once and for half, then
+the other half (ATR, R&S, Touchstone, CSV/TSV: every dataset and script line equal): the fit is
+deterministic, and saving a project twice writes the same script. The fit of all 320 pages of the
+30-day project takes 0.22 s (Python 3.13); the project still saves in about 15 s (14.6 s on 3.13,
+15.7 s on 3.12; 0.4.4: 14.4 s).
+
+### 15.4 Versions
+
+| File | Before | Now |
+|---|---|---|
+| `vszh5_writer.py` | 0.0.30 | **0.0.31** (vertical labels, `axis_tick_room`, ports of Veusz's ticks and formats, fitted margins and pages; `LOCAL_DATETIME_ROTATE` 45 -> -90) |
+| `_autoplot_native.py` | 0.5.4 | **0.5.5** (`_fit_page` on save) |
+| `_autoplot_common.py` | 0.4.4 | **0.4.5** (`DEFAULT_DATETIME_TICK_ROTATE_DEG` 45 -> -90) |
+| `_autoplot_pyqtgraph.py` | 0.3.4 | **0.3.5** (two-line date ticks) |
+| `CSV_TSV_AutoPlot.py` | 6.1.5 | **6.1.6** (date x axis -90) |
+| `tests/test_writer_0031.py` | — | **0.0.1** (16 tests) |
+| `tests/test_writer_0030.py` | 0.0.1 | **0.0.2** (time-pair pages left out of the 0.0.29 identity) |
+| `tests/test_time_gaps.py` / `tests/test_writer_names_time.py` | 0.0.1 / 0.0.2 | **0.0.2** / **0.0.3** (two-line format) |
+| `REQUIREMENTS.md` | 0.2.3 | **0.2.4** (no new packages) |
+| FITS / Franks 0.4.4, ATR 0.2.6, R&S 1.1.6, Touchstone 0.7.5, plugins 0.3.4 | | unchanged code (their projects change through `_autoplot_native`) |
+
+### 15.5 Verification
+
+| Check | Python 3.8.20 | Python 3.12.3 | Python 3.13.18 |
+|---|---|---|---|
+| Unit tests (`python -m unittest discover -s tests`) | 133 OK (5 skipped: 2 need PyOpenCL; 3 need Veusz, which `test_native_export` blocks in a full run) | 133 OK (5 skipped) | 133 OK (5 skipped; 3 in the PyOpenCL venv) |
+| Veusz tests alone (`python -m unittest tests.test_writer_0031 tests.test_writer_0030`, Veusz 4.2.1) | | | 28 OK (ports equal to Veusz; every tick label drawn) |
+| Headless GUI and real-data runs (`run_env_checks.sh`, 13 runs) | 13 of 13 pass | 13 of 13 pass | 13 of 13 pass |
+| Plots tab two-line date ticks (screenshot) | pyqtgraph 0.13.3: shown | pyqtgraph 0.14.0: shown | 0.14.0: shown |
+| Ports against Veusz 4.2.1 (`port_check.py`) | | | 27 105 numeric tick sets with texts in 8 formats, 8 000 date tick sets: 0 differences |
+| Writer 0.0.31 vs master 0.0.30 | | | pages without dates or ranges identical (every dataset, attribute, script line) |
+| Format check (header, revision = version, Date lines, docstrings, 3.8 grammar) | every `.py` OK | | |
+| Tooltip audit | 0 missing | | |
+
+![Plots tab: the date above the time](docs/tick_labels_0.4.5_plots_tab.png)
+
+### 15.6 Data gaps and limits
+
+* The label widths are estimates from character widths, not the fonts Veusz finds on your
+  computer. They were checked against the drawn width with the font Veusz uses here (Liberation
+  Serif, which fontconfig gives for Veusz's Times New Roman): 2-5 % above it. Each character's width
+  is the larger of its Arial and Times widths, so Arial- and Times-like faces are covered; a much
+  wider face set in Veusz's preferences could need more room than given.
+* Rendered with Veusz 4.2.1 on Linux only; Veusz 3.6.2 was not rendered. Its source (PyPI sdist)
+  has the same code as 4.2.1 in every file the fit follows - `axis.py`, `axisticks.py`,
+  `axisbroken.py`, `grid.py`, `formatting.py`, `dates.py` - apart from comments and Qt 5 / Qt 6
+  names, and the same `\\` line end in `textrender.py`, so 3.6.2 draws the same ticks and labels.
+  Windows was not run in this session.
+* A Veusz grid makes all rows the same height, so a page of many panels grows to fit the panel that
+  needs most room.
+* `MajorTicks/number` is a target: Veusz picks the closest count of 1, 2, 2.5 or 5 steps; the fit
+  uses Veusz's own choice (ported), so the count it checks is the count Veusz draws.
+
+### 15.7 References (round 15)
+
+| # | Reference (IEEE) |
+|---|---|
+| [57] | Veusz developers, *Veusz 4.2.1* source code: `veusz/widgets/axis.py` (`_drawTickLabels`, `_drawAxisLabel`, `_drawTextWithoutOverlap`, `computeTicks`), `veusz/widgets/axisticks.py` (`AxisTicks`, `DateTicks`), `veusz/widgets/axisbroken.py`, `veusz/widgets/grid.py` (`_gridengine`, `_drawChild`), `veusz/utils/formatting.py` (`formatNumber`), `veusz/utils/textrender.py` (`\\` line end), `veusz/utils/dates.py`. [Online]. Available: https://pypi.org/project/veusz/4.2.1/ |
+| [58] | *Date and time — Representations for information interchange — Part 1: Basic rules*, ISO 8601-1:2019, International Organization for Standardization, Geneva, 2019. [Online]. Available: https://www.iso.org/standard/70907.html |
+| [59] | pyqtgraph developers, *pyqtgraph 0.14.0* source code: `pyqtgraph/graphicsItems/AxisItem.py` (`textFillLimits`, `generateDrawSpecs`) and `DateAxisItem.py` (`tickStrings`, `setZoomLevelForDensity`). [Online]. Available: https://github.com/pyqtgraph/pyqtgraph |

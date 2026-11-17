@@ -49,6 +49,68 @@ Compatible with: Python 3.8+ (pandas >= 1.3, qtpy with PySide6 or PyQt5)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 6.1.6: Date-time x axis vertical (reading downwards), on two lines.
+Date: 2026-11-16
+#              * The date x axis was set to 45 degrees; now -90
+#                (vszh5_writer.VERTICAL_TICK_ROTATE).  The save writes the
+#                date and the time on two lines and fits the margin; long
+#                numeric x labels (e.g. 1000000000 Hz, 5 of 6 drawn before)
+#                are turned vertical too (_autoplot_native 0.5.5).
+# %%%%% Function Descriptions
+        _default_parser_is_exact: True when pandas' default C float parser reads _PARSER_PROBE exactly.
+        scan_number_forms: (long digit run, exponent notation) found in the file (6.1.3); read in 4 MiB blocks, a run across two blocks included; (True, True) when the file c...
+        CSVProcessingConfig (class): How the files are read.
+        PlotConfig (class): Plot formatting.
+        LoadedFile (class): One delimited file in memory.
+        exact_cell_texts: {column: every cell as text} for the numeric ``columns`` whose float64 ``values`` cannot hold the cells exactly (6.1.3): integers beyond +/-2**53,...
+        delimiter_from_text: GUI text -> delimiter ('\\t' typed as two characters means a tab).
+        detect_delimiter: Most frequent of , TAB ; | in the first non-comment lines.
+        read_file_metadata: The lines before the header line.
+        load_csv_file: (LoadedFile or None, status message) of one file.
+        load_files: Load files in parallel threads; (files in input order, messages).
+        get_common_columns: Columns in ALL files (intersection).
+        get_all_columns: Columns of ANY file (union).
+        _naive_zone: Zone of time stamps written without one, when they are local time.
+        column_values: ('numeric' | 'date' | 'text', values) of one column, rows kept.
+        VeuszPlotter (class): Builds the project: one overlay page and one page per file.
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "CSV/TSV AutoPlot"
+        APP_VERSION = "6.1.6"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        VEUSZ_EPOCH: Veusz datetime zero (UTC)
+        MIN_PARSED_FRACTION: a column is numeric / date when >= 80 % of its cells parse
+        _PARSER_PROBE: numbers the inexact pandas parsers read wrongly (checked once at import)
+        PANDAS_NEEDS_ROUND_TRIP: True when pandas' default C parser is not exact (pandas 2.0.3 / 3.0.5 measured; 3.1.1 is exact)
+        _FORM_TABLE: byte map d = digit or point, e = e/E, s = sign, x = other (scan_number_forms)
+        COLOURS: trace colours (Tableau 10, hex, the same in Veusz and the Plots tab)
+# %%%%% More Info
+    Run:  python CSV_TSV_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python CSV_TSV_AutoPlot.py a.csv --x Time --y V --output out.vszh5
+    Date-time columns are stored as Veusz date-times (UTC) and drawn in local
+    ISO 8601 (VSZH5_DISPLAY_TZ overrides the computer's zone); the stamps as
+    written are kept as text.  Numbers are read exactly (PANDAS_NEEDS_ROUND_TRIP).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 6.1.5: Clear also drops the project, the plots and the preview.
 Date: 2026-11-16
 #              * Clear forgot the loaded files but kept the project and the
@@ -355,7 +417,7 @@ from _autoplot_native import (float_loses_text, tag_data,  # noqa: E402
                               trace_widget_name)
 
 APP_NAME = "CSV/TSV AutoPlot"
-APP_VERSION = "6.1.5"
+APP_VERSION = "6.1.6"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Delimited text files (CSV, TSV, custom) to native Veusz .vszh5 "
                    "projects, with interactive pyqtgraph plots.")
@@ -891,8 +953,11 @@ class VeuszPlotter:
         if date_x:
             from _autoplot_native import mark_local_time_axis
             default_label = config.x_label in ("", PlotConfig.x_label)
+            import vszh5_writer
             mark_local_time_axis(graph.x, "Local time" if default_label else config.x_label)
-            graph.x.TickLabels.rotate.val = "45"
+            # 6.1.6: vertical (reading downwards); the save writes the date
+            # and the time on two lines and fits the margin (_fit_page).
+            graph.x.TickLabels.rotate.val = str(vszh5_writer.VERTICAL_TICK_ROTATE)
         else:
             graph.x.log.val = config.x_scale == "log"
         graph.y.log.val = config.y_scale == "log"

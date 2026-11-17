@@ -23,6 +23,31 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.2: Writer 0.0.31 and later; time-pair pages left out of the identity.
+Date: 2026-11-16
+#              * test_versions accepts 0.0.30 or later.
+#              * build_document(pair=False) and test_documents_identical
+#                without the time-pair pages, which writer 0.0.31 draws with
+#                vertical labels on purpose (tests/test_writer_0031.py).
+# %%%%% Function Descriptions
+        load_writer: Import the writer file ``path`` as module ``name``.
+        build_document: Write a document with every 0.0.29 page helper through writer module ``w`` (xy, grid, time pair, image, bar, text and Smith pages); ``pair`` False...
+        document_objects: Every dataset, attribute and the script of a .vszh5, save stamps left out ({name: (attrs, bytes)} plus the script lines).
+        IdentityWith0029 (class): Documents of every 0.0.29 helper are identical in 0.0.29 and 0.0.30.
+        GapRuleTests (class): GapRule, rule_gap_positions, rule_axis_break_pairs and gap_plan.
+        PageHelperTests (class): x_breaks on xy_page, Panel / grid_page and time_pair_pages.
+        VeuszRenderTests (class): Veusz loads and renders the broken axes (skipped without Veusz).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        ROOT: repository folder
+        MASTER_0029: the registry master 0.0.29 kept in docs/writer_0.0.30
+# %%%%% More Info
+    Run:  python -m unittest discover -s tests
+    Needs docs/writer_0.0.30/vszh5_writer_0.0.29.py (the registry master
+    0.0.29, SHA-256 checked); the render test needs a Python with Veusz.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.1: First version.
 Date: 2026-11-16
 #              Identity with master 0.0.29 (docs/writer_0.0.30), the gap
@@ -83,9 +108,10 @@ def load_writer(path, name):
     return module
 
 
-def build_document(writer_module, path):
+def build_document(writer_module, path, pair=True):
     """Write a document with every 0.0.29 page helper through writer module
-    ``w`` (xy, grid, time pair, image, bar, text and Smith pages)."""
+    ``w`` (xy, grid, time pair, image, bar, text and Smith pages); ``pair``
+    False leaves out the time-pair pages (0.0.2)."""
     m = writer_module
     t = np.arange(50.0)
     mjd = 61349.5 + t / 86400.0
@@ -95,8 +121,9 @@ def build_document(writer_module, path):
     m.grid_page(doc, "grid", [m.Panel([m.Trace("t", "v")], "t", "v", "panel A"),
                               m.Panel([m.Trace("t", "v2")], "t", "v2", "panel B", ylog=True)])
     axis = m.local_time_axis(m.mjd_to_epoch(mjd), zone="-05:00")
-    m.time_pair_pages(doc, "pair", [m.Trace("mjd", "v", "v")], "mjd", "local", axis,
-                      title="Pair", ylabel="V")
+    if pair:
+        m.time_pair_pages(doc, "pair", [m.Trace("mjd", "v", "v")], "mjd", "local", axis,
+                          title="Pair", ylabel="V")
     m.image_page(doc, "img", "z", title="Image")
     m.bar_page(doc, "bars", "a", ["c1"], title="Bars")
     m.text_page(doc, "text", "Text", ["line 1", "line 2"])
@@ -153,17 +180,20 @@ class IdentityWith0029(unittest.TestCase):
         cls.old = load_writer(MASTER_0029, "vszh5_writer_0029")
 
     def test_versions(self):
-        """The writer is 0.0.30 and its header says so."""
-        self.assertEqual(w.__version__, "0.0.30")
-        self.assertIn("Version        : 0.0.30", (ROOT / "vszh5_writer.py").read_text(encoding="utf-8"))
+        """The writer is 0.0.30 or later and its header says so (0.0.2)."""
+        self.assertGreaterEqual(tuple(int(p) for p in w.__version__.split(".")), (0, 0, 30))
+        self.assertIn("Version        : " + w.__version__,
+                      (ROOT / "vszh5_writer.py").read_text(encoding="utf-8"))
         self.assertEqual(self.old.__version__, "0.0.29")
 
     def test_documents_identical(self):
         """Datasets, attributes and script lines are the same (save stamps and
-        the version comment aside)."""
+        the version comment aside).  0.0.2: without the time-pair pages,
+        which writer 0.0.31 draws with vertical labels on purpose
+        (tests/test_writer_0031.py)."""
         with tempfile.TemporaryDirectory() as folder:
-            build_document(self.old, Path(folder) / "old.vszh5")
-            build_document(w, Path(folder) / "new.vszh5")
+            build_document(self.old, Path(folder) / "old.vszh5", pair=False)
+            build_document(w, Path(folder) / "new.vszh5", pair=False)
             old_objects, old_script = document_objects(Path(folder) / "old.vszh5")
             new_objects, new_script = document_objects(Path(folder) / "new.vszh5")
         self.assertEqual(sorted(old_objects), sorted(new_objects))

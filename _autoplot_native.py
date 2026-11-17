@@ -32,6 +32,129 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.5.5: Every major tick label shows: vertical date and long-number x labels.
+Date: 2026-11-16
+#              * NEW _fit_page (run by finalize() for every page, after the
+#                time and gap layouts): each axis's labels as Veusz will draw
+#                them (vszh5_writer.axis_tick_room on the data range of its
+#                traces / images); x date-times and long numbers vertical
+#                (-90, reading downwards; date-times on two lines, the date
+#                then "T" + time); bottom and left margins every label and
+#                axis label need, the largest of a grid for all its graphs;
+#                pages grown (never shrunk) so each plot keeps MIN_PLOT_CM
+#                and room for every label; fewer major ticks per part of a
+#                broken axis whose parts are short.  What the fit writes is
+#                undone before the next fit (NativeWidget.fit_base /
+#                fit_written), so saving twice writes the same file.
+#              * The 0.5.0 page size of date pages (13 cm a column, 8 cm a
+#                row; 25 x 16 cm) is the starting size (_dated_page_size);
+#                Veusz's grid uses only the columns its graphs fill.
+#              * Measured (Veusz 4.2.1): x tick labels drawn, before -> now:
+#                GBT tack 723 / 1925 -> 1925 / 1925; UWBR Temps 403 / 788 ->
+#                788 / 788; R&S 2130 / 2563 -> 2563 / 2563; CSV 15 / 18 ->
+#                18 / 18; y labels on tack 1979 / 2017 -> 2017 / 2017.
+#              Checked: tests/test_writer_0031.py (16 tests: identity with
+#              master 0.0.30 for pages without dates or ranges, the ports
+#              against Veusz 4.2.1, the label decisions, the page helpers,
+#              the native fit, a Veusz render in which every tick label is
+#              drawn) on Python 3.8, 3.12 and 3.13 (the Veusz tests with
+#              Veusz 4.2.1 on 3.13); every example project rendered in
+#              Veusz 4.2.1 with all tick labels drawn.
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        parse_gap_string: Parse a human-readable gap string into MJD-days.
+        add_gap_arguments: Add the gap options to an argparse parser (0.5.3): --gap-k, --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks, --no-numeric-gap...
+        layout_from_args: The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3).
+        TimeLayout (class): Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any sorted x, and the two consequences of a gap made optional), see vszh5_writer T...
+        _number_text: A setting for the notes with every digit (repr), without a trailing ".0" (0.5.3; %g cut 12.3456789 to 12.3457).
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0).
+        _set_gap_note: Put the gap-rule line ``note`` into the graph notes (0.5.3: a line from an earlier layout is replaced, so the notes state the rule in use).
+        _sorted_finite: True when the finite values of ``values`` never decrease (at least 3).
+        _layout_numeric_axis: Gap options on an x axis that is not time (0.5.3): frequency, angle, index ...
+        _undo_numeric_layout: Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the gap options of a project turn non-time axes off between two saves, the traces d...
+        _drop_unused_plot_copies: Remove line-break plot copies no widget draws any more (0.5.3): when the gap options change between two saves, copies of the old layout would other...
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        _fit_set: Set ``key`` on ``widget`` for the tick-label fit, remembering the value it had before (0.5.5).
+        _fit_restore: Undo the previous tick-label fit on ``widget`` (0.5.5): a setting the fit wrote and nobody changed since gets its earlier value back.
+        _cm: A Veusz distance setting in cm (``default`` when unset or not physical).
+        _pt: A Veusz font size setting in points (``default`` when unset).
+        _finite_range: (min, max) of the finite values of dataset ``name`` (1-D or date), or None; cached per finalize in ``cache``.
+        _axis_data_range: (min, max) of the data a graph draws on ``axis`` (xy traces and images), or None when it draws nothing known (0.5.5).
+        _axis_room: vszh5_writer.TickRoom of one axis as it is set now (0.5.5); None for a hidden axis, a label axis or an axis without known data.
+        _dated_page_size: (width, height) cm the 0.5.0 rule gives a page with date-time axes and no size of its own: 13 cm a column and 8 cm a row (at least 16 cm) for a gri...
+        _fit_page: Fit the tick labels of every graph on ``page`` (0.5.5): vertical labels where they belong, the margins every label needs and a page large enough (s...
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        process_rss_mb: Resident set size of this process in MiB (NaN when it cannot be read).
+        _release_os_heap: Hand freed heap memory back to the operating system; returns the steps that ran (names), [] when nothing applies.
+        release_memory: Give the memory of dropped data back to the operating system (0.5.4).
+        file_stamp: (size, mtime_ns, options) of ``path``: the data read from it are still good while this is unchanged; None when the file cannot be read.
+        KeptReads (class): Data read from the listed files, kept until the user clears them (0.5.4).
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        _GAP_TOKEN_REGEX: one number and unit of a gap text (s, min, h, d, m; bare = hours)
+        GAP_STRING_HELP: tool tip of the gap text boxes
+        _DAYS_PER_MONTH: average Gregorian month (365.25 / 12 days) for 'm' in gap texts
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 1 / 1440 (gap text parsing)
+        _DAYS_PER_SECOND: 1 / 86400 (gap text parsing)
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _MISSING: Every page is fitted on save, after the time and gap layouts: each axis's tick labels are worked out the way Veusz will draw them (vszh5_writer.axi...
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    TimeLayout holds the options; finalize() lays out time axes
+    (_layout_time_axis), then other x axes (_layout_numeric_axis), then drops
+    plot copies no widget draws (_drop_unused_plot_copies).
+    Memory: release_memory() after
+    the last reference to dropped data is gone (gc, GPU pools, malloc_trim /
+    HeapCompact + working-set trim); KeptReads keeps per-file data until Clear.
+    Tick labels: finalize() fits every page
+    (_fit_page): vertical two-line date labels and long numbers, margins and
+    page sizes so Veusz draws every major tick label; undone before the next fit.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.5.4: Clear gives memory back to the OS; data kept between batches.
 Date: 2026-11-16
 #              * NEW release_memory(log): three garbage-collection passes, the
@@ -493,7 +616,7 @@ import numpy as np
 import vszh5_writer
 from vszh5_writer import VeuszWriter, VszDoc, vz_text
 
-VERSION = "0.5.4"
+VERSION = "0.5.5"
 WRITER_VERSION = vszh5_writer.__version__
 DATASET_SETTINGS = frozenset((
     "xData", "yData", "labels", "scalePoints", "yDataLow", "yDataHigh",
@@ -593,6 +716,8 @@ class NativeWidget:
         self.gap_layout_key = None     # 0.5.3: gap options applied to this numeric axis
         self.time_layout_key = None    # 0.5.0: TimeLayout applied to this axis       # 0.3.0: named from its data by finalize()
         self.local_time = None        # 0.3.0: label prefix of a local date-time axis
+        self.fit_base = {}            # 0.5.5: settings before the tick-label fit
+        self.fit_written = {}         # 0.5.5: settings the tick-label fit wrote
 
     @property
     def typename(self):
@@ -1313,6 +1438,278 @@ def _size_dated_page(page):
         page.settings["height"] = "16cm"
 
 
+# %% Tick labels that all show (0.5.5)
+# Every page is fitted on save, after the time and gap layouts: each axis's
+# tick labels are worked out the way Veusz will draw them
+# (vszh5_writer.axis_tick_room, a port of Veusz's tick choice and number
+# formats), an x axis with date-times or long numbers gets vertical labels
+# (-90 degrees, reading downwards; a date-time on two lines, the date and
+# "T" + the time), every graph gets the bottom and left margins its labels
+# and axis labels need (the largest of a grid, so its plots line up), and a
+# page grows - never shrinks - until each plot keeps MIN_PLOT_CM and room for
+# every label; a broken axis whose parts are too short gets fewer major
+# ticks per part (MajorTicks/number).  What the fit writes is undone before
+# the next fit, so saving twice gives the same file.
+_MISSING = object()
+
+
+def _fit_set(widget, key, value):
+    """Set ``key`` on ``widget`` for the tick-label fit, remembering the value
+    it had before (0.5.5)."""
+    if key not in widget.fit_base:
+        widget.fit_base[key] = widget.settings.get(key, _MISSING)
+    widget.settings[key] = value
+    widget.fit_written[key] = value
+
+
+def _fit_restore(widget):
+    """Undo the previous tick-label fit on ``widget`` (0.5.5): a setting the
+    fit wrote and nobody changed since gets its earlier value back."""
+    for key, value in widget.fit_written.items():
+        if widget.settings.get(key, _MISSING) == value:
+            before = widget.fit_base.get(key, _MISSING)
+            if before is _MISSING:
+                widget.settings.pop(key, None)
+            else:
+                widget.settings[key] = before
+    widget.fit_base = {}
+    widget.fit_written = {}
+
+
+def _cm(value, default):
+    """A Veusz distance setting in cm (``default`` when unset or not physical)."""
+    if value is None or value is _MISSING:
+        return float(default)
+    found = vszh5_writer._distance_cm(str(value))
+    return float(default) if found is None else found
+
+
+def _pt(value, default=None):
+    """A Veusz font size setting in points (``default`` when unset)."""
+    found = _cm(value, -1.0) if value is not None else -1.0
+    return default if found < 0 else found / (2.54 / 72.0)
+
+
+def _finite_range(doc, name, cache):
+    """(min, max) of the finite values of dataset ``name`` (1-D or date), or
+    None; cached per finalize in ``cache``."""
+    if name in cache:
+        return cache[name]
+    found = None
+    entry = doc.datasets.get(name) if isinstance(name, str) else None
+    if entry is not None and entry[0] in ("1d", "date"):
+        values = np.asarray(entry[1]["data"], dtype=float).ravel()
+        values = values[np.isfinite(values)]
+        if values.size:
+            found = (float(values.min()), float(values.max()))
+    elif entry is not None and entry[0] == "2d":
+        found = None                              # images: their own x/y ranges below
+    cache[name] = found
+    return found
+
+
+def _axis_data_range(doc, graph, axis, cache):
+    """(min, max) of the data a graph draws on ``axis`` (xy traces and
+    images), or None when it draws nothing known (0.5.5)."""
+    horizontal = axis.settings.get("direction", "horizontal") != "vertical"
+    axis_key, data_key = ("xAxis", "xData") if horizontal else ("yAxis", "yData")
+    default_axis = "x" if horizontal else "y"
+    lows, highs = [], []
+    for child in graph.WalkWidgets():
+        if child.kind == "xy" and child.settings.get(axis_key, default_axis) == axis.name:
+            name = child.settings.get(data_key)
+            if name is None and horizontal:          # no x data: Veusz uses 1 .. N
+                y = _finite_range(doc, child.settings.get("yData"), cache)
+                entry = doc.datasets.get(child.settings.get("yData"))
+                if y is not None and entry is not None:
+                    lows.append(1.0)
+                    highs.append(float(np.asarray(entry[1]["data"]).size))
+                continue
+            found = _finite_range(doc, name, cache)
+            if found is not None:
+                lows.append(found[0])
+                highs.append(found[1])
+        elif child.kind == "image" and child.settings.get(axis_key, default_axis) == axis.name:
+            entry = doc.datasets.get(child.settings.get("data"))
+            if entry is not None and entry[0] == "2d":
+                parts = entry[1]
+                span = parts.get("xrange" if horizontal else "yrange")
+                edges = parts.get("xedge" if horizontal else "yedge")
+                if span is not None and len(span) == 2:
+                    lows.append(float(min(span)))
+                    highs.append(float(max(span)))
+                elif edges is not None and len(edges):
+                    lows.append(float(np.nanmin(edges)))
+                    highs.append(float(np.nanmax(edges)))
+    if not lows:
+        return None
+    return (min(lows), max(highs))
+
+
+def _axis_room(doc, graph, axis, length_cm, cache):
+    """vszh5_writer.TickRoom of one axis as it is set now (0.5.5); None for a
+    hidden axis, a label axis or an axis without known data."""
+    settings = axis.settings
+    if settings.get("hide", False) or settings.get("TickLabels/hide", False):
+        return None
+    mode = settings.get("mode", "numeric")
+    if mode not in ("numeric", "datetime"):
+        return None
+    data_range = _axis_data_range(doc, graph, axis, cache)
+    dated = mode == "datetime"
+    if data_range is None and not dated:
+        return None
+    horizontal = settings.get("direction", "horizontal") != "vertical"
+    # NativeWidget._write gives a date axis 8 pt ticks and a 10 pt label.
+    tick_pt = _pt(settings.get("TickLabels/size"), 8.0 if dated else None)
+    label_pt = _pt(settings.get("Label/size"), 10.0 if dated else vszh5_writer.VEUSZ_TEXT_PT)
+    rotate = settings.get("TickLabels/rotate")
+    try:
+        major = int(settings.get("MajorTicks/number", vszh5_writer.VEUSZ_MAJOR_TICKS))
+    except (TypeError, ValueError):
+        major = vszh5_writer.VEUSZ_MAJOR_TICKS
+    return vszh5_writer.axis_tick_room(
+        "horizontal" if horizontal else "vertical", mode, data_range=data_range,
+        tick_format=str(settings.get("TickLabels/format", "") or ""),
+        log=bool(settings.get("log", False)), axis_length_cm=length_cm,
+        label=str(settings.get("label", "") or ""), label_size_pt=label_pt,
+        tick_size_pt=tick_pt if (dated or "TickLabels/size" in settings) else None,
+        autorange=str(settings.get("autoRange", "next-tick")),
+        axis_min=settings.get("min", "Auto"), axis_max=settings.get("max", "Auto"),
+        breaks=list(settings.get("breakPoints", ()) or ()) if axis.kind == "axis-broken" else (),
+        major_ticks=major, rotate=rotate)
+
+
+def _dated_page_size(page, graphs, columns):
+    """(width, height) cm the 0.5.0 rule gives a page with date-time axes and
+    no size of its own: 13 cm a column and 8 cm a row (at least 16 cm) for a
+    grid, 25 x 16 cm for one graph; None for other pages."""
+    if not any(w.kind in ("axis", "axis-broken") and w.settings.get("mode") == "datetime"
+               for w in page.WalkWidgets()):
+        return None
+    if columns:
+        rows = int(math.ceil(len(graphs) / float(columns)))
+        return 13.0 * columns, max(16.0, 8.0 * rows)
+    return 25.0, 16.0
+
+
+def _fit_page(doc, page, cache=None):
+    """
+    Fit the tick labels of every graph on ``page`` (0.5.5): vertical labels
+    where they belong, the margins every label needs and a page large enough
+    (see the section text).  Graphs in a grid share the largest margins.
+    """
+    cache = {} if cache is None else cache
+    graphs = [w for w in page.WalkWidgets() if w.kind == "graph"]
+    for widget in [page] + [w for w in page.WalkWidgets() if w.kind in ("grid", "graph", "axis",
+                                                                        "axis-broken")]:
+        _fit_restore(widget)
+    if not graphs:
+        return
+    grid = next((c for c in page.children if c.kind == "grid"), None)
+    columns = 0
+    if grid is not None:
+        try:
+            columns = max(1, int(grid.settings.get("columns", 2) or 2))
+        except (TypeError, ValueError):
+            columns = 2
+    in_grid = [g for g in graphs if grid is not None and g.parent is grid]
+    rows = int(math.ceil(len(in_grid) / float(columns))) if in_grid else 0
+    defaults = vszh5_writer.VEUSZ_GRAPH_MARGINS_CM
+    grid_margins = vszh5_writer.VEUSZ_GRID_MARGINS_CM
+    base_size = _dated_page_size(page, in_grid if in_grid else graphs, columns if in_grid else 0)
+    # Veusz uses only the columns its graphs fill (grid._gridengine): one
+    # graph in a 2-column grid spans the whole grid.
+    columns = min(columns, len(in_grid)) if in_grid else columns
+    width = _cm(page.settings.get("width"), base_size[0] if base_size else
+                vszh5_writer.VEUSZ_PAGE_CM[0])
+    height = _cm(page.settings.get("height"), base_size[1] if base_size else
+                 vszh5_writer.VEUSZ_PAGE_CM[1])
+    page_set = {"width": "width" in page.settings, "height": "height" in page.settings}
+    gm = dict((side, _cm(grid.settings.get(side), grid_margins[side]) if grid is not None else 0.0)
+              for side in grid_margins)
+
+    def margins_of(graph):
+        """The graph's own margins (cm), Veusz defaults where unset."""
+        return dict((side, _cm(graph.settings.get(side), defaults[side])) for side in defaults)
+
+    def plot_lengths(graph, margin):
+        """(x length, y length) of a graph's plot area on the page (cm)."""
+        if graph in in_grid:
+            cell_w = (width - gm["leftMargin"] - gm["rightMargin"]) / columns
+            cell_h = (height - gm["topMargin"] - gm["bottomMargin"]) / max(rows, 1)
+        else:
+            cell_w, cell_h = width, height
+        return (cell_w - margin["leftMargin"] - margin["rightMargin"],
+                cell_h - margin["topMargin"] - margin["bottomMargin"])
+
+    plans = {}
+    need = {}
+    for _pass in range(2):
+        # 1. every axis's labels (pass 2: with the axis lengths on the page)
+        for graph in graphs:
+            margin = need.get(graph) or margins_of(graph)
+            lengths = plot_lengths(graph, margin) if _pass else (None, None)
+            rooms = []
+            for axis in [c for c in graph.children if c.kind in ("axis", "axis-broken")]:
+                horizontal = axis.settings.get("direction", "horizontal") != "vertical"
+                room = _axis_room(doc, graph, axis, lengths[0] if horizontal else None, cache)
+                if room is not None:
+                    rooms.append((axis, horizontal, room))
+            plans[graph] = rooms
+        # 2. margins: each graph's own, or the largest of its grid
+        bottoms, lefts = {}, {}
+        for graph, rooms in plans.items():
+            margin = margins_of(graph)
+            bottoms[graph] = max([margin["bottomMargin"]] + [r.room_cm for _a, h, r in rooms if h])
+            lefts[graph] = max([margin["leftMargin"]] + [r.room_cm for _a, h, r in rooms if not h])
+        shared_bottom = max([bottoms[g] for g in in_grid] or [0.0])
+        shared_left = max([lefts[g] for g in in_grid] or [0.0])
+        for graph in graphs:
+            margin = margins_of(graph)
+            margin["bottomMargin"] = shared_bottom if graph in in_grid else bottoms[graph]
+            margin["leftMargin"] = shared_left if graph in in_grid else lefts[graph]
+            need[graph] = margin
+        # 3. the page: each plot keeps MIN_PLOT_CM and room for its labels
+        need_w, need_h = 0.0, 0.0
+        cell_w = cell_h = 0.0
+        for graph, rooms in plans.items():
+            margin = need[graph]
+            plot_w = max([vszh5_writer.MIN_PLOT_CM[0]] +
+                         [r.min_length_cm for _a, h, r in rooms if h and r.vertical])
+            plot_h = max([vszh5_writer.MIN_PLOT_CM[1]] + [r.min_length_cm for _a, h, r in rooms if not h])
+            w_cm = margin["leftMargin"] + plot_w + margin["rightMargin"]
+            h_cm = margin["topMargin"] + plot_h + margin["bottomMargin"]
+            if graph in in_grid:
+                cell_w, cell_h = max(cell_w, w_cm), max(cell_h, h_cm)
+            else:
+                need_w, need_h = max(need_w, w_cm), max(need_h, h_cm)
+        if in_grid:
+            need_w = max(need_w, gm["leftMargin"] + gm["rightMargin"] + columns * cell_w)
+            need_h = max(need_h, gm["topMargin"] + gm["bottomMargin"] + rows * cell_h)
+        width, height = max(width, need_w), max(height, need_h)
+    # Write what changed (undone by the next fit).
+    for key, value, explicit, default in (
+            ("width", width, page_set["width"], base_size[0] if base_size else None),
+            ("height", height, page_set["height"], base_size[1] if base_size else None)):
+        current = _cm(page.settings.get(key), default if default is not None else
+                      vszh5_writer.VEUSZ_PAGE_CM[0])
+        if explicit and value <= current + 1e-9:
+            continue
+        if not explicit and default is None and value <= vszh5_writer.VEUSZ_PAGE_CM[0] + 1e-9:
+            continue                          # Veusz's own 15 cm page is big enough
+        _fit_set(page, key, vszh5_writer.margin_text(value) if value > (default or 0) + 1e-9
+                 else "%gcm" % value)
+    for graph in graphs:
+        own = margins_of(graph)
+        for side in ("bottomMargin", "leftMargin"):
+            if need[graph][side] > own[side] + 1e-9:
+                _fit_set(graph, side, vszh5_writer.margin_text(need[graph][side]))
+        for axis, _horizontal, room in plans.get(graph, ()):
+            for key, value in room.settings.items():
+                _fit_set(axis, key, value)
+
+
 # %% Smith charts (0.4.0)
 def apply_settings(widget, settings):
     """
@@ -1957,8 +2354,6 @@ class NativeDocument:
                     if not _layout_time_axis(self, graph, axis):
                         _layout_numeric_axis(self, graph, axis)
         _drop_unused_plot_copies(self)
-        for page in [w for w in self.Root.children if w.kind == "page"]:
-            _size_dated_page(page)
         for widget in self.Root.WalkWidgets():
             label = widget.local_time
             if label is None or widget.kind not in ("axis", "axis-broken"):
@@ -1992,6 +2387,11 @@ class NativeDocument:
                     and not widget.settings.get("hide", False) \
                     and "TickLabels/format" not in widget.settings:
                 widget.settings["TickLabels/format"] = NUMERIC_TICK_FORMAT
+        # 0.5.5: vertical two-line date labels and long numbers, margins
+        # and page sizes that show every major tick label (_fit_page).
+        ranges = {}
+        for page in [w for w in self.Root.children if w.kind == "page"]:
+            _fit_page(self, page, ranges)
         self._tag_untagged()
 
     def GetDataType(self, name):

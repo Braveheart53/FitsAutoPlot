@@ -23,11 +23,11 @@ This should be your starting point if you are just running the scripts for plott
 
 Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/make_suite_icons.py; the app icon is from GBT_2.ico). Version 0.2.0 (2026-11-05): one button and one Applications-menu entry (Ctrl+1 ...) per tool, including Franks_AutoPlot; View > Light / Dark mode; Help > About (author, NRAO/GBO, licence) and Veusz plugin instructions; per-launch log files (File > Open Launch Log Folder) with a report if a tool exits with an error at start-up. Run `python postProcessing_Launcher.py --list` to see which tools it found. A frozen (PyInstaller) launcher needs `GBO_POSTPROC_PYTHON` set to the python.exe of the plotting environment. Details: RELEASE_launcher-0.2.0_touchstone-0.5.0.md.
 
-# Common to every tool (2026-11-09; gaps and Clear 2026-11-16)
+# Common to every tool (2026-11-09; gaps, Clear and tick labels 2026-11-16)
 
-* **Project files**: every `.vszh5` is written by the shared writer `vszh5_writer.py` 0.0.30 (the
-  registry master, SHA-256 `26194c8e...`; additions only: the gap options `GapRule` / `gap_plan`
-  and `x_breaks=` on the page helpers) through `_autoplot_native.py` 0.5.4 (0.0.28 saves the 30-day 1PPS project in 14 s instead of 34 s, same file contents). Veusz is not needed to write a project, only to open it, or for
+* **Project files**: every `.vszh5` is written by the shared writer `vszh5_writer.py` 0.0.31 (the
+  registry master; 0.0.30 added the gap options `GapRule` / `gap_plan` and `x_breaks=`, 0.0.31 the
+  vertical tick labels and `axis_tick_room`) through `_autoplot_native.py` 0.5.5 (0.0.28 saves the 30-day 1PPS project in 14 s instead of 34 s, same file contents). Veusz is not needed to write a project, only to open it, or for
   File > Export PDF / PNG.
 * **Plots tab**: every tool shows the pages of its project with pyqtgraph (`_autoplot_pyqtgraph.py`):
   values at the cursor, Ctrl+wheel zoom, CSV/PNG/SVG export, polar (ATR) and Smith (Touchstone) plots.
@@ -35,7 +35,8 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
   (`_suite_gui.py`); the Veusz plugins style only their own dialog.
 * **Date-times**: time stamps are stored as Veusz date-time datasets in UTC plus a `<name>_local`
   copy on the clock of the computer doing the processing (daylight saving included). Date-time
-  axes read `2026-11-09T08:39:00-05:00` (ISO 8601, 24 h, with the UTC offset); when the data cross
+  axes read `2026-11-09T08:39:00-05:00` (ISO 8601, 24 h, with the UTC offset), written vertically on
+  two lines - `2026-11-09` and `T08:39:00-05:00` - since 2026-11-16 (see Tick labels); when the data cross
   a daylight-saving change the ticks omit the offset and the axis label lists each offset and when it
   starts. Set `VSZH5_DISPLAY_TZ` (for example `America/New_York`, `-05:00` or `UTC`) to process for
   another zone, e.g. on a build server that runs in UTC.
@@ -64,6 +65,18 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
   changed: line breaks are NaN rows in plot copies (`<y>_gaps`), and each graph's notes state the
   rule in use. The Plots tab follows the same options and shades the broken-axis intervals. n = 0
   keeps one continuous axis. Gap texts take `s`, `min`, `h`, `d` and `m` (months).
+* **Tick labels** (2026-11-16, every tool, writer 0.0.31 / suite 0.4.5): x tick labels with
+  date-times or long numbers (more than 6 characters, e.g. `9999940` Hz or MJD `61349.25`, or wider
+  than 80 % of the tick spacing) are turned -90 degrees - vertical, reading downwards - at 8 pt, and a
+  date-time is written on two lines, the date and then `T` + the time (Veusz text markup `\\` ends
+  the line). On save every graph gets the bottom and left margins its labels and axis label need (the
+  largest of a grid for all its graphs, so the plots line up) and a page grows, never shrinks, so each
+  plot keeps at least 6 x 4 cm and room for every label; a broken axis whose parts are short gets fewer
+  major ticks per part. Veusz now draws every major tick label: on the GBT tack project 1925 of 1925
+  date labels (723 before, 2 of 6 per grid panel at 45 degrees) and every y label. The labels are
+  worked out the way Veusz draws them (ports of its tick choice and number formats, equal to Veusz
+  4.2.1 in every case compared). The Plots tab shows the date above the time too when the ticks are
+  less than a day apart.
 * **Clear and add** (2026-11-16, every tool): *Clear* removes the files, the data read from them,
   the project (Save is disabled, so nothing cleared can be saved later), the Plots tab and previews,
   the caches and their spill files, and gives the memory back to the operating system (garbage
@@ -90,7 +103,8 @@ Version 0.2.1 (2026-11-09): real icons on every button (assets/, drawn by tools/
 
 Release notes: RELEASE_suite-2026-11-09.md (sections 1-9), its FITS addendum (section 10), the
 speed / GPU / dB-averaging round (section 11), the names / tags / nothing-cut round (section 12)
-the gap options of every plot generator (section 13) and Clear / add (section 14).
+the gap options of every plot generator (section 13), Clear / add (section 14) and the vertical
+tick labels (section 15).
 Every option has a tooltip (hover over it for help).
 
 # FITS-AutoPlot.py

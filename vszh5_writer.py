@@ -13,7 +13,7 @@
 --------
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.30 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.31 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -41,7 +41,11 @@
                   4.2.1 with real GBT sampler2log files; 0.0.28 faster
                   save: files identical to 0.0.27; 0.0.29 exact ISO text:
                   3.6.2, every other output identical to 0.0.28; 0.0.30
-                  gap options: 4.2.1, every 0.0.29 call identical)
+                  gap options: 4.2.1, every 0.0.29 call identical;
+                  0.0.31 vertical tick labels: 4.2.1, every tick label
+                  drawn and inside its cell on every page helper and on
+                  the FitsAutoPlot projects; tick and format ports equal
+                  to Veusz 4.2.1 in 35 105 cases)
  Lineage        : 0.0.20 joins the two releases that were both numbered
                   0.0.18 - the R&S FSP logger 0.9.0 release (render fixes)
                   and the AB Power Meter Monitor 1.6.0 release (appender) -
@@ -70,8 +74,13 @@
                   T4 workbench) adds the gap options: GapRule (line breaks
                   and / or x-axis breaks, either one off, a log-scale check
                   for frequency sweeps), gap_plan, x_breaks= on the page
-                  helpers, local_veusz_exact. One master copy: the
-                  RF project document
+                  helpers, local_veusz_exact. 0.0.31 (FitsAutoPlot suite
+                  0.4.5) turns date-time and long-number x tick labels
+                  vertical (-90 degrees, reading downwards; a date-time
+                  on two lines) and fits margins and pages so Veusz draws
+                  every major tick label: axis_tick_room and its ports of
+                  Veusz's tick choice and number formats.  One master
+                  copy: the RF project document
                   claude/vszh5_writer.py (see claude/vszh5-writer-registry.md).
 ===============================================================================
 # %%% Author Information
@@ -282,11 +291,29 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
   Panel.x_breaks and time_pair_pages(mjd_breaks=, local_breaks=) draw a
   Veusz axis-broken x axis; local_veusz_exact (UTC + offset in one step,
   no round trip through Unix seconds).
+* (0.0.31) Tick labels that all show: x date-time labels turned -90
+  degrees (vertical, reading downwards) and written on two lines
+  (datetime_two_line: the date, then "T" + the time; Veusz markup "\\\\"
+  ends a line), long numeric x labels (more than LONG_TICK_LABEL_CHARS,
+  or wider than TICK_FIT_FRACTION of the tick spacing) turned too, at
+  VERTICAL_TICK_SIZE; axis_tick_room() works out the labels Veusz will
+  draw (veusz_ticks, veusz_date_ticks, veusz_number_text: ports of Veusz
+  4.2.1, equal in every case compared) and the margin they need;
+  xy_page / grid_page / image_page / time_pair_pages / style_datetime_axis
+  set the bottom (and, with y_range, left) margins and grow a page that is
+  too small (MIN_PLOT_CM); a broken axis whose parts are short gets fewer
+  major ticks.  Pages without a date axis or data ranges are written as in
+  0.0.30.  LOCAL_DATETIME_ROTATE is -90 (was 45).
 
 # %%% References
 [R1] Veusz Developers, Veusz 4.2.1 source: veusz/document/doc.py
      (saveToHDF5File), veusz/document/loader.py (loadHDF5Doc),
-     veusz/utils/textrender.py (latexEscape, symbols), veusz/veusz_main.py.
+     veusz/utils/textrender.py (latexEscape, symbols), veusz/veusz_main.py;
+     (0.0.31) veusz/widgets/axis.py (_drawTickLabels, _drawAxisLabel,
+     _drawTextWithoutOverlap, computeTicks), veusz/widgets/axisticks.py
+     (AxisTicks, DateTicks), veusz/widgets/axisbroken.py, veusz/widgets/
+     grid.py (_gridengine, _drawChild), veusz/utils/formatting.py
+     (formatNumber), veusz/utils/dates.py.
      https://pypi.org/project/veusz/4.2.1/
 [R2] h5py developers, "h5py 3.16.0." https://pypi.org/project/h5py/
 [R3] W. W. Wallace, isp_speed_monitor.py 1.3.0, Adaptive Electrodynamics
@@ -303,6 +330,250 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.31: FitsAutoPlot suite 0.4.5 (operator request 2026-11-16: date and
+Date: 2026-11-16
+#              long-number x tick labels vertical, reading downwards, the
+#              date and time on two lines, every grid axis sized to show all
+#              major tick values), for every program that uses the writer.
+#              Built on master 0.0.30 (SHA-256 26194c8e...e40aa01f604),
+#              registry checked first.
+#              * WHY: Veusz draws an axis label first and then each tick
+#                label only if it overlaps nothing drawn (axis.py
+#                _drawTextWithoutOverlap); 45-degree 25-character ISO labels
+#                overlapped (FitsAutoPlot 0.4.4 GBT tack: 723 of 1925 x labels
+#                drawn, 2 of 6 per grid panel) and margins too small for the
+#                labels pushed the axis label over them (38 of 2017 y labels
+#                dropped on tack).
+#              * CHANGED LOCAL_DATETIME_ROTATE 45 -> -90; style_datetime_axis
+#                writes the format on two lines, 8 pt labels and the graph's
+#                bottomMargin (rotate=45, size="", margin=False: 0.0.30).
+#              * CHANGED xy_page, grid_page (Panel), image_page,
+#                frequency_time_pages and time_pair_pages: a date-time x axis
+#                gets vertical two-line labels and the bottom margin they
+#                need; grid_page uses one margin for all panels and grows a
+#                page that is too small; the MJD page of time_pair_pages shows
+#                12 significant digits (Veusz's automatic format wrote
+#                6.1349x10^4) on vertical labels.  Pages without a date axis
+#                or data ranges are written exactly as in 0.0.30.
+#              * NEW x_vertical=, x_range=, y_range=, x_tick_format=,
+#                bottom_margin= on xy_page; the same fields on Panel;
+#                mjd_range= on time_pair_pages; LocalTimeAxis
+#                .datetime_format_2line.
+#              * NEW axis_tick_room / TickRoom (the labels Veusz will draw,
+#                vertical or level, the margin and the shortest axis they
+#                need; MajorTicks/number for short parts of broken axes),
+#                datetime_two_line, ISO_DATETIME_FORMAT_2LINE,
+#                tick_text_width_em, tick_text_lines, margin_text; ports of
+#                Veusz 4.2.1: veusz_ticks (AxisTicks), veusz_date_ticks and
+#                veusz_date_tick_count (DateTicks), veusz_number_text
+#                (formatNumber), datetime_tick_texts; constants
+#                VERTICAL_TICK_ROTATE, VERTICAL_TICK_SIZE,
+#                LONG_TICK_LABEL_CHARS, TICK_FIT_FRACTION, VEUSZ_TEXT_PT,
+#                VEUSZ_MAJOR_TICKS, VEUSZ_GRAPH_MARGINS_CM,
+#                VEUSZ_GRID_MARGINS_CM, VEUSZ_PAGE_CM, FULL_NUMBER_FORMAT,
+#                MIN_PLOT_CM.  __all__ also lists the 0.0.30 names.
+#              Checked: tests/test_writer_0031.py (16 tests: identity with
+#              master 0.0.30 for pages without dates or ranges, the ports
+#              against Veusz 4.2.1, the label decisions, the page helpers,
+#              the native fit, a Veusz render in which every tick label is
+#              drawn) on Python 3.8, 3.12 and 3.13 (the Veusz tests with
+#              Veusz 4.2.1 on 3.13); every example project rendered in
+#              Veusz 4.2.1 with all tick labels drawn.
+# %%%%% Function Descriptions
+        epoch_to_veusz: Unix epoch seconds -> Veusz date value (seconds since 2009-01-01).
+        local_utc_offsets: Local UTC offset in seconds for every timestamp, DST-aware.
+        _hour_offsets: UTC offset (s) at the middle of each UTC hour number in ``hours``.
+        vz_text: Escape Veusz text-markup characters so a string prints literally.
+        escape_hdf_name: Escape a dataset name for use as an HDF5 member name, as Veusz does.
+        widget_name: Any text -> a valid Veusz widget name (0.0.25).
+        unique_widget_name: ``name``, or ``name_2``, ``name_3`` ...
+        header_notes: Page notes text from a source-file header (0.0.25).
+        set_notes: Set the notes of the current widget (a page) when ``notes`` is not empty.
+        VszDoc (class): Builder for the Veusz command script stored in the document.
+        VeuszWriter (class): Write Veusz datasets and a document script to a .vszh5 file.
+        _default_file_mode: Mode a new file would get from open(): 0o666 minus the process umask.
+        _one_dimensional: ``values`` as a contiguous float64 1-D array, or ValueError (0.0.23).
+        _create_resizable_1d: Create ``group[key]``: a chunked, resizable, uncompressed float64 array.
+        _is_regular: True when the spacing of ``values`` is constant (relative 1e-6).
+        _image_axis: Choose and check the stored form of one image axis (see dataset_2d).
+        Trace (class): One line or marker series (Veusz 'xy' widget) for xy_page().
+        add_title: Centred title label near the top of the current page.
+        title_settings: Settings of add_title()'s page title label (0.0.26: shared with the widget-tree builders, same values and order as before).
+        _distance_cm: A physical Veusz distance ("15cm", "6in", "20pt") in cm; None otherwise.
+        _plot_length_cm: (0.0.31) ``length`` minus ``margins`` in cm (an axis length); None when any of them is not a physical distance.
+        _fitted_margin: (0.0.31) ``margin``, or the room tick labels need when that is more (``default_cm`` stands for an empty margin); "" when an empty margin can stay e...
+        _fitted_page_length: (0.0.31) A page length (height) grown so the plot area between ``margins`` is at least ``plot_cm``; unchanged when it already is, when nothing is a...
+        _graph_name: (0.0.25) Explicit name, else "g_<y>" for one trace, else "g_<page>".
+        _open_page_and_graph: Add a page (sized, with notes), its title and a graph; leave the graph current.
+        _add_axes: The x and y axes of the current graph, with labels, scales and limits.
+        xy_page: A page with one graph of line/marker traces; returns the graph name.
+        _apply_tick_rooms: (0.0.31) Write the tick format and the TickRoom settings (vertical labels, two-line date format, MajorTicks/number) on the current graph's x and y...
+        _add_traces: Add the xy widgets of ``traces`` to the current graph (0.0.25: named after Trace.name or the y dataset, unique in the graph); returns the names.
+        _trace_settings: Settings of the xy widget that draws ``trace`` (relative paths, in the order Veusz receives them); shared by _add_traces and smith_graph_spec (0.0....
+        _add_key: Legend in the current graph: True, False or "auto" (more than one label).
+        image_page: A page with a 2-D dataset drawn as an image, and a colour bar; returns the graph name.
+        Panel (class): One graph of grid_page(): traces, axes and a small title (0.0.12).
+        grid_page: A page with several graphs in a Veusz grid (rows filled left to right).
+        linear_power_mean_dbm: Equal-weight power mean of finite dBm samples, returned in dBm.
+        frequency_ghz_text: Scale decimal Hz to GHz without coarse rounding/name collisions.
+        frequency_time_pages: Append one page per frequency and a combined page; preserve all raw data.
+        mjd_to_epoch: UTC Modified Julian Date (days) -> Unix epoch seconds.
+        mjd_to_veusz: UTC MJD -> Veusz date seconds; ``offset_s`` shifts to a local clock.
+        iso_offset_text: UTC offset in seconds -> ISO-8601 "+HH:MM" / "-HH:MM" (e.g.
+        _zone_from_text: "UTC"/"Z", "+HH:MM", "-5", "UTC-05:00" or an IANA name -> tzinfo.
+        iana_zone: An IANA zone ("America/New_York") as a tzinfo on every Python (0.0.27).
+        display_zone: Zone for local date-time axes (0.0.25): VSZH5_DISPLAY_TZ when set, else ``default`` (None = the time zone of this computer).
+        _zone_offsets: Per-sample UTC offset (s) in ``zone`` (None = VSZH5_DISPLAY_TZ, else this computer's zone).
+        LocalTimeAxis (class): A local wall-clock date axis for Veusz (0.0.24), see local_time_axis().
+        _offset_change_instant: First whole UTC minute in (before, after] whose offset is ``offset_after`` (bisection; the zone changes offset once between two samples) (0.0.27).
+        local_time_axis: Veusz date values and an ISO-8601 tick format on a local clock.
+        veusz_to_epoch: Veusz date seconds (since 2009-01-01, UTC) -> Unix epoch seconds (0.0.25).
+        local_time_from_veusz: local_time_axis() for UTC values already in Veusz date seconds (0.0.25).
+        style_datetime_axis: Make ``axis`` (path from the current widget, e.g.
+        iso_local_strings: ISO-8601 local date-times with offsets, e.g.
+        _exact_wall_text: (0.0.29) ISO text (no offset suffix) of an exact wall-clock time in Unix-style seconds (Decimal): whole seconds through datetime, then every digit...
+        mjd_iso_local_strings: (0.0.29) ISO-8601 local date-times of UTC MJD values, every digit kept.
+        with_x: The same traces drawn against another x dataset (0.0.24).
+        time_pair_pages: Two xy pages from one set of traces: against MJD and against local time.
+        datetime_two_line: Veusz date format ``fmt`` with the time on a second line (0.0.31).
+        tick_text_width_em: Width of the widest line of a tick label, in em of its font (0.0.31).
+        tick_text_lines: Number of lines of a tick label (Veusz "\\\\" line breaks) (0.0.31).
+        _sci_to_human: Port of veusz.utils.formatting.sciToHuman: "1.5e-06" -> "1.5x10^{-6}".
+        _veusz_general: Port of Veusz formatGeneral (%Vg) and formatSciNotation (%Ve).
+        veusz_number_text: Tick-label text Veusz writes for the number ``value`` with tick format ``fmt`` (0.0.31; port of veusz.utils.formatting.formatNumber for numbers: %V...
+        _veusz_engineering: Port of Veusz formatEngineering (%VE, SI suffixes).
+        datetime_tick_texts: Sample tick label of a Veusz date format (0.0.31), drawn with the widest names (September, Wednesday); digits all have the same width, so one sampl...
+        veusz_ticks: Major tick values Veusz 4.2.1 puts on a numeric axis showing ``minval`` ..
+        _veusz_datetime: Port of veusz.utils.dates.floatToDateTime (Veusz seconds -> datetime).
+        _veusz_seconds: Port of veusz.utils.dates.datetimeToFloat (datetime -> Veusz seconds).
+        _veusz_round_down: Port of veusz.utils.dates.roundDownToTimeTuple (as a datetime).
+        _veusz_add: Port of veusz.utils.dates.addTimeTupleToDateTime (``sign`` -1 subtracts).
+        veusz_date_ticks: (major tick values, automatic format, axis minimum, axis maximum) Veusz 4.2.1 puts on a date axis from ``minval`` to ``maxval`` Veusz seconds (0.0....
+        veusz_date_tick_count: (number of major ticks, automatic format) of a Veusz date axis from ``minval`` to ``maxval`` Veusz seconds, not extended (0.0.31).
+        _segments: (start, stop) of each part of an axis broken at ``breaks`` (flat start, stop pairs, as Veusz breakPoints; pairs outside lo..hi ignored).
+        TickRoom (class): Tick labels of one axis and the room they need (0.0.31); see axis_tick_room().
+        axis_tick_room: Tick labels of an axis, whether an x axis's labels go vertical, and the margin they need (0.0.31).
+        margin_text: A Veusz distance in cm, rounded UP to 0.05 cm so it is never too small ("2.65cm") (0.0.31).
+        median_step: Median of the positive, finite steps of ``t`` (0.0 when there is none).
+        gap_threshold: Line-break threshold in the units of ``t``: ``manual`` when > 0, else ``k * median_step(t)`` (0.0 = no threshold, e.g.
+        gap_positions: Insertion indices of the gap rows: ``i + 1`` for every step ``t[i+1] - t[i] > threshold``.
+        insert_gaps: ``values`` (float) with a NaN inserted before each of ``positions`` (from gap_positions); the input is not changed.
+        axis_break_pairs: (start, end) intervals to leave out of a broken axis.
+        GapRule (class): What a gap in a plotted series does (0.0.30); see the section above.
+        rule_gap_positions: Gap-row positions of one trace under ``rule`` (0.0.30): gap_positions() of its small-gap threshold, kept only where the step is also large on a log...
+        rule_axis_break_pairs: Axis-break intervals of one x axis shared by ``series`` (the x values of each trace) under ``rule`` (0.0.30); [] when break_axis is off.
+        break_points: Veusz axis-broken ``breakPoints``: the pairs as one flat list.
+        gap_plan: Gap rows of every trace and the break points of their shared x axis (0.0.30), in one call.
+        local_veusz_exact: Local wall-clock Veusz date values of UTC Veusz date values, as one addition: UTC + the offsets of ``axis`` (0.0.30).
+        gamma_from_impedance: Reflection coefficient Gamma = (Z - Z0) / (Z + Z0) (complex array).
+        impedance_from_gamma: Impedance Z = Z0 (1 + Gamma) / (1 - Gamma); Gamma = 1 gives inf.
+        vswr_from_gamma: VSWR = (1 + |Gamma|) / (1 - |Gamma|); inf for |Gamma| >= 1.
+        _joined: Concatenate (x, y) curves with a NaN point between them (Veusz breaks an xy line at NaN, nanHandling 'break-on', its default).
+        SmithGrid (class): Datasets and widget specifications of a Smith-chart grid (0.0.26).
+        _grid_line_settings: xy settings of a grid line family: no markers, no legend entry.
+        _grid_label_settings: xy settings that print a text dataset at points (no line, no marker).
+        smith_grid: The grid of a Smith chart as Veusz datasets and xy widget settings.
+        smith_trace_datasets: Datasets of one Smith trace: "<stem>_re", "<stem>_im" and, when given, "<stem>_freq_Hz" (read by the suite's interactive Smith plot).
+        smith_trace: Trace of Im(Gamma) against Re(Gamma) for the datasets of smith_trace_datasets(stem, ...); keyword arguments go to Trace.
+        smith_has_key: True when a Smith graph gets a legend: key=True, or "auto" with more than one labelled trace (as xy_page).
+        smith_graph_spec: Settings of a Smith graph and its children, for any Veusz builder.
+        smith_page_layout: (page width, page height, graph top margin) of a Smith page: the chart about ``size`` across, 1 cm more height for the title, ``key_width`` more wi...
+        smith_page: A page with one Smith chart; returns the graph name (0.0.26).
+        text_page: Pages of plain text lines (escaped; monospaced by default) (0.0.12).
+        step_mask: (x, y) arrays of a stepped mask: one flat segment per band.
+        reference_line: (x, y) arrays of a straight threshold or marker line.
+        bar_page: A page with a vertical category bar chart (0.0.14); returns the graph name.
+        _reduce_axis: Reduce ``values`` along ``axis`` in groups of ``factor`` (see block_reduce).
+        _reduce_groups: Collapse ``axis`` of a grouped array with ``method``.
+        block_reduce: Decimate a 2-D array in blocks of ``row_factor`` x ``column_factor``.
+        regularize_rows: Image rows with (possibly uneven) centres -> an even grid for drawing.
+        dataset_names: Names of the datasets stored in a .vszh5 document (unescaped, sorted).
+        read_text_dataset: The strings of a text dataset written by dataset_text(), or None if absent.
+        page_names: Names of the pages of a written document, in page order (0.0.13).
+        AppendLockedError (class): The document is locked by another process (HDF5 file locking).
+        _is_lock_error: True for HDF5's "unable to lock file" open failure (any platform).
+        VeuszAppender (class): Grow an existing .vszh5 document in place, a few rows at a time.
+        _decode: bytes or numpy bytes -> str (UTF-8); anything else -> str().
+        find_veusz_exe: Locate the Veusz program: explicit path, env var, PATH, usual folders.
+        _popen_kwargs: Hide the console window of child processes on Windows.
+        _render_script: The script piped into `veusz --listen`.
+        _outline_parts: Split an outline entry into (title, page, children).
+        add_pdf_bookmarks: Write a bookmark (outline) hierarchy into an existing PDF, in place.
+        render_pages: Render a .vszh5 to one multipage PDF and per-page PNG files.
+        _page_names_from_log: Veusz page names from the VSZH5_PAGES line the render script prints.
+        _run_listen: Pipe a script into `veusz --listen --quiet` and wait for the marker.
+        _render_in_process: Fallback: render with the veusz Python package in this process.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VSZH5_FORMAT: Highest document format the Veusz 3.6 and 4.2 loaders accept.
+        VSZH5_LAYOUT_VERSION: Veusz release whose HDF5 layout this writer follows (written as vsz_version).
+        COMPRESS_MIN_ELEMENTS: Arrays at least this long are gzip+shuffle compressed when compress=True.
+        _VLEN_BYTES: text datasets
+        APPEND_CHUNK_ELEMENTS: (0.0.18) Rows per chunk of a resizable (appendable) 1-D or date dataset: : 1024 float64 = 8 KiB, at the low end of the 10 KiB - 1 MiB range h5py :...
+        PDF_DPI: Resolution passed to Veusz's Export() for PDF. Veusz 4.x lays a PDF page : out at the nearest resolution the Qt PDF engine supports (72) but sets t...
+        VEUSZ_EPOCH: Veusz date origin, and the offset that maps Unix seconds onto it.
+        UNIX_TO_VEUSZ_S: -1230768000
+        _HOUR_OFFSET_CACHE: 0.0.28: UTC offset of each whole UTC hour, per zone, kept between calls. A project with thousands of time traces asked the zone database for the sa...
+        _HOUR_OFFSET_CACHE_MAX: entries (about 114 years of hours)
+        WIDGET_NAME_MAX: Longest widget name the helpers make (Veusz has no limit; long names make : the widget tree and PDF bookmarks hard to read).
+        TRACE_COLOURS: 1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+        _CM_PER_UNIT: Centimetres per unit for the physical Veusz distance units.
+        MJD_UNIX_EPOCH: Modified Julian Date of the Unix epoch, 1970-01-01T00:00:00 UTC.
+        ISO_DATETIME_FORMAT: Veusz tick format of an ISO-8601 date-time without offset (Veusz %VD codes).
+        ISO_TIMESPECS: (0.0.29) timespec values of iso_local_strings(): seconds (default), : milliseconds, microseconds, auto, exact.
+        _EXACT: (0.0.29) Decimal arithmetic of the exact ISO text: 80 digits, far above the 17 + 5 digits an MJD or epoch times 86400 can need, so nothing is rounded.
+        _MJD_UNIX_EPOCH_DECIMAL = Decimal("40587")
+        _SECONDS_PER_DAY_DECIMAL = Decimal("86400")
+        DISPLAY_TZ_ENV: (0.0.25) Environment variable that overrides the computer's time zone for : local date-time axes: "UTC", a fixed offset such as "-05:00" or "+0530"...
+        _FIXED_OFFSET: fixed UTC offset text (-05:00, UTC-05:00, GMT+0100) for VSZH5_DISPLAY_TZ
+        LOCAL_DATETIME_ROTATE: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis. : 0.0.31: -90 (VERTICAL_TICK_ROTATE: vertical, reading downwards, two : lines...
+        VERTICAL_TICK_ROTATE: (0.0.31) Rotation of a vertical x tick label: -90 reads downwards.  Veusz : draws a horizontal axis's label at 360 - rotate degrees (axis.py), so -...
+        VERTICAL_TICK_SIZE: (0.0.31) Font size of vertical x tick labels (two 8 pt lines are 0.65 cm wide).
+        LONG_TICK_LABEL_CHARS: (0.0.31) A numeric x label longer than this many characters is "long" and : is turned vertical ("61349.25", "9999940", "1000000000"; not "-150", "2...
+        TICK_FIT_FRACTION: (0.0.31) A level x label wider than this fraction of the tick spacing is : turned vertical too (Veusz would drop its overlapping neighbours).
+        VEUSZ_TEXT_PT: (0.0.31) Veusz defaults used when a setting is not written: text size of : tick and axis labels (pt), MajorTicks/number, graph margins and page siz...
+        VEUSZ_MAJOR_TICKS: Veusz's MajorTicks/number default (major ticks to aim for)
+        VEUSZ_GRAPH_MARGINS_CM: Veusz's default graph margins (cm)
+        VEUSZ_GRID_MARGINS_CM: Veusz's default grid margins (cm)
+        VEUSZ_PAGE_CM: Veusz's default page size (width, height) in cm
+        FULL_NUMBER_FORMAT: (0.0.31) Tick format that shows up to 12 significant digits: Veusz's : automatic "%Vg" writes MJD 61349.25 as 6.134925x10^4.
+        MIN_PLOT_CM: (0.0.31) Smallest plot area (width, height) in cm a fitted page keeps.
+        ISO_DATETIME_FORMAT_2LINE: (0.0.31) Veusz date format of an ISO-8601 date-time on two lines.
+        _CHAR_EM: Character advance widths in em (see the section text); others: _EM_UPPER, _EM_LOWER or _EM_OTHER.  "−" is the minus sign Veusz writes for "-" in nu...
+        _LINE_EM: height of one text line (ascent + descent + leading)
+        _SPACE_EM: Veusz spacing next to a text block (leading + descent)
+        _LABEL_EM: full height of the axis label (usefullheight=True)
+        _ROOM_PAD_CM: extra room so rounding never clips a label
+        _SCRIPT_SCALE: size of a ^{...} / _{...} part relative to the font
+        _PT_CM: centimetres per typographic point (2.54 / 72)
+        _DATE_TIME_SPLIT: Date codes followed by "T" or a space and then a time code: where datetime_two_line() ends the first line.
+        _VEUSZ_CODE: ]*)(VDVS|VD.|V.|[A-Za-z%])")
+        _SAMPLE_DATETIME: Widest values for the sample text of a date format: September and Wednesday are the longest English month and day names; digits are equal.
+        _VEUSZ_DATE_INTERVALS: Veusz 4.2.1 DateTicks intervals (years, months, days, hours, minutes, seconds, microseconds) and their automatic formats [R1: axisticks.py].
+        _VEUSZ_DATE_SECONDS: length in seconds of each _VEUSZ_DATE_INTERVALS step, as Veusz computes it
+        GAP_K: Default line-break multiplier K (gap when dt > K * median(dt)).
+        GAP_AXIS_N: Default axis-break multiple n (axis cut when dt > n * K * median(dt)); 0 = never.
+        GAP_AXIS_MARGIN: Fraction of a gap kept visible at each side of an axis break.
+        SMITH_RESISTANCES: Normalized resistance (conductance) circles and reactance (susceptance) : arcs drawn by default - the values of scikit-rf's and the Plots tab's chart.
+        SMITH_REACTANCES: normalised reactances of the Smith grid arcs
+        SMITH_VSWR: VSWR circles of scikit-rf's draw_vswr=True.
+        SMITH_GRID_COLOUR: a6a6a6"
+        SMITH_FRAME_COLOUR: 4d4d4d"
+        SMITH_LABEL_COLOUR: 595959"
+        SMITH_LIMIT: Half-width of the Re/Im Gamma axes: room outside |Gamma| = 1 for labels.
+        SMITH_NOTES_PREFIX: First words of the notes of every Smith graph (how readers recognise one).
+        VEUSZ_LINE_BREAK: Veusz text markup for a line break (two backslashes in the label text).
+        REDUCE_METHODS: Methods of block_reduce().
+        APPEND_META_GROUP: Top-level HDF5 group for the appender's private bookkeeping (e.g. a logger's : column index). Veusz reads only /Veusz [R1: loader.loadHDF5Doc], so...
+# %%%%% More Info
+    Master copy: RF project document claude/vszh5_writer.py (registry
+    claude/vszh5-writer-registry.md).  Needs numpy and h5py; Veusz only to open
+    or render; pypdf only for PDF bookmarks; on Python 3.8 backports.zoneinfo
+    or python-dateutil for IANA zone names (VSZH5_DISPLAY_TZ=America/New_York).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md of FitsAutoPlot (mamba:
+    environment-py38.yml, environment-py312.yml).  Release notes: RF project
+    claude/vszh5-writer-0.0.31-notes.md (0.0.30: claude/vszh5-writer-0.0.30-notes.md).
 # %%%% 0.0.30: FitsAutoPlot suite 0.4.3 (operator request 2026-11-16: every plot
 Date: 2026-11-16
 #              generator gap aware, with options to break the line/trace
@@ -1472,7 +1743,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.30"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.31"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -1515,6 +1786,16 @@ __all__ = [
     # 0.0.27: time gaps
     "GAP_K", "GAP_AXIS_N", "GAP_AXIS_MARGIN", "median_step", "gap_threshold",
     "gap_positions", "insert_gaps", "axis_break_pairs",
+    # 0.0.30: gap options (listed here from 0.0.31)
+    "GapRule", "rule_gap_positions", "rule_axis_break_pairs", "break_points", "gap_plan",
+    "local_veusz_exact",
+    # 0.0.31: vertical tick labels and the room they need
+    "VERTICAL_TICK_ROTATE", "VERTICAL_TICK_SIZE", "LONG_TICK_LABEL_CHARS", "TICK_FIT_FRACTION",
+    "VEUSZ_TEXT_PT", "VEUSZ_MAJOR_TICKS", "VEUSZ_GRAPH_MARGINS_CM", "VEUSZ_GRID_MARGINS_CM",
+    "VEUSZ_PAGE_CM", "FULL_NUMBER_FORMAT", "MIN_PLOT_CM", "ISO_DATETIME_FORMAT_2LINE",
+    "datetime_two_line", "tick_text_width_em", "tick_text_lines", "veusz_number_text",
+    "datetime_tick_texts", "veusz_ticks", "veusz_date_ticks", "veusz_date_tick_count",
+    "TickRoom", "axis_tick_room", "margin_text",
 ]
 
 # %% ===========================================================================
@@ -2186,6 +2467,39 @@ def _distance_cm(distance: str) -> float | None:
     return float(match.group(1)) * _CM_PER_UNIT[match.group(2)] if match else None
 
 
+def _plot_length_cm(length: str, *margins: str) -> float | None:
+    """(0.0.31) ``length`` minus ``margins`` in cm (an axis length); None
+    when any of them is not a physical distance."""
+    values = [_distance_cm(length)] + [_distance_cm(m) for m in margins]
+    if None in values:
+        return None
+    return max(values[0] - sum(values[1:]), 0.0)
+
+
+def _fitted_margin(margin: str, room_cm: float, default_cm: float = 1.7) -> str:
+    """(0.0.31) ``margin``, or the room tick labels need when that is more
+    (``default_cm`` stands for an empty margin); "" when an empty margin can
+    stay empty."""
+    if not room_cm:
+        return margin
+    given = _distance_cm(margin) if margin else default_cm
+    if given is not None and given >= room_cm:
+        return margin
+    return margin_text(room_cm)
+
+
+def _fitted_page_length(length: str, margins: Sequence[str], plot_cm: float) -> str:
+    """(0.0.31) A page length (height) grown so the plot area between
+    ``margins`` is at least ``plot_cm``; unchanged when it already is, when
+    nothing is asked (0) or when a distance is not physical."""
+    total = _distance_cm(length)
+    used = [_distance_cm(m) for m in margins]
+    if not plot_cm or total is None or None in used:
+        return length
+    need = sum(used) + plot_cm
+    return length if total >= need else margin_text(need)
+
+
 def _graph_name(graph_name: str, page: str, traces: Sequence[Trace] = ()) -> str:
     """(0.0.25) Explicit name, else "g_<y>" for one trace, else "g_<page>"."""
     if graph_name:
@@ -2254,7 +2568,9 @@ def xy_page(doc: VszDoc, page: str, traces: Sequence[Trace], title: str = "",
             width: str = "25cm", height: str = "15cm", left_margin: str = "2.2cm",
             top_margin: str = "1.4cm", escape: bool = True,
             datetime_format: str = "", graph_name: str = "", notes: Any = "",
-            x_breaks: Sequence[float] = ()) -> str:
+            x_breaks: Sequence[float] = (), x_vertical: bool | None = None,
+            x_range: Any = None, y_range: Any = None, x_tick_format: str = "",
+            bottom_margin: str = "") -> str:
     """A page with one graph of line/marker traces; returns the graph name.
 
     Parameters
@@ -2297,20 +2613,66 @@ def xy_page(doc: VszDoc, page: str, traces: Sequence[Trace], title: str = "",
     x_breaks:
         (0.0.30) Intervals left out of a broken x axis, flat (start, stop,
         ...) in x units, e.g. gap_plan()[1]; empty = one continuous axis.
+    x_vertical:
+        (0.0.31) x tick labels turned -90 degrees (vertical, reading
+        downwards): None = automatic - a date-time x axis always (its
+        format written on two lines, date then "T" + time), a numeric one
+        when ``x_range`` gives labels longer than LONG_TICK_LABEL_CHARS;
+        True / False = always / never (False writes the 0.0.30 axis).
+        The bottom margin grows to fit the labels and the axis label.
+    x_range, y_range:
+        (0.0.31) (min, max) of the data on x / y, when known: the tick
+        labels Veusz will draw are worked out (axis_tick_room) so a long
+        numeric x label goes vertical and the bottom / left margins fit
+        every label.  None = unknown (numeric axes as in 0.0.30).
+    x_tick_format:
+        (0.0.31) TickLabels/format of a numeric x axis, e.g.
+        FULL_NUMBER_FORMAT; empty = Veusz's automatic format.
+    bottom_margin:
+        (0.0.31) Graph bottom margin; empty = Veusz's 1.7 cm, or the room
+        the x tick labels need when that is more.
     """
     graph = _graph_name(graph_name, page, traces)
-    _open_page_and_graph(doc, page, title, width, height,
-                         {"leftMargin": left_margin, "topMargin": top_margin}, escape,
+    dated = xmode == "datetime"
+    x_room = axis_tick_room("horizontal", xmode, data_range=x_range,
+                            tick_format=datetime_format if dated else x_tick_format,
+                            log=xlog, label=xlabel, autorange=x_autorange, axis_min=xmin,
+                            axis_max=xmax, breaks=x_breaks, vertical=x_vertical,
+                            axis_length_cm=_plot_length_cm(width, left_margin, "0.2cm"))
+    y_room = axis_tick_room("vertical", "numeric", data_range=y_range, log=ylog,
+                            label=ylabel, autorange=y_autorange, axis_min=ymin, axis_max=ymax)
+    margins = {"leftMargin": _fitted_margin(left_margin, y_room.room_cm), "topMargin": top_margin}
+    bottom = _fitted_margin(bottom_margin or "", x_room.room_cm,
+                            VEUSZ_GRAPH_MARGINS_CM["bottomMargin"])
+    if bottom:
+        margins["bottomMargin"] = bottom
+    height = _fitted_page_length(height, (top_margin, bottom or "1.7cm"),
+                                 max(MIN_PLOT_CM[1], y_room.min_length_cm)
+                                 if (x_room.room_cm or y_room.room_cm) else 0.0)
+    _open_page_and_graph(doc, page, title, width, height, margins, escape,
                          graph=graph, notes=notes)
     _add_axes(doc, xlabel, ylabel, xlog, ylog, xmin, xmax, ymin, ymax, xmode, escape,
               x_autorange, y_autorange, x_breaks=x_breaks)
-    if xmode == "datetime" and datetime_format:
-        doc.set("x/TickLabels/format", datetime_format)
+    _apply_tick_rooms(doc, x_room, y_room, datetime_format if dated else x_tick_format)
     _add_traces(doc, traces, escape)
     _add_key(doc, traces, key, key_position)
     doc.up()                                     # graph -> page
     doc.up()                                     # page -> where we started
     return graph
+
+
+def _apply_tick_rooms(doc: VszDoc, x_room: TickRoom, y_room: TickRoom | None = None,
+                      x_format: str = "", y_format: str = "") -> None:
+    """(0.0.31) Write the tick format and the TickRoom settings (vertical
+    labels, two-line date format, MajorTicks/number) on the current graph's
+    x and y axes; the format is written once, as drawn."""
+    for axis, room, fmt in (("x", x_room, x_format), ("y", y_room, y_format)):
+        settings = dict(room.settings) if room is not None else {}
+        fmt = settings.pop("TickLabels/format", fmt)
+        if fmt:
+            doc.set(axis + "/TickLabels/format", fmt)
+        for path, value in settings.items():
+            doc.set(axis + "/" + path, value)
 
 
 def _add_traces(doc: VszDoc, traces: Sequence[Trace], escape: bool = True) -> list[str]:
@@ -2419,6 +2781,16 @@ def image_page(doc: VszDoc, page: str, dataset: str, title: str = "", xlabel: st
     for mode in (xmode, ymode):
         if mode not in ("numeric", "datetime"):
             raise ValueError(f"image axis mode must be numeric or datetime, not {mode!r}")
+    # 0.0.31: a date x axis gets vertical two-line labels and the bottom
+    # margin they need; a date y axis the left margin its labels need.
+    x_room = axis_tick_room("horizontal", xmode, tick_format=datetime_format, label=xlabel,
+                            autorange="exact") if xmode == "datetime" else None
+    y_room = axis_tick_room("vertical", ymode, tick_format=datetime_format, label=ylabel,
+                            autorange="exact") if ymode == "datetime" else None
+    if x_room is not None:
+        bottom_margin = _fitted_margin(bottom_margin, x_room.room_cm)
+    if y_room is not None:
+        left_margin = _fitted_margin(left_margin, y_room.room_cm)
     margins = {"rightMargin": right_margin, "topMargin": top_margin,
                "bottomMargin": bottom_margin}
     if left_margin:
@@ -2433,9 +2805,9 @@ def image_page(doc: VszDoc, page: str, dataset: str, title: str = "", xlabel: st
               "exact", "exact")
     if ymode != "numeric":
         doc.set("y/mode", ymode)
-    for axis_name, mode in (("x", xmode), ("y", ymode)):
-        if mode == "datetime" and datetime_format:
-            doc.set(f"{axis_name}/TickLabels/format", datetime_format)
+    if x_room is not None or y_room is not None:                  # 0.0.31
+        _apply_tick_rooms(doc, x_room, y_room, datetime_format if xmode == "datetime" else "",
+                          datetime_format if ymode == "datetime" else "")
     doc.add("image", image)
     doc.set(f"{image}/data", dataset)
     doc.set(f"{image}/colorMap", colormap)
@@ -2487,6 +2859,10 @@ class Panel:
     datetime_format: str = ""                    # 0.0.24: datetime x tick format
     name: str = ""                               # 0.0.25: graph name ("g_<first y>")
     x_breaks: Sequence[float] = ()               # 0.0.30: broken x axis (gap_plan)
+    x_vertical: Any = None                       # 0.0.31: vertical x labels (None = automatic)
+    x_range: Any = None                          # 0.0.31: (min, max) of the x data
+    y_range: Any = None                          # 0.0.31: (min, max) of the y data
+    x_tick_format: str = ""                      # 0.0.31: numeric x TickLabels/format
 
 
 def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", columns: int = 2,
@@ -2499,8 +2875,60 @@ def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", 
     of one measurement together). (0.0.25) Graphs are named Panel.name or
     "g_<first y dataset>" (unique in the grid); ``notes`` go to the page
     notes. Returns the graph names.
+
+    (0.0.31) A date-time x axis, or a panel's x_range / y_range, makes the
+    tick labels fit (axis_tick_room): vertical two-line date labels, long
+    numbers turned vertical, the same bottom / left margin on every panel
+    (the largest any panel needs, so the plots line up) and a page grown
+    (never shrunk) until each plot keeps MIN_PLOT_CM and room for all its
+    labels.  Without dates or ranges the page is written as in 0.0.30.
     """
     rows = max(1, math.ceil(len(panels) / max(columns, 1)))
+    # Veusz uses only the columns the panels fill (grid._gridengine).
+    used_columns = max(1, min(max(columns, 1), len(panels)))
+    grid_top = 1.2 if title else 0.3
+    margin_cm = {"leftMargin": 1.8, "rightMargin": 0.3, "topMargin": 0.7, "bottomMargin": 1.3}
+    page_cm = (_distance_cm(width), _distance_cm(height))
+
+    def rooms(length_cm: float | None) -> list[tuple[TickRoom, TickRoom]]:
+        """x and y TickRoom of every panel (x axes ``length_cm`` long)."""
+        found = []
+        for panel in panels:
+            dated = panel.xmode == "datetime"
+            found.append((
+                axis_tick_room("horizontal", panel.xmode, data_range=panel.x_range,
+                               tick_format=panel.datetime_format if dated else panel.x_tick_format,
+                               log=panel.xlog, label=panel.xlabel, autorange=panel.x_autorange,
+                               axis_min=panel.xmin, axis_max=panel.xmax, breaks=panel.x_breaks,
+                               vertical=panel.x_vertical, axis_length_cm=length_cm),
+                axis_tick_room("vertical", "numeric", data_range=panel.y_range, log=panel.ylog,
+                               label=panel.ylabel, axis_min=panel.ymin, axis_max=panel.ymax)))
+        return found
+
+    panel_rooms = rooms(None)
+    fitted = any(x.room_cm or y.room_cm for x, y in panel_rooms)
+    for _pass in range(2 if fitted else 0):
+        margin_cm["bottomMargin"] = max([1.3] + [x.room_cm for x, _y in panel_rooms])
+        margin_cm["leftMargin"] = max([1.8] + [y.room_cm for _x, y in panel_rooms])
+        plot_w = max([MIN_PLOT_CM[0]] + [x.min_length_cm for x, _y in panel_rooms if x.vertical])
+        plot_h = max([MIN_PLOT_CM[1]] + [y.min_length_cm for _x, y in panel_rooms])
+        need_w = 0.2 + 0.3 + used_columns * (margin_cm["leftMargin"] + plot_w + 0.3)
+        need_h = grid_top + 0.2 + rows * (0.7 + plot_h + margin_cm["bottomMargin"])
+        if page_cm[0] is not None and page_cm[0] < need_w:
+            width, page_cm = margin_text(need_w), (_distance_cm(margin_text(need_w)), page_cm[1])
+        if page_cm[1] is not None and page_cm[1] < need_h:
+            height, page_cm = margin_text(need_h), (page_cm[0], _distance_cm(margin_text(need_h)))
+        length = (None if page_cm[0] is None else
+                  (page_cm[0] - 0.5) / used_columns - margin_cm["leftMargin"] - 0.3)
+        panel_rooms = rooms(length)
+    if fitted:
+        margin_cm["bottomMargin"] = max([1.3] + [x.room_cm for x, _y in panel_rooms])
+        margin_cm["leftMargin"] = max([1.8] + [y.room_cm for _x, y in panel_rooms])
+    graph_margins = (("leftMargin", "1.8cm"), ("rightMargin", "0.3cm"),
+                     ("topMargin", "0.7cm"), ("bottomMargin", "1.3cm"))
+    if fitted:
+        graph_margins = tuple((side, value if _distance_cm(value) >= margin_cm[side]
+                               else margin_text(margin_cm[side])) for side, value in graph_margins)
     doc.add("page", page)
     doc.to(page)
     doc.set("width", width)
@@ -2524,14 +2952,14 @@ def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", 
         names.append(graph)
         doc.add("graph", graph)
         doc.to(graph)
-        for side, value in (("leftMargin", "1.8cm"), ("rightMargin", "0.3cm"),
-                            ("topMargin", "0.7cm"), ("bottomMargin", "1.3cm")):
+        for side, value in graph_margins:
             doc.set(side, value)
         _add_axes(doc, panel.xlabel, panel.ylabel, panel.xlog, panel.ylog, panel.xmin, panel.xmax,
                   panel.ymin, panel.ymax, panel.xmode, escape, panel.x_autorange,
                   x_breaks=panel.x_breaks)
-        if panel.xmode == "datetime" and panel.datetime_format:     # 0.0.24
-            doc.set("x/TickLabels/format", panel.datetime_format)
+        x_room, y_room = panel_rooms[index]                          # 0.0.31
+        _apply_tick_rooms(doc, x_room, y_room, panel.datetime_format      # 0.0.24
+                          if panel.xmode == "datetime" else panel.x_tick_format)
         _add_traces(doc, panel.traces, escape)
         _add_key(doc, panel.traces, panel.key)
         if panel.title:                          # small title just above the plot area
@@ -2795,6 +3223,13 @@ class LocalTimeAxis:
     label: str                       # axis label naming the offset(s)
     changes: tuple                   # ((ISO instant, "+HH:MM"), ...) offset starts
 
+    @property
+    def datetime_format_2line(self) -> str:
+        """(0.0.31) ``datetime_format`` on two lines, the date then "T" and
+        the time (datetime_two_line), for vertical x tick labels.  The page
+        helpers and style_datetime_axis() convert on their own."""
+        return datetime_two_line(self.datetime_format)
+
 
 def _offset_change_instant(before: float, after: float, offset_after: float, zone: Any) -> float:
     """First whole UTC minute in (before, after] whose offset is ``offset_after``
@@ -2879,31 +3314,56 @@ def local_time_from_veusz(veusz_utc: Any, zone: Any = None,
                            zone=zone, label=label)
 
 
-#: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis; a
-#: 25-character "2026-11-09T08:39:00-05:00" label needs it.
-LOCAL_DATETIME_ROTATE = 45
+#: (0.0.25) Tick-label rotation (degrees) of an ISO-8601 date-time axis.
+#: 0.0.31: -90 (VERTICAL_TICK_ROTATE: vertical, reading downwards, two
+#: lines); 0.0.25 - 0.0.30: 45, at which 25-character labels overlapped.
+LOCAL_DATETIME_ROTATE = -90
 
 
 def style_datetime_axis(doc: "VszDoc", axis: str, local_axis: Any = None,
                         datetime_format: str = "", label: str = "",
                         rotate: int = LOCAL_DATETIME_ROTATE,
-                        autorange: str = "exact") -> None:
+                        autorange: str = "exact", size: str = "8pt",   # VERTICAL_TICK_SIZE
+                        direction: str = "horizontal", margin: bool = True) -> None:
     """Make ``axis`` (path from the current widget, e.g. "x" or
     "g_level/x") a datetime axis (0.0.25).
 
     With a LocalTimeAxis the tick format is its ISO-8601 24-hour format with
     the UTC offset and the axis label names the offset; ``datetime_format``
     and ``label`` override them.
+
+    (0.0.31) An x axis (``direction`` "horizontal") turned +-90 degrees -
+    the default, -90, reads downwards - gets its format on two lines (date,
+    then "T" + time; datetime_two_line), tick labels of ``size`` ("" =
+    Veusz's) and, with ``margin``, its graph's bottomMargin set to the room
+    the labels and the axis label need (never below Veusz's 1.7 cm).  A y
+    axis ("vertical") keeps level labels and its format.  rotate=45,
+    size="" and margin=False write the 0.0.30 settings.
     """
     fmt = datetime_format or (local_axis.datetime_format if local_axis is not None
                               else ISO_DATETIME_FORMAT)
+    horizontal = direction != "vertical"
+    turned = horizontal and abs(int(rotate)) == 90
+    if turned:
+        fmt = datetime_two_line(fmt)
     doc.set(f"{axis}/mode", "datetime")
     doc.set(f"{axis}/TickLabels/format", fmt)
-    doc.set(f"{axis}/TickLabels/rotate", str(int(rotate)))
+    if horizontal:
+        doc.set(f"{axis}/TickLabels/rotate", str(int(rotate)))
+    if turned and size:
+        doc.set(f"{axis}/TickLabels/size", size)
     doc.set(f"{axis}/autoRange", autorange)
     text = label or (local_axis.label if local_axis is not None else "")
     if text:
         doc.set(f"{axis}/label", vz_text(text))
+    if horizontal and margin:
+        size_cm = _distance_cm(size) if size else None
+        room = axis_tick_room("horizontal", "datetime", tick_format=fmt, label=text,
+                              rotate=rotate, tick_size_pt=(size_cm / _PT_CM if size_cm
+                                                           else VEUSZ_TEXT_PT))
+        graph = axis.rsplit("/", 1)[0] + "/" if "/" in axis else ""
+        doc.set(graph + "bottomMargin",
+                margin_text(max(room.room_cm, VEUSZ_GRAPH_MARGINS_CM["bottomMargin"])))
 
 
 def iso_local_strings(epoch_s: Any, zone: Any = None, timespec: str = "seconds") -> list[str]:
@@ -3006,7 +3466,8 @@ def with_x(traces: Sequence[Trace], x: str) -> list[Trace]:
 def time_pair_pages(doc: VszDoc, page: str, traces: Sequence[Trace], mjd_x: str, local_x: str,
                     local_axis: LocalTimeAxis, title: str = "", ylabel: str = "",
                     mjd_label: str = "MJD (UTC)", mjd_breaks: Sequence[float] = (),
-                    local_breaks: Sequence[float] = (), **xy_kwargs: Any) -> list[str]:
+                    local_breaks: Sequence[float] = (), mjd_range: Any = None,
+                    **xy_kwargs: Any) -> list[str]:
     """Two xy pages from one set of traces: against MJD and against local time.
 
     ``mjd_x`` is a numeric dataset of MJD values; ``local_x`` a date dataset
@@ -3015,16 +3476,678 @@ def time_pair_pages(doc: VszDoc, page: str, traces: Sequence[Trace], mjd_x: str,
     go to xy_page() (xmode/datetime_format are set here).
     (0.0.30) ``mjd_breaks`` / ``local_breaks``: x-axis breaks of each page
     in its own units (MJD days / Veusz date seconds), e.g. from gap_plan().
+    (0.0.31) The MJD axis shows up to 12 significant digits
+    (FULL_NUMBER_FORMAT; Veusz's automatic format wrote 6.1349x10^4) on
+    vertical labels - ``mjd_range`` (min, max MJD) lets axis_tick_room keep
+    short labels level - and the local page has vertical two-line ISO labels;
+    both pages get the bottom margin their labels need.  x_vertical=False
+    in the keywords keeps level labels on both.
     """
-    for key in ("xmode", "datetime_format", "xlabel", "x_breaks"):
+    for key in ("xmode", "datetime_format", "xlabel", "x_breaks", "x_range", "x_tick_format"):
         xy_kwargs.pop(key, None)
+    vertical = xy_kwargs.pop("x_vertical", None)
     xy_page(doc, page + "_mjd", with_x(traces, mjd_x), title=title, xlabel=mjd_label,
-            ylabel=ylabel, x_breaks=mjd_breaks, **xy_kwargs)
+            ylabel=ylabel, x_breaks=mjd_breaks, x_tick_format=FULL_NUMBER_FORMAT,
+            x_range=mjd_range,
+            x_vertical=vertical if (vertical is not None or mjd_range is not None) else True,
+            **xy_kwargs)
     xy_kwargs.setdefault("x_autorange", "exact")
     xy_page(doc, page + "_local", with_x(traces, local_x), title=title, xlabel=local_axis.label,
             ylabel=ylabel, xmode="datetime", datetime_format=local_axis.datetime_format,
-            x_breaks=local_breaks, **xy_kwargs)
+            x_breaks=local_breaks, x_vertical=vertical, **xy_kwargs)
     return [page + "_mjd", page + "_local"]
+
+
+# %% ===========================================================================
+#    VERTICAL TICK LABELS AND THE ROOM THEY NEED (0.0.31)
+# =============================================================================
+# Operator request (FitsAutoPlot, 2026-11-16): date-time and long-number tick
+# labels on an x axis are turned -90 degrees (vertical, reading downwards),
+# a date-time label is written on two lines - the date, then "T" and the
+# time - and every graph gets the margins its tick labels need, so Veusz
+# draws every major tick label.  Veusz text markup ends a line at "\\"
+# (VEUSZ_LINE_BREAK), the way Veusz's own automatic date formats split date
+# and time ('%VDY-%VDm-%VDd\\%VDH:%VDM') [R1: veusz/widgets/axisticks.py].
+#
+# Why labels went missing (Veusz 4.2.1, veusz/widgets/axis.py [R1]): an axis
+# draws its axis label FIRST and then each tick label only when it does not
+# overlap one already drawn (Axis._drawTextWithoutOverlap); the axis label is
+# kept inside the graph's cell (ensureInBox), so a margin too small for the
+# tick labels pushes the axis label over them and they are dropped, and
+# 45-degree 25-character ISO labels overlap their neighbours.  Measured on
+# the FitsAutoPlot 0.4.4 GBT tack output: 2 of 6 date labels drawn on each of
+# the 321 grid panels; 2 of 7 y labels dropped where the 1.7 cm default left
+# margin was too narrow for "-0.225" at 14 pt.
+#
+# Room between an axis and the edge of its graph's cell (Axis._drawTickLabels
+# and Axis._drawAxisLabel):
+#
+#     room = 2 s_t + E + s_l + H_l + pad
+#
+#     s_t        spacing of the tick-label font (leading + descent; 0.3 em)
+#     E          tick-label extent across the axis: the widest line of a
+#                label turned 90 degrees (or of a y-axis label), the line
+#                height times the number of lines of a level x label
+#     s_l, H_l   spacing and full height of the axis-label font (0.3, 1.2 em)
+#     pad        0.15 cm
+#
+# Widths are sums of per-character advance widths in em (_CHAR_EM): the
+# larger of Arial/Helvetica and Times/Liberation Serif for each character,
+# so the estimate is never below the drawn width (Veusz 4.2.1, 8 pt:
+# "T00:00:00-04:00" drawn 2.00 cm, estimated 2.07 cm; "1000000000" drawn
+# 1.49 cm, estimated 1.57 cm).
+#
+# Tick values are those Veusz itself chooses: veusz_ticks() is a port of
+# Veusz 4.2.1 AxisTicks (linear and log) and veusz_date_tick_count() of the
+# interval choice of DateTicks; veusz_number_text() of utils.formatNumber.
+
+#: (0.0.31) Rotation of a vertical x tick label: -90 reads downwards.  Veusz
+#: draws a horizontal axis's label at 360 - rotate degrees (axis.py), so -90
+#: turns the text 90 degrees clockwise (checked by rendering: 90 reads upwards).
+VERTICAL_TICK_ROTATE = -90
+#: (0.0.31) Font size of vertical x tick labels (two 8 pt lines are 0.65 cm wide).
+VERTICAL_TICK_SIZE = "8pt"
+#: (0.0.31) A numeric x label longer than this many characters is "long" and
+#: is turned vertical ("61349.25", "9999940", "1000000000"; not "-150", "2.5").
+LONG_TICK_LABEL_CHARS = 6
+#: (0.0.31) A level x label wider than this fraction of the tick spacing is
+#: turned vertical too (Veusz would drop its overlapping neighbours).
+TICK_FIT_FRACTION = 0.8
+#: (0.0.31) Veusz defaults used when a setting is not written: text size of
+#: tick and axis labels (pt), MajorTicks/number, graph margins and page size
+#: (cm) [R1: setting/collections.py, widgets/axis.py, graph.py, page.py].
+VEUSZ_TEXT_PT = 14.0
+VEUSZ_MAJOR_TICKS = 6
+VEUSZ_GRAPH_MARGINS_CM = {"leftMargin": 1.7, "rightMargin": 0.2, "topMargin": 0.2,
+                          "bottomMargin": 1.7}
+VEUSZ_GRID_MARGINS_CM = {"leftMargin": 1.7, "rightMargin": 0.2, "topMargin": 0.2,
+                         "bottomMargin": 1.7}
+VEUSZ_PAGE_CM = (15.0, 15.0)
+#: (0.0.31) Tick format that shows up to 12 significant digits: Veusz's
+#: automatic "%Vg" writes MJD 61349.25 as 6.134925x10^4.
+FULL_NUMBER_FORMAT = "%.12Vg"
+#: (0.0.31) Smallest plot area (width, height) in cm a fitted page keeps.
+MIN_PLOT_CM = (6.0, 4.0)
+#: (0.0.31) Veusz date format of an ISO-8601 date-time on two lines.
+ISO_DATETIME_FORMAT_2LINE = "%VDY-%VDm-%VDd\\\\T%VDH:%VDM:%VDS"
+# Character advance widths in em (see the section text); others: _EM_UPPER,
+# _EM_LOWER or _EM_OTHER.  "−" is the minus sign Veusz writes for "-"
+# in numbers; "×" the multiplication sign of x10^n.
+_CHAR_EM = dict({c: 0.556 for c in "0123456789"},
+                **{".": 0.278, ",": 0.278, ":": 0.278, ";": 0.278, " ": 0.278,
+                   "/": 0.278, "-": 0.333, "(": 0.333, ")": 0.333,
+                   "−": 0.584, "+": 0.584, "×": 0.584, "%": 0.889,
+                   "T": 0.611, "E": 0.667, "M": 0.889, "W": 0.944,
+                   "m": 0.833, "w": 0.722, "e": 0.556, "μ": 0.576})
+_EM_UPPER, _EM_LOWER, _EM_OTHER = 0.722, 0.556, 0.6
+_LINE_EM = 1.15          # height of one text line (ascent + descent + leading)
+_SPACE_EM = 0.3          # Veusz spacing next to a text block (leading + descent)
+_LABEL_EM = 1.2          # full height of the axis label (usefullheight=True)
+_ROOM_PAD_CM = 0.15      # extra room so rounding never clips a label
+_SCRIPT_SCALE = 0.7      # size of a ^{...} / _{...} part relative to the font
+_PT_CM = 2.54 / 72.0
+# Date codes followed by "T" or a space and then a time code: where
+# datetime_two_line() ends the first line.
+_DATE_TIME_SPLIT = re.compile(r"(%VD[djex])([T ])(%VD[HIlkX])")
+# Veusz's format-code pattern (veusz/utils/formatting.py _formatRE).
+_VEUSZ_CODE = re.compile(r"%([-0-9.+# ]*)(VDVS|VD.|V.|[A-Za-z%])")
+# Widest values for the sample text of a date format: September and
+# Wednesday are the longest English month and day names; digits are equal.
+_SAMPLE_DATETIME = _dt.datetime(2026, 9, 30, 23, 59, 59, 999000)
+# Veusz 4.2.1 DateTicks intervals (years, months, days, hours, minutes,
+# seconds, microseconds) and their automatic formats [R1: axisticks.py].
+_VEUSZ_DATE_INTERVALS = (
+    ((200, 0, 0, 0, 0, 0, 0), "%VDY"), ((100, 0, 0, 0, 0, 0, 0), "%VDY"),
+    ((50, 0, 0, 0, 0, 0, 0), "%VDY"), ((20, 0, 0, 0, 0, 0, 0), "%VDY"),
+    ((10, 0, 0, 0, 0, 0, 0), "%VDY"), ((5, 0, 0, 0, 0, 0, 0), "%VDY"),
+    ((2, 0, 0, 0, 0, 0, 0), "%VDY"), ((1, 0, 0, 0, 0, 0, 0), "%VDY"),
+    ((0, 6, 0, 0, 0, 0, 0), "%VDY-%VDm"), ((0, 4, 0, 0, 0, 0, 0), "%VDY-%VDm"),
+    ((0, 3, 0, 0, 0, 0, 0), "%VDY-%VDm"), ((0, 2, 0, 0, 0, 0, 0), "%VDY-%VDm"),
+    ((0, 1, 0, 0, 0, 0, 0), "%VDY-%VDm"),
+    ((0, 0, 28, 0, 0, 0, 0), "%VDY-%VDm-%VDd"), ((0, 0, 14, 0, 0, 0, 0), "%VDY-%VDm-%VDd"),
+    ((0, 0, 7, 0, 0, 0, 0), "%VDY-%VDm-%VDd"), ((0, 0, 2, 0, 0, 0, 0), "%VDY-%VDm-%VDd"),
+    ((0, 0, 1, 0, 0, 0, 0), "%VDY-%VDm-%VDd"),
+    ((0, 0, 0, 12, 0, 0, 0), "%VDY-%VDm-%VDd\\\\%VDH:%VDM"),
+    ((0, 0, 0, 6, 0, 0, 0), "%VDY-%VDm-%VDd\\\\%VDH:%VDM"),
+    ((0, 0, 0, 4, 0, 0, 0), "%VDY-%VDm-%VDd\\\\%VDH:%VDM"),
+    ((0, 0, 0, 3, 0, 0, 0), "%VDY-%VDm-%VDd\\\\%VDH:%VDM"),
+    ((0, 0, 0, 2, 0, 0, 0), "%VDH:%VDM"), ((0, 0, 0, 1, 0, 0, 0), "%VDH:%VDM"),
+    ((0, 0, 0, 0, 30, 0, 0), "%VDH:%VDM"), ((0, 0, 0, 0, 15, 0, 0), "%VDH:%VDM"),
+    ((0, 0, 0, 0, 10, 0, 0), "%VDH:%VDM"), ((0, 0, 0, 0, 5, 0, 0), "%VDH:%VDM"),
+    ((0, 0, 0, 0, 2, 0, 0), "%VDH:%VDM"), ((0, 0, 0, 0, 1, 0, 0), "%VDH:%VDM"),
+    ((0, 0, 0, 0, 0, 30, 0), "%VDH:%VDM:%VDS"), ((0, 0, 0, 0, 0, 15, 0), "%VDH:%VDM:%VDS"),
+    ((0, 0, 0, 0, 0, 10, 0), "%VDH:%VDM:%VDS"), ((0, 0, 0, 0, 0, 5, 0), "%VDH:%VDM:%VDS"),
+    ((0, 0, 0, 0, 0, 2, 0), "%VDH:%VDM:%VDS"), ((0, 0, 0, 0, 0, 1, 0), "%VDH:%VDM:%VDS"),
+    ((0, 0, 0, 0, 0, 0, 500000), "%VDH:%VDM:%VDVS"),
+    ((0, 0, 0, 0, 0, 0, 200000), "%VDVS"), ((0, 0, 0, 0, 0, 0, 100000), "%VDVS"),
+    ((0, 0, 0, 0, 0, 0, 50000), "%VDVS"), ((0, 0, 0, 0, 0, 0, 10000), "%VDVS"),
+)
+_VEUSZ_DATE_SECONDS = np.array([
+    us * 1e-6 + s + mi * 60 + hr * 3600 + dy * 86400 + mn * (365 / 12.0) * 86400 + yr * 365 * 86400
+    for (yr, mn, dy, hr, mi, s, us), _fmt in _VEUSZ_DATE_INTERVALS])
+
+
+def datetime_two_line(fmt: str) -> str:
+    """Veusz date format ``fmt`` with the time on a second line (0.0.31).
+
+    The line ends between the date and the time: "...%VDdT%VDH..." becomes
+    "...%VDd\\\\T%VDH..." (the "T" starts the time line, as ISO 8601 writes
+    it) and "...%VDd %VDH..." becomes "...%VDd\\\\%VDH...".  A format that
+    already holds a line break, has no date followed by a time, or is empty
+    is returned as it is.  ISO_DATETIME_FORMAT -> ISO_DATETIME_FORMAT_2LINE.
+    """
+    if not fmt or "\\\\" in fmt:
+        return fmt
+    match = _DATE_TIME_SPLIT.search(fmt)
+    if match is None:
+        return fmt
+    keep = "T" if match.group(2) == "T" else ""
+    return fmt[:match.start(2)] + "\\\\" + keep + fmt[match.end(2):]
+
+
+def tick_text_width_em(text: str) -> float:
+    """Width of the widest line of a tick label, in em of its font (0.0.31).
+
+    ``text`` may hold Veusz line breaks ("\\\\") and ^{...} / _{...} parts
+    (drawn at _SCRIPT_SCALE); every character counts with its _CHAR_EM width.
+    """
+    widest = 0.0
+    for line in str(text).split("\\\\"):
+        width, scale, index = 0.0, 1.0, 0
+        while index < len(line):
+            pair = line[index:index + 2]
+            if pair in ("^{", "_{"):
+                scale, index = _SCRIPT_SCALE, index + 2
+                continue
+            char = line[index]
+            index += 1
+            if char == "}":
+                scale = 1.0
+                continue
+            if char in ("{", "\\"):
+                continue
+            em = _CHAR_EM.get(char)
+            if em is None:
+                em = _EM_UPPER if char.isupper() else _EM_LOWER if char.islower() else _EM_OTHER
+            width += em * scale
+        widest = max(widest, width)
+    return widest
+
+
+def tick_text_lines(text: str) -> int:
+    """Number of lines of a tick label (Veusz "\\\\" line breaks) (0.0.31)."""
+    return str(text).count("\\\\") + 1
+
+
+def _sci_to_human(text: str, cleanup: bool = False) -> str:
+    """Port of veusz.utils.formatting.sciToHuman: "1.5e-06" -> "1.5x10^{-6}"."""
+    leader, exponent = text.split("e")
+    if cleanup and "." in leader:
+        leader = leader.rstrip("0").rstrip(".")
+    if leader == "1" and cleanup:
+        leader = ""
+    else:
+        leader += "×"
+    return "%s10^{%i}" % (leader, int(exponent))
+
+
+def _veusz_general(value: float, arg: str) -> str:
+    """Port of Veusz formatGeneral (%Vg) and formatSciNotation (%Ve)."""
+    if arg:
+        text = ("%" + arg + "g") % value
+        return _sci_to_human(text) if "e" in text else text
+    size = abs(value)
+    if size >= 1e4 or 1e-110 < size < 1e-2:
+        if not np.isfinite(value):
+            return str(value)
+        return _sci_to_human("%.10e" % value, cleanup=True)
+    return "%.10g" % value
+
+
+def veusz_number_text(value: float, fmt: str = FULL_NUMBER_FORMAT) -> str:
+    """Tick-label text Veusz writes for the number ``value`` with tick
+    format ``fmt`` (0.0.31; port of veusz.utils.formatting.formatNumber for
+    numbers: %Vg, %Ve, %VE, C formats; "Auto" is Veusz's %Vg).  Veusz
+    writes "-" as the minus sign U+2212 in its own V codes."""
+    fmt = "%Vg" if not fmt or fmt.lower() == "auto" else fmt
+    out, rest = [], fmt
+    while rest:
+        match = _VEUSZ_CODE.search(rest)
+        if match is None:
+            out.append(rest)
+            break
+        arg, kind = match.groups()
+        if kind[:1] == "V":
+            if kind == "Vg":
+                text = _veusz_general(value, arg)
+            elif kind == "Ve":
+                text = (_sci_to_human(("%" + arg + "e") % value) if arg
+                        else _sci_to_human("%.10e" % value, cleanup=True))
+            elif kind == "VE":
+                text = _veusz_engineering(value, arg)
+            else:                                   # a date code on a number axis
+                text = "0000"
+            text = text.replace("-", "−")
+        elif kind == "%":
+            text = "%"
+        else:
+            try:                                    # Veusz localeFormat: minus sign too
+                text = (("%" + arg + kind) % value).replace("-", "\u2212")
+            except (TypeError, ValueError):
+                text = "FormatError"
+        out.append(rest[:match.start()])
+        out.append(text)
+        rest = rest[match.end():]
+    return "".join(out)
+
+
+def _veusz_engineering(value: float, arg: str) -> str:
+    """Port of Veusz formatEngineering (%VE, SI suffixes)."""
+    suffixes = ("y", "z", "a", "f", "p", "n", "μ", "m", "", "k", "M", "G",
+                "T", "P", "E", "Z", "Y")
+    if value != 0.0:
+        logindex = math.log10(abs(value)) / 3.0
+        if logindex < 0.0 and (int(logindex) - logindex) > 1e-6:
+            logindex -= 1
+        logindex = min(max(logindex, -8), len(suffixes) - 9)
+        suffix = suffixes[int(logindex) + 8]
+        value = value / 10 ** (int(logindex) * 3)
+    else:
+        suffix = ""
+    return ("%" + arg + "g%s") % (value, suffix)
+
+
+def datetime_tick_texts(fmt: str) -> list[str]:
+    """Sample tick label of a Veusz date format (0.0.31), drawn with the
+    widest names (September, Wednesday); digits all have the same width, so
+    one sample stands for every tick.  "" or "Auto" stand for Veusz's
+    automatic formats; the longest of them is sampled."""
+    if not fmt or fmt.lower() == "auto":
+        fmt = "%VDY-%VDm-%VDd\\\\%VDH:%VDM"
+
+    def code(match: Any) -> str:
+        """The sample text of one Veusz %VD code (other codes unchanged)."""
+        arg, kind = match.groups()
+        if kind == "VDVS":
+            return ("%" + arg + "g") % (59.0 + 0.999)
+        if kind.startswith("VD"):
+            return _SAMPLE_DATETIME.strftime("%" + kind[2:]).replace("-", "−")
+        return match.group(0)
+    return [_VEUSZ_CODE.sub(code, fmt)]
+
+
+def veusz_ticks(minval: float, maxval: float, numticks: int = VEUSZ_MAJOR_TICKS,
+                extendmin: bool = False, extendmax: bool = False,
+                log: bool = False) -> tuple[np.ndarray, float, float]:
+    """Major tick values Veusz 4.2.1 puts on a numeric axis showing
+    ``minval`` .. ``maxval`` (0.0.31; port of veusz/widgets/axisticks.py
+    AxisTicks, prefermore=True).  ``extendmin``/``extendmax``: the "next-tick"
+    auto range.  Returns (ticks, axis minimum, axis maximum)."""
+    lo = max(min(float(minval), 1e100), -1e100)
+    hi = max(min(float(maxval), 1e100), -1e100)
+    if log:
+        lo, hi = math.log10(max(lo, 1e-99)), math.log10(max(hi, 1e-99))
+        allowed = (1.0, 3.0, 6.0, 9.0, 12.0, 15.0, 19.0)
+    else:
+        allowed = (1.0, 2.0, 2.5, 5.0)
+    if abs(lo - hi) < 1e-99:
+        hi = lo + 1.0
+        if hi == lo:
+            lo, hi = 0.0, 1.0
+
+    def count(interval: float, logstep: int) -> tuple[int, float, float]:
+        """Veusz _calcNoTicks: (ticks, min, max) for interval x 10^logstep."""
+        mn, mx = lo, hi
+        delta = interval * (10.0 ** logstep)
+        maxextend = (hi - lo) * 0.15
+        if extendmin and abs(math.modf(mn / delta)[0]) > 1e-8:
+            d = mn - math.floor(mn / delta) * delta
+            if d <= maxextend:
+                mn -= d
+        if extendmax and abs(math.modf(mx / delta)[0]) > 1e-8:
+            d = (math.floor(mx / delta) + 1.0) * delta - mx
+            if d <= maxextend:
+                mx += d
+        return (int(math.floor(mx / delta)) - int(math.ceil(mn / delta)) + 1, mn, mx)
+
+    selection = []
+    largest = 0
+    logstep = int(np.log10(hi - lo)) + 1
+    for _guard in range(400):
+        for interval in allowed:
+            no, mn, mx = count(interval, logstep)
+            selection.append((no, interval, logstep, mn, mx))
+            largest = max(largest, no)
+        if largest > numticks * 2:
+            break
+        logstep -= 1
+        if logstep < 0 and log:
+            break
+    best, minabs, mindelta = selection[0], 1e99, 1e99
+    for entry in selection:                     # Veusz _selectBestTickFromSelection
+        delta = entry[0] - numticks
+        if abs(delta) < minabs:
+            minabs, mindelta, best = abs(delta), delta, entry
+        if abs(delta) == minabs and delta > mindelta:
+            minabs, mindelta, best = abs(delta), delta, entry
+    _no, interval, logstep, mn, mx = best
+    step = interval * 10.0 ** logstep
+    ticks = np.arange(int(math.ceil(mn / step)), int(math.floor(mx / step)) + 1) * step
+    if log:
+        if interval == 1.0 and len(ticks) < 2:
+            low = int(math.floor(mn))
+            extra = [low + math.log10(m) for m in (2.0, 5.0, 20.0, 50.0)
+                     if mn <= low + math.log10(m) <= mx]
+            ticks = np.concatenate((ticks, np.array(extra)))
+        return 10.0 ** ticks, 10.0 ** mn, 10.0 ** mx
+    return ticks, mn, mx
+
+
+def _veusz_datetime(value: float) -> _dt.datetime:
+    """Port of veusz.utils.dates.floatToDateTime (Veusz seconds -> datetime)."""
+    days = int(value / 24 / 60 / 60)
+    frac, sec = math.modf(value - days * 24 * 60 * 60)
+    try:
+        return _dt.timedelta(days, sec, frac * 1e6) + VEUSZ_EPOCH
+    except OverflowError:
+        return _dt.datetime(8000, 1, 1)
+
+
+def _veusz_seconds(stamp: _dt.datetime) -> float:
+    """Port of veusz.utils.dates.datetimeToFloat (datetime -> Veusz seconds)."""
+    delta = stamp - VEUSZ_EPOCH
+    return delta.days * 24 * 60 * 60 + (delta.seconds + delta.microseconds * 1e-6)
+
+
+def _veusz_round_down(stamp: _dt.datetime, step: Sequence[int]) -> _dt.datetime:
+    """Port of veusz.utils.dates.roundDownToTimeTuple (as a datetime)."""
+    parts = [stamp.year, stamp.month, stamp.day, stamp.hour, stamp.minute,
+             stamp.second, stamp.microsecond]
+    index = 6
+    while index >= 0 and step[index] == 0:
+        parts[index] = 1 if index in (1, 2) else 0
+        index -= 1
+    if index in (1, 2):
+        parts[index] = ((parts[index] - 1) // step[index]) * step[index] + 1
+    else:
+        parts[index] = (parts[index] // step[index]) * step[index]
+    return _dt.datetime(*parts)
+
+
+def _veusz_add(stamp: _dt.datetime, step: Sequence[int], sign: int = 1) -> _dt.datetime:
+    """Port of veusz.utils.dates.addTimeTupleToDateTime (``sign`` -1 subtracts)."""
+    stamp = stamp + sign * _dt.timedelta(days=step[2], hours=step[3], minutes=step[4],
+                                         seconds=step[5], microseconds=step[6])
+    stamp = stamp.replace(year=stamp.year + sign * step[0])
+    for _month in range(step[1]):
+        month, year = stamp.month + sign, stamp.year
+        if month == 13:
+            month, year = 1, year + 1
+        elif month == 0:
+            month, year = 12, year - 1
+        stamp = stamp.replace(year=year, month=month)
+    return stamp
+
+
+def veusz_date_ticks(minval: float, maxval: float, numticks: int = VEUSZ_MAJOR_TICKS,
+                     extendmin: bool = False, extendmax: bool = False
+                     ) -> tuple[np.ndarray, str, float, float]:
+    """(major tick values, automatic format, axis minimum, axis maximum)
+    Veusz 4.2.1 puts on a date axis from ``minval`` to ``maxval`` Veusz
+    seconds (0.0.31; port of veusz/widgets/axisticks.py
+    DateTicks.bestTickFinder; ``extendmin``/``extendmax``: "next-tick")."""
+    minval, maxval = float(minval), float(maxval)
+    span = maxval - minval
+    estimated = span / _VEUSZ_DATE_SECONDS
+    first = max(int(estimated.searchsorted(numticks)) - 1, 0)
+    second = min(first + 1, len(estimated) - 1)
+    best = first if abs(estimated[first] - numticks) < abs(estimated[second] - numticks) else second
+    step, fmt = _VEUSZ_DATE_INTERVALS[best]
+    try:
+        mindate, maxdate = _veusz_datetime(minval), _veusz_datetime(maxval)
+        minround, maxround = _veusz_round_down(mindate, step), _veusz_round_down(maxdate, step)
+        mintick = minround if minround == mindate else _veusz_add(minround, step)
+        maxtick = maxround
+        below = _veusz_seconds(mindate) - _veusz_seconds(mintick)
+        if extendmin and below != 0.0 and below < span * 0.15:
+            mindate = mintick = _veusz_add(minround, step, -1)
+        above = _veusz_seconds(maxdate) - _veusz_seconds(maxtick)
+        if extendmax and above != 0.0 and above < span * 0.15:
+            maxdate = maxtick = _veusz_add(maxtick, step)
+        ticks = []
+        stamp = mintick
+        while stamp <= maxtick and len(ticks) < 10000:
+            ticks.append(_veusz_seconds(stamp))
+            stamp = _veusz_add(stamp, step)
+        low, high = _veusz_seconds(mindate), _veusz_seconds(maxdate)
+    except (OverflowError, ValueError):          # outside datetime's years
+        ticks = list(np.linspace(minval, maxval, int(numticks)))
+        low, high = minval, maxval
+    return np.array(ticks), fmt, low, high
+
+
+def veusz_date_tick_count(minval: float, maxval: float,
+                          numticks: int = VEUSZ_MAJOR_TICKS) -> tuple[int, str]:
+    """(number of major ticks, automatic format) of a Veusz date axis from
+    ``minval`` to ``maxval`` Veusz seconds, not extended (0.0.31)."""
+    ticks, fmt, _low, _high = veusz_date_ticks(minval, maxval, numticks)
+    return int(len(ticks)), fmt
+
+
+def _segments(lo: float, hi: float, breaks: Sequence[float]) -> list[tuple[float, float]]:
+    """(start, stop) of each part of an axis broken at ``breaks`` (flat
+    start, stop pairs, as Veusz breakPoints; pairs outside lo..hi ignored)."""
+    points = sorted(float(v) for v in breaks)
+    inside = []
+    for index in range(0, len(points) // 2 * 2, 2):
+        if points[index] >= lo and points[index + 1] <= hi:
+            inside += [points[index], points[index + 1]]
+    edges = [lo] + inside + [hi]
+    return [(edges[2 * i], edges[2 * i + 1]) for i in range(len(edges) // 2)]
+
+
+@dataclass(frozen=True)
+class TickRoom:
+    """Tick labels of one axis and the room they need (0.0.31); see
+    axis_tick_room()."""
+    texts: tuple                 # estimated tick labels ("\\\\" between lines)
+    vertical: bool               # x labels turned VERTICAL_TICK_ROTATE degrees
+    size_pt: float               # tick-label font size the room is worked out for
+    extent_cm: float             # widest label across the axis
+    along_cm: float              # label size along the axis
+    room_cm: float               # cell margin the labels and axis label need; 0 = unknown
+    ticks: int                   # most major ticks in one part of the axis
+    min_length_cm: float         # shortest axis that shows every label apart
+    settings: dict               # axis settings to write {path relative to the axis: value}
+
+
+def axis_tick_room(direction: str = "horizontal", mode: str = "numeric", *,
+                   data_range: Any = None, tick_format: str = "", log: bool = False,
+                   axis_length_cm: float | None = None, label: str = "",
+                   label_size_pt: float = VEUSZ_TEXT_PT, tick_size_pt: float | None = None,
+                   autorange: str = "next-tick", axis_min: Any = "Auto", axis_max: Any = "Auto",
+                   breaks: Sequence[float] = (), major_ticks: int = VEUSZ_MAJOR_TICKS,
+                   rotate: Any = None, vertical: bool | None = None) -> TickRoom:
+    """Tick labels of an axis, whether an x axis's labels go vertical, and
+    the margin they need (0.0.31).
+
+    Parameters
+    ----------
+    direction:
+        "horizontal" (an x axis at the bottom) or "vertical" (a y axis at the left).
+    mode:
+        Veusz axis mode, "numeric" or "datetime" (dates in Veusz seconds).
+    data_range:
+        (min, max) of the data drawn on the axis; None = unknown.  A
+        numeric axis with an unknown range gets room only when ``vertical``
+        is True (for 10 digits); a date axis always (its format fixes the
+        label length).
+    tick_format:
+        TickLabels/format ("" or "Auto" = Veusz's automatic format).
+    log, autorange, axis_min, axis_max, breaks, major_ticks:
+        The axis settings log, autoRange, min, max, breakPoints and
+        MajorTicks/number, so the tick values are those Veusz draws.
+    axis_length_cm:
+        Length of the axis on the page (cm), if known: then a part of a
+        broken (or a short) axis gets fewer ticks (MajorTicks/number) until
+        every label fits, and a level x label wider than TICK_FIT_FRACTION of
+        the tick spacing goes vertical.
+    label, label_size_pt:
+        The axis label (empty = none) and its font size.
+    tick_size_pt:
+        Tick-label font size set by the caller; None = VERTICAL_TICK_SIZE for
+        vertical labels, else Veusz's 14 pt.
+    rotate:
+        TickLabels/rotate set by the caller: kept, and the room follows it.
+    vertical:
+        None = automatic (an x date-time axis, or numeric labels longer than
+        LONG_TICK_LABEL_CHARS, go vertical); True / False = always / never.
+        Ignored for y axes.
+
+    Returns a TickRoom: ``settings`` are what to write on the axis (rotate,
+    size, the two-line date format, MajorTicks/number), empty when nothing
+    changes; ``room_cm`` the margin (0 when the labels are unknown).
+    """
+    horizontal = direction != "vertical"
+    dated = mode == "datetime"
+    fmt = tick_format or ""
+    auto_fmt = fmt.lower() in ("", "auto")
+    numticks = int(major_ticks or VEUSZ_MAJOR_TICKS)
+    known = data_range is not None
+    if known:
+        try:
+            lo, hi = sorted(float(v) for v in data_range)
+            known = bool(np.isfinite(lo) and np.isfinite(hi)) and not (log and hi <= 0)
+        except (TypeError, ValueError):
+            known = False
+    auto_lo, auto_hi = axis_min in ("Auto", None), axis_max in ("Auto", None)
+    extend_lo = extend_hi = False
+    if known:                           # the plotted range, as Veusz finds it
+        lo = lo if auto_lo else float(axis_min)
+        hi = hi if auto_hi else float(axis_max)
+        lo, hi = min(lo, hi), max(lo, hi)
+        if autorange == "next-tick":
+            extend_lo, extend_hi = auto_lo, auto_hi
+        elif autorange not in ("exact", "", None) and not log:
+            match = re.fullmatch(r"\s*\+?(\d+(?:\.\d+)?)\s*%\s*", str(autorange))
+            if match:
+                grow = (hi - lo) * float(match.group(1)) * 0.01
+                lo, hi = lo - (grow if auto_lo else 0.0), hi + (grow if auto_hi else 0.0)
+        if log and lo <= 0:
+            lo = hi / 1e3
+    explicit = None if rotate in (None, "") else int(float(rotate))
+    if not horizontal:
+        is_vertical = False
+    elif explicit is not None:
+        is_vertical = abs(explicit) == 90
+    elif vertical is not None:
+        is_vertical = bool(vertical)
+    else:
+        is_vertical = dated                  # numeric: decided from the labels below
+
+    def drawn_format() -> str:
+        """The date format as drawn: two lines when the x labels are vertical."""
+        return datetime_two_line(fmt) if (dated and is_vertical) else fmt
+
+    def labels_for(n_ticks: int) -> tuple[list[str], int, int]:
+        """(label texts, most ticks in one part, parts) with MajorTicks/number n."""
+        if not known:
+            if dated:
+                return datetime_tick_texts(drawn_format()), n_ticks, 1
+            return (["0000000000"] if (horizontal and is_vertical) else []), n_ticks, 1
+        a, b = lo, hi
+        pieces = _segments(a, b, breaks)
+        if len(pieces) > 1:
+            # Veusz extends the whole range to the next tick first, then
+            # ticks every part of a broken axis without extending it.
+            if dated:
+                _t, _f, a, b = veusz_date_ticks(a, b, n_ticks, extend_lo, extend_hi)
+            else:
+                _t, a, b = veusz_ticks(a, b, n_ticks, extend_lo, extend_hi, log=log)
+            pieces = _segments(a, b, breaks)
+        found, most = [], 0
+        for start, stop in pieces:
+            one = len(pieces) == 1
+            if dated:
+                ticks, auto, _a, _b = veusz_date_ticks(start, stop, n_ticks,
+                                                       extend_lo and one, extend_hi and one)
+                count = len(ticks)
+                found += datetime_tick_texts(auto if auto_fmt else drawn_format())
+            else:
+                ticks, _a, _b = veusz_ticks(start, stop, n_ticks, extend_lo and one,
+                                            extend_hi and one, log=log)
+                count = len(ticks)
+                found += [veusz_number_text(float(v), fmt or "Auto") for v in ticks]
+            most = max(most, count)
+        return found, most, len(pieces)
+
+    texts, most, n_parts = labels_for(numticks)
+    if horizontal and explicit is None and vertical is None and not dated and texts and not log:
+        longest = max(len(re.sub(r"[\^_]\{|\}", "", t)) for t in texts)
+        is_vertical = longest > LONG_TICK_LABEL_CHARS
+        texts, most, n_parts = labels_for(numticks)
+
+    def font_pt() -> float:
+        """Tick font size: the caller's, else 8 pt vertical / 14 pt level."""
+        if tick_size_pt:
+            return float(tick_size_pt)
+        return float(VERTICAL_TICK_SIZE[:-2]) if is_vertical else VEUSZ_TEXT_PT
+
+    def measure(labels: Sequence[str]) -> tuple[float, float]:
+        """(extent across the axis, size along it) of the largest label, cm."""
+        em_cm = font_pt() * _PT_CM
+        width = max((tick_text_width_em(t) for t in labels), default=0.0) * em_cm
+        height = max((tick_text_lines(t) for t in labels), default=1) * _LINE_EM * em_cm
+        if not horizontal:
+            return width, height
+        if explicit is not None and abs(explicit) not in (0, 90, 180):
+            slant = (width + height) * 0.7071           # 45 / 135 degrees
+            return slant, slant
+        return (width, height) if is_vertical else (height, width)
+
+    def part_length(parts: int) -> float:
+        """Length of one part of a broken axis (Veusz leaves 5 % per break)."""
+        return float(axis_length_cm) * (1.0 - 0.05 * (parts - 1)) / max(parts, 1)
+
+    extent, along = measure(texts)
+    if (horizontal and not is_vertical and explicit is None and vertical is None and texts
+            and axis_length_cm and most > 1 and known
+            and along > TICK_FIT_FRACTION * part_length(n_parts) / (most - 1)):
+        is_vertical = True                 # level labels would overlap: turn them
+        texts, most, n_parts = labels_for(numticks)
+        extent, along = measure(texts)
+    chosen = numticks
+    if known and axis_length_cm and texts:
+        while chosen > 2 and most > 1 and part_length(n_parts) / (most - 1) < along * 1.2:
+            chosen -= 1                    # fewer ticks until the labels fit
+            texts, most, n_parts = labels_for(chosen)
+            extent, along = measure(texts)
+    size = font_pt()
+    room = 0.0
+    min_length = 0.0
+    if texts:
+        em_label = float(label_size_pt) * _PT_CM
+        room = (2 * _SPACE_EM * size * _PT_CM + extent + _ROOM_PAD_CM
+                + ((_SPACE_EM + _LABEL_EM) * em_label if label else 0.0))
+        min_length = (max(most - 1, 1) * along * 1.2 + along) * max(n_parts, 1)
+    settings: dict[str, Any] = {}
+    if horizontal and is_vertical:
+        if explicit is None:
+            settings["TickLabels/rotate"] = str(VERTICAL_TICK_ROTATE)
+        if not tick_size_pt:
+            settings["TickLabels/size"] = VERTICAL_TICK_SIZE
+        if dated and not auto_fmt and datetime_two_line(fmt) != fmt:
+            settings["TickLabels/format"] = datetime_two_line(fmt)
+    if chosen != numticks:
+        settings["MajorTicks/number"] = int(chosen)
+    return TickRoom(tuple(texts), bool(horizontal and is_vertical), size, extent, along,
+                    room, most, min_length, settings)
+
+
+def margin_text(cm: float) -> str:
+    """A Veusz distance in cm, rounded UP to 0.05 cm so it is never too small
+    ("2.65cm") (0.0.31)."""
+    return "%gcm" % (math.ceil(round(float(cm) * 20.0, 6)) / 20.0)
 
 
 # %% ===========================================================================

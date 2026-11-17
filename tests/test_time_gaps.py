@@ -25,6 +25,23 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.2: The local date-time format is on two lines, rotate -90.
+Date: 2026-11-16
+#              * test_line_breaks_one_axis expects "%VDY-%VDm-%VDd\\\\T..."
+#                and TickLabels/rotate "-90" (vszh5_writer 0.0.31).
+# %%%%% Function Descriptions
+        GapHelpers (class): vszh5_writer 0.0.27: thresholds are multiples of the median step.
+        _graph: Add a page with a graph, an x axis labelled ``label`` and one xy trace per name in ``y_names``; return the graph.
+        TimeLayoutPass (class): _autoplot_native 0.5.0: every MJD axis becomes a local date-time axis.
+        FitsReader (class): FITS AutoPlot 0.4.0: padding rows, full headers, page order.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        ROOT = Path(__file__).resolve().parents[1]
+# %%%%% More Info
+    Run:  python -m unittest discover -s tests
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.1: First tests (from the UWBR, tack and 1PPS files of 2026-11-09).
 Date: 2026-11-09
 # %%%%% Function Descriptions
@@ -147,7 +164,9 @@ class TimeLayoutPass(unittest.TestCase):
         self.assertEqual(int(np.isnan(x).sum()), 50)       # 49 slow steps + the 1 s -> 60 s jump
         self.assertEqual(axis.kind, "axis")
         self.assertEqual(axis.settings["mode"], "datetime")
-        self.assertEqual(axis.settings["TickLabels/format"], "%VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00")
+        # 0.0.2: on two lines (vertical labels, vszh5_writer 0.0.31)
+        self.assertEqual(axis.settings["TickLabels/format"], "%VDY-%VDm-%VDd\\\\T%VDH:%VDM:%VDS-05:00")
+        self.assertEqual(axis.settings["TickLabels/rotate"], "-90")
         self.assertEqual(axis.settings["label"], "Local time (ISO 8601, UTC-05:00)")
         # stored data unchanged
         self.assertEqual(doc.datasets["ds__T1__sorted"][1]["data"].size, 350)

@@ -32,6 +32,122 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.5: Date-time x axes turned -90 degrees (vertical, reading downwards).
+Date: 2026-11-16
+#              * DEFAULT_DATETIME_TICK_ROTATE_DEG 45 -> -90
+#                (style_datetime_x_axis, configure_axis_datetime_mode); the
+#                native save writes the label on two lines and fits the
+#                margins (_autoplot_native 0.5.5).  At 45 degrees 2 of 6 ISO
+#                labels were drawn on each GBT tack grid panel.
+# %%%%% Function Descriptions
+        make_dark_palette: Return a Fusion-style dark palette.
+        make_light_palette: Return a default light palette (style standard).
+        apply_theme: Apply the suite's 'dark' or 'light' palette to the running QApplication (standalone windows only - plugins style their own dialog instead).
+        suite_theme: Theme stored for the whole suite (launcher and tools).
+        store_suite_theme: Save ``mode`` ('dark' or 'light') as the suite-wide theme.
+        MemoryMonitorConfig (class): Configuration knobs for the memory monitor.
+        MemoryAwareCache (class): Memory-aware data cache that spills large numpy arrays to disk via ``numpy.memmap``.
+        MemoryMonitor (class): Background thread that publishes a callback whenever process RSS crosses the high-water mark.
+        run_in_threadpool: Submit ``work_items`` -- ``(key, fn, args)`` triplets -- to a ``ThreadPoolExecutor`` and collect results keyed by ``key``.
+        open_embedded: Legacy function name; return a native model, never launch Veusz.
+        begin_native_plugin_export: Pick an output file before parsing; never modify the host document.
+        finish_native_plugin_export: Same HDF5 writer for both plugin entry points and standalone GUIs.
+        save_vszh5: Atomically write the native model with h5py; no Veusz runtime needed.
+        _walk_widget_tree: Recursive sibling of ``Root.WalkWidgets``.
+        _collect_referenced_dataset_names_via_walk: Original (v0.0.17) WalkWidgets-based traversal.
+        _collect_referenced_dataset_names_via_text: v0.0.19 authoritative collector: dump the document via Veusz's own text serialization and regex out every ``Set('xData', 'name')``-style binding.
+        _collect_referenced_dataset_names: v0.0.19: combine WalkWidgets-based traversal AND a document-text scan, returning the UNION of both whitelists.
+        save_vszh5_minimized: Save exactly the referenced native datasets without deleting anything.
+        _norm_tag_token: Lower-cased, stripped string form of a tag-tuple element.
+        is_sentinel_tag_tuple: Return True iff ``tup`` is a placeholder/catch-all channel-tag tuple that should be EXCLUDED from dt-overlay datetime emission.
+        is_delta_column: Deprecated stub kept for v0.0.17 back-compat.
+        open_in_veusz_app: Launch an optional external Veusz GUI and load ``filename`` (typically a .vszh5 project just written by save_vszh5).
+        detect_time_breaks: Detect large gaps in a 1-D monotonic-ish array of time samples and return a list of (start, end) pairs suitable for Veusz's ``axis-broken`` widget.
+        column_unit_factor_from_day: Return the multiplier that converts a day-scale threshold into the units of the column named ``col_name``.
+        detect_time_breaks_unit_aware: Unit-aware wrapper around ``detect_time_breaks``.
+        break_pairs_to_breakpoints: Flatten a list of (start, end) tuples to Veusz's flat-list format [s1, e1, s2, e2, ...] as expected by the ``breakPoints`` setting of the ``axis-br...
+        make_broken_x_axis: Add an ``axis-broken`` widget named ``x`` to ``graph`` with the given list of (start, end) break pairs, after removing the default ``x`` axis that...
+        mjd_to_veusz_seconds: Convert an array of Modified Julian Dates (UTC) to the float-seconds units Veusz uses internally for date-time datasets.
+        _coerce_axis_setting_to_str: Some Veusz axis settings (rotate, in particular) are documented as accepting either an int or its string form.
+        style_datetime_x_axis: Apply the standard datetime tick-label format and angled rotation to an axis widget.
+        is_gpu_available: True when a GPU back end (CuPy CUDA/ROCm or PyOpenCL) found a device.
+        gpu_backend_name: Short string describing the GPU back end (or why there is none) for the GUI/log.
+        enable_gpu: Toggle the process-wide GPU acceleration flag.
+        gpu_enabled: Return the current global GPU-enabled state.
+        set_gpu_argsort_threshold: Set the minimum array size (samples) at which the GPU sort is used.
+        get_gpu_argsort_threshold: Minimum array size (samples) for the GPU argsort path.
+        gpu_tooltip: Tooltip of a GPU checkbox: the device found (or why none), the size threshold of ``operation`` and the install hints for NVIDIA and AMD.
+        gpu_usage_text: GPU and CPU calls of each GPU-capable operation since reset_gpu_usage().
+        reset_gpu_usage: Start counting GPU and CPU calls again (at the start of a batch).
+        gpu_argsort: Return ``np.argsort(arr, kind="stable")`` (ascending, int64) with optional GPU acceleration (NVIDIA or AMD; see _autoplot_gpu).
+        ProgressThrottle (class): Rate limit for progress-bar updates (0.4.1).
+        AutoPlotMainWindow (class): Base main window mirroring the layout used by Touchstone_AutoPlot.py:
+        open_maybe_gzipped: Return a binary file handle for ``path``; transparently gunzip *.gz.
+        mjd_to_datestr: Convert an array of Modified Julian Dates (UTC, double precision) into an array of formatted timestamp strings, with every digit of the time.
+        dataset_kinds: Type kinds of a FITS / Franks AutoPlot dataset, read from its name.
+        document_dataset_names: Every dataset name of a NativeDocument or a Veusz document.
+        tag_named_datasets: Tag FITS / Franks datasets: ``sources`` plus the kinds of each name (dataset_kinds); text datasets also get ``type_text``.
+        register_nrao_fits_units: Register the non-standard NRAO FITS unit aliases with astropy.units so that ``QTable.read`` / ``Table.read`` no longer emit a UnitsWarning.
+        suppress_fits_unit_warnings: Context manager that filters the harmless FITS unit-related warnings emitted by ``astropy.io.fits`` and ``astropy.table`` when reading NRAO 1PPS-de...
+        set_datetime_dataset: Push a Veusz datetime dataset, coercing values to plain floats.
+        safe_dsname: Sanitize an arbitrary string for use as a Veusz dataset name.
+        _stable_index: Deterministic non-negative index in ``[0, modulus)``.
+        trace_style_for: Return ``(color_hex, line_style_str)`` for an identity key.
+        apply_trace_style: Apply identity-stable color + line style + markers to a Veusz xy.
+        build_sparse_datestr_dataset: Push a same-length sparse date-string text dataset to Veusz.
+        build_full_datestr_dataset: Push a same-length per-point date-string text dataset to Veusz.
+        style_xy_datetime_labels: Apply rotated, compact text formatting to an xy widget's labels.
+        build_density_datestr_dataset: Push a same-length date-string text dataset with continuous density.
+        build_textx_dataset: Push a same-length per-point date-string text dataset for use as xData.
+        configure_axis_labels_mode: Switch a Veusz axis to ``mode='labels'`` with sensible defaults.
+        build_dtnum_dataset: Push a numeric Veusz-datetime-seconds dataset for use as xData.
+        configure_axis_datetime_mode: Switch a Veusz x axis to ``mode='datetime'`` and style its ticks.
+        mjd_break_pairs_to_dtsec: Convert MJD (start, end) gap pairs to Veusz datetime-seconds pairs.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _DATASET_REF_SETTINGS: v0.0.19: trimmed the tuple to entries that *actually* hold dataset names.  ``posn`` is a position rectangle, ``key`` is a legend-label STRING -- ne...
+        _DOC_DATASET_REF_REGEX: v0.0.19: regex used to extract dataset references from the document's own saved-text representation.  This is the AUTHORITATIVE source of truth --...
+        SENTINEL_TAG_TOKENS: The user can extend the sentinel set in place; the predicate is case-insensitive and trims whitespace before matching.
+        DELTA_COLUMN_NAME_PATTERNS: Deprecated column-name predicate -- retained as a no-op for any external script that may have imported it.  v0.0.17 superseded this with the tuple-...
+        DAY_SCALE_COLUMN_NAMES: Unknown column names default to 1.0 (i.e. assume MJD-day units), which is the safe choice when the column appears to be a generic time axis: a too-...
+        SECOND_SCALE_COLUMN_NAMES: column names whose values are seconds (time axes)
+        MJD_VEUSZ_EPOCH_MJD: MJD that corresponds to Veusz's internal date-time zero (2009-01-01 UTC).
+        DEFAULT_DATETIME_TICK_FORMAT: 0.3.0: ISO 8601
+        LOCAL_TIME_AXIS_LABEL: 0.3.0: label of a local date-time axis (the offset is appended on save).
+        DEFAULT_DATETIME_TICK_ROTATE_DEG: Default tick label rotation.  0.4.5: -90 (vertical, reading downwards; vszh5_writer 0.0.31 LOCAL_DATETIME_ROTATE): on save the native project write...
+        DEFAULT_DATETIME_MAJOR_TICKS_TARGET: Target number of major ticks along the x axis.  Veusz auto-picks the spacing to satisfy roughly this many major ticks; we keep it modest so the rot...
+        QUEUED_CONNECTION: queued signal connection, valid for PySide6, PyQt5 and PyQt6
+        MJD_EPOCH_JD_OFFSET: Modified Julian Date epoch: MJD 0.0 == 1858-11-17 00:00:00 UTC. JD = MJD + 2400000.5  -- we implement the conversion directly without astropy.time...
+        _NAME_KINDS: (name suffix, type kinds) of FITS / Franks dataset names, longest first
+        _NRAO_UNITS_REGISTERED: NRAO 1PPS-delta FITS files use non-standard FITS unit strings: * CHANNELA / CHANNELB carry unit='none'  (text columns, no real unit) * DELTAT  carr...
+        TRACE_COLOR_PALETTE: trace colours, cycled
+        TRACE_LINE_STYLES: line styles cycled after the colours
+        TRACE_STYLE_VARY_THRESHOLD: 16
+        DEFAULT_DATETIME_LABEL_ANCHORS: legacy date-label pages: labels per trace
+        DEFAULT_DATETIME_LABEL_ANGLE: legacy date-label pages: label angle (degrees)
+        DEFAULT_DATETIME_LABEL_SIZE: legacy date-label pages: label font size
+        DEFAULT_DATETIME_LABEL_FMT: legacy date-label pages: strftime format
+        PYQTGRAPH_ERROR = None
+        _PSUTIL_AVAILABLE = True
+# %%%%% More Info
+    Shared by FITS and Franks AutoPlot and their plugins.  numpy.memmap is
+    the RAM -> disk transport of MemoryAwareCache (no pickling, the kernel page
+    cache does the writing).  The memory monitor runs in its own thread: its
+    callback must not touch Qt widgets (log() is safe).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.4: Clear forgets everything; added files join the kept data.
 Date: 2026-11-16
 #              * Clear (button and File menu) used to empty the file list
@@ -1225,7 +1341,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.4.4"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.4.5"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -2415,10 +2531,13 @@ MJD_VEUSZ_EPOCH_MJD = 54832.0
 DEFAULT_DATETIME_TICK_FORMAT = "%VDY-%VDm-%VDdT%VDH:%VDM:%VDS"   # 0.3.0: ISO 8601
 # 0.3.0: label of a local date-time axis (the offset is appended on save).
 LOCAL_TIME_AXIS_LABEL = "Local time"
-# Default tick label rotation -- 45 degrees keeps a 19-character label
-# readable at typical cadences.  Veusz accepts integer or stringified
-# integer degrees ("45" or 45 both work).
-DEFAULT_DATETIME_TICK_ROTATE_DEG = 45
+# Default tick label rotation.  0.4.5: -90 (vertical, reading downwards;
+# vszh5_writer 0.0.31 LOCAL_DATETIME_ROTATE): on save the native project
+# writes the date-time on two lines (date, then "T" + time) and gives the
+# graph the margin its labels need (_autoplot_native._fit_page).  Until
+# 0.4.4: 45 degrees, at which 25-character ISO labels overlapped (2 of 6
+# drawn on the GBT tack grids).  Veusz accepts "-90" or -90.
+DEFAULT_DATETIME_TICK_ROTATE_DEG = -90
 # Target number of major ticks along the x axis.  Veusz auto-picks the
 # spacing to satisfy roughly this many major ticks; we keep it modest so
 # the rotated date strings have room to breathe.

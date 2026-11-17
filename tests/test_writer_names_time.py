@@ -22,6 +22,21 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.0.3: The local date-time format is on two lines, rotate -90.
+Date: 2026-11-16
+#              * test_native_axis_resolved_on_save expects the two-line
+#                format and TickLabels/rotate "-90" (vszh5_writer 0.0.31).
+# %%%%% Function Descriptions
+        WriterNamesAndNotes (class): Names and notes made by the writer's page helpers.
+        LocalDateTimes (class): UTC Veusz date datasets shown on the processing computer's clock.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        ROOT: repository folder
+# %%%%% More Info
+    Run:  python -m unittest discover -s tests
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.0.2: Header template, Spyder cells; docstrings for every test.
 Date: 2026-11-09
 # %%%%% Function Descriptions
@@ -143,8 +158,9 @@ class LocalDateTimes(unittest.TestCase):
         xy = graph.children[-1]
         self.assertEqual(xy.name, "level")
         self.assertEqual(xy.settings["xData"], "t_utc_local")
-        self.assertEqual(graph.x.settings["TickLabels/format"],
-                         "%VDY-%VDm-%VDdT%VDH:%VDM:%VDS-05:00")
+        self.assertEqual(graph.x.settings["TickLabels/format"],          # 0.0.3: two lines
+                         "%VDY-%VDm-%VDd\\\\T%VDH:%VDM:%VDS-05:00")
+        self.assertEqual(graph.x.settings["TickLabels/rotate"], "-90")
         self.assertEqual(graph.x.settings["label"], "Local time (ISO 8601, UTC-05:00)")
         self.assertEqual(doc.datasets["t_utc"][0], "date")
         self.assertEqual(doc.datasets["t_utc_local"][0], "date")

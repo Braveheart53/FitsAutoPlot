@@ -1,7 +1,11 @@
 # FitsAutoPlot suite — requirements and tested environments
 
-Revision 0.2.3 (2026-11-16). Applies to the 2026-11-16 suite (FITS / Franks AutoPlot 0.4.4,
-R&S 1.1.6, ATR 0.2.6, CSV/TSV 6.1.5, Touchstone 0.7.5, writer 0.0.30). 0.2.3: Clear gives the memory
+Revision 0.2.4 (2026-11-16). Applies to the 2026-11-16 suite 0.4.5 (FITS / Franks AutoPlot 0.4.4,
+R&S 1.1.6, ATR 0.2.6, CSV/TSV 6.1.6, Touchstone 0.7.5, writer 0.0.31, `_autoplot_native` 0.5.5,
+`_autoplot_common` 0.4.5, `_autoplot_pyqtgraph` 0.3.5). 0.2.4: the vertical tick labels need no new
+or changed packages (the label sizes are worked out without Qt or Veusz; Veusz 4.2.1 only for the
+render checks); 133 unit tests pass on Python 3.8.20, 3.12.3 and 3.13.18. The Plots tab's
+two-line date ticks were checked with pyqtgraph 0.13.3 (Python 3.8) and 0.14.0 (3.12, 3.13). 0.2.3: Clear gives the memory
 back to the operating system with the C library already present (glibc `malloc_trim` on Linux;
 `ucrtbase` / `kernel32` on Windows, through `ctypes`): no new packages; psutil, when installed,
 reads the RSS shown in the log. 0.2.2: no new or changed packages for the gap options; 109 unit tests pass on Python 3.8.20, 3.12 and 3.13 (Veusz 4.2.1
