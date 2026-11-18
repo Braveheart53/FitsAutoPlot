@@ -1525,3 +1525,309 @@ shows in every tool and in both plugin dialogs (default 80 %), and every new wid
 | [67] | Microsoft, "GlobalMemoryStatusEx function (sysinfoapi.h)," *Win32 API*, Microsoft Learn. [Online]. Available: https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex |
 | [68] | Python Software Foundation, "pickle - Python object serialization," *Python 3.12 Documentation* (protocol 5, PEP 574; security warning). [Online]. Available: https://docs.python.org/3.12/library/pickle.html |
 | [69] | Python Software Foundation, "tempfile - Generate temporary files and directories," *Python 3.12 Documentation* (`mkstemp`, `gettempdir`). [Online]. Available: https://docs.python.org/3.12/library/tempfile.html |
+
+## 18. Gap options enforced (2026-11-17)
+
+Request (after tasks 1 and 2): *"When done recheck the gap aware settings and ensure they are being
+enforced."* Every gap option was set in every program, before a run and changed after a run, and
+the project, the Plots tab and the saved `.vszh5` were compared with hand-worked expectations. Run
+on Python 3.12 only. Archive: `FitsAutoPlot_suite_0.4.8_2026-11-17.7z` (every tracked file, assets
+included).
+
+![The Gaps box: an entry that cannot be read is framed red; the tool tips say why or what was read](docs/gap_text_check_0.4.8.png)
+
+### 18.1 What was not enforced, and the fix
+
+| # | Found | Effect before | Now |
+|---|---|---|---|
+| 1 | The gap text parser picked number-unit tokens out of the text wherever they were and ignored what lay between them | `00:10:00` = 0 h + 10 h + 0 h = **10 h**; `1x2` = 3 h; `.5h` = 5 h; `1:30` = 31 h - all used without a word | The whole entry must be read, token after token [70]; clocks `H:MM` / `H:MM:SS(.s)` (hours:minutes[:seconds], as ISO 8601 writes a time [73]); long unit names (`sec`, `minutes`, `hours`, `days`, `months`); anything else is refused with the reason |
+| 2 | Units were added up in days (`value x (1/24)/60`), in binary floating point [72] | `16min` = 959.9999999999999 s, so a step of exactly 960 s was cut although "greater than 16 min" was asked | The text is read exactly (`fractions.Fraction`) and rounded once: `16min` = 960 s, `0.1h` = 360 s; the TimeLayout gets seconds everywhere |
+| 3 | An unreadable entry gave 0 (no fixed gap) silently in CSV/TSV, ATR, R&S, Touchstone and every batch command | The K / n rule ran while the user believed a fixed gap was in force | The box is framed red with the reason in its tool tip (`Now: 15 min` when readable); the run, the save and the end of editing log `The fixed small gap '1x2' is not used: unknown unit 'x' ...`; batch: `--gap-small` / `--gap-large` are refused by argparse with the reason [71] |
+| 4 | FITS / Franks (and both plugins): a text, readable or not, overrode the hours box | An unreadable text switched the hours box off too | An unreadable text is logged and the hours box is used |
+| 5 | `--gap-k` / `--gap-n` took any number; TimeLayout did not clamp K | `--gap-k 0.5` cut the line at ordinary steps; `inf` / `nan` fixed gaps reached the notes | `--gap-k` must be >= 1, `--gap-n` >= 0 (argparse stops otherwise); TimeLayout keeps K >= 1 (not a number = the default), n and the fixed gaps finite |
+| 6 | Gap options changed **after** a run: only the time-axis boxes redrew the Plots tab | The saved `.vszh5` used the new options, the Plots tab still showed the old ones | Every gap option redraws the Plots tab 0.5 s after the last change (a text when its editing ends [76]), in every program; the log states the rule in force |
+| 7 | Local clock: the large-gap rule ran on local wall-clock seconds | US 2026-03-08 (spring forward [74]): a 1-hour jump with no data gap broke the local page (n = 2); 2026-11-01 (fall back): a 3-hour hole was 2 hours on the local clock and was not broken at `--gap-large 2.5h`, while the UTC and MJD pages were | Axis breaks are found in UTC seconds and moved onto the local axis, between the latest local value before the gap and the earliest after it [75]; where a fall-back hour leaves no room, no break (no sample is hidden). Without a daylight-saving change the breaks are exactly the 0.4.7 ones |
+| 8 | Plots tab, local clock: each trace was cut again on its local copy | An extra line break at the spring-forward hour, which the project does not have | A clock trace is drawn as the project laid it out (cut in UTC); a clock axis shades exactly the project's `breakPoints` |
+
+### 18.2 Checked (Python 3.12.3)
+
+**CSV/TSV AutoPlot GUI, a file with known gaps** (1-minute samples, a 960 s step and a 172 800 s
+step): 32 settings x (before the run, changed after the run) = 64 cases, counted in the project,
+in what the Plots tab's curve holds and shades, and in the saved file - **64 of 64**:
+
+| Setting | Line cuts | Axis breaks | Note |
+|---|---|---|---|
+| defaults (K = 10: 600 s; n = 100: 60 000 s) | 2 | 1 | |
+| K = 15.9 / K = 16 | 2 / 1 | 1 | 954 s < 960 s; 960 s is not > 960 s |
+| small `16min` / `15min 59s` | 1 / 2 | 1 | was 2 / 2 (959.999... s) |
+| small `00:10:00` / `0:20` / `0.25` (h) | 2 / 1 / 2 | 1 | `00:10:00` was 10 h: 1 cut and no axis break |
+| small `1x2`, `5ms` (unreadable) | 2 | 1 | logged, box red, K rule |
+| n = 287.9 / n = 288 | 2 | 1 / 0 | 172 740 s / 172 800 s (not >) |
+| large `47h 59min` / `2d` / `2 days 1 hour` / `3d` | 2 | 1 / 0 / 0 / 0 | |
+| large `0:10` with small `20min` | 1 | 1 | never shorter than the small gap |
+| large `1d,2h` (unreadable) | 2 | 1 | logged, box red, n rule |
+| lines off / axis off / n = 0 / both off | 0 / 2 / 2 / 0 | 1 / 0 / 0 / 0 | |
+| numeric x (index) rule on / off; small text on an index axis | 2 / 0; 2 | 0 | fixed gaps are time only |
+
+**Every other program, before and after a run** (10 settings x 2; invariants: project breaks =
+Plots tab shaded regions = file breaks; no broken axis outside the gap layout; axis breaks off or
+n = 0: none; line breaks off: no gap rows; non-time axes off: nothing on them; the Plots tab draws
+as many NaN rows as the project):
+
+| Program and files | Cases OK | Axes | Breaks at the defaults | Note |
+|---|---|---|---|---|
+| FITS, GBT UWBR Vacuum (15 files) | 20 of 20 | 48 | 0 | 12 246 gap rows at K = 10; hours-box fallback checked |
+| FITS, GBT tack azServo1Hz (10 files) | 20 of 20 | 963 | 0 | continuous 1 Hz data: no gaps at any setting |
+| FITS, GBT 30-day OnePpsDeltas (319 files) | 20 of 20 | 960 | 12 | 1518 gap rows at the defaults; 21 breaks at small `1h` / large `1d`; 18 with the 0.5 h hours box |
+| Franks, a `time_gbt.dat` with a 31-minute and a 7-day step (1-minute MJD samples) | 20 of 20 | 24 | 24 | 2 cuts and 1 break per graph at the defaults, as worked out by hand; the hours box (0.5 h) cuts the 31-minute step |
+| ATR (example files) | 20 of 20 | 52 | 0 | evenly spaced azimuths |
+| R&S (Processed `.sft`) | 20 of 20 | 584 | 2 | the overlay of files far apart in frequency |
+| Touchstone (223 `.s2p`, frequency and time-gated pages) | 20 of 20 | 2200 | 0 | K = 2, n = 3: 72 gap rows, 0 with non-time axes off |
+
+**Daylight saving** (`VSZH5_DISPLAY_TZ=America/New_York`; 1-minute data through 2026-03-08 07:00
+UTC and 2026-11-01 06:00 UTC, with and without a 3-hour hole; defaults, n = 2 and a 2.5 h large
+gap): the local, UTC and MJD pages have the same cuts and breaks in every case (before: 2
+differences), the Plots tab draws the project's (before: one more line cut on the local page at the
+spring-forward hour), no sample lies inside a break, and Veusz 4.2.1 draws the pages (the 2026-11-01 local page now breaks where the UTC page
+does).
+
+**No change elsewhere**: the 0.4.7 real-data projects made again with 0.4.8 - FITS tack (all
+clocks), UWBR Temps and Vacuum, the 30-day 1PPS set, ATR, R&S, CSV/TSV and Touchstone - are
+identical object for object (80 722 HDF5 objects for the 30-day set) and line for line; only the
+writer stamp differs.
+
+**Unit tests**: `tests/test_gap_enforcement.py` (20 tests: the accepted texts exactly, the refused
+ones with a reason, the log lines, the TimeLayout ranges, the flags, both daylight-saving changes,
+the Plots tab, the red frame, `layout_changed` / `follow()`, the FITS hours fallback, both
+plugins); the whole suite 184 OK (6 Veusz tests skipped in the full run; the Veusz modules
+alone: 59 OK); the 13 headless GUI and real-data runs pass (`run_env_checks.sh`).
+
+### 18.3 Versions
+
+| File | Version |
+|---|---|
+| `_autoplot_native.py` | 0.5.8 |
+| `_autoplot_common.py` | 0.4.8 |
+| `_suite_gui.py` | 0.1.6 |
+| `_autoplot_pyqtgraph.py` | 0.3.7 |
+| `FITS_AutoPlot.py`, `Franks_AutoPlot.py` | 0.4.7 |
+| `CSV_TSV_AutoPlot.py` | 6.1.9 |
+| `ATR_AutoPlot.py` | 0.2.8 |
+| `RAndS_FSW_ASCII_Plotter.py` | 1.1.8 |
+| `Touchstone_AutoPlot.py` | 0.7.7 |
+| `FITS_AutoPlot_plugin.py`, `Franks_AutoPlot_plugin.py` | 0.3.7 |
+| `tests/test_gap_enforcement.py` | 0.0.1 (new, 20 tests) |
+| `REQUIREMENTS.md` | 0.2.7 |
+| `vszh5_writer.py` 0.0.31 | unchanged (the writer's gap functions were right; the faults were in the suite's use of them) |
+
+### 18.4 Data gaps and limits
+
+* Windows was not run here; nothing in this round is platform-specific.
+* `m` stays **months** (30.4375 d, as since 0.0.19); minutes are `min`. `5m` is 152 days - the tool
+  tip shows it ("Now: 152.188 d (13149000.0 s)"), and the graph notes state every threshold.
+* On the local clock a fall-back hour folds the time axis back on itself (wall-clock time repeats
+  01:00-02:00); the data are drawn in their order, as before. Only the gap rule changed: it now uses
+  UTC.
+* The ATR and tack example files have no gaps at any setting, so they check that nothing is cut;
+  the CSV file, the UWBR, 30-day, R&S and Touchstone sets check the cuts and breaks.
+
+### 18.5 References (round 18)
+
+| # | Reference (IEEE) |
+|---|---|
+| [70] | Python Software Foundation, "fractions - Rational numbers," *Python 3.12 Documentation*. [Online]. Available: https://docs.python.org/3.12/library/fractions.html |
+| [71] | Python Software Foundation, "argparse - Parser for command-line options, arguments and subcommands" (`type=`, `ArgumentTypeError`), *Python 3.12 Documentation*. [Online]. Available: https://docs.python.org/3.12/library/argparse.html |
+| [72] | *IEEE Standard for Floating-Point Arithmetic*, IEEE Std 754-2019, Jul. 2019, doi: 10.1109/IEEESTD.2019.8766229. |
+| [73] | *Date and time - Representations for information interchange - Part 1: Basic rules*, ISO 8601-1:2019, ISO, Geneva, 2019. [Online]. Available: https://www.iso.org/standard/70907.html |
+| [74] | National Institute of Standards and Technology, "Daylight Saving Time (DST)," NIST Time and Frequency Division. [Online]. Available: https://www.nist.gov/pml/time-and-frequency-division/popular-links/daylight-saving-time-dst |
+| [75] | A. Belopolsky and T. Peters, "PEP 495 - Local Time Disambiguation," Python Enhancement Proposals, 2015. [Online]. Available: https://peps.python.org/pep-0495/ |
+| [76] | The Qt Company, "QLineEdit Class" (`editingFinished()`, `textChanged()`), *Qt 6 Documentation*. [Online]. Available: https://doc.qt.io/qt-6/qlineedit.html |
+
+## 19. Pages to draw: Per file / Combined axis / Overlay (2026-11-17)
+
+Request: *"in the fits files only for the vszh5 file (do it in the qtplot as well), ensure these
+options are available and working: Overlay (exists), Per File (exists), Combined Axis ... The
+combined files should generate a plot that looks like the per file plots, but has the full range
+of values in each axis ... concatenation of the datasets of the same value but not overlayed as
+done in overlay. Add this type of plot to the drop down options in the qtplot interface as well,
+just above the overlays. Implement this same thing in all other plotting routines. Ensure gap
+awareness still applies when concatenation is utilized. Ensure this still follows the RAM usage
+implementation."* Run on Python 3.12 only. Archive: `FitsAutoPlot_suite_0.4.9_2026-11-17.7z`
+(every tracked file, assets included).
+
+![Pages to draw in FITS AutoPlot (the same box in every program and both plugins)](docs/pages_0.4.9_options.png)
+
+![Plots tab: the combined page of the 15 UWBR Temperature files, listed just above the overlay](docs/pages_0.4.9_plots_tab.png)
+
+![Combined-axis pages drawn by Veusz 4.2.1, one per program](docs/combined_pages_0.4.9_veusz.png)
+
+### 19.1 What each program draws
+
+*Pages to draw* has three boxes, all ticked: **Per file** (each file's own pages, as before),
+**Combined axis** (new) and **Overlay**. The combined pages come just above the first overlay page
+in the project, in the Plots tab's page list and in the saved `.vszh5`. A box changed after a run
+rebuilds the project half a second after the last change (a restarted single-shot timer [81]).
+
+| Program | Combined-axis pages (new) | Joined on | Overlay pages | Where the choice is |
+|---|---|---|---|---|
+| FITS AutoPlot 0.4.8 | `Combined_<HDU>` (and its `_utc` / `_mjd` clock copies), one set per table-HDU layout (`Combined_2_<HDU>` ... when the files differ) | DMJD, per row tag (CHANNELA/B ...) | `Overlay_<unit>` | GUI box; plugin field `pages` |
+| Franks AutoPlot 0.4.8 | `Combined` (`Combined_2` ... for another flavour or column layout) | MJD | `Overlay_<column>` | GUI box; plugin field `pages` |
+| CSV/TSV AutoPlot 6.2.0 | `CombinedPlot` (graph `CombinedGraph`) | the X column | `OverlayPlot` | GUI box; `--pages` |
+| ATR AutoPlot 0.3.0 | `Combined_mag`, `Combined_phase`, `Combined_polar_mag`, `Combined_polar_phase` (one trace per frequency) | azimuth | `Overlay_All_*` | GUI box; `--pages` |
+| R&S plotter 1.2.0 | `Combined average` (per x kind and unit) and, in *All plots*, `Combined Section n` | frequency or time | `AllImported`, `Averages` | GUI box; `--pages` |
+| Touchstone AutoPlot 0.8.0 | `Combined_SParam` (magnitude and phase) | frequency | `Overlay_SParam` (**new**: the tool had no multi-file overlay) | side-panel box |
+
+The plugins keep the old `combined_only` field: it unticks *Per file*.
+
+### 19.2 How a combined trace is made, and its gaps
+
+For the files $f = 1 \dots F$ in page order, with x values $x^{(f)}$ and y values $y^{(f)}$ of the
+same quantity, the combined trace is
+
+$$
+\mathbf{x}^{c} = \operatorname{concat}\left(x^{(1)}, \dots, x^{(F)}\right),\qquad
+\pi = \operatorname{argsort}_{\text{stable}}\left(\mathbf{x}^{c}\right),\qquad
+x_i = \mathbf{x}^{c}_{\pi_i},\quad y_i = \mathbf{y}^{c}_{\pi_i},\quad s_i = \mathbf{s}^{c}_{\pi_i},
+$$
+
+where $s$ is the file of each row. The sort is stable, so equal x keep their file order, and NaN x
+go last [77], [78]. Nothing is rounded, thinned or averaged. Text x (CSV/TSV) stays in file order.
+
+**Gaps.** Each file keeps its own small-gap threshold, measured on its own samples:
+
+$$
+T_f = \begin{cases} T_{\text{fixed}} & \text{a fixed small gap is set (time axes)} \\
+K \cdot \operatorname{median}\left(\Delta x^{(f)}\right) & \text{otherwise.} \end{cases}
+$$
+
+The runs of a file are its samples between its own cuts (steps $> T_f$; on non-time axes also
+larger than $K$ times the median step of $\ln x$, as before). Let $R$ be the union of every
+file's runs. A step of the combined trace is cut (one NaN row in the plot copies) only when
+
+$$
+[x_i, x_{i+1}] \not\subseteq R \quad\text{and}\quad x_{i+1} - x_i > \max\left(T_{s_i}, T_{s_{i+1}}\right).
+$$
+
+So the trace breaks where no file has data. It never breaks inside a file's own sampling. The
+step from one file to the next is cut only when it is a gap by both files' rules. The runs are
+merged with a running maximum and looked up with a binary search [79], [80]. The x axis breaks
+are those an overlay of the same files gets:
+$\Delta > n \cdot \max_f T_f$, or the fixed large gap [18], [43].
+
+**Why per file.** One median taken over the joined values (the first build of this round) cut
+every step of a coarse file joined with a fine one:
+
+| Data | One median of the joined values | Per file (now) | Check |
+|---|---|---|---|
+| UWBR Vacuum, 15 files | 3804 gap rows | **278** | equal to the files' own cuts (278) plus the steps between files (0), worked out independently |
+| UWBR Temperature, 15 files, 9 traces | 5670 gap rows | **810** | 9 x (89 own cuts + 1 step between files) |
+| R&S, 8 sweeps (100 Hz, 20 Hz and 1 MHz spans at 10 MHz) | 800 axis breaks, page 1824.2 cm wide | **0** breaks, normal page | the 1 MHz sweep covers the narrow ones |
+| R&S, the 20 Processed files, 186 combined pages | 20 518 gap rows, 4037 axis breaks | **37 / 37** | |
+| GBT 30-day 1PPS, 319 files | 313 gap rows, 3 breaks | 313 / 3 | one cadence: the same |
+
+**Plots tab** (`_autoplot_pyqtgraph` 0.3.8): an x axis the project laid out is drawn from the
+project's own cut copies and shades exactly the project's `breakPoints`. It no longer cuts the
+joined values again. Before, R&S showed 4039 shaded breaks where the project and the file have 39.
+
+### 19.3 RAM
+
+* The combined datasets are stored with the same `SetData`, so the RAM-limit check runs as each
+  one is stored. Above the limit they move to the offload file like any other dataset.
+* The file of each row is kept in 1 byte (up to 256 files) or 2 bytes (up to 65 536 files). It
+  moves to the offload file with the datasets, is not saved in the `.vszh5`, and is dropped by
+  Clear.
+* FITS and Franks build one group (HDU layout) at a time and then drop its joined columns.
+* The joined columns are stored once, sorted. There is no second raw copy: the per-file raw
+  datasets already hold every file as read.
+* GBT 30-day 1PPS set, every page kind: 656 MB RSS after the batch in RAM (80 % limit) and 396 MB
+  offloaded (1 % limit). The two saved files are identical, 81 043 of 81 043 HDF5 objects and
+  every script line.
+
+### 19.4 Checked (Python 3.12.3)
+
+**Real files, every program, every page-kind set.** Each run was checked in the project, in the
+Plots tab (`document_pages`, `trace_arrays`, `graph_break_regions`) and in the saved file. The
+checks were:
+
+* page kinds and order (combined pages in one block just above the first overlay);
+* every combined trace equal to the files' traces joined and stable-sorted, value for value;
+* polar traces drawing the combined datasets;
+* line cuts and axis breaks the same in the project, the Plots tab and the file;
+* the combined axes laid out by the gap rules.
+
+| Program and files | Pages (all kinds) | Combined: gap rows / axis breaks | All kinds: in RAM = offloaded | Kinds checked | Combined off = 0.4.8 |
+|---|---|---|---|---|---|
+| CSV/TSV, a file with known gaps split in two (given out of order) | 4 | 4 / 1 | 55 of 55 objects | all, combined, per file + overlay, combined + overlay | `temps.tsv`: 28 of 28 |
+| Franks, two `time_gbt.dat` 2 days apart | 7 | 4 / 4 | 110 of 110 | the same four | - |
+| FITS, UWBR Vacuum (15 files) | 17 | 278 / 0 | 226 of 226 | the same four | 254 of 254 |
+| FITS, UWBR Temperature (15 files) | 17 | 810 / 0 | 836 of 836 | the same four | 866 of 866 |
+| FITS, GBT tack (10 files) | - | - | - | - | 1657 of 1657 |
+| FITS, GBT 30-day 1PPS (319 files) | 321 | 313 / 3 | 81 043 of 81 043 | all | 80 722 of 80 722 |
+| ATR, the 25 example files | 106 | 0 / 0 | 346 of 346 | the same four | 303 of 303 |
+| R&S, the 20 Processed `.sft` | 770 | 37 / 37 | 2211 of 2211 | the same four | 1316 of 1316 |
+| Touchstone, the 223 example `.s2p` | 1102 | 0 / 0 (the files overlap in frequency) | 12 365 of 12 365 | the same four | 12 120 of 12 120 (per file only: the overlay page is new) |
+
+"Combined off = 0.4.8" means *Per file* + *Overlay* gives the 0.4.8 project. It is equal object for
+object and line for line; only the writer stamp differs.
+
+**Unit tests**: `tests/test_page_kinds.py`, 22 tests:
+
+* the page-kind words and `--pages`;
+* stable joining with NaN, several y and text x;
+* overlap counting and page moving;
+* the gap rule, hand-worked: a hole between files, files back to back, a coarse sweep with a fine
+  one inside it, a hole another file fills, the same hole not filled, NaN x, one file = the plain
+  rule, 1-s and 60-s cadences on an MJD axis;
+* the file numbers offloaded and laid out the same;
+* the Plots tab following the project;
+* FITS (tagged), Franks, CSV/TSV, ATR, R&S and Touchstone combined values and order;
+* the FITS window rebuilt when a box changes;
+* both plugins' `pages` and `combined_only` fields.
+
+The whole suite runs 206 OK (6 Veusz tests skipped in the full run; the Veusz modules alone: 59
+OK). The 13 headless GUI and real-data runs pass (`run_env_checks.sh`; the CSV/TSV run's expected page
+list now starts with `CombinedPlot`). Veusz 4.2.1 draws every combined page (the figure above). Headers, docstrings and tool tips
+pass the suite's checks (no widget without a tool tip).
+
+### 19.5 Versions
+
+| File | Version |
+|---|---|
+| `_autoplot_native.py` | 0.5.9 |
+| `_autoplot_common.py` | 0.4.9 |
+| `_suite_gui.py` | 0.1.7 |
+| `_autoplot_pyqtgraph.py` | 0.3.8 |
+| `FITS_AutoPlot.py`, `Franks_AutoPlot.py` | 0.4.8 |
+| `CSV_TSV_AutoPlot.py` | 6.2.0 |
+| `ATR_AutoPlot.py` | 0.3.0 |
+| `RAndS_FSW_ASCII_Plotter.py` | 1.2.0 |
+| `Touchstone_AutoPlot.py` | 0.8.0 |
+| `FITS_AutoPlot_plugin.py`, `Franks_AutoPlot_plugin.py` | 0.3.8 |
+| `tests/test_page_kinds.py` | 0.0.1 (new, 22 tests) |
+| `REQUIREMENTS.md` | 0.2.8 |
+| `vszh5_writer.py` 0.0.31 | unchanged (the writer's gap functions are used as they are) |
+
+### 19.6 Data gaps and limits
+
+* Windows was not run here. Nothing in this round is platform-specific.
+* **Overlapping files interleave.** Where files overlap in x (the 223 Touchstone files cover the
+  same band; repeated ATR cuts at one frequency), the combined trace joins their samples in x
+  order. The line then zig-zags between the files. The page notes and the log count the
+  overlapping files, so this is visible. For such sets the overlay is the page to read, and the
+  combined page shows the full range.
+* CSV/TSV joins only the files whose X column is of the first file's kind (dates or numbers); the
+  others are named in the log. A text X is joined in file order and has no gap rule.
+* FITS combined pages leave out image HDUs. Legacy datetime-duplicate (`_dt_labels`) datasets of a
+  combined page carry the file numbers too, but they were checked only in code (the option is off
+  by default and was not run on real files).
+* The Plots tab screenshot is the light theme; the box is the same in dark mode.
+
+### 19.7 References (round 19)
+
+| # | Reference (IEEE) |
+|---|---|
+| [77] | NumPy developers, "numpy.argsort" (`kind='stable'`, `stable=True`: equal values keep their relative order), *NumPy documentation*. [Online]. Available: https://numpy.org/doc/stable/reference/generated/numpy.argsort.html |
+| [78] | NumPy developers, "numpy.sort" (Notes: NaN values are sorted to the end), *NumPy documentation*. [Online]. Available: https://numpy.org/doc/stable/reference/generated/numpy.sort.html |
+| [79] | NumPy developers, "numpy.searchsorted" (`side='right'`), *NumPy documentation*. [Online]. Available: https://numpy.org/doc/stable/reference/generated/numpy.searchsorted.html |
+| [80] | NumPy developers, "numpy.ufunc.accumulate" (`np.maximum.accumulate`), *NumPy documentation*. [Online]. Available: https://numpy.org/doc/stable/reference/generated/numpy.ufunc.accumulate.html |
+| [81] | The Qt Company, "QTimer Class" (`setSingleShot()`, `start()` restarts a running timer), *Qt 6 Documentation*. [Online]. Available: https://doc.qt.io/qt-6/qtimer.html |

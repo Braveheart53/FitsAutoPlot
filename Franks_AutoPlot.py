@@ -31,6 +31,165 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.8: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * The "Combine files only" box is replaced by Pages to draw
+#                (Per file, Combined axis, Overlay; all ticked).
+#              * NEW combined_franks_data() / push_combined_franks_pages(): a
+#                "Combined" page (Combined_2 ... for another flavour or column
+#                layout), the same page as a file's own: every column of every
+#                file joined and sorted on MJD (stable), placed just above the
+#                overlay pages.
+#              * _push_franks_body(store_raw, row_files): the joined columns are
+#                stored once, sorted; the time datasets get the file of every
+#                row (gaps only where no file has data).  One group at a time.
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model (_push_franks_body), then tag every new dataset (0.4.2) with ``source_<file>`` and th...
+        _push_franks_body: Add parsed Franks columns to a native in-memory project model.
+        combined_franks_data: The data of the combined-axis pages (0.4.8): one parse-result dict per file layout, holding the columns of every file joined end to end.
+        push_combined_franks_pages: Build the combined-axis pages (0.4.8) from ``ordered`` (combined_franks_data) with push_franks_to_veusz - the same page as a file's own, named "Com...
+        build_unit_overlay_pages_franks: Cross-file column overlay pages (_build_overlay_pages_franks_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_overlay_pages_franks_body: Build one overlay page per **shared column name** across the loaded batch.
+        _parse_franks_isolated: Process-pool entry point (0.4.1): parse one Franks file on its own.
+        store_parse_result: Put the arrays of a _parse_franks_isolated() result into ``cache`` under the keys parse_franks_file() uses (numeric "<base>.<col>", text "<base>.<c...
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.8"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        COMBINED_BASE: dataset / page name of the combined-axis page ('Combined')
+        _OVERLAY_COLORS: overlay trace colours
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept.  Time axes and gaps
+    as in FITS AutoPlot; the time_gbt.dat comment text is the COMMENTS column.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Pages to draw (all ticked): Per file - each file's own pages;
+    Combined axis - the same quantity of every file joined end to end and
+    sorted on x (one trace spanning every file, cut only where no file has
+    data), just above the overlays; Overlay - the files' traces on one graph.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.4.7: Gap options enforced (shared controls, _autoplot_common 0.4.8).
+Date: 2026-11-17
+#              * As FITS AutoPlot 0.4.7: checked gap texts, the hours box when
+#                the text cannot be read, the Plots tab follows the options.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        _detect_flavour: Return 't00new' or 'time_gbt' for a Franks data file.
+        _safe_columns: Turn header names into Veusz-safe dataset names.
+        parse_franks_file: Read one Franks-style ASCII file into a dict of column arrays.
+        push_franks_to_veusz: Add parsed Franks columns to a native in-memory project model (_push_franks_body), then tag every new dataset (0.4.2) with ``source_<file>`` and th...
+        _push_franks_body: Add parsed Franks columns to a native in-memory project model.
+        build_unit_overlay_pages_franks: Cross-file column overlay pages (_build_overlay_pages_franks_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_overlay_pages_franks_body: Build one overlay page per **shared column name** across the loaded batch.
+        _parse_franks_isolated: Process-pool entry point (0.4.1): parse one Franks file on its own.
+        store_parse_result: Put the arrays of a _parse_franks_isolated() result into ``cache`` under the keys parse_franks_file() uses (numeric "<base>.<col>", text "<base>.<c...
+        FranksBatchWorker (class): Background QThread that parses Franks files in parallel.
+        FranksAutoPlotWindow (class): Top-level window for the Franks AutoPlot script.
+        main: Run the Franks AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'Franks AutoPlot'
+        APP_VERSION = "0.4.7"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: folder of this file
+        MJD_LIKE_SORT_KEYS: v0.0.11: Franks files always use MJD as their sort key, so the upper-cased sort-key column name is *always* in this set.  We keep the set explicit...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: I/O-bound default: ASCII reads + np.genfromtxt both release the GIL on the heavy paths, so we get a real speedup from oversubscribing the CPU.
+        DEFAULT_RSS_HIGH_WATER_MB = 1024
+        T00_COLUMNS: column names of a .t00new file (used when its header is malformed)
+        TIMEDAT_COLUMNS: column names of a time_gbt.dat file
+        _OVERLAY_COLORS: overlay trace colours
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python Franks_AutoPlot.py   (GUI; View menu: light/dark)
+    Franks timing files (.t00new, time_gbt.dat and backups) are ASCII with
+    mixed date and numeric columns, so they are parsed with numpy (not a Veusz
+    importer); raw and MJD-sorted datasets are both kept.  Time axes and gaps
+    as in FITS AutoPlot; the time_gbt.dat comment text is the COMMENTS column.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.6: RAM limit - plot data offloaded to disk above it.
 Date: 2026-11-17
 #              * Options: "Offload plot data to disk above RAM use of" (shared
@@ -760,7 +919,7 @@ import re
 import shutil
 import sys
 import traceback
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ============================================================================
 # %%% IMPORTS - Scientific
@@ -770,10 +929,11 @@ import numpy as np
 # ============================================================================
 # %%% IMPORTS - Native project model
 # ============================================================================
-from _autoplot_native import NativeDocument
+from _autoplot_native import (NativeDocument, overlapping_ranges,   # 0.4.8: combined axis
+                              describe_page_kinds, file_index_array, set_combined_sources)
 
 APP_NAME = 'Franks AutoPlot'
-APP_VERSION = "0.4.6"
+APP_VERSION = "0.4.8"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -1079,8 +1239,17 @@ def _push_franks_body(doc, data: Dict[str, Any], log_cb=None,
                          datetime_label_density_pct: int = 10,
                          datetime_emit_numeric_dt: bool = False,
                          datetime_emit_text_dt: bool = True,
-                         hide_keys: bool = False) -> None:
+                         hide_keys: bool = False,
+                         store_raw: bool = True,
+                         row_files: Optional[Any] = None) -> None:
     """Add parsed Franks columns to a native in-memory project model.
+
+    0.4.8: ``store_raw`` False leaves out the "<..>__raw" datasets in file
+    order (the combined-axis page stores its joined columns once, sorted;
+    the per-file raw datasets already hold every file as read).
+    ``row_files`` (the combined-axis data): the file number of every row;
+    the sorted time datasets get it (_autoplot_native.set_combined_sources),
+    so the gap layout cuts the combined traces only where no file has data.
 
     v0.0.19: ``hide_keys`` -- when True every key (legend) widget added
     to the per-file page is created with its Border hidden.
@@ -1165,7 +1334,8 @@ def _push_franks_body(doc, data: Dict[str, Any], log_cb=None,
             if arr.dtype.kind in ("U", "S", "O"):
                 values = [v.decode("ascii", "replace") if isinstance(v, bytes) else str(v)
                           for v in arr]
-                doc.SetDataText(raw_name, values)
+                if store_raw:
+                    doc.SetDataText(raw_name, values)
                 if sort_idx is not None:
                     doc.SetDataText(sorted_name, [values[i] for i in sort_idx])
                 else:
@@ -1174,11 +1344,17 @@ def _push_franks_body(doc, data: Dict[str, Any], log_cb=None,
                 # NaN-preserving: Veusz handles NaN natively in numeric
                 # datasets, so we push the float array through unchanged.
                 fa = np.ascontiguousarray(arr, dtype=float)
-                doc.SetData(raw_name, fa)
+                if store_raw:
+                    doc.SetData(raw_name, fa)
                 if sort_idx is not None:
                     doc.SetData(sorted_name, np.ascontiguousarray(fa[sort_idx]))
                 else:
                     doc.SetData(sorted_name, fa)
+                if row_files is not None and cname == sort_key:
+                    # 0.4.8: the file of every row of the combined trace
+                    _rows = np.asarray(row_files)
+                    set_combined_sources(doc, [sorted_name], _rows if sort_idx is None
+                                         else _rows[sort_idx])
         except Exception as exc:
             if log_cb:
                 log_cb("  SetData failed for %s: %s" % (cname, exc))
@@ -1256,6 +1432,10 @@ def _push_franks_body(doc, data: Dict[str, Any], log_cb=None,
                     doc, dtnum_name, arr_mjd, log_cb=log_cb,
                 ):
                     datelabels_dtnum_name = dtnum_name
+                    if row_files is not None:                    # 0.4.8
+                        _rows = np.asarray(row_files)
+                        set_combined_sources(doc, [dtnum_name], _rows if sort_idx is None
+                                             else _rows[sort_idx])
             # v0.0.16: stash the sorted MJD array for broken-axis
             # parity computation on the dt_labels page.
             try:
@@ -1518,6 +1698,105 @@ def _push_franks_body(doc, data: Dict[str, Any], log_cb=None,
         if log_cb:
             log_cb("  Datetime-labels page built (%s_dt_labels, numeric "
                    "dtsec, mode='datetime')." % base)
+
+
+# ============================================================================
+# %% COMBINED-AXIS PAGE (0.4.8): every file's columns joined on one axis
+# ============================================================================
+#: (0.4.8) Dataset / page prefix of the combined-axis pages.
+COMBINED_BASE = "Combined"
+
+
+def combined_franks_data(ordered: Sequence[Tuple[str, Any]],
+                         log_cb=None) -> List[Dict[str, Any]]:
+    """
+    The data of the combined-axis pages (0.4.8): one parse-result dict per
+    file layout, holding the columns of every file joined end to end.
+
+    ``ordered``: (path, data) in page order, as parse_franks_file returns
+    them; errors are skipped.  Files are joined when they are of the same
+    flavour (t00new / time_gbt) and have the same columns in the same order
+    (numbers with numbers, text with text); each other layout gets its own
+    group ("Combined", "Combined_2", ...).  MJD stays the sort key, so
+    _push_franks_body sorts the joined rows on time (stable: equal times
+    keep their file order).  Nothing is rounded (numpy.concatenate).  The
+    "header_lines" list the files with their rows, then the first file's
+    header; "combined_files" names the files; "row_files" the file (0, 1,
+    ...) of every joined row (the gap layout of the combined traces).
+    """
+    groups: Dict[Tuple[Any, ...], List[Tuple[str, Dict[str, Any]]]] = {}
+    order: List[Tuple[Any, ...]] = []
+    for path, data in ordered:
+        if not isinstance(data, dict):
+            continue
+        cols = data.get("columns") or {}
+        layout = tuple((name, "n" if np.asarray(arr).dtype.kind in "iufb" else
+                        "t" if np.asarray(arr).dtype.kind in "SUO" else np.asarray(arr).dtype.kind)
+                       for name, arr in cols.items())
+        key = (data.get("flavour"), layout, data.get("sort_key"))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append((path, data))
+    results: List[Dict[str, Any]] = []
+    for number, key in enumerate(order, start=1):
+        files = groups[key]
+        first = files[0][1]
+        base = COMBINED_BASE if number == 1 else "%s_%d" % (COMBINED_BASE, number)
+        names = list((first.get("columns") or {}).keys())
+        joined = {name: np.concatenate([np.asarray(d["columns"][name]) for _p, d in files])
+                  for name in names}
+        rows = [len(np.asarray(d["columns"][names[0]])) if names else 0 for _p, d in files]
+        labels = [str(d.get("source_name") or d.get("base_name") or os.path.basename(p))
+                  for p, d in files]
+        sort_key = first.get("sort_key")
+        overlap = 0
+        if sort_key in joined and joined[sort_key].dtype.kind in "iuf":
+            overlap = overlapping_ranges([np.asarray(d["columns"][sort_key], dtype=float)
+                                          for _p, d in files])
+        header = ["Combined axis: %d %s file(s) joined end to end, %d rows%s." % (
+            len(files), first.get("flavour") or "", int(sum(rows)),
+            ", sorted on %s (stable: equal times keep their file order)" % sort_key
+            if sort_key in joined else " in file order"),
+            "Files, in order (rows):"] + ["  %s (%d)" % (n, r) for n, r in zip(labels, rows)]
+        if overlap:
+            header.append("Note: the time ranges of %d file(s) overlap an earlier file; the "
+                          "combined traces interleave their samples there." % overlap)
+            if log_cb:
+                log_cb("  Combined: the time ranges of %d file(s) overlap an earlier file - "
+                       "their samples interleave" % overlap)
+        header += ["", "Header of the first file (%s):" % labels[0]] \
+            + list(first.get("header_lines") or [])
+        results.append({"flavour": first.get("flavour"), "columns": joined,
+                        "sort_key": sort_key, "header_lines": header, "base_name": base,
+                        "source_name": COMBINED_BASE, "combined_files": labels,
+                        "row_files": file_index_array(rows)})
+    return results
+
+
+def push_combined_franks_pages(doc, ordered: Sequence[Tuple[str, Any]], log_cb=None,
+                               **push_options: Any) -> List[Any]:
+    """
+    Build the combined-axis pages (0.4.8) from ``ordered``
+    (combined_franks_data) with push_franks_to_veusz - the same page as a
+    file's own, named "Combined" - and return the pages made.  One layout
+    group at a time; its joined columns are dropped once its datasets are
+    in the project (the RAM limit sees them as they are stored).  The joined
+    columns are stored once, sorted.  ``push_options``: the push options.
+    """
+    pages_before = list(doc.Root.children)
+    groups = 0
+    for data in combined_franks_data(ordered, log_cb=log_cb):
+        if log_cb:
+            log_cb("Combined axis: %d file(s)" % len(data["combined_files"]))
+        push_franks_to_veusz(doc, data, log_cb=log_cb, plot_individual=True,
+                             store_raw=False, row_files=data["row_files"], **push_options)
+        data.clear()
+        groups += 1
+    pages = [p for p in doc.Root.children if p not in pages_before]
+    if log_cb:
+        log_cb("Combined-axis pages: %d page(s) from %d file layout(s)" % (len(pages), groups))
+    return pages
 
 
 # ============================================================================
@@ -2121,15 +2400,14 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         )
         form.addRow(self.hide_keys_cb)
 
-        self.combined_only_cb = QCheckBox(
-            "Combined (overlay) plots only -- skip per-file pages"
-        )
-        self.combined_only_cb.setToolTip(
-            "Build only the overlay pages (all files on one graph per unit)"
-            " and no page per file - much faster to open for hundreds of "
-            "files.")
-        self.combined_only_cb.setChecked(False)
-        form.addRow(self.combined_only_cb)
+        # 0.4.8: Per file / Combined axis / Overlay pages (replaces the
+        # "Combined (overlay) plots only -- skip per-file pages" box: untick
+        # Per file for that)
+        self.add_page_controls(form, notes={
+            "per_file": "Franks: one page per file, a graph per numeric column against MJD.",
+            "combined": "Franks: a page 'Combined' with every file of the same layout "
+                        "(t00new / time_gbt, same columns) joined and sorted on MJD.",
+            "overlay": "Franks: one page per column name, every file's column stacked."})
 
         # --- Datetime-duplicate plots (v0.0.11) ---------------------------
         self.datetime_dup_cb = QCheckBox(
@@ -2305,7 +2583,7 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         # 0.4.0: manual gap in days for the page builders; every time axis
         # is laid out by the document's TimeLayout (line breaks at
         # dt > K x median(dt), axis breaks at n x that, local ISO 8601).
-        gap_absolute = self.gap_manual_days()
+        gap_absolute = self.gap_manual_days(quiet=True)     # 0.4.7: time_layout() logs
         self.keep_read_results(results, getattr(self, "_read_options", ()))
         results = self.batch_results(results)
         self.veusz_doc = self.new_project("Franks_AutoPlot")
@@ -2315,7 +2593,11 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
         self.log(self.veusz_doc.time_layout.describe_clocks())   # 0.4.5
         # v0.0.19: hide-legend-keys checkbox
         hide_keys = bool(self.hide_keys_cb.isChecked())
-        plot_individual = not bool(self.combined_only_cb.isChecked())
+        # 0.4.8: the page kinds ticked (Per file / Combined axis / Overlay)
+        kinds = self.page_kinds()
+        self._built_page_kinds = kinds
+        self.log(describe_page_kinds(kinds))
+        plot_individual = "per_file" in kinds
         # v0.0.11: datetime-duplicate toggle
         datetime_duplicate = bool(self.datetime_dup_cb.isChecked())
         # v0.0.15: density-pct (0..100) + two dt page gates.
@@ -2383,8 +2665,23 @@ class FranksAutoPlotWindow(AutoPlotMainWindow):
             self.parse_progress_bar.setValue(idx)
             if app is not None:
                 app.processEvents()
+        # 0.4.8: the combined-axis page(s) - every file's columns joined on
+        # one MJD axis - after the per-file pages, just above the overlays
+        if "combined" in kinds and file_records:
+            try:
+                push_combined_franks_pages(
+                    self.veusz_doc, ordered, log_cb=self.log, emit_datestr=emit_datestr,
+                    gap_k=gap_k, gap_absolute=gap_absolute,
+                    datetime_duplicate=datetime_duplicate,
+                    datetime_label_density_pct=datetime_label_density_pct,
+                    datetime_emit_numeric_dt=datetime_emit_numeric_dt,
+                    datetime_emit_text_dt=datetime_emit_text_dt, hide_keys=hide_keys)
+            except Exception as exc:
+                self.log("  Combined-axis page failed: %s" % exc)
+            if app is not None:
+                app.processEvents()
         # Build cross-file column-name overlay pages.
-        if file_records:
+        if file_records and "overlay" in kinds:
             try:
                 build_unit_overlay_pages_franks(
                     self.veusz_doc, file_records,

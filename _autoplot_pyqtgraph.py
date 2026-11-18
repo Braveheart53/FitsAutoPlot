@@ -78,6 +78,194 @@ Compatible with: Python 3.8+ (pyqtgraph 0.13.3) and 3.12+ (pyqtgraph 0.14),
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.8: An axis the project laid out is drawn as the project laid it out.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * document_pages: "x_laid_out" (_laid_out(): the project's time
+#                or numeric gap layout ran on the axis); such a graph draws
+#                the project's cut copies (not cut again: graph_recut()) and
+#                shades exactly its breakPoints (graph_break_regions(), also
+#                used by the checks; display_x(): Veusz date and MJD values in
+#                the units the traces are drawn in).  A combined-axis trace is
+#                cut only where none of its files has data, which the Plots tab
+#                cannot see from the joined values: before, R&S showed 4039
+#                shaded breaks where the project has 39.
+#              * The page drop-down lists the pages in project order, so the
+#                combined pages come just above the overlays.
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        exact_cell_text: A CSV cell with every digit: text as is, an integer as is, a float as repr() (the shortest text that gives back the same float64).
+        install_exact_csv_export: Replace pyqtgraph's "CSV of original plot data" exporter (right-click > Export...) with one that writes every digit (0.3.2).
+        _ctrl_pressed: True when Ctrl is held during a (scene) wheel event.
+        _utc_text: Wall-clock text of a Unix time ('-' when unknown).
+        _value_text: Compact number; '-' for None/NaN (0.3.6: 12 significant digits from 10 000 up, so an MJD or a frequency reads to the second / hertz).
+        _align_right: Right-align a table cell (Qt.Alignment on new PySide6, int on old).
+        _swatch: Small square icon in a trace colour (legend column).
+        break_gaps: Insert one NaN after every step longer than ``factor`` x the median step.
+        _scroll_enclosing_area: Scroll the nearest QScrollArea around the plot by the wheel's steps.
+        _wheel_passes_through: True when the wheel must NOT zoom: scroll the page instead.
+        _ViewBox (class): ViewBox whose wheel zoom needs Ctrl.
+        tick_texts: Tick texts for numbers that pyqtgraph would cut (0.3.6), or None.
+        _AxisItem (class): Value axis with the same wheel rule; 0.3.6: large numbers (MJD, Hz) keep the digits their tick spacing needs (tick_texts).
+        _DateAxisItem (class): UTC date axis with the same wheel rule; below one day per tick the labels are two lines, the date above "T" + the time (0.3.5), like the vertical t...
+        _PlotWidget (class): PlotWidget that reports when the mouse leaves it (to clear the crosshair).
+        configure: Global pyqtgraph options and the wheel rule (call before plots exist).
+        _setting: A NativeWidget setting ('PlotLine/color', 'label', ...).
+        _children: Child widgets of ``widget`` whose kind is one of ``kinds``, in order.
+        _graphs_of: Graphs of a page in drawing order (directly or inside grids).
+        _numeric: (array, kind) of a numeric 1-D or date dataset, else (None, kind).
+        _looks_like_mjd: MJD axis: 'MJD' in the dataset name or axis label and plausible values.
+        document_pages: Pages of a NativeDocument as plain descriptions (no Qt objects).
+        _laid_out: True when the project's gap layout (finalize: the time or the numeric gap options) has laid out this x axis (0.3.8): its traces then draw the proje...
+        _axis_breaks: The (start, stop) intervals a project's broken x axis leaves out, in the axis' units (0.3.7; [] when the axis is not broken).
+        _axis_offset: UTC offset ("-05:00") of a local ISO date-time axis, "local" when the data cross offsets, "Z" for a UTC axis (0.3.6), "" when not a date-time axis...
+        _axis_range: (min, max) fixed in the project, None where the limit is Auto.
+        _smith_graph: Description of a Smith chart written by vszh5_writer 0.0.26 (0.3.0).
+        _polar_graph: Description of a Veusz polar graph and its nonorthpoint traces.
+        trace_arrays: (x, y, x_is_unix_time) of one trace, converted for display.
+        graph_recut: False when the Plots tab draws a graph's traces as the project laid them out (0.3.8: a time-axis clock, 0.3.7, or any x axis the project's gap layo...
+        graph_break_regions: The x intervals the Plots tab shades on one graph of document_pages (0.3.8), in the units its traces are drawn in: the project's own breakPoints on...
+        display_x: A project x value in the units trace_arrays draws it in (0.3.8): Veusz date seconds -> Unix seconds, MJD -> Unix seconds when ``mjd_as_date``, anyt...
+        plot_gap_rule: The writer GapRule the Plots tab uses for one graph (0.3.3): the project's TimeLayout (its defaults when the project has none) for time traces, its...
+        axis_break_regions: (start, stop) x intervals where the Veusz project breaks the x axis of a graph whose traces have the x values ``xs`` (display units), by the projec...
+        TracePlot (class): A pyqtgraph plot with its legend-and-values column beside it (same layout and behaviour as the AB monitor's TracePlot).
+        ImagePlot (class): A 2-D dataset (FITS image HDU) with a colour bar.
+        _nice_ticks: About ``count`` round tick values from low to high.
+        _GridPlot (class): Common base of PolarPlot and SmithPlot: an aspect-locked plot with a drawn grid, and the same legend-and-values column as TracePlot.
+        PolarPlot (class): Veusz-style polar plot of r(theta) traces (e.g.
+        SmithPlot (class): Smith chart (impedance grid "z" or admittance grid "y") of reflection coefficients, with f, Gamma, Z and VSWR of the nearest point under the mouse.
+        html_escape: Minimal HTML escaping for header labels.
+        ProjectPlotPanel (class): The "Plots" tab.
+        self_test: Build and delete one plot; None when pyqtgraph works, else the reason (needs a QApplication).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        COLOURS: 4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+        THEMES: 1e1e2e", "#cdd6f4", "#9399b2"),
+        PLOT_HEIGHT: px per plot row
+        LEGEND_WIDTH: px of the legend column (user can drag the splitter)
+        SYMBOL_MAX_POINTS: point symbols only up to this many points per trace
+        GAP_FACTOR: a step > GAP_FACTOR x median step breaks the line
+        WHEEL_NEEDS_CTRL: plain wheel scrolls the page, Ctrl+wheel zooms
+        VEUSZ_EPOCH_UNIX: 2009-01-01T00:00:00Z: Veusz datetime zero
+        MJD_UNIX_EPOCH: MJD of 1970-01-01T00:00:00Z
+        MJD_PLAUSIBLE: values outside are not treated as MJD
+        SMITH_NOTES_PREFIX: (0.3.0) How a Smith chart graph of vszh5_writer 0.0.26 is recognised (its : notes) and how its trace datasets are named (same values as the writer).
+        _LINE_STYLES: Veusz line style -> Qt pen style
+        _MARKERS: Veusz marker -> pyqtgraph symbol
+# %%%%% More Info
+    The Plots tab of every program (pyqtgraph 0.13 on Python 3.8, 0.14 on
+    3.12, through qtpy/PySide6).  Ctrl + wheel zooms; the wheel alone scrolls.
+    Right-click > Export > "CSV of original plot data (every digit)" writes
+    repr() of every value.
+    Gaps: the Plots tab breaks lines by the project's options and shades the
+    x intervals the Veusz project leaves out of a broken axis (pyqtgraph has
+    no broken axis).
+    Clocks: UTC pages read "Z",
+    MJD pages stay numbers; large numbers keep the digits their tick spacing
+    needs (tick_texts).
+    Laid out (0.3.8): an x axis the project laid out is drawn with the
+    project's own cut copies and breakPoints (a combined-axis trace is cut only
+    where none of its files has data).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.3.7: The Plots tab draws the project's own cuts and breaks of a clock axis.
+Date: 2026-11-17
+#              * trace_arrays(recut=False): a time-axis clock trace is drawn as
+#                the project laid it out (cut in UTC seconds); cutting the
+#                local copy again broke the line at a spring-forward hour.
+#              * document_pages: "x_breaks" (the axis' breakPoints); a clock
+#                axis shades exactly those (in display units), so the Plots
+#                tab and the .vszh5 break the same places on every clock.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        exact_cell_text: A CSV cell with every digit: text as is, an integer as is, a float as repr() (the shortest text that gives back the same float64).
+        install_exact_csv_export: Replace pyqtgraph's "CSV of original plot data" exporter (right-click > Export...) with one that writes every digit (0.3.2).
+        _ctrl_pressed: True when Ctrl is held during a (scene) wheel event.
+        _utc_text: Wall-clock text of a Unix time ('-' when unknown).
+        _value_text: Compact number; '-' for None/NaN (0.3.6: 12 significant digits from 10 000 up, so an MJD or a frequency reads to the second / hertz).
+        _align_right: Right-align a table cell (Qt.Alignment on new PySide6, int on old).
+        _swatch: Small square icon in a trace colour (legend column).
+        break_gaps: Insert one NaN after every step longer than ``factor`` x the median step.
+        _scroll_enclosing_area: Scroll the nearest QScrollArea around the plot by the wheel's steps.
+        _wheel_passes_through: True when the wheel must NOT zoom: scroll the page instead.
+        _ViewBox (class): ViewBox whose wheel zoom needs Ctrl.
+        tick_texts: Tick texts for numbers that pyqtgraph would cut (0.3.6), or None.
+        _AxisItem (class): Value axis with the same wheel rule; 0.3.6: large numbers (MJD, Hz) keep the digits their tick spacing needs (tick_texts).
+        _DateAxisItem (class): UTC date axis with the same wheel rule; below one day per tick the labels are two lines, the date above "T" + the time (0.3.5), like the vertical t...
+        _PlotWidget (class): PlotWidget that reports when the mouse leaves it (to clear the crosshair).
+        configure: Global pyqtgraph options and the wheel rule (call before plots exist).
+        _setting: A NativeWidget setting ('PlotLine/color', 'label', ...).
+        _children: Child widgets of ``widget`` whose kind is one of ``kinds``, in order.
+        _graphs_of: Graphs of a page in drawing order (directly or inside grids).
+        _numeric: (array, kind) of a numeric 1-D or date dataset, else (None, kind).
+        _looks_like_mjd: MJD axis: 'MJD' in the dataset name or axis label and plausible values.
+        document_pages: Pages of a NativeDocument as plain descriptions (no Qt objects).
+        _axis_breaks: The (start, stop) intervals a project's broken x axis leaves out, in the axis' units (0.3.7; [] when the axis is not broken).
+        _axis_offset: UTC offset ("-05:00") of a local ISO date-time axis, "local" when the data cross offsets, "Z" for a UTC axis (0.3.6), "" when not a date-time axis...
+        _axis_range: (min, max) fixed in the project, None where the limit is Auto.
+        _smith_graph: Description of a Smith chart written by vszh5_writer 0.0.26 (0.3.0).
+        _polar_graph: Description of a Veusz polar graph and its nonorthpoint traces.
+        trace_arrays: (x, y, x_is_unix_time) of one trace, converted for display.
+        plot_gap_rule: The writer GapRule the Plots tab uses for one graph (0.3.3): the project's TimeLayout (its defaults when the project has none) for time traces, its...
+        axis_break_regions: (start, stop) x intervals where the Veusz project breaks the x axis of a graph whose traces have the x values ``xs`` (display units), by the projec...
+        TracePlot (class): A pyqtgraph plot with its legend-and-values column beside it (same layout and behaviour as the AB monitor's TracePlot).
+        ImagePlot (class): A 2-D dataset (FITS image HDU) with a colour bar.
+        _nice_ticks: About ``count`` round tick values from low to high.
+        _GridPlot (class): Common base of PolarPlot and SmithPlot: an aspect-locked plot with a drawn grid, and the same legend-and-values column as TracePlot.
+        PolarPlot (class): Veusz-style polar plot of r(theta) traces (e.g.
+        SmithPlot (class): Smith chart (impedance grid "z" or admittance grid "y") of reflection coefficients, with f, Gamma, Z and VSWR of the nearest point under the mouse.
+        html_escape: Minimal HTML escaping for header labels.
+        ProjectPlotPanel (class): The "Plots" tab.
+        self_test: Build and delete one plot; None when pyqtgraph works, else the reason (needs a QApplication).
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        COLOURS: 4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
+        THEMES: 1e1e2e", "#cdd6f4", "#9399b2"),
+        PLOT_HEIGHT: px per plot row
+        LEGEND_WIDTH: px of the legend column (user can drag the splitter)
+        SYMBOL_MAX_POINTS: point symbols only up to this many points per trace
+        GAP_FACTOR: a step > GAP_FACTOR x median step breaks the line
+        WHEEL_NEEDS_CTRL: plain wheel scrolls the page, Ctrl+wheel zooms
+        VEUSZ_EPOCH_UNIX: 2009-01-01T00:00:00Z: Veusz datetime zero
+        MJD_UNIX_EPOCH: MJD of 1970-01-01T00:00:00Z
+        MJD_PLAUSIBLE: values outside are not treated as MJD
+        SMITH_NOTES_PREFIX: (0.3.0) How a Smith chart graph of vszh5_writer 0.0.26 is recognised (its : notes) and how its trace datasets are named (same values as the writer).
+        _LINE_STYLES: Veusz line style -> Qt pen style
+        _MARKERS: Veusz marker -> pyqtgraph symbol
+# %%%%% More Info
+    The Plots tab of every program (pyqtgraph 0.13 on Python 3.8, 0.14 on
+    3.12, through qtpy/PySide6).  Ctrl + wheel zooms; the wheel alone scrolls.
+    Right-click > Export > "CSV of original plot data (every digit)" writes
+    repr() of every value.
+    Gaps: the Plots tab breaks lines by the project's options and shades the
+    x intervals the Veusz project leaves out of a broken axis (pyqtgraph has
+    no broken axis).
+    Clocks: UTC pages read "Z",
+    MJD pages stay numbers; large numbers keep the digits their tick spacing
+    needs (tick_texts).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.6: Plots tab: UTC and MJD clock pages; numbers keep their digits.
 Date: 2026-11-17
 #              * document_pages(): "x_clock" of every graph; an MJD clock page
@@ -587,7 +775,7 @@ from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from qtpy.QtCore import Qt, Signal  # noqa: E402
 import pyqtgraph as pg  # noqa: E402
 
-VERSION = "0.3.6"
+VERSION = "0.3.8"
 __version__ = VERSION
 
 # %% Settings
@@ -1049,10 +1237,31 @@ def document_pages(doc: Any) -> List[Dict[str, Any]]:
                            "x_log": bool(_setting(x_axis, "log", False)) if x_axis else False,
                            "y_log": bool(_setting(y_axis, "log", False)) if y_axis else False,
                            "x_range": _axis_range(x_axis), "y_range": _axis_range(y_axis),
-                           "x_tz": _axis_offset(x_axis), "x_clock": x_clock})
+                           "x_tz": _axis_offset(x_axis), "x_clock": x_clock,
+                           "x_breaks": _axis_breaks(x_axis),               # 0.3.7
+                           "x_laid_out": _laid_out(x_axis)})               # 0.3.8
         if graphs:
             pages.append({"name": page.name, "graphs": graphs})
     return pages
+
+
+def _laid_out(axis: Any) -> bool:
+    """True when the project's gap layout (finalize: the time or the
+    numeric gap options) has laid out this x axis (0.3.8): its traces then
+    draw the project's own cut copies and its breaks are the project's
+    breakPoints - a combined-axis trace is cut only where none of its files
+    has data, a rule the Plots tab cannot see from the joined values."""
+    return axis is not None and (getattr(axis, "gap_layout_key", None) is not None
+                                 or getattr(axis, "time_layout_key", None) is not None)
+
+
+def _axis_breaks(axis: Any) -> List[Tuple[float, float]]:
+    """The (start, stop) intervals a project's broken x axis leaves out, in
+    the axis' units (0.3.7; [] when the axis is not broken)."""
+    if axis is None or getattr(axis, "kind", "") != "axis-broken":
+        return []
+    points = [float(v) for v in (_setting(axis, "breakPoints", ()) or ())]
+    return list(zip(points[0::2], points[1::2]))
 
 
 def _axis_offset(axis: Any) -> str:
@@ -1158,13 +1367,18 @@ def _polar_graph(doc: Any, graph: Any, page_title: str = "") -> Optional[Dict[st
 
 
 def trace_arrays(doc: Any, trace: Dict[str, Any], x_kind: str,
-                 mjd_as_date: bool, days: bool = False) -> Tuple[np.ndarray, np.ndarray, bool]:
+                 mjd_as_date: bool, days: bool = False,
+                 recut: bool = True) -> Tuple[np.ndarray, np.ndarray, bool]:
     """
     (x, y, x_is_unix_time) of one trace, converted for display.
 
     Veusz datetime seconds -> Unix seconds; MJD -> Unix seconds when
     ``mjd_as_date``; gaps broken with NaN.  0.3.6: ``days`` - x is an MJD
     clock axis (numbers, in days): the time gap rule is used, on seconds.
+    0.3.7: ``recut`` False draws the trace as the project laid it out (a
+    time-axis clock: the project cut its lines in UTC seconds; cutting the
+    local copy again broke the line at a spring-forward hour, where the
+    data have no gap).
     """
     x, _k = _numeric(doc, trace["x_name"])
     y, _k = _numeric(doc, trace["y_name"])
@@ -1187,10 +1401,50 @@ def trace_arrays(doc: Any, trace: Dict[str, Any], x_kind: str,
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     rule = plot_gap_rule(doc, is_time or days)
-    if rule is None:
+    if rule is None or not recut:
         return x, y, is_time
     cut = vszh5_writer.rule_gap_positions(x * 86400.0 if days else x, rule)
     return vszh5_writer.insert_gaps(x, cut), vszh5_writer.insert_gaps(y, cut), is_time
+
+
+def graph_recut(graph: Dict[str, Any]) -> bool:
+    """False when the Plots tab draws a graph's traces as the project laid
+    them out (0.3.8: a time-axis clock, 0.3.7, or any x axis the project's
+    gap layout ran on); True when it cuts them itself (trace_arrays)."""
+    return not (graph.get("x_clock") or graph.get("x_laid_out"))
+
+
+def graph_break_regions(doc: Any, graph: Dict[str, Any], xs: Sequence[np.ndarray],
+                        is_time: bool, mjd_as_date: bool) -> List[Tuple[float, float]]:
+    """
+    The x intervals the Plots tab shades on one graph of document_pages
+    (0.3.8), in the units its traces are drawn in: the project's own
+    breakPoints on a time-axis clock (0.3.7) and on any axis the project
+    laid out - a combined-axis trace is broken where no file has data, which
+    the joined values alone do not tell - else the project's gap options
+    applied to ``xs`` (axis_break_regions).  [] on a log axis.
+    """
+    if graph.get("x_log", False):
+        return []
+    if graph.get("x_clock"):
+        shift = VEUSZ_EPOCH_UNIX if graph.get("x_kind") == "veusz_date" else 0.0
+        return [(a + shift, b + shift) for a, b in graph.get("x_breaks", [])]
+    if graph.get("x_laid_out"):
+        return [(display_x(a, graph.get("x_kind", ""), mjd_as_date),
+                 display_x(b, graph.get("x_kind", ""), mjd_as_date))
+                for a, b in graph.get("x_breaks", [])]
+    return axis_break_regions(doc, xs, is_time, graph.get("x_clock") == "mjd")
+
+
+def display_x(value: float, x_kind: str, mjd_as_date: bool) -> float:
+    """A project x value in the units trace_arrays draws it in (0.3.8):
+    Veusz date seconds -> Unix seconds, MJD -> Unix seconds when
+    ``mjd_as_date``, anything else as it is."""
+    if x_kind == "veusz_date":
+        return float(value) + VEUSZ_EPOCH_UNIX
+    if x_kind == "mjd" and mjd_as_date:
+        return (float(value) - MJD_UNIX_EPOCH) * 86400.0
+    return float(value)
 
 
 def plot_gap_rule(doc: Any, is_time: bool) -> Any:
@@ -2202,13 +2456,17 @@ class ProjectPlotPanel(QtWidgets.QWidget):
                 days = graph.get("x_clock") == "mjd"             # 0.3.6
                 for trace in graph["traces"]:
                     x, y, is_time = trace_arrays(self.doc, trace, graph["x_kind"],
-                                                 mjd_as_date, days)
+                                                 mjd_as_date, days,
+                                                 recut=graph_recut(graph))      # 0.3.8
                     plot.add_trace(trace["label"], x, y, trace["colour"], trace["style"],
                                    trace["marker"], trace["line"])
                     xs.append(x[np.isfinite(x)])
-                # 0.3.3: where the project breaks the x axis (gap options)
+                # 0.3.3: where the project breaks the x axis (gap options);
+                # 0.3.7 / 0.3.8: the project's own breaks wherever it laid
+                # the axis out (graph_break_regions)
                 if not graph.get("x_log", False):
-                    plot.mark_axis_breaks(axis_break_regions(self.doc, xs, is_time, days))
+                    plot.mark_axis_breaks(graph_break_regions(self.doc, graph, xs, is_time,
+                                                              mjd_as_date))
                 plot._set_header(None)
                 plot.apply_axes(graph.get("x_log", False), graph.get("y_log", False),
                                 graph.get("x_range", (None, None)) if not date_axis

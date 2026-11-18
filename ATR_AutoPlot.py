@@ -61,6 +61,155 @@ frequency; this program assumes lower -> upper (see DATA_GAPS).
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.0: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * NEW Combined_mag, Combined_phase, Combined_polar_mag and
+#                Combined_polar_phase, just above the overlay pages: the pattern
+#                of each frequency (and repeat) of every file joined and sorted
+#                on azimuth ("Combined[_<freq>]_Az / _mag / _phase"); one trace
+#                per frequency; the files' rows go to the gap layout.
+#              * PlotOptions.pages; per-file pages and overlays only when
+#                ticked.  GUI: Pages to draw (a change redraws); batch: --pages.
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _mhz_text: A frequency (MHz) as exact text (0.2.4): every digit of the float64 (repr), without a trailing ".0" - 2700.0 -> "2700", 1420.40575 -> "1420.40575".
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.3.0"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Pages to draw (all ticked): Per file - each file's own pages;
+    Combined axis - the same quantity of every file joined end to end and
+    sorted on x (one trace spanning every file, cut only where no file has
+    data), just above the overlays; Overlay - the files' traces on one graph.
+    Batch: --pages per_file,combined,overlay (any of them).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.2.8: Gap options enforced.
+Date: 2026-11-17
+#              * The Plots tab follows every gap option changed after a run
+#                (GapOptionsBox.follow; before, the save used the new options
+#                and the Plots tab the old ones); options(log): the rule in
+#                force and any unreadable fixed-gap text are logged at the run
+#                and the save; --gap-* checked at the command line.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        ATRFormatError (class): The file is not an ATR pattern file this program can read.
+        ATRPattern (class): One parsed .atr file (n_freq traces of n_az points).
+        parse_header_time: "Tue, Jul 02, 2024 12:19 PM" (and close variants) -> naive datetime.
+        _header_number: First number in header field ``key`` of an ATR file.
+        parse_atr_text: Parse the text of one ATR file.
+        _mhz_text: A frequency (MHz) as exact text (0.2.4): every digit of the float64 (repr), without a trailing ".0" - 2700.0 -> "2700", 1420.40575 -> "1420.40575".
+        _is_float: True when ``token`` parses as a float.
+        read_atr_file: Read and parse one file (ASCII; undecodable bytes are replaced).
+        _read_worker: Process-pool worker: (path, pattern or None, error text).
+        read_files: Read files in input order, in a 'spawn' process pool when it pays off.
+        PlotOptions (class): Plot settings chosen in the GUI (or on the command line).
+        ATRPlotter (class): Builds the Veusz project of a batch of patterns.
+        build_project: ATRPlotter with every pattern added (input order).
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        batch: Command-line conversion; returns the process exit code.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "ATR AutoPlot"
+        APP_VERSION = "0.2.8"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        DATA_GAPS: Known gaps in the format description (shown in the log once per run).
+        DEFAULT_MAG_RANGE: dB, as in the 2025 version
+        PHASE_RANGE: deg
+        AZIMUTH_RANGE: deg, full-circle axis (default)
+        _NUMBER_LINE: data line: starts with a number (inf and nan allowed)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python ATR_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python ATR_AutoPlot.py *.atr --output atr.vszh5   (batch, no GUI)
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.2.7: RAM limit - plot data offloaded to disk above it.
 Date: 2026-11-17
 #              * RamLimitBox under the gap options; the project's datasets and
@@ -445,7 +594,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
@@ -459,7 +608,7 @@ from _autoplot_native import (exact_number_text, tag_data,   # noqa: E402
 from _autoplot_parallel import adaptive_map, module_import_seconds  # noqa: E402  (0.x adaptive pool)
 
 APP_NAME = "ATR AutoPlot"
-APP_VERSION = "0.2.7"
+APP_VERSION = "0.3.0"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("GBO Outdoor Antenna Range (.atr) pattern files to native Veusz "
                    ".vszh5 projects, with interactive pyqtgraph plots.")
@@ -722,6 +871,9 @@ class PlotOptions:
     #: 0.2.5: gap options (_autoplot_native TimeLayout); None = the defaults
     #: (line and axis breaks on, non-time axes included)
     gaps: Any = None
+    #: 0.3.0: page kinds (_autoplot_native.page_kinds): per_file, combined,
+    #: overlay; None = all three
+    pages: Any = None
 
 
 class ATRPlotter:
@@ -747,6 +899,11 @@ class ATRPlotter:
         self._overlays: Optional[Tuple[Any, Any]] = None
         self._az_span: List[float] = []
         self._overlay_notes: List[str] = []
+        from _autoplot_native import page_kinds
+        self.kinds = page_kinds(self.options.pages)               # 0.3.0
+        #: 0.3.0: (stem, azimuth, [(key, magnitude, phase), ...]) per file,
+        #: for the combined-axis pages
+        self._combined_parts: List[Tuple[str, np.ndarray, List[Tuple[Any, ...]]]] = []
 
     # ----- names ----------------------------------------------------------------
     def _unique_stem(self, pattern: ATRPattern) -> str:
@@ -768,8 +925,13 @@ class ATRPlotter:
 
     # ----- public ---------------------------------------------------------------
     def add_pattern(self, pattern: ATRPattern) -> str:
-        """Datasets and pages of one file; returns its dataset stem."""
-        if self._overlays is None:
+        """Datasets and pages of one file; returns its dataset stem.
+
+        0.3.0: the per-file pages and the overlay traces only for the page
+        kinds asked for (``options.pages``); the datasets are stored either
+        way, and the file is kept for the combined-axis pages (finish()).
+        """
+        if self._overlays is None and "overlay" in self.kinds:
             self._overlays = self._create_overlay_pages()
         stem = self._unique_stem(pattern)
         doc = self.doc
@@ -827,8 +989,18 @@ class ATRPlotter:
         title = stem.replace("_", " ")
         colour = "red" if single else "auto"
         x_range = self._x_range([pattern])
-        for kind, label, y_range in (("mag", self.MAG_LABEL, self.options.mag_range),
-                                     ("phase", self.PHASE_LABEL, PHASE_RANGE)):
+        # 0.3.0: kept for the combined-axis pages - one key per frequency
+        # (and occurrence, when a file repeats a frequency)
+        seen: Dict[float, int] = {}
+        parts = []
+        for k, (mag_name, phase_name, key) in enumerate(traces):
+            mhz = float(pattern.frequencies_mhz[k])
+            seen[mhz] = seen.get(mhz, 0) + 1
+            parts.append(((mhz, seen[mhz]), pattern.magnitude_db[k], pattern.phase_deg[k], key))
+        self._combined_parts.append((stem, np.asarray(pattern.azimuth_deg), parts))
+        file_pages = (("mag", self.MAG_LABEL, self.options.mag_range),
+                      ("phase", self.PHASE_LABEL, PHASE_RANGE)) if "per_file" in self.kinds else ()
+        for kind, label, y_range in file_pages:
             page = doc.Root.Add("page", name="%s_%s" % (stem, kind))
             page.notes.val = notes
             graph = page.Add("grid", columns=2).Add(
@@ -839,7 +1011,8 @@ class ATRPlotter:
                 xy = graph.Add("xy", name=trace_widget_name(y_name))   # 0.2.4: data name
                 self._configure_xy(xy, az_name, mag_name if kind == "mag" else phase_name,
                                    colour, key, fill=single)
-        for kind, r_range in (("mag", self.options.mag_range), ("phase", PHASE_RANGE)):
+        for kind, r_range in ((("mag", self.options.mag_range), ("phase", PHASE_RANGE))
+                              if "per_file" in self.kinds else ()):
             page = doc.Root.Add("page", name="%s_polar_%s" % (stem, kind))
             self._add_page_title(page, title)
             page.notes.val = notes
@@ -851,8 +1024,8 @@ class ATRPlotter:
                 point = polar.Add("nonorthpoint", name=trace_widget_name(r_name))   # 0.2.4
                 self._configure_polar_plot(point, mag_name if kind == "mag" else phase_name,
                                            az_name, colour, fill=single)
-        mag_graph, phase_graph = self._overlays
-        for mag_name, phase_name, key in traces:
+        mag_graph, phase_graph = self._overlays if self._overlays is not None else (None, None)
+        for mag_name, phase_name, key in (traces if self._overlays is not None else ()):
             label = stem if single else "%s %s" % (stem, key)
             self._configure_overlay_xy(mag_graph.Add("xy", name=trace_widget_name(mag_name)),
                                        az_name, mag_name, label)
@@ -861,7 +1034,13 @@ class ATRPlotter:
         return stem
 
     def finish(self) -> None:
-        """Overlay x ranges once all files are in (fit-to-data option)."""
+        """Overlay x ranges once all files are in (fit-to-data option); 0.3.0:
+        the combined-axis pages, just above the overlay pages."""
+        if "combined" in self.kinds and self._combined_parts:
+            from _autoplot_native import move_pages_before
+            pages = self._combined_pages()
+            anchor = self._overlays[0].parent.parent if self._overlays is not None else None
+            move_pages_before(self.doc, pages, anchor)
         if self._overlays is not None:
             text = "\n\n".join(["Overlay of %d file(s)" % len(self._overlay_notes)]
                                 + self._overlay_notes)
@@ -875,6 +1054,95 @@ class ATRPlotter:
     def save(self, filename: str) -> str:
         """Write the .vszh5 (atomic, vszh5_writer); returns the path written."""
         return self.doc.save(filename)
+
+    def _combined_pages(self) -> List[Any]:
+        """
+        The combined-axis pages (0.3.0): Combined_mag, Combined_phase,
+        Combined_polar_mag and Combined_polar_phase, laid out like a file's
+        own pages, with one trace per frequency holding that frequency's
+        pattern of every file joined end to end and sorted on azimuth
+        (stable: equal azimuths keep their file order;
+        _autoplot_native.concatenate_on_x), so the azimuth axis spans every
+        file.  Nothing is rounded.  Returns the pages made.
+        """
+        from _autoplot_native import concatenate_on_x, overlapping_ranges, set_combined_sources
+        doc = self.doc
+        order: List[Any] = []
+        members: Dict[Any, List[Tuple[str, np.ndarray, np.ndarray, np.ndarray]]] = {}
+        labels: Dict[Any, str] = {}
+        for stem, azimuth, parts in self._combined_parts:
+            for key, mag, phase, text in parts:
+                if key not in members:
+                    members[key] = []
+                    order.append(key)
+                    labels[key] = text if key[1] == 1 else "%s (%d)" % (text, key[1])
+                members[key].append((stem, azimuth, np.asarray(mag), np.asarray(phase)))
+        traces = []
+        for index, key in enumerate(order, start=1):
+            group = members[key]
+            az, (mag, phase), row_files = concatenate_on_x(
+                [g[1] for g in group], [[g[2], g[3]] for g in group], with_sources=True)
+            suffix = "" if len(order) == 1 else "_" + self._freq_tag(key[0]) + (
+                "" if key[1] == 1 else "_%d" % key[1])
+            az_name = "Combined%s_Az" % suffix
+            mag_name, phase_name = "Combined%s_mag" % suffix, "Combined%s_phase" % suffix
+            doc.SetData(az_name, az)
+            doc.SetData(mag_name, mag)
+            doc.SetData(phase_name, phase)
+            set_combined_sources(doc, [az_name], row_files)   # gaps only where no file has data
+            sources = [g[0] for g in group]
+            tag_data(doc, [az_name], sources, ("azimuth_deg", "combined"))
+            tag_data(doc, [mag_name], sources, ("magnitude_dB", "combined"))
+            tag_data(doc, [phase_name], sources, ("phase_deg", "combined"))
+            overlap = overlapping_ranges([g[1] for g in group])
+            traces.append((az_name, mag_name, phase_name, labels[key], len(group), overlap))
+        files = [stem for stem, _a, _p in self._combined_parts]
+        notes = "\n\n".join(
+            ["Combined axis: the pattern of every frequency of %d file(s) joined end to end "
+             "and sorted on azimuth (stable: equal azimuths keep their file order).\n"
+             "Files, in order: %s\n%s" % (len(files), ", ".join(files), "\n".join(
+                 "%s: %d file(s)%s" % (t[3], t[4], ", azimuth ranges of %d overlap an earlier "
+                 "file - their samples interleave" % t[5] if t[5] else "") for t in traces))]
+            + self._overlay_notes)
+        single = len(traces) == 1
+        colour = "red" if single else "auto"
+        title = "Combined axis (%d files)" % len(files)
+        x_range = self._x_range([p for p in self._range_patterns()])
+        pages = []
+        for kind, label, y_range in (("mag", self.MAG_LABEL, self.options.mag_range),
+                                     ("phase", self.PHASE_LABEL, PHASE_RANGE)):
+            page = doc.Root.Add("page", name="Combined_%s" % kind)
+            page.notes.val = notes
+            graph = page.Add("grid", columns=2).Add(
+                "graph", name="Combined_%s" % ("Mag" if kind == "mag" else "Phase"))
+            self._configure_graph(graph, title, label, y_range, x_range)
+            for az_name, mag_name, phase_name, key, _n, _o in traces:
+                y_name = mag_name if kind == "mag" else phase_name
+                self._configure_xy(graph.Add("xy", name=trace_widget_name(y_name)), az_name,
+                                   y_name, colour, key, fill=single)
+            pages.append(page)
+        for kind, r_range in (("mag", self.options.mag_range), ("phase", PHASE_RANGE)):
+            page = doc.Root.Add("page", name="Combined_polar_%s" % kind)
+            self._add_page_title(page, title)
+            page.notes.val = notes
+            polar = page.Add("grid", columns=2).Add(
+                "polar", name="Combined_Polar_%s" % ("mag" if kind == "mag" else "Phase"))
+            self._configure_polar_graph(polar, *r_range)
+            for az_name, mag_name, phase_name, key, _n, _o in traces:
+                r_name = mag_name if kind == "mag" else phase_name
+                self._configure_polar_plot(polar.Add("nonorthpoint", name=trace_widget_name(r_name)),
+                                           r_name, az_name, colour, fill=single)
+            pages.append(page)
+        return pages
+
+    def _range_patterns(self) -> List[Any]:
+        """Stand-ins with the azimuths of every kept file, for _x_range (0.3.0)."""
+        class _Az(object):
+            """An object with an ``azimuth_deg`` attribute."""
+            def __init__(self, azimuth):
+                """Keep ``azimuth`` (degrees) as ``azimuth_deg``."""
+                self.azimuth_deg = azimuth
+        return [_Az(azimuth) for _stem, azimuth, _parts in self._combined_parts]
 
     # ----- pages ----------------------------------------------------------------
     def _x_range(self, patterns: Sequence[ATRPattern]) -> Tuple[float, float]:
@@ -1006,7 +1274,7 @@ def _build_gui_classes():
     Keeps the batch mode (``--output``) free of Qt; returns (QApplication,
     ATRMainWindow).
     """
-    from qtpy.QtCore import QThread, Signal
+    from qtpy.QtCore import QThread, QTimer, Signal
     from qtpy.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFileDialog,
                                 QFormLayout, QGroupBox, QHBoxLayout, QLineEdit,
                                 QListWidget, QMainWindow, QMessageBox, QProgressBar,
@@ -1146,7 +1414,27 @@ def _build_gui_classes():
             layout.addWidget(options)
             # 0.2.5: gaps (missing azimuths, time breaks): line / axis breaks
             self.gap_box = suite.GapOptionsBox()
+            # 0.2.8: a gap option changed after a run redraws the Plots tab
+            self.gap_box.follow(
+                lambda: self.plotter.doc if self.plotter is not None else None,
+                lambda: self.plot_panel, self._log,
+                ready=lambda: self.save_button.isEnabled())
             layout.addWidget(self.gap_box)
+            # 0.3.0: Per file / Combined axis / Overlay pages; a box changed
+            # after a run builds the project again (files already read are
+            # not read again)
+            self.page_types_box = suite.PageTypesBox(notes={
+                "per_file": "ATR: four pages per file (magnitude, phase, polar magnitude, "
+                            "polar phase).",
+                "combined": "ATR: the same four pages, 'Combined_*', each frequency's "
+                            "pattern of every file joined and sorted on azimuth.",
+                "overlay": "ATR: 'Overlay_All_mag' and 'Overlay_All_phase', every file stacked."})
+            layout.addWidget(self.page_types_box)
+            self._pages_timer = QTimer(self)
+            self._pages_timer.setSingleShot(True)
+            self._pages_timer.setInterval(500)
+            self._pages_timer.timeout.connect(self._page_kinds_changed)
+            self.page_types_box.kinds_changed.connect(lambda _k: self._pages_timer.start())
             # 0.2.7: offload plot data to disk above this computer's RAM limit
             self.ram_box = suite.RamLimitBox()
             layout.addWidget(self.ram_box)
@@ -1241,16 +1529,30 @@ def _build_gui_classes():
             if plotter is not None:
                 plotter.doc.release()
 
-        def options(self) -> PlotOptions:
+        def options(self, log: Optional[Callable[[str], None]] = None) -> PlotOptions:
             """PlotOptions from the GUI (an inverted magnitude range is widened to
-            1 dB above the minimum).
+            1 dB above the minimum; 0.2.8: ``log`` gets the gap rule in force
+            and any fixed-gap text that cannot be read).
             """
             low, high = self.mag_min.value(), self.mag_max.value()
             if high <= low:
                 high = low + 1.0
+            if log is not None:                                   # 0.3.0
+                from _autoplot_native import describe_page_kinds
+                log(describe_page_kinds(self.page_types_box.kinds()))
             return PlotOptions(title=self.title_edit.text().strip(),
                                mag_range=(low, high), fit_azimuth=self.fit_box.isChecked(),
-                               gaps=self.gap_box.time_layout())
+                               gaps=self.gap_box.time_layout(log),
+                               pages=self.page_types_box.kinds())
+
+        def _page_kinds_changed(self) -> None:
+            """0.3.0: a page box changed after a run - build the project again with
+            the ticked kinds (nothing before the first run or during one)."""
+            if self.plotter is None or not self.save_button.isEnabled():
+                return
+            if self.plotter.kinds == self.page_types_box.kinds():
+                return
+            self._process()
 
         # ----- processing ---------------------------------------------------------
         def _process(self) -> None:
@@ -1301,7 +1603,7 @@ def _build_gui_classes():
                 return
             self._drop_project()
             try:
-                self.plotter = build_project(patterns, self.options())
+                self.plotter = build_project(patterns, self.options(self._log))
             except Exception as exc:
                 self._log("Project build failed: %s" % exc)
                 QMessageBox.critical(self, APP_NAME, "Project build failed:\n%s" % exc)
@@ -1336,7 +1638,7 @@ def _build_gui_classes():
             if not path:
                 return
             try:
-                self.plotter.doc.time_layout = self.gap_box.time_layout()   # 0.2.5
+                self.plotter.doc.time_layout = self.gap_box.time_layout(self._log)   # 0.2.5
                 self.last_saved = self.plotter.save(path)
             except Exception as exc:
                 QMessageBox.critical(self, APP_NAME, "Failed to save the project:\n%s" % exc)
@@ -1399,15 +1701,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
     from _autoplot_native import (add_gap_arguments, add_memory_arguments, layout_from_args,
-                                  ram_limit_from_args)
+                                  ram_limit_from_args, add_page_arguments, page_kinds_from_args)
     add_gap_arguments(parser)                  # 0.2.5: --gap-k ... --no-axis-breaks
     add_memory_arguments(parser)               # 0.2.7: --ram-limit
+    add_page_arguments(parser)                 # 0.3.0: --pages per_file,combined,overlay
     args = parser.parse_args(argv)
     ram_limit_from_args(args)
     if args.output:
         return batch(args.files, args.output,
                      PlotOptions(args.title, tuple(args.mag_range), args.fit_azimuth,
-                                 gaps=layout_from_args(args)),
+                                 gaps=layout_from_args(args), pages=page_kinds_from_args(args)),
                      args.workers)
     QApplication, ATRMainWindow = _build_gui_classes()
     app = QApplication.instance() or QApplication(sys.argv[:1])

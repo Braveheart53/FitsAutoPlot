@@ -40,6 +40,228 @@ Optional: cupy (NVIDIA CUDA or AMD ROCm) or pyopencl + pyvkfft (any OpenCL
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.8.0: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * NEW Combined_SParam (each S-parameter of every file joined and
+#                sorted on frequency: Combined_<P>_freq_GHz / _mag_dB /
+#                _phase_deg) and Overlay_SParam (every S-parameter of every
+#                file; colour per file, line style per parameter), after the
+#                per-file pages and before the time-gated and Smith pages; the
+#                Touchstone tool had no multi-file overlay before.
+#              * create_plots_from_data(page=False) stores a file's datasets
+#                without its page; create_multi_file_pages(); Pages to draw in
+#                the side panel (a change rebuilds the frequency pages).
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        is_windows: True on Windows.
+        get_extended_path: Convert a path to Windows extended-length form (\\\\?\\) if needed.
+        normalize_path: Resolved path; extended-length form on Windows.
+        validate_path_length: Check a path against the classic Windows MAX_PATH limit.
+        truncate_filename: Shorten a file name to ``max_length`` keeping the extension.
+        ProcessingConfig (class): File processing options.
+        TimeDomainConfig (class): Time-domain transform and gate settings.
+        SmithChartConfig (class): Smith chart options.
+        get_sparam_color: Consistent colour for an S-parameter across every plot.
+        _num: A number for page notes and titles with every digit (0.7.3): the shortest text that gives back the same float64 (repr), an integer as is; 0.7.2 use...
+        sanitize_name: Veusz-safe dataset / widget / tag stem (letters, digits, '_').
+        s_param_names: [(i, j, 'S<i+1><j+1>'), ...] in row-major order.
+        to_db: 20*log10|x| with a floor so silence never becomes -inf; inf/NaN -> NaN.
+        td_axis_floor: Lower y limit (dB) for time-domain plots: peak minus TD_DISPLAY_RANGE_DB, rounded down to 10 dB.
+        read_touchstone_header: Comment ('!') and option ('#') lines, plus any keyword lines, up to the first numeric data line.
+        ensure_uniform_network: Return a network on an exactly uniform frequency grid.
+        resolve_window: scipy.signal.get_window specification for a GUI window choice.
+        time_domain_vectorized: Windowed band-pass time-domain response of every S-parameter at once.
+        one_port: S_ij of ``network`` as a one-port (scikit-rf gates one-ports only).
+        call_time_gate: ``skrf.time.time_gate`` with only the arguments this scikit-rf supports.
+        compute_time_domain: Time-domain response and time gating of every (or selected) S-parameter.
+        _td_worker: Process-pool entry point: (key, network, config, gpu) -> (key, result).
+        run_time_domain_batch: Time domain + gating for many files.
+        TimeDomainProcessor (class): Thin object wrapper over ``compute_time_domain`` (kept for 0.4.0 users).
+        make_smith_figure: Smith chart of a one-port with scikit-rf.
+        export_smith_worker: Process-pool entry point that writes one Smith chart file.
+        SmithChartPlottermpld3 (class): Smith chart export helpers (name kept from 0.4.0).
+        TouchstonePlotter (class): Builds the Veusz project for the processed Touchstone files.
+        _matplotlib_canvas: Fallback matplotlib Qt canvas (imported only when needed).
+        TouchstonePlotCanvas (class): Time-domain and Smith chart previews.
+        process_single_touchstone_file: Read one Touchstone file (process-pool entry point).
+        unique_keys: Map each path to a unique display key (file name, then ' (2)', ...).
+        TouchstoneProcessingThread (class): Reads the selected files (process pool for several files).
+        FunctionWorker (class): Run ``func(progress_callback)`` off the GUI thread.
+        _module_version: Installed version of a module, or 'not installed'.
+        build_about_content: Rich text and runtime details for Help > About.
+        TouchstoneMainWindow (class): Main window: processing, time domain and Smith chart tabs.
+        main: Start the GUI.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "Touchstone AutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        DB_FLOOR: |x| floor before 20*log10 (-240 dB)
+        TD_DISPLAY_RANGE_DB: time-domain y axis spans peak - 120 dB .. Auto
+        UNIFORM_RTOL: steps within this are taken as exactly uniform
+        NONUNIFORM_NOTE_RTOL: above this the re-gridding is reported
+        CPU_COUNT: logical CPUs of this computer
+        MAX_PATH_WINDOWS: classic Windows MAX_PATH (260 characters)
+        PATH_WARNING_THRESHOLD: warn when a path is longer than this
+        EXTENDED_PATH_PREFIX: Windows extended-length path prefix
+        GATING_MODES: gating combo box text -> gating mode
+        WINDOW_TYPES: transform / gate window choices
+        _NUMERIC_START: line starting with a number (Touchstone data line)
+        _TIME_GATE_PARAMS: parameters accepted by skrf.time.time_gate (they differ between scikit-rf versions)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+        QT_BINDING = "PySide6"
+        PYQTGRAPH_ERROR = ""
+        MPLD3_AVAILABLE = True
+        PDF_LIBRARY = "pypdf"
+        VEUSZ_BACKEND = "native"
+# %%%%% More Info
+    Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
+    scikit-rf reads the .sNp files; time domain and gating, Smith charts
+    (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
+    'spawn' start method on every platform and is used only when it pays off
+    (_autoplot_parallel); GPU optional for large transforms (NVIDIA or AMD,
+    _autoplot_gpu).
+    Every dataset carries the Veusz tags source_<file>, source_<run> and
+    type_<kind>; traces are named after their data; notes and titles give
+    every digit.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Pages to draw (all ticked): Per file - each file's own pages;
+    Combined axis - the same quantity of every file joined end to end and
+    sorted on x (one trace spanning every file, cut only where no file has
+    data), just above the overlays; Overlay - the files' traces on one graph.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.7.7: Gap options enforced.
+Date: 2026-11-17
+#              * The Plots tab follows every gap option changed after a run
+#                (GapOptionsBox.follow); the rule in force and any unreadable
+#                fixed-gap text are logged at the run and the save.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        is_windows: True on Windows.
+        get_extended_path: Convert a path to Windows extended-length form (\\\\?\\) if needed.
+        normalize_path: Resolved path; extended-length form on Windows.
+        validate_path_length: Check a path against the classic Windows MAX_PATH limit.
+        truncate_filename: Shorten a file name to ``max_length`` keeping the extension.
+        ProcessingConfig (class): File processing options.
+        TimeDomainConfig (class): Time-domain transform and gate settings.
+        SmithChartConfig (class): Smith chart options.
+        get_sparam_color: Consistent colour for an S-parameter across every plot.
+        _num: A number for page notes and titles with every digit (0.7.3): the shortest text that gives back the same float64 (repr), an integer as is; 0.7.2 use...
+        sanitize_name: Veusz-safe dataset / widget / tag stem (letters, digits, '_').
+        s_param_names: [(i, j, 'S<i+1><j+1>'), ...] in row-major order.
+        to_db: 20*log10|x| with a floor so silence never becomes -inf; inf/NaN -> NaN.
+        td_axis_floor: Lower y limit (dB) for time-domain plots: peak minus TD_DISPLAY_RANGE_DB, rounded down to 10 dB.
+        read_touchstone_header: Comment ('!') and option ('#') lines, plus any keyword lines, up to the first numeric data line.
+        ensure_uniform_network: Return a network on an exactly uniform frequency grid.
+        resolve_window: scipy.signal.get_window specification for a GUI window choice.
+        time_domain_vectorized: Windowed band-pass time-domain response of every S-parameter at once.
+        one_port: S_ij of ``network`` as a one-port (scikit-rf gates one-ports only).
+        call_time_gate: ``skrf.time.time_gate`` with only the arguments this scikit-rf supports.
+        compute_time_domain: Time-domain response and time gating of every (or selected) S-parameter.
+        _td_worker: Process-pool entry point: (key, network, config, gpu) -> (key, result).
+        run_time_domain_batch: Time domain + gating for many files.
+        TimeDomainProcessor (class): Thin object wrapper over ``compute_time_domain`` (kept for 0.4.0 users).
+        make_smith_figure: Smith chart of a one-port with scikit-rf.
+        export_smith_worker: Process-pool entry point that writes one Smith chart file.
+        SmithChartPlottermpld3 (class): Smith chart export helpers (name kept from 0.4.0).
+        TouchstonePlotter (class): Builds the Veusz project for the processed Touchstone files.
+        _matplotlib_canvas: Fallback matplotlib Qt canvas (imported only when needed).
+        TouchstonePlotCanvas (class): Time-domain and Smith chart previews.
+        process_single_touchstone_file: Read one Touchstone file (process-pool entry point).
+        unique_keys: Map each path to a unique display key (file name, then ' (2)', ...).
+        TouchstoneProcessingThread (class): Reads the selected files (process pool for several files).
+        FunctionWorker (class): Run ``func(progress_callback)`` off the GUI thread.
+        _module_version: Installed version of a module, or 'not installed'.
+        build_about_content: Rich text and runtime details for Help > About.
+        TouchstoneMainWindow (class): Main window: processing, time domain and Smith chart tabs.
+        main: Start the GUI.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "Touchstone AutoPlot"
+        ORGANIZATION_NAME = "NRAO-GBO"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        DB_FLOOR: |x| floor before 20*log10 (-240 dB)
+        TD_DISPLAY_RANGE_DB: time-domain y axis spans peak - 120 dB .. Auto
+        UNIFORM_RTOL: steps within this are taken as exactly uniform
+        NONUNIFORM_NOTE_RTOL: above this the re-gridding is reported
+        CPU_COUNT: logical CPUs of this computer
+        MAX_PATH_WINDOWS: classic Windows MAX_PATH (260 characters)
+        PATH_WARNING_THRESHOLD: warn when a path is longer than this
+        EXTENDED_PATH_PREFIX: Windows extended-length path prefix
+        GATING_MODES: gating combo box text -> gating mode
+        WINDOW_TYPES: transform / gate window choices
+        _NUMERIC_START: line starting with a number (Touchstone data line)
+        _TIME_GATE_PARAMS: parameters accepted by skrf.time.time_gate (they differ between scikit-rf versions)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+        QT_BINDING = "PySide6"
+        PYQTGRAPH_ERROR = ""
+        MPLD3_AVAILABLE = True
+        PDF_LIBRARY = "pypdf"
+        VEUSZ_BACKEND = "native"
+# %%%%% More Info
+    Run:  python Touchstone_AutoPlot.py   (GUI; View menu: light/dark)
+    scikit-rf reads the .sNp files; time domain and gating, Smith charts
+    (pyqtgraph previews, Veusz pages, PDF/PNG export); multiprocessing uses the
+    'spawn' start method on every platform and is used only when it pays off
+    (_autoplot_parallel); GPU optional for large transforms (NVIDIA or AMD,
+    _autoplot_gpu).
+    Every dataset carries the Veusz tags source_<file>, source_<run> and
+    type_<kind>; traces are named after their data; notes and titles give
+    every digit.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.7.6: RAM limit - plot data offloaded to disk above it.
 Date: 2026-11-17
 #              * RamLimitBox under the gap options; the project's datasets and
@@ -767,7 +989,7 @@ if getattr(sys, "frozen", False):
     QT_BINDING = "PySide6"
 else:
     import qtpy
-    from qtpy.QtCore import Qt, QThread, Signal, qVersion, QCoreApplication, QEvent
+    from qtpy.QtCore import Qt, QThread, QTimer, Signal, qVersion, QCoreApplication, QEvent
     from qtpy.QtGui import QKeySequence
     try:
         from qtpy.QtGui import QAction, QActionGroup
@@ -857,7 +1079,7 @@ except ImportError:  # pragma: no cover - script copied without the module
 
 # %% Application identity
 APP_NAME = "Touchstone AutoPlot"
-__version__ = "0.7.6"
+__version__ = "0.8.0"
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO / Green Bank Observatory (GBO)"
@@ -1614,8 +1836,13 @@ class TouchstonePlotter:
             xy.key.val = key
 
     # ----- pages -------------------------------------------------------------
-    def create_plots_from_data(self, key: str, data: Dict[str, Any]):
-        """Frequency-domain page (magnitude and phase) of one file."""
+    def create_plots_from_data(self, key: str, data: Dict[str, Any], page: bool = True):
+        """Frequency-domain page (magnitude and phase) of one file.
+
+        0.8.0: ``page`` False stores the datasets without the page (the "Per
+        file" kind unticked; the combined and overlay pages use them).
+        Returns {S-parameter: (frequency, magnitude, phase dataset names)}.
+        """
         network = data['network']
         base = sanitize_name(key)
         freq_name = "%s_freq_GHz" % base
@@ -1623,6 +1850,24 @@ class TouchstonePlotter:
         self._tag(data, key, [freq_name], ("frequency_GHz",))
         page_name = "SParam_%s" % base
         self._remove_page(page_name)
+        unwrap = self.unwrap_phase
+        if not page:
+            names = {}
+            for i, j, param in s_param_names(network.nports):
+                s = network.s[:, i, j]
+                mag_name = "%s_%s_mag_dB" % (base, param)
+                phase_name = "%s_%s_phase_deg%s" % (base, param, "_unwrapped" if unwrap else "")
+                phase = np.angle(s)
+                if unwrap:
+                    phase = np.unwrap(phase)
+                self.doc.SetData(mag_name, to_db(s))
+                self.doc.SetData(phase_name, np.degrees(phase))
+                self._tag(data, key, [mag_name], ("magnitude_dB", param))
+                self._tag(data, key, [phase_name], ("phase_deg", param)
+                          + (("unwrapped",) if unwrap else ()))
+                names[param] = (freq_name, mag_name, phase_name)
+            return names
+        names = {}
         page = self.doc.Root.Add('page', name=page_name)
         page.width.val = '30cm'          # two graphs side by side
         page.height.val = '15cm'
@@ -1656,6 +1901,136 @@ class TouchstonePlotter:
                                     freq_name, mag_name, color, key=param)
             self._configure_xy_plot(graph_phase.Add('xy', name=trace_widget_name(phase_name)),
                                     freq_name, phase_name, color, key=param)
+            names[param] = (freq_name, mag_name, phase_name)
+        return names
+
+    #: 0.8.0: page names of the multi-file pages
+    COMBINED_PAGE = "Combined_SParam"
+    OVERLAY_PAGE = "Overlay_SParam"
+    #: 0.8.0: colours of the files on the overlay page (cycled)
+    FILE_COLOURS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
+                    "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+
+    def create_multi_file_pages(self, files: Sequence[Tuple[str, Dict[str, Any],
+                                                          Dict[str, Tuple[str, str, str]]]],
+                                kinds: Sequence[str], log_cb=None) -> List[Any]:
+        """
+        The frequency-domain pages of several files (0.8.0), after the per-file
+        pages: "Combined_SParam" (kind "combined") just above "Overlay_SParam"
+        (kind "overlay").
+
+        ``files``: (key, data, create_plots_from_data's names) per file, in
+        page order.  Combined axis: magnitude and phase graphs like a file's
+        own, one trace per S-parameter holding that parameter of every file
+        that has it - the file's own magnitude and phase datasets joined end
+        to end and sorted on frequency (stable: equal frequencies keep their
+        file order; _autoplot_native.concatenate_on_x), so the frequency axis
+        spans every file (e.g. adjacent bands become one sweep); the gap
+        options lay the joined traces out like any other.  Overlay: every
+        file's S-parameters stacked (colour per file, line style per
+        parameter).  Nothing is rounded.  Returns the pages made.
+        """
+        from _autoplot_native import concatenate_on_x, overlapping_ranges, set_combined_sources
+        self._remove_page(self.COMBINED_PAGE)
+        self._remove_page(self.OVERLAY_PAGE)
+        pages = []
+        if not files:
+            return pages
+        unwrap = self.unwrap_phase
+        phase_title = "Phase%s" % (" (unwrapped)" if unwrap else "")
+        y_phase = ("Auto", "Auto") if unwrap else (-180.0, 180.0)
+        stems = [key for key, _d, _n in files]
+        if "combined" in kinds:
+            order = []
+            members: Dict[str, List[Tuple[str, Tuple[str, str, str]]]] = {}
+            for key, _data, names in files:
+                for param, triple in names.items():
+                    if param not in members:
+                        members[param] = []
+                        order.append(param)
+                    members[param].append((key, triple))
+            notes = ["Combined axis: each S-parameter of %d file(s) joined end to end and "
+                     "sorted on frequency (stable: equal frequencies keep their file order); "
+                     "the files' own magnitude and phase values%s." % (
+                         len(files), ", each file unwrapped on its own" if unwrap else ""),
+                     "Files, in order: " + ", ".join(stems)]
+            page = self.doc.Root.Add('page', name=self.COMBINED_PAGE)
+            page.width.val = '30cm'
+            page.height.val = '15cm'
+            grid = page.Add('grid', columns=2)
+            graph_mag = grid.Add('graph', name="Combined_Mag")
+            graph_phase = grid.Add('graph', name="Combined_Phase")
+            self._configure_standard_graph(graph_mag, "Combined axis (%d files) - Magnitude"
+                                           % len(files), 'Frequency (GHz)', 'Magnitude (dB)')
+            self._configure_standard_graph(graph_phase, "Combined axis (%d files) - %s"
+                                           % (len(files), phase_title), 'Frequency (GHz)',
+                                           'Phase (deg)', *y_phase)
+            for param in order:
+                group = members[param]
+                freqs = [np.asarray(self.doc.GetData(t[0])[0], dtype=float) for _k, t in group]
+                mags = [np.asarray(self.doc.GetData(t[1])[0], dtype=float) for _k, t in group]
+                phases = [np.asarray(self.doc.GetData(t[2])[0], dtype=float) for _k, t in group]
+                freq, (mag, phase), row_files = concatenate_on_x(
+                    freqs, [[m, p] for m, p in zip(mags, phases)], with_sources=True)
+                del mags, phases
+                f_name = "Combined_%s_freq_GHz" % param
+                m_name = "Combined_%s_mag_dB" % param
+                p_name = "Combined_%s_phase_deg%s" % (param, "_unwrapped" if unwrap else "")
+                self.doc.SetData(f_name, freq)
+                self.doc.SetData(m_name, mag)
+                self.doc.SetData(p_name, phase)
+                # 0.8.0: the file of every row - the gap layout cuts the
+                # joined trace only where none of the files has data
+                set_combined_sources(self.doc, [f_name], row_files)
+                sources = [k for k, _t in group] + ([self.dataset_name] if self.dataset_name
+                                                    else [])
+                tag_data(self.doc, [f_name], sources, ["frequency_GHz", "combined"])
+                tag_data(self.doc, [m_name], sources, ["magnitude_dB", param, "combined"])
+                tag_data(self.doc, [p_name], sources, ["phase_deg", param, "combined"]
+                         + (["unwrapped"] if unwrap else []))
+                overlap = overlapping_ranges(freqs)
+                notes.append("%s: %d file(s)%s" % (
+                    param, len(group), ", the frequency ranges of %d overlap an earlier file - "
+                    "their samples interleave" % overlap if overlap else ""))
+                if overlap and log_cb:
+                    log_cb("Combined %s: the frequency ranges of %d file(s) overlap an earlier "
+                           "file - their samples interleave" % (param, overlap))
+                color = get_sparam_color(param)
+                self._configure_xy_plot(graph_mag.Add('xy', name=trace_widget_name(m_name)),
+                                        f_name, m_name, color, key=param)
+                self._configure_xy_plot(graph_phase.Add('xy', name=trace_widget_name(p_name)),
+                                        f_name, p_name, color, key=param)
+            page.notes.val = "\n".join(notes) + "\n\n" + self.plot_title
+            pages.append(page)
+        if "overlay" in kinds:
+            page = self.doc.Root.Add('page', name=self.OVERLAY_PAGE)
+            page.width.val = '30cm'
+            page.height.val = '15cm'
+            page.notes.val = ("Overlay: every S-parameter of %d file(s) stacked (colour per "
+                              "file, line style per parameter).\nFiles, in order: %s\n\n%s"
+                              % (len(files), ", ".join(stems), self.plot_title))
+            grid = page.Add('grid', columns=2)
+            graph_mag = grid.Add('graph', name="Overlay_Mag")
+            graph_phase = grid.Add('graph', name="Overlay_Phase")
+            self._configure_standard_graph(graph_mag, "Overlay (%d files) - Magnitude"
+                                           % len(files), 'Frequency (GHz)', 'Magnitude (dB)')
+            self._configure_standard_graph(graph_phase, "Overlay (%d files) - %s"
+                                           % (len(files), phase_title), 'Frequency (GHz)',
+                                           'Phase (deg)', *y_phase)
+            styles = ("solid", "dashed", "dotted", "dash-dot")
+            for index, (key, _data, names) in enumerate(files):
+                color = self.FILE_COLOURS[index % len(self.FILE_COLOURS)]
+                for p_index, (param, (f_name, m_name, p_name)) in enumerate(names.items()):
+                    style = styles[p_index % len(styles)]
+                    label = "%s %s" % (key, param)
+                    self._configure_xy_plot(
+                        graph_mag.Add('xy', name=trace_widget_name("Overlay_" + m_name)),
+                        f_name, m_name, color, key=label, style=style, marker="none")
+                    self._configure_xy_plot(
+                        graph_phase.Add('xy', name=trace_widget_name("Overlay_" + p_name)),
+                        f_name, p_name, color, key=label, style=style, marker="none")
+            pages.append(page)
+        return pages
 
     def create_time_gated_plots(self, key: str, data: Dict[str, Any],
                                 td_result: Dict[str, Any],
@@ -2344,7 +2719,26 @@ class TouchstoneMainWindow(QMainWindow):
         # 0.7.4: gaps in the frequency points (segmented sweeps): line / axis
         # breaks; a log-spaced sweep is not cut (geometric rule)
         self.gap_box = suite.GapOptionsBox()
+        # 0.7.7: a gap option changed after a run redraws the Plots tab
+        self.gap_box.follow(
+            lambda: getattr(getattr(self, "touchstone_plotter", None), "doc", None),
+            lambda: self.plot_panel, self._log_message,
+            ready=lambda: self.save_button.isEnabled())
         side.addWidget(self.gap_box)
+        # 0.8.0: Per file / Combined axis / Overlay frequency pages; a box
+        # changed after a run builds those pages again (nothing is read again)
+        self.page_types_box = suite.PageTypesBox(notes={
+            "per_file": "Touchstone: 'SParam_<file>', magnitude and phase of each file.",
+            "combined": "Touchstone: 'Combined_SParam', each S-parameter of every file "
+                        "joined and sorted on frequency (adjacent bands become one sweep).",
+            "overlay": "Touchstone: 'Overlay_SParam', every file's S-parameters stacked.  "
+                       "Time-gated and Smith pages stay per file."})
+        side.addWidget(self.page_types_box)
+        self._pages_timer = QTimer(self)
+        self._pages_timer.setSingleShot(True)
+        self._pages_timer.setInterval(500)
+        self._pages_timer.timeout.connect(self._page_kinds_changed)
+        self.page_types_box.kinds_changed.connect(lambda _k: self._pages_timer.start())
         # 0.7.6: offload plot data to disk above this computer's RAM limit
         self.ram_box = suite.RamLimitBox()
         side.addWidget(self.ram_box)
@@ -2883,7 +3277,8 @@ class TouchstoneMainWindow(QMainWindow):
         except RuntimeError as exc:
             QMessageBox.critical(self, "Veusz Output Unavailable", str(exc))
             return
-        self.touchstone_plotter.doc.time_layout = self.gap_box.time_layout()   # 0.7.4
+        self.touchstone_plotter.doc.time_layout = self.gap_box.time_layout(
+            self._log_message)                                                 # 0.7.4; 0.7.7: logged
         self.touchstone_plotter.doc.offload_log = self._log_message           # 0.7.6
         # 0.7.5: only files not read yet (or changed on disk) are read; the
         # pages are built from every listed file
@@ -2923,11 +3318,7 @@ class TouchstoneMainWindow(QMainWindow):
         self.smith_networks.clear()
         for key, data in bad.items():
             self._log_message("FAILED %s: %s" % (key, (data or {}).get('error')))
-        for key, data in good.items():
-            try:
-                self.touchstone_plotter.create_plots_from_data(key, data)
-            except Exception as exc:
-                self._log_message("Plot error %s: %s" % (key, exc))
+        self._build_frequency_pages()                     # 0.8.0: page kinds
         phase = "unwrapped" if self.config.unwrap_phase else "wrapped"
         self._log_message("Processed %d file(s), %d failed; frequency pages built "
                           "(phase %s)" % (len(good), len(bad), phase))
@@ -2937,6 +3328,43 @@ class TouchstoneMainWindow(QMainWindow):
         if bad:
             QMessageBox.warning(self, "Processing Warnings",
                                 "%d file(s) failed. See the log for details." % len(bad))
+
+    def _build_frequency_pages(self):
+        """The frequency-domain pages of the processed files (0.8.0): each
+        file's page (Per file), then Combined_SParam and Overlay_SParam, for
+        the ticked page kinds; placed before any time-gated or Smith page."""
+        from _autoplot_native import describe_page_kinds, move_pages_before
+        plotter = self.touchstone_plotter
+        kinds = self.page_types_box.kinds()
+        self._built_page_kinds = kinds
+        self._log_message(describe_page_kinds(kinds))
+        frequency = lambda name: (name.startswith("SParam_") or name in (
+            plotter.COMBINED_PAGE, plotter.OVERLAY_PAGE))
+        anchor = next((p for p in plotter.doc.Root.children if not frequency(p.name)), None)
+        files = []
+        for key, data in self.processed_data.items():
+            try:
+                names = plotter.create_plots_from_data(key, data, page="per_file" in kinds)
+            except Exception as exc:
+                self._log_message("Plot error %s: %s" % (key, exc))
+                continue
+            files.append((key, data, names))
+        try:
+            plotter.create_multi_file_pages(files, kinds, self._log_message)
+        except Exception as exc:
+            self._log_message("Combined / overlay pages failed: %s" % exc)
+        move_pages_before(plotter.doc, [p for p in plotter.doc.Root.children
+                                        if frequency(p.name)], anchor)
+
+    def _page_kinds_changed(self):
+        """0.8.0: a page box changed after a run - build the frequency pages
+        again with the ticked kinds and redraw the Plots tab."""
+        if (not self.processed_data or self.touchstone_plotter is None
+                or self._worker is not None
+                or getattr(self, "_built_page_kinds", None) == self.page_types_box.kinds()):
+            return
+        self._build_frequency_pages()
+        self._show_plots()
 
     def _on_processing_error(self, message: str):
         """Processing failed: unlock the GUI, log and show the message."""
@@ -3141,7 +3569,8 @@ class TouchstoneMainWindow(QMainWindow):
         if not path:
             return
         try:
-            self.touchstone_plotter.doc.time_layout = self.gap_box.time_layout()   # 0.7.4
+            self.touchstone_plotter.doc.time_layout = self.gap_box.time_layout(
+                self._log_message)                                             # 0.7.4; 0.7.7
             saved = self.touchstone_plotter.save(path)
         except Exception as exc:
             QMessageBox.critical(self, "Save Error", "Failed to save project:\n%s" % exc)

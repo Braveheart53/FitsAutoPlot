@@ -26,6 +26,188 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.4.8: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * The "Combine files only" box is replaced by Pages to draw
+#                (Per file, Combined axis, Overlay; all ticked).
+#              * NEW combined_fits_data() / push_combined_pages(): one page set
+#                per table-HDU layout ("Combined_<HDU>"; "Combined_2" ... for an
+#                HDU whose files differ), the same pages as a file's own (tags,
+#                clocks, legends): each tag's columns of every file joined and
+#                sorted on DMJD (stable), tag rows moved by the rows before
+#                them, images not joined; the header lists the files and rows
+#                and notes overlapping time ranges.  Placed just above the
+#                first overlay page in the project, the Plots tab and the file.
+#              * push_to_veusz(store_raw, sources, row_files): the joined
+#                columns are stored once, sorted (no second raw copy); every
+#                time-axis x dataset gets the file of every row, so the gap
+#                layout cuts a combined trace only where no file has data.
+#              * One HDU group at a time: built, stored (the RAM limit checked
+#                as each dataset is stored) and its joined columns dropped.
+#              * A page box changed after a batch rebuilds the project.
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        file_source_word: Source of a file's datasets for the ``source_*`` tag (0.4.2): the file name without its FITS extensions (data["base_name"] when present).
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        _column_class: What a column must share with another to be joined (0.4.8): numbers ("n": integer, unsigned, float, bool), complex ("c"), text ("t") or the dtype k...
+        combined_fits_data: The data of the combined-axis pages (0.4.8): one read-result dict per table HDU, holding that HDU's columns of every file joined end to end.
+        push_combined_pages: Build the combined-axis pages (0.4.8) from ``ordered`` (combined_fits_data) with push_to_veusz - the same pages as a file's own, named "Combined_<H...
+        build_unit_overlay_pages: Cross-file unit-overlay pages (see _build_unit_overlay_pages_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_unit_overlay_pages_body: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.8"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        COMBINED_BASE: dataset / page prefix of the combined-axis pages ('Combined')
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Pages to draw (all ticked): Per file - each file's own pages;
+    Combined axis - the same quantity of every file joined end to end and
+    sorted on x (one trace spanning every file, cut only where no file has
+    data), just above the overlays; Overlay - the files' traces on one graph.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.4.7: Gap options enforced (shared controls, _autoplot_common 0.4.8).
+Date: 2026-11-17
+#              * The fixed-gap texts are checked while typed; an unreadable
+#                small-gap text is logged once and the hours box is used; the
+#                Plots tab follows every gap option changed after a batch.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        valid_time_rows: Boolean mask of the rows of ``table`` with a usable time stamp (0.4.0).
+        header_lines: Every header card of an open FITS file as page-note lines (0.4.0).
+        FITSProcessor (class): Read a single FITS file (compressed or not) and return a normalised dict of column-shaped numpy arrays plus minimal metadata.
+        file_source_word: Source of a file's datasets for the ``source_*`` tag (0.4.2): the file name without its FITS extensions (data["base_name"] when present).
+        push_to_veusz: Add a processed FITS file to a NativeDocument without executing Veusz.
+        _build_pages: Create one Veusz page per HDU with the appropriate plot widgets.
+        build_unit_overlay_pages: Cross-file unit-overlay pages (see _build_unit_overlay_pages_body), then the Veusz tags of every overlay dataset (0.4.2): the source tag of each fi...
+        _build_unit_overlay_pages_body: Build one overlay page per distinct unit string across the loaded batch.
+        _result_order: Sort key of a (path, result) pair: first valid time stamp, then path (0.4.0).
+        _read_fits_isolated: Process-pool entry point (0.4.1): read one FITS file on its own.
+        store_read_result: Put the arrays of a _read_fits_isolated() result into ``cache`` (0.4.1).
+        FITSBatchWorker (class): Background QThread that reads a batch of FITS files concurrently.
+        FITSAutoPlotWindow (class): Top-level window for the FITS AutoPlot script.
+        main: Run the FITS AutoPlot window; returns the Qt exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = 'FITS AutoPlot'
+        APP_VERSION = "0.4.7"
+        EMIT_TEXT_X_DATASETS: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no : longer written; the dt_labels pages use Veusz date-time datasets on a : l...
+        _THIS_DIR: Allow this file to be launched directly even if _autoplot_common.py lives in the same folder but the folder is not on sys.path.
+        MJD_LIKE_SORT_KEYS: v0.0.11: list of FITS sort-key column names that we treat as MJD-valued for the purposes of building a Veusz date-time companion dataset.  JD is in...
+        JD_LIKE_SORT_KEYS: other sort-key names treated like MJD
+        MAX_THREADS: used by ThreadPoolExecutor
+        DEFAULT_RSS_HIGH_WATER_MB: spill threshold per process
+        DEFAULT_BACKEND: native output; legacy backend names are aliases
+        SORTED_KEY_HINT = ["DMJD", "MJD", "TIME", "TIMESTAMP", "JD"]
+        ALLOWED_EXT: file extensions offered and accepted
+        TAG_COLUMN_HINTS: v0.0.12: Column names that should be treated as ROW-TAGS rather than their own plottable series.  NRAO 1PPS-delta files use CHANNELA / CHANNELB to...
+        TIME_COLUMN_NAMES: (0.4.0) Time columns whose non-positive or non-finite rows are padding.
+        _OVERLAY_COLORS: A palette of distinct colours used to disambiguate the (file, column) traces stacked on the same overlay graph.  Veusz also accepts hex codes; we u...
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python FITS_AutoPlot.py   (GUI; View menu: light/dark)
+    GBT sampler2log FITS files: a PRIMARY HDU and one BinTable (e.g.
+    OnePpsDeltas: DMJD, CHANNELA, CHANNELB, DELTAT; Rcvr temperatures and
+    vacuum; azServo1Hz).  Rows with DMJD <= 0 (padding) are left out.  Every
+    column becomes a Veusz dataset (raw and sorted by DMJD); DMJD axes are drawn
+    as local ISO 8601 date-times; a trace breaks where dt > K x median(dt) and
+    the x axis breaks where dt > n x that threshold (GUI: small/large gap).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.4.6: RAM limit - plot data offloaded to disk above it.
 Date: 2026-11-17
 #              * Options: "Offload plot data to disk above RAM use of" (shared
@@ -950,7 +1132,7 @@ import shutil
 import sys
 import tempfile
 import traceback
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ============================================================================
 # %%% IMPORTS - Scientific
@@ -962,10 +1144,12 @@ from astropy.table import QTable
 # ============================================================================
 # %%% IMPORTS - Native project model (no Veusz runtime)
 # ============================================================================
-from _autoplot_native import NativeDocument
+from _autoplot_native import (NativeDocument, overlapping_ranges,   # 0.4.8: combined axis
+                              move_pages_before, describe_page_kinds, file_index_array,
+                              set_combined_sources)
 
 APP_NAME = 'FITS AutoPlot'
-APP_VERSION = "0.4.6"
+APP_VERSION = "0.4.8"
 #: 0.3.0: per-point date TEXT datasets (the v0.0.15 text-x variant) are no
 #: longer written; the dt_labels pages use Veusz date-time datasets on a
 #: local ISO-8601 axis.  True writes them again (back-compat only).
@@ -1364,9 +1548,24 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                   datetime_label_density_pct: int = 10,
                   datetime_emit_numeric_dt: bool = False,
                   datetime_emit_text_dt: bool = True,
-                  hide_keys: bool = False) -> None:
+                  hide_keys: bool = False,
+                  store_raw: bool = True,
+                  sources: Optional[Sequence[str]] = None,
+                  row_files: Optional[Dict[str, Any]] = None) -> None:
     """
     Add a processed FITS file to a NativeDocument without executing Veusz.
+
+    0.4.8: ``row_files`` {HDU name: file number of every row} (the
+    combined-axis data, combined_fits_data): each time-axis x dataset made
+    from those rows (per tag, sorted) gets the file of every row
+    (_autoplot_native.set_combined_sources), so the gap layout cuts a
+    combined trace only where none of its files has data.
+
+    0.4.8: ``store_raw`` False leaves out step 1 (the "<..>__raw" datasets in
+    file order and the "<..>__utc" date dataset) - the combined-axis pages
+    (push_combined_pages) store their joined columns once, sorted; the
+    per-file raw datasets already hold every file as read.  ``sources``
+    replaces the source tag (default: the file name).
 
     v0.0.19: ``hide_keys`` -- when True every key (legend) widget added
     by ``_build_pages`` and downstream helpers is created with its
@@ -1459,8 +1658,8 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
     if backend not in ("astropy", "both", "veusz"):
         raise ValueError("Unknown FITS backend: %s" % backend)
     backend = "astropy"
-    _col_total += len(data.get("columns") or {})
-    for (hname, col), values in (data.get("columns") or {}).items():
+    _col_total += len(data.get("columns") or {}) if store_raw else 0
+    for (hname, col), values in ((data.get("columns") or {}).items() if store_raw else ()):
         raw_name = "%s__%s__%s__raw" % (
             base, safe_dsname(hname), safe_dsname(col))
         array = np.asarray(values)
@@ -1507,7 +1706,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
             doc.SetDataDateTime(utc_name, utc, mjd=raw_name)
             raw_names.append(utc_name)
         _tick()
-    if log_cb:
+    if log_cb and store_raw:
         log_cb("  Native model: %d raw datasets (Astropy only)" % len(raw_names))
 
     # ---- 2) Astropy/column-oriented sorted datasets ----------------------
@@ -1636,6 +1835,11 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                    % (ds_name, exc))
                         continue
                     sorted_names.append(ds_name)
+                    if is_xcol and row_files and hname in row_files:
+                        # 0.4.8: the file of every row of the combined trace
+                        _rows = np.asarray(row_files[hname])[row_idx]
+                        set_combined_sources(doc, [ds_name], _rows if order is None
+                                             else _rows[order])
                     bucket = per_tag_sorted_names[hname].setdefault(
                         tup, {}
                     )
@@ -1670,6 +1874,11 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                 # Samples with NaN are simply skipped by xy plots; the row
                 # is NOT removed from the dataset.
                 doc.SetData(ds_name, np.ascontiguousarray(arr_s, dtype=float))
+                if row_files and hname in row_files and (hname, col) == sort_key:
+                    # 0.4.8: the file of every row of the combined trace
+                    _rows = np.asarray(row_files[hname])
+                    set_combined_sources(doc, [ds_name], _rows[sort_idx_by_hdu[hname]]
+                                         if hname in sort_idx_by_hdu else _rows)
             sorted_names.append(ds_name)
             _tick()
         # Stash the per-tag map on the data dict so _build_pages and
@@ -1851,6 +2060,11 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                                     bucket["__datelabels_dtnum__"] = (
                                         dtnum_name
                                     )
+                                    if row_files and sk_hdu in row_files:   # 0.4.8
+                                        _rows = np.asarray(row_files[sk_hdu])[row_idx]
+                                        set_combined_sources(
+                                            doc, [dtnum_name],
+                                            _rows if order is None else _rows[order])
                                     sorted_names.append(dtnum_name)
                                     # Stash MJD source for v0.0.16
                                     # broken-axis parity on dt_labels.
@@ -1921,6 +2135,10 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
                         sorted_names.append(textx_name)
                     if ok_dtnum:
                         sorted_names.append(dtnum_name)
+                        if row_files and sk_hdu in row_files:          # 0.4.8
+                            _rows = np.asarray(row_files[sk_hdu])
+                            set_combined_sources(doc, [dtnum_name], _rows[sort_idx_by_hdu[sk_hdu]]
+                                                 if sk_hdu in sort_idx_by_hdu else _rows)
                     if ok_density or ok_textx or ok_dtnum:
                         # v0.0.15: stash both names on the data record
                         # so _build_pages can clone the appropriate
@@ -2030,7 +2248,7 @@ def push_to_veusz(doc, file_path: str, data: Dict[str, Any],
     # time_MJD, time_text, image, ...); replaces the bare "<file>", "raw",
     # "sorted" and "datestr" tags of 0.4.1.
     tag_named_datasets(doc, [n for n in document_dataset_names(doc) if n not in names_before],
-                       sources=[file_source_word(file_path, data)])
+                       sources=list(sources) if sources else [file_source_word(file_path, data)])
 
     # cleanup any temporary uncompressed copy
     if data["tmp_uncompressed"]:
@@ -2617,6 +2835,153 @@ def _build_pages(doc, base: str, data: Dict[str, Any],
         except Exception:
             # Older Veusz API: omit colorbar
             graph.Add("image", name="imageIn", data=ds_name)
+
+
+# ============================================================================
+# %% COMBINED-AXIS PAGES (0.4.8): every file's data joined on one axis
+# ============================================================================
+#: (0.4.8) Dataset / page prefix of the combined-axis pages.
+COMBINED_BASE = "Combined"
+
+
+def _column_class(array: Any) -> Tuple[str, Tuple[int, ...]]:
+    """What a column must share with another to be joined (0.4.8): numbers
+    ("n": integer, unsigned, float, bool), complex ("c"), text ("t") or the
+    dtype kind, and the cell shape (vector columns)."""
+    array = np.asarray(array)
+    kind = array.dtype.kind
+    group = "n" if kind in "iufb" else "t" if kind in "SUO" else kind
+    return group, tuple(array.shape[1:])
+
+
+def combined_fits_data(ordered: Sequence[Tuple[str, Any]],
+                       log_cb=None) -> List[Dict[str, Any]]:
+    """
+    The data of the combined-axis pages (0.4.8): one read-result dict per
+    table HDU, holding that HDU's columns of every file joined end to end.
+
+    ``ordered``: (path, data) of the files in page order (time order,
+    _result_order), as FITSProcessor.read returns them; errors are skipped.
+    Files are joined when their HDU has the same name, the same columns in
+    the same order (numbers with numbers, text with text, same cell shape)
+    and the same row-tag columns; an HDU whose files differ gets one group
+    per layout ("Combined", "Combined_2", ...).  The time column stays the
+    sort key, so push_to_veusz sorts the joined rows on time per tag (stable:
+    equal times keep their file order); the row tags are the files' tags
+    with their rows moved by the rows before them, so every tag keeps its
+    trace.  Image HDUs are not joined.  Nothing is rounded: columns are
+    joined with numpy.concatenate (integers and floats give float64, as on
+    a page).  Each dict's "header" lists the files with their rows, then
+    the first file's header; "combined_files" names the files; "row_files"
+    {HDU: the file (0, 1, ...) of every joined row} lets the gap layout cut
+    the combined traces only where no file has data.
+    """
+    groups: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    order: List[Tuple[Any, ...]] = []
+    for path, data in ordered:
+        if not isinstance(data, dict):
+            continue
+        columns = data.get("columns") or {}
+        hdus: Dict[str, List[str]] = {}
+        for (hname, col) in columns:
+            hdus.setdefault(hname, []).append(col)
+        for hname, cols in hdus.items():
+            layout = tuple((col,) + _column_class(columns[(hname, col)]) for col in cols)
+            tags = tuple((data.get("tag_columns") or {}).get(hname) or ())
+            key = (hname, layout, tags)
+            if key not in groups:
+                groups[key] = {"files": [], "hname": hname, "cols": cols, "tags": tags}
+                order.append(key)
+            groups[key]["files"].append((path, data))
+    results: List[Dict[str, Any]] = []
+    bases_of: Dict[str, int] = {}
+    for key in order:
+        group = groups[key]
+        hname, cols, files = group["hname"], group["cols"], group["files"]
+        count = bases_of.get(hname, 0) + 1
+        bases_of[hname] = count
+        base = COMBINED_BASE if count == 1 else "%s_%d" % (COMBINED_BASE, count)
+        joined: Dict[Tuple[str, str], np.ndarray] = {}
+        rows = [len(np.asarray(f[1]["columns"][(hname, cols[0])])) for f in files]
+        for col in cols:
+            joined[(hname, col)] = np.concatenate(
+                [np.asarray(f[1]["columns"][(hname, col)]) for f in files])
+        units = {}
+        for col in cols:
+            seen = [str((f[1].get("units") or {}).get((hname, col), "")) for f in files]
+            units[(hname, col)] = seen[0]
+            if any(u != seen[0] for u in seen) and log_cb:
+                log_cb("  Combined %s / %s: the files give the units %s; the first is "
+                       "used" % (hname, col, sorted(set(seen))))
+        first = files[0][1]
+        sort_key = first.get("sort_key")
+        if not sort_key or sort_key[0] != hname:
+            sort_key = None
+        tag_groups: Dict[Tuple[str, ...], np.ndarray] = {}
+        if group["tags"]:
+            pieces: Dict[Tuple[str, ...], List[np.ndarray]] = {}
+            offset = 0
+            for (_p, data), n_rows in zip(files, rows):
+                for tup, index in ((data.get("tag_groups") or {}).get(hname) or {}).items():
+                    pieces.setdefault(tup, []).append(np.asarray(index, dtype=np.int64) + offset)
+                offset += n_rows
+            tag_groups = {tup: np.concatenate(parts) for tup, parts in pieces.items()}
+        names = [str(d.get("base_name") or os.path.basename(p)) for p, d in files]
+        overlap = 0
+        if sort_key is not None:
+            overlap = overlapping_ranges([np.asarray(d["columns"][sort_key], dtype=float)
+                                          for _p, d in files])
+        header = ["Combined axis: %s of %d file(s) joined end to end, %d rows%s." % (
+            hname, len(files), int(sum(rows)),
+            ", sorted on %s (stable: equal times keep their file order)" % sort_key[1]
+            if sort_key else " in file order (no time column)"),
+            "Files, in order (rows):"] + ["  %s (%d)" % (n, r) for n, r in zip(names, rows)]
+        if overlap:
+            header.append("Note: the time ranges of %d file(s) overlap an earlier file; the "
+                          "combined traces interleave their samples there." % overlap)
+            if log_cb:
+                log_cb("  Combined %s: the time ranges of %d file(s) overlap an earlier "
+                       "file - their samples interleave" % (hname, overlap))
+        header += ["", "Header of the first file (%s):" % names[0]] + list(first.get("header") or [])
+        dropped = sum(int((d.get("dropped_rows") or {}).get(hname, 0)) for _p, d in files)
+        results.append({
+            "columns": joined, "images": {}, "units": units, "sort_key": sort_key,
+            "tag_columns": {hname: list(group["tags"])} if group["tags"] else {},
+            "tag_groups": {hname: tag_groups} if group["tags"] else {},
+            "header": header, "dropped_rows": {hname: dropped} if dropped else {},
+            "fits_for_vz": "", "tmp_uncompressed": False, "base_name": base,
+            "combined_files": names,
+            "row_files": {hname: file_index_array(rows)},
+        })
+    return results
+
+
+def push_combined_pages(doc, ordered: Sequence[Tuple[str, Any]], log_cb=None,
+                        **push_options: Any) -> List[Any]:
+    """
+    Build the combined-axis pages (0.4.8) from ``ordered`` (combined_fits_data)
+    with push_to_veusz - the same pages as a file's own, named
+    "Combined_<HDU>" - and return the pages made.  One HDU group at a time:
+    its joined columns are dropped once its datasets are in the project, so
+    the RAM limit (offload) sees each group's datasets as they are stored.
+    The joined columns are stored once, sorted (the per-file "raw" copies
+    already hold every file as read).  ``push_options``: push_to_veusz's.
+    """
+    pages_before = list(doc.Root.children)
+    made = 0
+    for data in combined_fits_data(ordered, log_cb=log_cb):
+        if log_cb:
+            log_cb("Combined axis [%s]: %d file(s)" % (
+                ", ".join(sorted({h for h, _c in data["columns"]})), len(data["combined_files"])))
+        push_to_veusz(doc, data["base_name"], data, "astropy", log_cb=log_cb,
+                      plot_individual=True, store_raw=False, sources=[COMBINED_BASE],
+                      skip_images=True, row_files=data["row_files"], **push_options)
+        data.clear()                       # the joined columns: in the project now
+        made += 1
+    pages = [p for p in doc.Root.children if p not in pages_before]
+    if log_cb:
+        log_cb("Combined-axis pages: %d page(s) from %d HDU group(s)" % (len(pages), made))
+    return pages
 
 
 # ============================================================================
@@ -3489,15 +3854,18 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         )
         form.addRow(self.hide_keys_cb)
 
-        self.combined_only_cb = QCheckBox(
-            "Combined (overlay) plots only -- skip per-file pages"
-        )
-        self.combined_only_cb.setToolTip(
-            "Build only the overlay pages (all files on one graph per unit)"
-            " and no page per file - much faster to open for hundreds of "
-            "files.")
-        self.combined_only_cb.setChecked(False)
-        form.addRow(self.combined_only_cb)
+        # 0.4.8: Per file / Combined axis / Overlay pages (replaces the
+        # "Combined (overlay) plots only -- skip per-file pages" box: untick
+        # Per file for that)
+        self.add_page_controls(form, notes={
+            "per_file": "FITS: the pages of every table HDU of each file (one trace per "
+                        "row tag, e.g. CHANNELA.CHANNELB).  Untick for hundreds of files: "
+                        "much faster to open.",
+            "combined": "FITS: one set of pages per table HDU, 'Combined_<HDU>', the rows "
+                        "of every file with the same HDU (same columns) joined and sorted "
+                        "on DMJD per row tag.  Image HDUs are not joined.",
+            "overlay": "FITS: one page per unit, every file's columns of that unit "
+                       "stacked ('Overlay_<unit>')."})
 
         # --- Datetime-duplicate plots (v0.0.11) ---------------------------
         # When ticked, every per-file page and every cross-file overlay
@@ -3688,13 +4056,17 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
         # the page builders; the final layout of every time axis (line
         # breaks, axis breaks, local ISO 8601) is the document's
         # TimeLayout, applied when the project is drawn or saved.
-        gap_absolute = self.gap_manual_days()
+        gap_absolute = self.gap_manual_days(quiet=True)     # 0.4.7: time_layout() logs
         self.veusz_doc.time_layout = self.time_layout()
         self.log(self.veusz_doc.time_layout.describe())
         self.log(self.veusz_doc.time_layout.describe_clocks())   # 0.4.5
         # v0.0.19: hide-legend-keys checkbox
         hide_keys = bool(self.hide_keys_cb.isChecked())
-        plot_individual = not bool(self.combined_only_cb.isChecked())
+        # 0.4.8: the page kinds ticked (Per file / Combined axis / Overlay)
+        kinds = self.page_kinds()
+        self._built_page_kinds = kinds
+        self.log(describe_page_kinds(kinds))
+        plot_individual = "per_file" in kinds
         # v0.0.11: datetime-duplicate toggle
         datetime_duplicate = bool(self.datetime_dup_cb.isChecked())
         # v0.0.15: density-pct (0..100) + two dt page gates.
@@ -3779,8 +4151,23 @@ class FITSAutoPlotWindow(AutoPlotMainWindow):
             self.parse_progress_bar.setValue(idx)
             if app is not None:
                 app.processEvents()
+        # 0.4.8: combined-axis pages - every file's rows of the same table
+        # HDU joined on one axis - after the per-file pages, so they come
+        # just above the overlays (the overlay pages are built next)
+        push_options = dict(gap_k=gap_k, gap_absolute=gap_absolute, emit_datestr=emit_datestr,
+                            datetime_duplicate=datetime_duplicate,
+                            datetime_label_density_pct=datetime_label_density_pct,
+                            datetime_emit_numeric_dt=datetime_emit_numeric_dt,
+                            datetime_emit_text_dt=datetime_emit_text_dt, hide_keys=hide_keys)
+        if "combined" in kinds and file_records:
+            try:
+                push_combined_pages(self.veusz_doc, ordered, log_cb=self.log, **push_options)
+            except Exception as exc:
+                self.log("  Combined-axis pages failed: %s" % exc)
+            if app is not None:
+                app.processEvents()
         # Build cross-file unit-overlay pages.
-        if file_records:
+        if file_records and "overlay" in kinds:
             try:
                 build_unit_overlay_pages(
                     self.veusz_doc, file_records,

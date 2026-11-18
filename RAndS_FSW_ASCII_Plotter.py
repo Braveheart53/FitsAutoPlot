@@ -67,6 +67,166 @@ as one trace per y column.
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 1.2.0: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * NEW "Combined average" page per x kind and y unit (every
+#                file's power average joined and sorted on x: Combined_x /
+#                Combined_avg_dB) and, in the All plots mode, "Combined Section
+#                <n>" (section n of every file), just above AllImported; the
+#                files' rows go to the gap layout, so a coarse sweep joined with
+#                a fine one is not cut at its own steps.
+#              * PlotOptions.pages: section and average pages only with Per
+#                file, AllImported and Averages only with Overlay.  GUI: Pages
+#                to draw (a change redraws); batch: --pages.
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        SFTFormatError (class): The file holds no trace this program can read.
+        SFTTrace (class): One sweep (section) of an R&S SFT file: its number, the instrument time stamp text and the trace values.
+        SFTFile (class): A parsed R&S FSP/FSW ASCII trace file (.sft).
+        _header: Parse the 'key;value;unit' header lines of an SFT file.
+        parse_sweep_time: FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime.
+        _float: float(text), or ``default`` (NaN) when text is not a number.
+        _text_tokens: Tokens of a section that is ASCII text but not numbers (1.1.4), or [] for a block that is not ASCII text.
+        _ascii_values: Values of an ASCII section, or None when the block is not ASCII numbers.
+        parse_sft_bytes: Parse one .sft file (see the file layout in the module header).
+        read_sft: Read and parse one SFT file (bytes, any encoding the parser accepts).
+        _read_worker: Process-pool worker: (path, SFTFile or None, error text).
+        read_files: Read in input order (a 'spawn' process pool when it pays off); (files, errors).
+        power_mean: Average of traces (rows) in their unit.
+        PlotOptions (class): Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and overlay, 2 = average only; ``use_gpu`` allows the GPU (NVIDIA or AMD) for...
+        RnSPlotter (class): Builds the project of a batch of .sft files.
+        build_project: RnSPlotter with every file of ``files`` added and finished.
+        batches: Split whole files into groups of at most ``plots_per_file`` sections (a file with more sections than that is a group of its own).
+        save_split: Write {base}_001.vszh5, {base}_002.vszh5 ...
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "R&S FSW / FSP Trace Plotter"
+        APP_VERSION = "1.2.0"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        MODE_NAMES: plot mode names (0 all, 1 average + overlay, 2 average only)
+        _SECTION: the 'Section<n>;<time stamp>' line that starts each sweep (bytes)
+        _NUMBER: one numeric token (inf, infinity and nan included)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python RAndS_FSW_ASCII_Plotter.py [files]   (GUI; View menu)
+          python RAndS_FSW_ASCII_Plotter.py *.sft --output rns.vszh5 [--split N]
+    Sweep averages are taken in the linear domain (10 log10 of the mean of
+    10^(P/10)); --gpu allows the GPU (NVIDIA or AMD, _autoplot_gpu) for
+    large stacks.  Files are read in a 'spawn' process pool when it pays off.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data; sections that are text or do not line up with
+    x are kept (_Section<n>_text, _Section<n>_unaligned).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Pages to draw (all ticked): Per file - each file's own pages;
+    Combined axis - the same quantity of every file joined end to end and
+    sorted on x (one trace spanning every file, cut only where no file has
+    data), just above the overlays; Overlay - the files' traces on one graph.
+    Batch: --pages per_file,combined,overlay (any of them).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 1.1.8: Gap options enforced.
+Date: 2026-11-17
+#              * The Plots tab follows every gap option changed after a run
+#                (GapOptionsBox.follow); options(log): the rule in force and any
+#                unreadable fixed-gap text are logged at the run and the save
+#                (split projects too); --gap-* checked at the command line.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        SFTFormatError (class): The file holds no trace this program can read.
+        SFTTrace (class): One sweep (section) of an R&S SFT file: its number, the instrument time stamp text and the trace values.
+        SFTFile (class): A parsed R&S FSP/FSW ASCII trace file (.sft).
+        _header: Parse the 'key;value;unit' header lines of an SFT file.
+        parse_sweep_time: FSP/FSW section stamp "2025.6.17_9.26.44:783" -> naive datetime.
+        _float: float(text), or ``default`` (NaN) when text is not a number.
+        _text_tokens: Tokens of a section that is ASCII text but not numbers (1.1.4), or [] for a block that is not ASCII text.
+        _ascii_values: Values of an ASCII section, or None when the block is not ASCII numbers.
+        parse_sft_bytes: Parse one .sft file (see the file layout in the module header).
+        read_sft: Read and parse one SFT file (bytes, any encoding the parser accepts).
+        _read_worker: Process-pool worker: (path, SFTFile or None, error text).
+        read_files: Read in input order (a 'spawn' process pool when it pays off); (files, errors).
+        power_mean: Average of traces (rows) in their unit.
+        PlotOptions (class): Plot choices: ``mode`` 0 = every sweep plus the average, 1 = average and overlay, 2 = average only; ``use_gpu`` allows the GPU (NVIDIA or AMD) for...
+        RnSPlotter (class): Builds the project of a batch of .sft files.
+        build_project: RnSPlotter with every file of ``files`` added and finished.
+        batches: Split whole files into groups of at most ``plots_per_file`` sections (a file with more sections than that is a group of its own).
+        save_split: Write {base}_001.vszh5, {base}_002.vszh5 ...
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _IMPORT_T0: time.perf_counter() when this program's import began
+        APP_NAME = "R&S FSW / FSP Trace Plotter"
+        APP_VERSION = "1.1.8"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        MODE_NAMES: plot mode names (0 all, 1 average + overlay, 2 average only)
+        _SECTION: the 'Section<n>;<time stamp>' line that starts each sweep (bytes)
+        _NUMBER: one numeric token (inf, infinity and nan included)
+        POOL_START_S: pool start-up estimate (s): platform cost plus this program's import time
+# %%%%% More Info
+    Run:  python RAndS_FSW_ASCII_Plotter.py [files]   (GUI; View menu)
+          python RAndS_FSW_ASCII_Plotter.py *.sft --output rns.vszh5 [--split N]
+    Sweep averages are taken in the linear domain (10 log10 of the mean of
+    10^(P/10)); --gpu allows the GPU (NVIDIA or AMD, _autoplot_gpu) for
+    large stacks.  Files are read in a 'spawn' process pool when it pays off.
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data; sections that are text or do not line up with
+    x are kept (_Section<n>_text, _Section<n>_unaligned).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 1.1.7: RAM limit - plot data offloaded to disk above it.
 Date: 2026-11-17
 #              * RamLimitBox under the gap options; the project's datasets and
@@ -500,7 +660,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 os.environ.setdefault("QT_API", "pyside6")   # before qtpy is imported
 
@@ -513,7 +673,7 @@ import _autoplot_gpu  # noqa: E402  (1.1.3: NVIDIA or AMD GPU, NumPy fallback)
 from _autoplot_native import exact_number_text, tag_data, trace_widget_name  # noqa: E402
 
 APP_NAME = "R&S FSW / FSP Trace Plotter"
-APP_VERSION = "1.1.7"
+APP_VERSION = "1.2.0"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Rohde & Schwarz .sft trace files to native Veusz .vszh5 projects, "
                    "with averages and interactive pyqtgraph plots.")
@@ -839,6 +999,9 @@ class PlotOptions:
     use_gpu: bool = False
     #: 1.1.5: gap options (_autoplot_native TimeLayout); None = the defaults
     gaps: Any = None
+    #: 1.2.0: page kinds (_autoplot_native.page_kinds): per_file, combined,
+    #: overlay; None = all three
+    pages: Any = None
 
 
 class RnSPlotter:
@@ -860,6 +1023,10 @@ class RnSPlotter:
         self._averages: Dict[str, List[Tuple[str, str, SFTFile]]] = {}
         self._file_notes: List[str] = []
         self._overlay_pages: List[Any] = []
+        from _autoplot_native import page_kinds
+        self.kinds = page_kinds(getattr(self.options, "pages", None))    # 1.2.0
+        #: 1.2.0: (stem, file, average dB) per file, for the combined pages
+        self._combined: List[Tuple[str, SFTFile, np.ndarray]] = []
 
     def _stem(self, sft: SFTFile) -> str:
         """Name stem for ``sft``: its file name without extension, with ``_2``,
@@ -915,11 +1082,11 @@ class RnSPlotter:
             doc.SetData(y_name, trace.values)
             tag_data(doc, [y_name], source, ("sweep", sft.y_unit))
             key = "%s S%d %s" % (stem, trace.number, trace.stamp)
-            if mode in (0, 1):
+            if mode in (0, 1) and "overlay" in self.kinds:        # 1.2.0: page kinds
                 overlay = self._overlay(sft)
                 xy = overlay.Add("xy", name=trace_widget_name(y_name))
                 self._style_overlay(xy, x_name, y_name, key)
-            if mode == 0:
+            if mode == 0 and "per_file" in self.kinds:
                 title = ("%s::Section %d;%s" % (stem, trace.number, trace.stamp)).replace("_", " ")
                 section_notes = header_notes(sft.header_lines, source=sft.path, extra=[
                     summary, "Section %d of %d: %s" % (trace.number, len(sft.traces), trace.stamp)])
@@ -949,17 +1116,29 @@ class RnSPlotter:
             doc.SetData(lin_name, np.power(10.0, avg_db / 10.0))
             tag_data(doc, [lin_name], source, ("average_linear", "power_linear"))
         title = ("%s average of %d sweep(s)" % (stem, len(sft.traces))).replace("_", " ")
-        graph = self._page_graph("%s average" % stem, title, notes, sft, y_label,
-                                 graph_name=db_name)
-        self._style_single(graph.Add("xy", name=trace_widget_name(db_name)), x_name, db_name,
-                           "%s average (%d)" % (stem, len(sft.traces)))
+        if "per_file" in self.kinds:                              # 1.2.0: page kinds
+            graph = self._page_graph("%s average" % stem, title, notes, sft, y_label,
+                                     graph_name=db_name)
+            self._style_single(graph.Add("xy", name=trace_widget_name(db_name)), x_name,
+                               db_name, "%s average (%d)" % (stem, len(sft.traces)))
         self._averages.setdefault(sft.x_kind, []).append((x_name, db_name, sft))
+        self._combined.append((stem, sft, avg_db))
         for warning in sft.warnings:
             self.messages.append("%s: %s" % (sft.name, warning))
         return stem
 
     def finish(self) -> None:
-        """Averages page(s): every file average, and all files on one x axis."""
+        """Averages page(s): every file average, and all files on one x axis.
+
+        1.2.0: the Averages pages only with the Overlay kind; the
+        combined-axis pages (_combined_pages) just above the overlays."""
+        if "combined" in self.kinds and self._combined:
+            from _autoplot_native import move_pages_before
+            pages = self._combined_pages()
+            move_pages_before(self.doc, pages,
+                              self._overlay_pages[0] if self._overlay_pages else None)
+        if "overlay" not in self.kinds:
+            return
         for page in self._overlay_pages:
             page.notes.val = "\n\n".join(["All Imported and Plottable Data Overlay"]
                                           + self._file_notes)
@@ -993,6 +1172,82 @@ class RnSPlotter:
             elif len(entries) > 1:
                 self.messages.append("Averages%s: the files have different x axes or units; "
                                      "no all-files average" % suffix)
+
+    def _combined_pages(self) -> List[Any]:
+        """
+        The combined-axis pages (1.2.0), one set per x kind (frequency, time,
+        index) and y unit: "Combined average" - every file's power average
+        joined end to end and sorted on x (stable: equal x keep their file
+        order; _autoplot_native.concatenate_on_x), so the x axis spans every
+        file (a frequency-stepped set becomes one wide sweep) - and, in the
+        "All plots" mode, "Combined Section <n>": section n of every file
+        that has one, joined the same way.  The gap options lay the joined
+        traces out like any other (the steps between files are gaps).
+        Nothing is rounded.  Returns the pages made.
+        """
+        from _autoplot_native import concatenate_on_x, overlapping_ranges, set_combined_sources
+        groups: Dict[Tuple[str, str], List[Tuple[str, SFTFile, np.ndarray]]] = {}
+        for entry in self._combined:
+            groups.setdefault((entry[1].x_kind, entry[1].y_unit), []).append(entry)
+        pages: List[Any] = []
+        for number, ((x_kind, y_unit), entries) in enumerate(groups.items(), start=1):
+            suffix = "" if x_kind == "frequency" else "_" + x_kind
+            if number > 1 and any(k[0] == x_kind for k in list(groups)[:number - 1]):
+                suffix += "_" + re.sub(r"[^A-Za-z0-9]+", "_", y_unit)
+            sft0 = entries[0][1]
+            stems = [e[0] for e in entries]
+            xs = [np.asarray(e[1].x, dtype=float) for e in entries]
+            overlap = overlapping_ranges(xs)
+            if overlap:
+                self.messages.append("Combined%s: the x ranges of %d file(s) overlap an earlier "
+                                     "file - their samples interleave" % (suffix, overlap))
+            head = ["Combined axis: %d file(s) joined end to end and sorted on x (stable: "
+                    "equal x keep their file order)." % len(entries),
+                    "Files, in order: " + ", ".join(stems)]
+            if overlap:
+                head.append("Note: the x ranges of %d file(s) overlap an earlier file; the "
+                            "combined traces interleave their samples there." % overlap)
+            notes = "\n\n".join(["\n".join(head)] + self._file_notes)
+            y_label = "Uncalibrated (%s)" % y_unit
+            x_all, avg, row_files = concatenate_on_x(xs, [e[2] for e in entries], with_sources=True)
+            x_name, db_name = "Combined%s_x" % suffix, "Combined%s_avg_dB" % suffix
+            self.doc.SetData(x_name, x_all)
+            self.doc.SetData(db_name, avg)
+            # 1.2.0: the file of every row - the gap layout cuts the joined
+            # trace only where none of the files has data
+            set_combined_sources(self.doc, [x_name], row_files)
+            tag_data(self.doc, [x_name], stems, ("combined", x_kind))
+            tag_data(self.doc, [db_name], stems, ("combined", "average_dB"
+                                                  if y_unit.lower().startswith("db")
+                                                  else "average_linear", y_unit))
+            title = "Combined axis: average of each of %d file(s)" % len(entries)
+            graph = self._page_graph("Combined%s average" % suffix, title, notes, sft0, y_label,
+                                     graph_name=db_name)
+            self._style_single(graph.Add("xy", name=trace_widget_name(db_name)), x_name,
+                               db_name, "Combined average (%d files)" % len(entries))
+            pages.append(graph.parent.parent)
+            if self.options.mode != 0:            # sections only in "All plots"
+                continue
+            numbers = sorted({t.number for e in entries for t in e[1].traces})
+            for section in numbers:
+                parts = [(np.asarray(e[1].x, dtype=float), t.values) for e in entries
+                         for t in e[1].traces if t.number == section]
+                sx, sy, sfiles = concatenate_on_x([p[0] for p in parts], [p[1] for p in parts],
+                                                  with_sources=True)
+                sx_name = "Combined%s_Section%d_x" % (suffix, section)
+                sy_name = "Combined%s_Section%d" % (suffix, section)
+                self.doc.SetData(sx_name, sx)
+                self.doc.SetData(sy_name, sy)
+                set_combined_sources(self.doc, [sx_name], sfiles)
+                tag_data(self.doc, [sx_name], stems, ("combined", x_kind))
+                tag_data(self.doc, [sy_name], stems, ("combined", "sweep", y_unit))
+                title = "Combined axis: section %d of %d file(s)" % (section, len(parts))
+                graph = self._page_graph("Combined%s Section %d" % (suffix, section), title,
+                                         notes, sft0, y_label, graph_name=sy_name)
+                self._style_single(graph.Add("xy", name=trace_widget_name(sy_name)), sx_name,
+                                   sy_name, "Combined section %d (%d files)" % (section, len(parts)))
+                pages.append(graph.parent.parent)
+        return pages
 
     # ----- pages ---------------------------------------------------------------
     def _overlay(self, sft: SFTFile) -> Any:
@@ -1114,7 +1369,7 @@ def _build_gui_classes():
     Keeps the batch mode (``--output``) free of Qt; returns (QApplication,
     EnhancedMainWindow).
     """
-    from qtpy.QtCore import QThread, Signal
+    from qtpy.QtCore import QThread, QTimer, Signal
     from qtpy.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QFileDialog,
                                 QFormLayout, QGroupBox, QHBoxLayout, QLineEdit,
                                 QListWidget, QMainWindow, QMessageBox, QProgressBar,
@@ -1258,7 +1513,28 @@ def _build_gui_classes():
             layout.addWidget(plot_group)
             # 1.1.5: gaps in frequency or time (zero span, sweep times)
             self.gap_box = suite.GapOptionsBox()
+            # 1.1.8: a gap option changed after a run redraws the Plots tab
+            self.gap_box.follow(
+                lambda: self.plotter.doc if self.plotter is not None else None,
+                lambda: self.plot_panel, self._log_message,
+                ready=lambda: self.save_button.isEnabled() and self.plot_button.isEnabled())
             layout.addWidget(self.gap_box)
+            # 1.2.0: Per file / Combined axis / Overlay pages (with the plot
+            # mode above); a box changed after a run builds the project again
+            self.page_types_box = suite.PageTypesBox(notes={
+                "per_file": "R&S: each file's average page and, in 'All plots', a page per "
+                            "section (sweep).",
+                "combined": "R&S: 'Combined average' - every file's average joined and "
+                            "sorted on x (a frequency-stepped set becomes one sweep) - and, in "
+                            "'All plots', 'Combined Section <n>'.",
+                "overlay": "R&S: 'AllImported' (every sweep stacked; modes 'All plots' and "
+                           "'Average + Overlay') and 'Averages' (every file's average)."})
+            layout.addWidget(self.page_types_box)
+            self._pages_timer = QTimer(self)
+            self._pages_timer.setSingleShot(True)
+            self._pages_timer.setInterval(500)
+            self._pages_timer.timeout.connect(self._page_kinds_changed)
+            self.page_types_box.kinds_changed.connect(lambda _k: self._pages_timer.start())
             # 1.1.7: offload plot data to disk above this computer's RAM limit
             self.ram_box = suite.RamLimitBox()
             layout.addWidget(self.ram_box)
@@ -1344,11 +1620,26 @@ def _build_gui_classes():
                                                     _autoplot_gpu.threshold("power_mean_db"))
                     if on else ""))
 
-        def options(self) -> PlotOptions:
-            """PlotOptions from the GUI (plot mode, GPU)."""
+        def options(self, log: Optional[Callable[[str], None]] = None) -> PlotOptions:
+            """PlotOptions from the GUI (plot mode, GPU; 1.1.8: ``log`` gets the
+            gap rule in force and any fixed-gap text that cannot be read)."""
+            if log is not None:                                   # 1.2.0
+                from _autoplot_native import describe_page_kinds
+                log(describe_page_kinds(self.page_types_box.kinds()))
             return PlotOptions(mode=max(0, self.plot_mode_group.checkedId()),
                                use_gpu=self.enable_gpu_checkbox.isChecked(),
-                               gaps=self.gap_box.time_layout())
+                               gaps=self.gap_box.time_layout(log),
+                               pages=self.page_types_box.kinds())
+
+        def _page_kinds_changed(self) -> None:
+            """1.2.0: a page box changed after a run - build the project again with
+            the ticked kinds (nothing before the first run or during one)."""
+            if self.plotter is None or not (self.save_button.isEnabled()
+                                            and self.plot_button.isEnabled()):
+                return
+            if self.plotter.kinds == self.page_types_box.kinds():
+                return
+            self._process_and_plot()
 
         def _browse_files(self) -> None:
             """Ask for .sft files and add them to the list."""
@@ -1440,7 +1731,7 @@ def _build_gui_classes():
                 return
             self._drop_project()
             try:
-                self.plotter = build_project(files, self.options())
+                self.plotter = build_project(files, self.options(self._log_message))
             except Exception as exc:
                 QMessageBox.critical(self, APP_NAME, "Plot creation failed:\n%s" % exc)
                 return
@@ -1477,7 +1768,8 @@ def _build_gui_classes():
                     return
                 base = os.path.join(folder, self.base_edit.text().strip() or "RnS_Plots_Batch")
                 try:
-                    written = save_split(self.files, base, self.plots_spin.value(), self.options())
+                    written = save_split(self.files, base, self.plots_spin.value(),
+                                         self.options(self._log_message))
                 except Exception as exc:
                     QMessageBox.critical(self, APP_NAME, "Save failed:\n%s" % exc)
                     return
@@ -1490,7 +1782,7 @@ def _build_gui_classes():
                 if not path:
                     return
                 try:
-                    self.plotter.doc.time_layout = self.gap_box.time_layout()   # 1.1.5
+                    self.plotter.doc.time_layout = self.gap_box.time_layout(self._log_message)
                     self.last_saved = self.plotter.doc.save(path)
                 except Exception as exc:
                     QMessageBox.critical(self, APP_NAME, "Save failed:\n%s" % exc)
@@ -1549,9 +1841,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="allow the GPU (NVIDIA or AMD) for large averages")
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
     from _autoplot_native import (add_gap_arguments, add_memory_arguments, layout_from_args,
-                                  ram_limit_from_args)
+                                  ram_limit_from_args, add_page_arguments, page_kinds_from_args)
     add_gap_arguments(parser)                  # 1.1.5: --gap-k ... --no-axis-breaks
     add_memory_arguments(parser)               # 1.1.7: --ram-limit
+    add_page_arguments(parser)                 # 1.2.0: --pages per_file,combined,overlay
     args = parser.parse_args(argv)
     ram_limit_from_args(args)
     monitor = None
@@ -1565,7 +1858,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print("FAILED", error, file=sys.stderr)
             if not files:
                 return 1
-            options = PlotOptions(args.mode, args.gpu, gaps=layout_from_args(args))
+            options = PlotOptions(args.mode, args.gpu, gaps=layout_from_args(args),
+                                  pages=page_kinds_from_args(args))
             if args.split > 0:
                 for path in save_split(files, args.output, args.split, options):
                     print("Wrote", path)

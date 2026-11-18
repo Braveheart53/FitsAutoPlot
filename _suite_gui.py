@@ -33,6 +33,140 @@ Compatible with: Python 3.8+, qtpy (PySide6 preferred; PyQt5/PyQt6 work)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.1.7: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * NEW PageTypesBox: "Pages to draw:" with Per file, Combined axis
+#                and Overlay (all ticked; tool tips, a line per program from
+#                ``notes``); kinds(), set_kinds() and kinds_changed(tuple).
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        saved_theme: The suite's stored theme ('light' or 'dark').
+        save_theme: Store the suite theme (shared with the launcher).
+        build_palette: Fusion palette for 'light' or 'dark' (the launcher's colours).
+        apply_theme: Fusion style and the theme's palette for the whole application.
+        dialog_stylesheet: Style sheet that themes ONE dialog and its children (plugins in Veusz).
+        add_view_menu: View > Light Mode / Dark Mode (exclusive); returns (light, dark) actions.
+        add_file_menu: File menu: the given (text, slot, shortcut) entries, then Exit (Ctrl+Q).
+        _module_version: ``__version__`` of module ``name``; 'installed' when it has none, 'not installed' when it cannot be imported.
+        about_details: Plain-text runtime details for the About dialog.
+        show_about: Help > About in the suite's common layout.
+        add_help_menu: Help > About <name> and About Qt.
+        make_plot_panel: (widget, panel): the pyqtgraph ProjectPlotPanel, or an explanation label (panel None) when pyqtgraph is missing; processing and saving still work.
+        find_veusz: Veusz program: VEUSZ_EXECUTABLE, then vszh5_writer.find_veusz_exe().
+        export_with_veusz: PDF (one bookmark per page) and per-page PNG files of a saved project, rendered by Veusz through vszh5_writer.render_pages; returns the files.
+        open_in_veusz: Open a saved project in the Veusz program (optional viewer).
+        release_after_clear: Finish a Clear (0.1.3): delete the widgets and threads already given to deleteLater() (the old plots) now, then give the freed memory back to the o...
+        suite_settings: The suite's settings (0.1.5): QSettings(SUITE_ORG, SUITE_APP), the store the theme uses.
+        saved_ram_limit: The RAM limit (%) saved by any tool of the suite (0.1.5); ``default`` (None: _autoplot_native.DEFAULT_RAM_LIMIT_PERCENT) when none is saved.
+        RamLimitBox (class): "RAM limit" control (0.1.5): offload plot data to disk when this computer's RAM in use (every program, not only this one) reaches the percentage se...
+        PageTypesBox (class): "Pages" check boxes (0.1.7): Per file, Combined axis, Overlay.
+        _note: "\\n\\n<note>" for a PageTypesBox tool tip, "" without one.
+        TimeAxesBox (class): "Time axes" check boxes (0.1.4): Local time, UTC and MJD.
+        watch_gap_text: Check a fixed-gap text box while it is typed in (0.1.6).
+        gap_text_seconds: A fixed-gap text box read (0.1.6): ``(seconds, read)``, the exact value of the entry (_autoplot_native.check_gap_seconds).
+        GapOptionsBox (class): "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and Franks AutoPlot.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION = "0.1.7"
+        SUITE_ORG = "NRAO-GBO"
+        SUITE_APP = "GBO Electronics Scientific Plotting Suite"
+        THEME_KEY = "theme"
+        AUTHOR = "William W. Wallace"
+        EMAIL = "wwallace@nrao.edu"
+        COMPANY = "NRAO / Green Bank Observatory (GBO)"
+        LICENCE = "GPL-3.0-or-later"
+        COPYRIGHT = "Copyright (C) 2025-2026 William W. Wallace"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        CLEAR_TOOLTIP: tool tip of every program's Clear button
+        RAM_LIMIT_KEY: QSettings key of the RAM limit shared by every tool of the suite
+        BAD_GAP_TEXT_STYLE: style of a gap text box whose entry cannot be read: red frame (0.1.6)
+# %%%%% More Info
+    Shared by the launcher and every program (theme, menus, About box, Veusz
+    helpers, GapOptionsBox, TimeAxesBox, RamLimitBox, PageTypesBox, release_after_clear and
+    CLEAR_TOOLTIP).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.1.6: Gap options enforced: checked texts, logged rule, live Plots tab.
+Date: 2026-11-17
+#              * NEW watch_gap_text(): a fixed-gap text box gets a red frame and
+#                the reason in its tool tip when the entry cannot be read, and
+#                "Now: 15 min" when it can (BAD_GAP_TEXT_STYLE).
+#              * NEW gap_text_seconds(); GapOptionsBox.time_layout(log): the
+#                exact seconds; with ``log`` an unreadable entry and the rule
+#                in force are logged (before, such an entry was ignored
+#                without a word).
+#              * GapOptionsBox.layout_changed (0.5 s after the last change)
+#                and follow(): a tool's Plots tab is redrawn when an option
+#                changes after a run (before, only the time-axis boxes did;
+#                the save used the new options, the Plots tab the old ones).
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        saved_theme: The suite's stored theme ('light' or 'dark').
+        save_theme: Store the suite theme (shared with the launcher).
+        build_palette: Fusion palette for 'light' or 'dark' (the launcher's colours).
+        apply_theme: Fusion style and the theme's palette for the whole application.
+        dialog_stylesheet: Style sheet that themes ONE dialog and its children (plugins in Veusz).
+        add_view_menu: View > Light Mode / Dark Mode (exclusive); returns (light, dark) actions.
+        add_file_menu: File menu: the given (text, slot, shortcut) entries, then Exit (Ctrl+Q).
+        _module_version: ``__version__`` of module ``name``; 'installed' when it has none, 'not installed' when it cannot be imported.
+        about_details: Plain-text runtime details for the About dialog.
+        show_about: Help > About in the suite's common layout.
+        add_help_menu: Help > About <name> and About Qt.
+        make_plot_panel: (widget, panel): the pyqtgraph ProjectPlotPanel, or an explanation label (panel None) when pyqtgraph is missing; processing and saving still work.
+        find_veusz: Veusz program: VEUSZ_EXECUTABLE, then vszh5_writer.find_veusz_exe().
+        export_with_veusz: PDF (one bookmark per page) and per-page PNG files of a saved project, rendered by Veusz through vszh5_writer.render_pages; returns the files.
+        open_in_veusz: Open a saved project in the Veusz program (optional viewer).
+        release_after_clear: Finish a Clear (0.1.3): delete the widgets and threads already given to deleteLater() (the old plots) now, then give the freed memory back to the o...
+        suite_settings: The suite's settings (0.1.5): QSettings(SUITE_ORG, SUITE_APP), the store the theme uses.
+        saved_ram_limit: The RAM limit (%) saved by any tool of the suite (0.1.5); ``default`` (None: _autoplot_native.DEFAULT_RAM_LIMIT_PERCENT) when none is saved.
+        RamLimitBox (class): "RAM limit" control (0.1.5): offload plot data to disk when this computer's RAM in use (every program, not only this one) reaches the percentage se...
+        TimeAxesBox (class): "Time axes" check boxes (0.1.4): Local time, UTC and MJD.
+        watch_gap_text: Check a fixed-gap text box while it is typed in (0.1.6).
+        gap_text_seconds: A fixed-gap text box read (0.1.6): ``(seconds, read)``, the exact value of the entry (_autoplot_native.check_gap_seconds).
+        GapOptionsBox (class): "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and Franks AutoPlot.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION = "0.1.6"
+        SUITE_ORG = "NRAO-GBO"
+        SUITE_APP = "GBO Electronics Scientific Plotting Suite"
+        THEME_KEY = "theme"
+        AUTHOR = "William W. Wallace"
+        EMAIL = "wwallace@nrao.edu"
+        COMPANY = "NRAO / Green Bank Observatory (GBO)"
+        LICENCE = "GPL-3.0-or-later"
+        COPYRIGHT = "Copyright (C) 2025-2026 William W. Wallace"
+        FACILITY_NOTE: NRAO / GBO statement in the About box
+        GPL_NOTICE: licence notice in the About box
+        CLEAR_TOOLTIP: tool tip of every program's Clear button
+        RAM_LIMIT_KEY: QSettings key of the RAM limit shared by every tool of the suite
+        BAD_GAP_TEXT_STYLE: style of a gap text box whose entry cannot be read: red frame (0.1.6)
+# %%%%% More Info
+    Shared by the launcher and every program (theme, menus, About box, Veusz
+    helpers, GapOptionsBox, TimeAxesBox, RamLimitBox, release_after_clear and
+    CLEAR_TOOLTIP).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.1.5: RamLimitBox - offload plot data to disk above a RAM limit.
 Date: 2026-11-17
 #              * NEW RamLimitBox: "Offload plot data to disk above RAM use of"
@@ -286,7 +420,7 @@ import platform
 import shutil
 import subprocess
 import sys
-from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Sequence, Tuple
 
 os.environ.setdefault("QT_API", "pyside6")
 
@@ -300,7 +434,7 @@ from qtpy.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFormLayout
                             QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                             QSpinBox, QVBoxLayout, QWidget)
 
-VERSION = "0.1.5"
+VERSION = "0.1.7"
 __version__ = VERSION
 
 # %% Suite identity (same values as postProcessing_Launcher.py)
@@ -716,6 +850,74 @@ class RamLimitBox(QWidget):
         return float(self.spin.value())
 
 
+class PageTypesBox(QWidget):
+    """
+    "Pages" check boxes (0.1.7): Per file, Combined axis, Overlay.
+
+    Per file: the pages of each file.  Combined axis: pages like a file's
+    own, but every trace holds the same quantity of all the files joined end
+    to end and sorted on x, so each axis spans the full range; in the project
+    and the Plots tab they come just above the overlays.  Overlay: all files
+    stacked on one graph per quantity.  Default: all three.  kinds() gives
+    the tuple of _autoplot_native.page_kinds; kinds_changed(tuple) is sent
+    after a box changes.  ``notes`` (optional) maps a kind to an extra
+    tool-tip line naming what that tool draws for it.
+    """
+
+    kinds_changed = Signal(object)
+
+    def __init__(self, parent: Any = None, notes: Optional[Dict[str, str]] = None) -> None:
+        """Three check boxes on one row, all ticked."""
+        super().__init__(parent)
+        notes = notes or {}
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        heading = QLabel("Pages to draw:")
+        heading.setToolTip("Which kinds of page the project and the Plots tab get "
+                           "(at least one data set is always saved).")
+        outer.addWidget(heading)
+        row = QHBoxLayout()
+        self.per_file_cb = QCheckBox("Per file")
+        self.per_file_cb.setToolTip(
+            "The pages of each file, one set per file." + _note(notes, "per_file"))
+        self.combined_cb = QCheckBox("Combined axis")
+        self.combined_cb.setToolTip(
+            "Pages like a file's own, but each trace holds the same quantity of every "
+            "file joined end to end (file order, then sorted on x), so each axis spans "
+            "the full range of all the files.  The gap options apply: the steps between "
+            "files are gaps like any other.  Listed just above the overlays."
+            + _note(notes, "combined"))
+        self.overlay_cb = QCheckBox("Overlay")
+        self.overlay_cb.setToolTip(
+            "Every file's traces stacked on one graph per quantity." + _note(notes, "overlay"))
+        for box in (self.per_file_cb, self.combined_cb, self.overlay_cb):
+            box.setChecked(True)
+            box.toggled.connect(lambda _on: self.kinds_changed.emit(self.kinds()))
+            row.addWidget(box)
+        row.addStretch(1)
+        outer.addLayout(row)
+
+    def kinds(self) -> Tuple[str, ...]:
+        """The ticked kinds in PAGE_KINDS order ("per_file", "combined", "overlay")."""
+        return tuple(kind for kind, box in (("per_file", self.per_file_cb),
+                                            ("combined", self.combined_cb),
+                                            ("overlay", self.overlay_cb)) if box.isChecked())
+
+    def set_kinds(self, kinds: Iterable[str]) -> None:
+        """Tick exactly ``kinds`` (_autoplot_native.page_kinds words)."""
+        from _autoplot_native import page_kinds
+        wanted = page_kinds(list(kinds))
+        for kind, box in (("per_file", self.per_file_cb), ("combined", self.combined_cb),
+                          ("overlay", self.overlay_cb)):
+            box.setChecked(kind in wanted)
+
+
+def _note(notes: Dict[str, str], kind: str) -> str:
+    """"\\n\\n<note>" for a PageTypesBox tool tip, "" without one."""
+    text = notes.get(kind)
+    return ("\n\n" + text) if text else ""
+
+
 class TimeAxesBox(QWidget):
     """
     "Time axes" check boxes (0.1.4): Local time, UTC and MJD.
@@ -803,6 +1005,57 @@ class TimeAxesBox(QWidget):
         self.clocks_changed.emit(self.clocks())
 
 
+#: (0.1.6) Style of a gap text box whose entry cannot be read (red frame,
+#: visible on the light and the dark theme).
+BAD_GAP_TEXT_STYLE = "QLineEdit { border: 2px solid #d64545; border-radius: 3px; }"
+
+
+def watch_gap_text(edit: Any, what: str = "gap") -> None:
+    """
+    Check a fixed-gap text box while it is typed in (0.1.6).
+
+    The entry is read with _autoplot_native.check_gap_string on every
+    change: an entry that cannot be read gets a red frame, and the tool tip
+    adds the reason; a readable one adds what it was read as ("Now: 15
+    min").  ``what`` names the box in the tool tip ("small gap").  The tool
+    tip set before the call is kept as the first part.
+    """
+    from _autoplot_native import check_gap_seconds, describe_gap_seconds
+    base = edit.toolTip()
+
+    def check(text: str) -> None:
+        """Frame and tool tip for the entry ``text``."""
+        seconds, problem = check_gap_seconds(text)
+        if problem is not None:
+            edit.setStyleSheet(BAD_GAP_TEXT_STYLE)
+            edit.setToolTip("%s\n\nNot used: %s - the fixed %s is not set, so the K / n "
+                            "rule applies." % (base, problem, what))
+        else:
+            edit.setStyleSheet("")
+            edit.setToolTip("%s\n\nNow: %s." % (base, describe_gap_seconds(seconds)
+                                                 if seconds > 0 else
+                                                 "not set (the K / n rule applies)"))
+        edit.setProperty("gap_problem", problem or "")
+
+    edit.textChanged.connect(check)
+    check(edit.text())
+
+
+def gap_text_seconds(edit: Any, what: str, log: Optional[Callable[[str], None]] = None
+                     ) -> Tuple[float, bool]:
+    """
+    A fixed-gap text box read (0.1.6): ``(seconds, read)``, the exact value
+    of the entry (_autoplot_native.check_gap_seconds).
+
+    ``read`` is False for an entry that cannot be read (``seconds`` is then
+    0.0) and ``log`` gets one line saying so; an empty box is (0.0, True).
+    """
+    from _autoplot_native import parse_gap_seconds, check_gap_seconds
+    text = edit.text() if edit is not None else ""
+    _seconds, problem = check_gap_seconds(text)
+    return parse_gap_seconds(text, log_cb=log, what=what), problem is None
+
+
 class GapOptionsBox(QGroupBox):
     """
     "Gaps" options for a tool's plots (0.1.2), the same controls as FITS and
@@ -819,7 +1072,17 @@ class GapOptionsBox(QGroupBox):
 
     0.1.4: ``time_axes`` True adds the "Time axes" boxes (TimeAxesBox:
     Local time / UTC / MJD) for tools that draw date-time x axes.
+
+    0.1.6: the fixed-gap texts are checked while typed (watch_gap_text: a
+    red frame and the reason when an entry cannot be read); time_layout(log)
+    logs such an entry and the rule in force; layout_changed is sent half a
+    second after a gap option changes (a text when its editing ends), and
+    follow() redraws a tool's Plots tab with it, so the Plots tab, the saved
+    .vszh5 and the log always show the options in the boxes.
     """
+
+    #: (0.1.6) Sent 0.5 s after a gap option last changed.
+    layout_changed = Signal()
 
     def __init__(self, parent: Any = None, time_axes: bool = False) -> None:
         """Build the check boxes, spin boxes and text boxes (defaults: both
@@ -879,6 +1142,21 @@ class GapOptionsBox(QGroupBox):
         # (n x small gap), so they stay enabled while either break is on
         self.lines_cb.toggled.connect(self._enable_values)
         self.axis_cb.toggled.connect(self._enable_values)
+        # 0.1.6: the texts are checked as they are typed; a change of any
+        # option is announced once it has settled (layout_changed)
+        watch_gap_text(self.small_text, "small gap")
+        watch_gap_text(self.large_text, "large gap")
+        self._changed_timer = QTimer(self)
+        self._changed_timer.setSingleShot(True)
+        self._changed_timer.setInterval(500)
+        self._changed_timer.timeout.connect(self.layout_changed.emit)
+        for box in (self.lines_cb, self.axis_cb, self.numeric_cb):
+            box.toggled.connect(self._changed_timer.start)
+        for spin in (self.k_spin, self.n_spin):
+            spin.valueChanged.connect(self._changed_timer.start)
+        for edit in (self.small_text, self.large_text):
+            edit.editingFinished.connect(self._changed_timer.start)
+        self._followers = []
 
     def _enable_values(self, _checked: bool = False) -> None:
         """Enable the small-gap values while either break is on and the
@@ -889,14 +1167,80 @@ class GapOptionsBox(QGroupBox):
         self.n_spin.setEnabled(self.axis_cb.isChecked())
         self.large_text.setEnabled(self.axis_cb.isChecked())
 
-    def time_layout(self) -> Any:
+    def time_layout(self, log: Optional[Callable[[str], None]] = None) -> Any:
         """The _autoplot_native TimeLayout of the current settings (0.1.4:
-        with the ticked time-axis clocks; Local only without the boxes)."""
-        from _autoplot_native import TimeLayout, parse_gap_string
-        return TimeLayout(k=float(self.k_spin.value()), n=float(self.n_spin.value()),
-                          manual_s=parse_gap_string(self.small_text.text()) * 86400.0,
-                          axis_manual_s=parse_gap_string(self.large_text.text()) * 86400.0,
-                          break_lines=self.lines_cb.isChecked(),
-                          break_axis=self.axis_cb.isChecked(),
-                          numeric=self.numeric_cb.isChecked(),
-                          clocks=self.time_axes_box.clocks() if self.time_axes_box else None)
+        with the ticked time-axis clocks; Local only without the boxes).
+
+        0.1.6: with ``log``, a fixed-gap text that cannot be read (not used:
+        the K / n rule applies) and then the rule in force are logged; before,
+        such an entry was ignored without a word."""
+        from _autoplot_native import TimeLayout
+        small_s, _ = gap_text_seconds(self.small_text, "small gap", log)
+        large_s, _ = gap_text_seconds(self.large_text, "large gap", log)
+        layout = TimeLayout(k=float(self.k_spin.value()), n=float(self.n_spin.value()),
+                            manual_s=small_s, axis_manual_s=large_s,
+                            break_lines=self.lines_cb.isChecked(),
+                            break_axis=self.axis_cb.isChecked(),
+                            numeric=self.numeric_cb.isChecked(),
+                            clocks=self.time_axes_box.clocks() if self.time_axes_box else None)
+        if log is not None:
+            log(layout.describe())
+            if self.time_axes_box is not None:
+                log(layout.describe_clocks())
+        return layout
+
+    def follow(self, document_of: Callable[[], Any], panel_of: Callable[[], Any],
+               log: Callable[[str], None], ready: Optional[Callable[[], bool]] = None) -> None:
+        """
+        Redraw a tool's Plots tab when the options change after a run (0.1.6).
+
+        On layout_changed (and on a time-axis box), when ``ready()`` (default:
+        always) and both ``document_of()`` (the project, a NativeDocument)
+        and ``panel_of()`` (the Plots tab) are there and the options differ
+        from the project's, the project gets the new TimeLayout and the Plots
+        tab is drawn again; the log says what is in force.  Nothing happens
+        during a run (``ready()`` False) - the run and the save read the
+        boxes themselves.  A fixed-gap text that cannot be read is logged
+        once when its editing ends (again only after it changed).
+        """
+        reported = [()]
+
+        def report_texts() -> None:
+            """Log the fixed-gap texts that cannot be read, once per entry."""
+            bad = tuple((what, edit.text().strip()) for what, edit in
+                        (("small gap", self.small_text), ("large gap", self.large_text))
+                        if edit.property("gap_problem"))
+            if bad and bad != reported[0]:
+                for what, edit in (("small gap", self.small_text),
+                                   ("large gap", self.large_text)):
+                    if edit.property("gap_problem"):
+                        gap_text_seconds(edit, what, log)
+            reported[0] = bad
+
+        def redraw(*_args: Any) -> None:
+            """Apply the boxes to the finished project and its Plots tab."""
+            report_texts()
+            if ready is not None and not ready():
+                return
+            doc, panel = document_of(), panel_of()
+            if doc is None or panel is None:
+                return
+            old = getattr(doc, "time_layout", None)
+            layout = self.time_layout()
+            if old is not None and (old.key(), old.clocks) == (layout.key(), layout.clocks):
+                return
+            try:
+                doc.time_layout = layout
+                log(layout.describe())
+                if self.time_axes_box is not None:
+                    log(layout.describe_clocks())
+                pages = panel.set_document(doc)
+            except Exception as exc:      # the project is still saved normally
+                log("Plots tab could not redraw for the new gap options: %s" % exc)
+                return
+            log("Plots tab redrawn for the options above: %d page(s)." % pages)
+
+        self._followers.append(redraw)
+        self.layout_changed.connect(redraw)
+        if self.time_axes_box is not None:
+            self.time_axes_box.clocks_changed.connect(redraw)

@@ -32,6 +32,438 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.5.9: Page kinds; combined-axis traces and their gap layout.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * NEW PAGE_KINDS, PAGE_KIND_TEXT, DEFAULT_PAGE_KINDS; page_kinds()
+#                (None or "all": all three; "none"; names separated by commas,
+#                + or spaces; an unknown word is refused), describe_page_kinds(),
+#                add_page_arguments() (--pages, checked by argparse) and
+#                page_kinds_from_args().
+#              * NEW concatenate_on_x(): the files' pieces joined in file order,
+#                then a stable sort on x (equal x keep their file order, NaN x
+#                last); nothing rounded; with_sources gives the file of every
+#                row (file_index_array: uint8 / uint16).  NEW
+#                overlapping_ranges() and move_pages_before() (combined pages
+#                just above the overlays).
+#              * NEW set_combined_sources() / combined_sources() /
+#                combined_gap_positions(): the gap layout of a joined trace.
+#                Each file is measured by its own rule and covers the runs
+#                between its own gaps; a step of the joined trace is cut only
+#                when no run of any file spans it and it is longer than the
+#                larger threshold of the two files beside it (and larger on a
+#                log scale for non-time axes); the axis breaks see the files as
+#                an overlay of them would (the largest threshold of the files).
+#                One median of the joined values cut every step of a coarse
+#                file joined with a fine one: R&S, a 1 MHz span joined with
+#                100 Hz and 20 Hz spans gave 800 axis breaks and an 18 m wide
+#                page; UWBR Vacuum gave 3804 gap rows where its files have 278.
+#              * _layout_time_axis / _layout_numeric_axis use it for every x
+#                dataset with file numbers; other traces are laid out as before.
+#              * NativeDocument.combined_of: the file numbers (1 or 2 bytes a
+#                row, not saved), emptied by release() and moved to the offload
+#                file with the datasets above the RAM limit (offload()).
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        _gap_fraction: The exact seconds of a gap text (0.5.8): ``(Fraction, None)`` or ``(None, problem)``; check_gap_string has the syntax.
+        check_gap_seconds: Read a gap text in seconds (0.5.8): ``(seconds, problem)``, the exact value of the text rounded once to a float (check_gap_string).
+        check_gap_string: Read a gap text (0.5.8): ``(days, problem)``.
+        describe_gap_seconds: A read gap for people (0.5.8): ``"15 min"``, ``"1.5 h"``, ``"not set"`` at 0 (TimeLayout's _seconds_text: exact seconds follow when the short form...
+        describe_gap_days: describe_gap_seconds for a gap in days (0.5.8).
+        parse_gap_seconds: parse_gap_string in seconds (0.5.8; exact, for TimeLayout manual_s / axis_manual_s): 0.0 for an entry that cannot be read, logged.
+        parse_gap_string: Parse a human-readable gap string into MJD-days (check_gap_string).
+        gap_text: argparse type of --gap-small / --gap-large (0.5.8): the text itself when check_gap_string() reads all of it, else ArgumentTypeError with the reason...
+        _gap_factor: A finite number >= ``minimum`` for argparse (0.5.8), else ArgumentTypeError.
+        gap_factor_k: argparse type of --gap-k (0.5.8): a finite K >= MIN_GAP_K.
+        gap_factor_n: argparse type of --gap-n (0.5.8): a finite n >= 0 (0 = no axis breaks).
+        add_gap_arguments: Add the gap options to an argparse parser (0.5.3): --gap-k, --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks, --no-numeric-gap...
+        add_memory_arguments: Add --ram-limit to an argparse parser (0.5.7): offload plot data to disk when this computer's RAM in use (all programs) reaches PERCENT (0 = never;...
+        ram_limit_from_args: Set the program's RAM limit from add_memory_arguments() (0.5.7); returns it.
+        layout_from_args: The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3; 0.5.6: --time-axes; 0.5.8: ``log_cb`` reports a gap text that cannot be read...
+        page_kinds: The page kinds asked for (0.5.9), in PAGE_KINDS order.
+        describe_page_kinds: Log line of the page kinds (0.5.9): "Pages: Per file, Combined axis, Overlay".
+        add_page_arguments: Add --pages to an argparse parser (0.5.9): which page kinds to draw (per_file, combined, overlay; default all); page_kinds_from_args() reads it.
+        page_kinds_from_args: The page kinds of add_page_arguments() in ``args`` (0.5.9; all when absent).
+        concatenate_on_x: Join the traces of several files into one (0.5.9, combined-axis pages).
+        file_index_array: The file (0, 1, ...) of every row of pieces of ``rows`` rows each, joined in that order (0.5.9), in the smallest unsigned integer type (uint8 below...
+        set_combined_sources: Record which file each row of the combined-axis x datasets ``names`` came from (0.5.9): ``sources`` holds one file number per row, in the rows' (so...
+        combined_sources: The file number of every row of the combined x dataset ``name`` (0.5.9; set_combined_sources), or None when ``name`` is not a joined trace or its l...
+        combined_gap_positions: Gap rows of a joined trace (0.5.9): ``values`` are its x values in the gap rule's units (sorted; NaN allowed), ``sources`` the file of every row.
+        overlapping_ranges: How many of the files' x ranges overlap an earlier one (0.5.9): the combined trace interleaves their samples there.
+        move_pages_before: Put ``pages`` (pages of ``doc``) just before the page ``anchor`` (0.5.9: combined pages just above the overlays, in the project and the Plots tab).
+        time_clocks: The clocks of ``value`` as a tuple in TIME_CLOCKS order (0.5.6).
+        _zone_of: The tzinfo of ``zone`` (None = VSZH5_DISPLAY_TZ, else None = this computer's zone; a text is read as by the writer) (0.5.6).
+        zone_name_at: Name of the time zone at the UTC instant ``epoch_s`` (Unix seconds) (0.5.6): what the operating system calls this computer's zone then ("EST", "EDT...
+        label_zone_name: ``name`` as the axis label shows it, or "" for a name that only repeats the offset or says UTC (0.5.6).
+        local_zone_description: One line naming the zone local time axes use (0.5.6), for the GUI and the logs: this computer's zone (or VSZH5_DISPLAY_TZ) with its name and UTC of...
+        _finite_seconds: A fixed gap in seconds (0.5.8): finite and > 0, else 0.0 (not set).
+        TimeLayout (class): Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any sorted x, and the two consequences of a gap made optional), see vszh5_writer T...
+        _number_text: A setting for the notes with every digit (repr), without a trailing ".0" (0.5.3; %g cut 12.3456789 to 12.3457).
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _page_of: The page widget ``widget`` is on, or None (0.5.6).
+        _clock_of: The time-axis clock of the page ``widget`` is on ("local" when the page has none yet, or the widget is on no page) (0.5.6).
+        _same_values: True when two arrays hold the same numbers, NaN where the other has NaN (0.5.6; numpy.array_equal(equal_nan=...) needs numpy >= 1.19).
+        _mjd_name: Name of the MJD plot copy of the UTC date dataset ``utc_name`` (0.5.6): "<x>__utc" -> "<x>__mjd", "<x>_utc" -> "<x>_mjd", else "<x>_mjd".
+        _exact_mjd: (MJD values, name of a stored dataset holding exactly them or None) of one time x (0.5.6).
+        _clock_dataset: Plot x dataset of one trace on the UTC or MJD clock (0.5.6).
+        _time_note: The "Time axis:" line of the graph notes for ``clock`` (0.5.6).
+        _set_note_line: Put ``line`` into the graph notes, replacing a line that starts with ``prefix`` (0.5.6; _set_gap_note for any prefix).
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0; 0.5.6 clocks).
+        _clock_break_pairs: Axis breaks found in UTC seconds, moved onto another clock's axis (0.5.8).
+        _set_gap_note: Put the gap-rule line ``note`` into the graph notes (0.5.3: a line from an earlier layout is replaced, so the notes state the rule in use).
+        _sorted_finite: True when the finite values of ``values`` never decrease (at least 3).
+        _layout_numeric_axis: Gap options on an x axis that is not time (0.5.3): frequency, angle, index ...
+        _undo_numeric_layout: Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the gap options of a project turn non-time axes off between two saves, the traces d...
+        _drop_unused_plot_copies: Remove line-break plot copies no widget draws any more (0.5.3): when the gap options change between two saves, copies of the old layout would other...
+        _has_clock_axis: True when ``page`` draws a date-time x axis laid out on a clock.
+        _free_page_name: ``wanted``, or wanted_2, wanted_3 ...
+        _copy_setting: A setting value for a page copy: lists and dicts copied, the rest (text, numbers, booleans) shared.
+        _clone_widget: Copy of ``widget`` and every widget below it, under ``parent`` (0.5.6).
+        _remove_clock_pages: Take the clock copies of the last finalize out of the project (0.5.6); finalize makes them again from their pages, so a copy always shows its page...
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        _fit_set: Set ``key`` on ``widget`` for the tick-label fit, remembering the value it had before (0.5.5).
+        _fit_restore: Undo the previous tick-label fit on ``widget`` (0.5.5): a setting the fit wrote and nobody changed since gets its earlier value back.
+        _cm: A Veusz distance setting in cm (``default`` when unset or not physical).
+        _pt: A Veusz font size setting in points (``default`` when unset).
+        _finite_range: (min, max) of the finite values of dataset ``name`` (1-D or date), or None; cached per finalize in ``cache``.
+        _axis_data_range: (min, max) of the data a graph draws on ``axis`` (xy traces and images), or None when it draws nothing known (0.5.5).
+        _axis_room: vszh5_writer.TickRoom of one axis as it is set now (0.5.5); None for a hidden axis, a label axis or an axis without known data.
+        _time_label_cm: Width (cm) a date-time x axis's label needs (0.5.6), 0 for other axes.
+        _dated_page_size: (width, height) cm the 0.5.0 rule gives a page with date-time axes and no size of its own: 13 cm a column and 8 cm a row (at least 16 cm) for a gri...
+        _fit_page: Fit the tick labels of every graph on ``page`` (0.5.5): vertical labels where they belong, the margins every label needs and a page large enough (s...
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        process_rss_mb: Resident set size of this process in MiB (NaN when it cannot be read).
+        _release_os_heap: Hand freed heap memory back to the operating system; returns the steps that ran (names), [] when nothing applies.
+        release_memory: Give the memory of dropped data back to the operating system (0.5.4).
+        _OffloadNotes (class): Throttled offload messages (0.5.7): the first at once, then at most one every _NOTE_S with the totals so far; flush() logs the last one held back (...
+        set_ram_limit: Set the RAM limit (% of this computer's RAM in use, every program) above which plot data are offloaded to disk (0.5.7); 0 or None = never.
+        ram_limit: The RAM limit in force (%; 0 = never offload) (0.5.7).
+        system_memory: (percent in use, total bytes, available bytes) of this computer's RAM (0.5.7), all programs together; None when it cannot be read.
+        memory_text: One line for the GUI (0.5.7), e.g.
+        payload_bytes: Bytes of the values in ``value`` (0.5.7): numpy arrays by nbytes, text and lists estimated, dicts / lists / tuples summed (nested to 4 levels).
+        OffloadStore (class): One append-only pickle file of offloaded values (0.5.7).
+        OffloadedValue (class): A value in an OffloadStore (0.5.7); load() reads it back (a new copy every time; nothing is kept in RAM).
+        OffloadedParts (class): The arrays of a dataset kept in an OffloadStore (0.5.7): a read-only mapping like the dict it replaces ({"data": ..., "serr": ...}).
+        loaded_parts: ``parts`` as a plain dict of arrays (0.5.7): offloaded parts are read back once; parts in RAM are returned as they are.
+        _over_ram_limit: (percent in use, limit) when this computer's RAM use is at or above ``limit`` (%), else None; None too when the limit is 0 or the use is unknown (0...
+        file_stamp: (size, mtime_ns, options) of ``path``: the data read from it are still good while this is unchanged; None when the file cannot be read.
+        KeptReads (class): Data read from the listed files, kept until the user clears them (0.5.4).
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        _GAP_NUMBER: a number of a gap text: digits, decimals, an exponent of up to 3 digits (0.5.8)
+        _GAP_TOKEN_REGEX: one number and its unit of a gap text, spaces allowed (0.5.8: matched one after another over the whole entry)
+        _GAP_NUMBER_REGEX: a gap text that is a bare number (hours) (0.5.8)
+        _GAP_CLOCK_REGEX: a gap text that is a clock H:MM or H:MM:SS(.s) (0.5.8)
+        GAP_STRING_HELP: tool tip of the gap text boxes
+        _DAYS_PER_MONTH: average Gregorian month (365.25 / 12 days) for 'm' in gap texts
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 1 / 1440 (gap text parsing)
+        _DAYS_PER_SECOND: 1 / 86400 (gap text parsing)
+        _GAP_UNIT_SECONDS: seconds per unit of a gap text, every accepted spelling; m = month = 2 629 800 s (0.5.8)
+        _GAP_HINT: short unit list a log line about an unread gap text ends with (0.5.8)
+        PAGE_KINDS: the page kinds a program can draw, in page order (per_file, combined, overlay)
+        PAGE_KIND_TEXT: names of the page kinds for people (GUI, logs, notes)
+        DEFAULT_PAGE_KINDS: default page kinds: all three
+        _PAGE_KIND_WORDS: the words page_kinds() accepts for each kind
+        TIME_CLOCKS: the clocks of date-time x axes, in page order (local, utc, mjd)
+        DEFAULT_TIME_CLOCKS: default clocks: local time only
+        CLOCK_PAGE_SUFFIX: page-name suffix of each clock ('' for local)
+        CLOCK_TITLES: clock names for people (GUI, logs, notes)
+        UTC_AXIS_LABEL: axis label of a UTC clock axis
+        MJD_AXIS_LABEL: axis label of an MJD clock axis
+        UTC_DATETIME_FORMAT: tick format of a UTC date-time axis (ISO 8601, 'Z')
+        _OFFSET_ONLY_NAME: zone names that only repeat the offset or say UTC (left off labels)
+        MIN_GAP_K: smallest K of the small-gap rule (0.5.8)
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _TIME_NOTE: start of the graph-notes line written by the time layout
+        _MISSING: Every page is fitted on save, after the time and gap layouts: each axis's tick labels are worked out the way Veusz will draw them (vszh5_writer.axi...
+        _LABEL_PAD_CM: room kept beside a time-axis label that sets the plot width (cm)
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+        DEFAULT_RAM_LIMIT_PERCENT: default RAM limit: offload above this much of the computer's RAM in use (%)
+        OFFLOAD_DIR_ENV: environment variable naming the folder for offload files
+        OFFLOAD_MIN_BYTES: datasets smaller than this (bytes of values) stay in RAM
+        _RAM_CHECK_S: RAM use is read at most this often while datasets are added (s)
+        _HEAP_TRIM_S: freed heap is handed back to the system at most this often (s)
+        _RAM_LIMIT: the program-wide RAM limit (set_ram_limit)
+        _NOTE_S: (0.5.7) Offload messages are logged at most this often (s), with totals.
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    TimeLayout holds the options; finalize() lays out time axes
+    (_layout_time_axis), then other x axes (_layout_numeric_axis), then drops
+    plot copies no widget draws (_drop_unused_plot_copies).
+    Memory: release_memory() after
+    the last reference to dropped data is gone (gc, GPU pools, malloc_trim /
+    HeapCompact + working-set trim); KeptReads keeps per-file data until Clear.
+    Tick labels: finalize() fits every page
+    (_fit_page): vertical two-line date labels and long numbers, margins and
+    page sizes so Veusz draws every major tick label; undone before the next fit.
+    Clocks: TimeLayout(clocks=...)
+    draws date-time x axes in local time, UTC and / or MJD, one set of pages per
+    clock, rebuilt on every save (see "Time-axis clocks").
+    Offload: above the RAM limit
+    (set_ram_limit) datasets and kept file data go to a pickle file
+    (OffloadStore) and are read back where used (see "Offloading").
+    Page kinds and combined-axis
+    traces: see "Page kinds" (page_kinds, concatenate_on_x, combined_gap_positions).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.5.8: Gap options enforced: gap texts read whole and exactly, DST.
+Date: 2026-11-17
+#              Operator request 2026-11-17: recheck that the gap-aware
+#              settings are enforced.
+#              * parse_gap_string: the whole entry must be read, token after
+#                token (before, tokens were found anywhere: "00:10:00" was
+#                10 h, "1x2" 3 h, ".5h" 5 h); NEW clocks H:MM / H:MM:SS(.s),
+#                long unit names (sec, minutes, hours, days, months) and
+#                exponents; a bare number alone is still hours; an entry that
+#                cannot be read gives 0 and a log line naming the entry, the
+#                reason and the gap (``what``).
+#              * The text is read exactly (fractions.Fraction) and rounded
+#                once: "16min" is 960 s (the day-based sum gave
+#                959.9999999999999 s, so a 960 s step was cut).  NEW
+#                check_gap_string / check_gap_seconds / parse_gap_seconds /
+#                describe_gap_seconds / describe_gap_days; TimeLayout gets
+#                seconds everywhere (layout_from_args too).
+#              * --gap-small / --gap-large / --gap-k / --gap-n are checked when
+#                the command line is read (gap_text, gap_factor_k,
+#                gap_factor_n): argparse stops with the reason instead of
+#                ignoring the entry; layout_from_args(log_cb).
+#              * TimeLayout: K >= 1 (MIN_GAP_K; a K below 1 cut ordinary
+#                steps), K not a number = the default, n not finite = 0, fixed
+#                gaps not finite = 0.
+#              * Local clock: axis breaks found in UTC seconds and moved onto
+#                the local axis (_clock_break_pairs): a spring-forward hour is
+#                no gap any more and a hole over the fall-back is broken as on
+#                the UTC and MJD pages; no sample is ever hidden.  Without a
+#                daylight-saving change the breaks are the same as before.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        _plain: Plain Python literal value of a setting (numpy -> Python); validated.
+        _literal: Python literal text of a setting (kept for callers of 0.1.0).
+        _escape_name: Veusz HDF5 dataset-name escaping (vszh5_writer.escape_hdf_name).
+        _Setting (class): Proxy for one setting path of a NativeWidget (``widget.Label.size``).
+        NativeWidget (class): One widget of the native project tree (page, graph, axis, xy, ...).
+        local_veusz_seconds: Local wall-clock Veusz date seconds of the UTC Veusz date seconds ``utc_veusz``, with the per-sample offsets of the LocalTimeAxis ``axis`` (0.5.2):...
+        mark_local_time_axis: Make ``axis`` (a NativeWidget axis or axis-broken) a local date-time axis (0.3.0): its tick format and label are set from the local datasets drawn...
+        _gap_fraction: The exact seconds of a gap text (0.5.8): ``(Fraction, None)`` or ``(None, problem)``; check_gap_string has the syntax.
+        check_gap_seconds: Read a gap text in seconds (0.5.8): ``(seconds, problem)``, the exact value of the text rounded once to a float (check_gap_string).
+        check_gap_string: Read a gap text (0.5.8): ``(days, problem)``.
+        describe_gap_seconds: A read gap for people (0.5.8): ``"15 min"``, ``"1.5 h"``, ``"not set"`` at 0 (TimeLayout's _seconds_text: exact seconds follow when the short form...
+        describe_gap_days: describe_gap_seconds for a gap in days (0.5.8).
+        parse_gap_seconds: parse_gap_string in seconds (0.5.8; exact, for TimeLayout manual_s / axis_manual_s): 0.0 for an entry that cannot be read, logged.
+        parse_gap_string: Parse a human-readable gap string into MJD-days (check_gap_string).
+        gap_text: argparse type of --gap-small / --gap-large (0.5.8): the text itself when check_gap_string() reads all of it, else ArgumentTypeError with the reason...
+        _gap_factor: A finite number >= ``minimum`` for argparse (0.5.8), else ArgumentTypeError.
+        gap_factor_k: argparse type of --gap-k (0.5.8): a finite K >= MIN_GAP_K.
+        gap_factor_n: argparse type of --gap-n (0.5.8): a finite n >= 0 (0 = no axis breaks).
+        add_gap_arguments: Add the gap options to an argparse parser (0.5.3): --gap-k, --gap-small, --gap-n, --gap-large, --no-line-breaks, --no-axis-breaks, --no-numeric-gap...
+        add_memory_arguments: Add --ram-limit to an argparse parser (0.5.7): offload plot data to disk when this computer's RAM in use (all programs) reaches PERCENT (0 = never;...
+        ram_limit_from_args: Set the program's RAM limit from add_memory_arguments() (0.5.7); returns it.
+        layout_from_args: The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3; 0.5.6: --time-axes; 0.5.8: ``log_cb`` reports a gap text that cannot be read...
+        time_clocks: The clocks of ``value`` as a tuple in TIME_CLOCKS order (0.5.6).
+        _zone_of: The tzinfo of ``zone`` (None = VSZH5_DISPLAY_TZ, else None = this computer's zone; a text is read as by the writer) (0.5.6).
+        zone_name_at: Name of the time zone at the UTC instant ``epoch_s`` (Unix seconds) (0.5.6): what the operating system calls this computer's zone then ("EST", "EDT...
+        label_zone_name: ``name`` as the axis label shows it, or "" for a name that only repeats the offset or says UTC (0.5.6).
+        local_zone_description: One line naming the zone local time axes use (0.5.6), for the GUI and the logs: this computer's zone (or VSZH5_DISPLAY_TZ) with its name and UTC of...
+        _finite_seconds: A fixed gap in seconds (0.5.8): finite and > 0, else 0.0 (not set).
+        TimeLayout (class): Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any sorted x, and the two consequences of a gap made optional), see vszh5_writer T...
+        _number_text: A setting for the notes with every digit (repr), without a trailing ".0" (0.5.3; %g cut 12.3456789 to 12.3457).
+        _seconds_text: A threshold for people: '45 s', '12 min', '3.5 h', '2.1 d'.
+        _time_kind: 'date' (Veusz date dataset, UTC), 'mjd', 'seconds' or None (not time).
+        _plot_name: A dataset name for a plot copy: ``wanted``, or wanted_2, ...
+        _page_of: The page widget ``widget`` is on, or None (0.5.6).
+        _clock_of: The time-axis clock of the page ``widget`` is on ("local" when the page has none yet, or the widget is on no page) (0.5.6).
+        _same_values: True when two arrays hold the same numbers, NaN where the other has NaN (0.5.6; numpy.array_equal(equal_nan=...) needs numpy >= 1.19).
+        _mjd_name: Name of the MJD plot copy of the UTC date dataset ``utc_name`` (0.5.6): "<x>__utc" -> "<x>__mjd", "<x>_utc" -> "<x>_mjd", else "<x>_mjd".
+        _exact_mjd: (MJD values, name of a stored dataset holding exactly them or None) of one time x (0.5.6).
+        _clock_dataset: Plot x dataset of one trace on the UTC or MJD clock (0.5.6).
+        _time_note: The "Time axis:" line of the graph notes for ``clock`` (0.5.6).
+        _set_note_line: Put ``line`` into the graph notes, replacing a line that starts with ``prefix`` (0.5.6; _set_gap_note for any prefix).
+        _layout_time_axis: Lay out one x axis whose traces are against time (0.5.0; 0.5.6 clocks).
+        _clock_break_pairs: Axis breaks found in UTC seconds, moved onto another clock's axis (0.5.8).
+        _set_gap_note: Put the gap-rule line ``note`` into the graph notes (0.5.3: a line from an earlier layout is replaced, so the notes state the rule in use).
+        _sorted_finite: True when the finite values of ``values`` never decrease (at least 3).
+        _layout_numeric_axis: Gap options on an x axis that is not time (0.5.3): frequency, angle, index ...
+        _undo_numeric_layout: Undo an earlier _layout_numeric_axis of this axis (0.5.3): when the gap options of a project turn non-time axes off between two saves, the traces d...
+        _drop_unused_plot_copies: Remove line-break plot copies no widget draws any more (0.5.3): when the gap options change between two saves, copies of the old layout would other...
+        _has_clock_axis: True when ``page`` draws a date-time x axis laid out on a clock.
+        _free_page_name: ``wanted``, or wanted_2, wanted_3 ...
+        _copy_setting: A setting value for a page copy: lists and dicts copied, the rest (text, numbers, booleans) shared.
+        _clone_widget: Copy of ``widget`` and every widget below it, under ``parent`` (0.5.6).
+        _remove_clock_pages: Take the clock copies of the last finalize out of the project (0.5.6); finalize makes them again from their pages, so a copy always shows its page...
+        _size_dated_page: Give a page with date-time axes room for its ISO 8601 tick labels (0.5.0).
+        _fit_set: Set ``key`` on ``widget`` for the tick-label fit, remembering the value it had before (0.5.5).
+        _fit_restore: Undo the previous tick-label fit on ``widget`` (0.5.5): a setting the fit wrote and nobody changed since gets its earlier value back.
+        _cm: A Veusz distance setting in cm (``default`` when unset or not physical).
+        _pt: A Veusz font size setting in points (``default`` when unset).
+        _finite_range: (min, max) of the finite values of dataset ``name`` (1-D or date), or None; cached per finalize in ``cache``.
+        _axis_data_range: (min, max) of the data a graph draws on ``axis`` (xy traces and images), or None when it draws nothing known (0.5.5).
+        _axis_room: vszh5_writer.TickRoom of one axis as it is set now (0.5.5); None for a hidden axis, a label axis or an axis without known data.
+        _time_label_cm: Width (cm) a date-time x axis's label needs (0.5.6), 0 for other axes.
+        _dated_page_size: (width, height) cm the 0.5.0 rule gives a page with date-time axes and no size of its own: 13 cm a column and 8 cm a row (at least 16 cm) for a gri...
+        _fit_page: Fit the tick labels of every graph on ``page`` (0.5.5): vertical labels where they belong, the margins every label needs and a page large enough (s...
+        apply_settings: Set ``{setting path: value}`` on a widget (0.4.0).
+        add_smith_graph: Add a Smith chart graph (vszh5_writer.smith_graph_spec) under ``parent`` (a page or grid widget); returns the graph widget (0.4.0).
+        add_smith_page: A page with one Smith chart, as vszh5_writer.smith_page() builds it, on a NativeDocument (or veusz.embed) widget tree; returns the graph (0.4.0).
+        _data_name: The dataset a plotting widget draws (y for xy), or ''.
+        _rename_from_data: Name an auto-named widget after its data (unique among siblings).
+        tag_word: ``text`` as a tag word: letters, digits and '_' only (never empty).
+        source_tag: Veusz tag naming where data come from: ``source_<word>``.
+        type_tag: Veusz tag naming what data are: ``type_<word>``.
+        tag_data: Tag the datasets ``names`` with ``source_*`` and ``type_*`` tags.
+        _safe_name: ``name`` with letters, digits and '_' only (any other character becomes '_'), so a widget name reads like the dataset it draws; a leading digit sta...
+        trace_widget_name: Name of the xy widget that draws ``y_dataset``: the dataset name (it holds the source file, the item and the processing type), plus ``_<variant>``...
+        exact_number_text: A number as text with every digit: repr() of a float (the shortest text that gives back the same float64), str() of an integer.
+        float_loses_text: True when float64 ``values`` parsed from the cell ``texts`` do not hold all of them (0.5.2): a cell that is not a number and not a missing-value wo...
+        process_rss_mb: Resident set size of this process in MiB (NaN when it cannot be read).
+        _release_os_heap: Hand freed heap memory back to the operating system; returns the steps that ran (names), [] when nothing applies.
+        release_memory: Give the memory of dropped data back to the operating system (0.5.4).
+        _OffloadNotes (class): Throttled offload messages (0.5.7): the first at once, then at most one every _NOTE_S with the totals so far; flush() logs the last one held back (...
+        set_ram_limit: Set the RAM limit (% of this computer's RAM in use, every program) above which plot data are offloaded to disk (0.5.7); 0 or None = never.
+        ram_limit: The RAM limit in force (%; 0 = never offload) (0.5.7).
+        system_memory: (percent in use, total bytes, available bytes) of this computer's RAM (0.5.7), all programs together; None when it cannot be read.
+        memory_text: One line for the GUI (0.5.7), e.g.
+        payload_bytes: Bytes of the values in ``value`` (0.5.7): numpy arrays by nbytes, text and lists estimated, dicts / lists / tuples summed (nested to 4 levels).
+        OffloadStore (class): One append-only pickle file of offloaded values (0.5.7).
+        OffloadedValue (class): A value in an OffloadStore (0.5.7); load() reads it back (a new copy every time; nothing is kept in RAM).
+        OffloadedParts (class): The arrays of a dataset kept in an OffloadStore (0.5.7): a read-only mapping like the dict it replaces ({"data": ..., "serr": ...}).
+        loaded_parts: ``parts`` as a plain dict of arrays (0.5.7): offloaded parts are read back once; parts in RAM are returned as they are.
+        _over_ram_limit: (percent in use, limit) when this computer's RAM use is at or above ``limit`` (%), else None; None too when the limit is 0 or the use is unknown (0...
+        file_stamp: (size, mtime_ns, options) of ``path``: the data read from it are still good while this is unchanged; None when the file cannot be read.
+        KeptReads (class): Data read from the listed files, kept until the user clears them (0.5.4).
+        NativeDocument (class): Build and atomically save a self-contained Veusz format-1 document.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        VERSION: module version
+        WRITER_VERSION: version of the vszh5_writer in use
+        DATASET_SETTINGS: widget settings that name datasets (checked on save)
+        WIDGET_KINDS: widget types the native model supports
+        _GAP_NUMBER: a number of a gap text: digits, decimals, an exponent of up to 3 digits (0.5.8)
+        _GAP_TOKEN_REGEX: one number and its unit of a gap text, spaces allowed (0.5.8: matched one after another over the whole entry)
+        _GAP_NUMBER_REGEX: a gap text that is a bare number (hours) (0.5.8)
+        _GAP_CLOCK_REGEX: a gap text that is a clock H:MM or H:MM:SS(.s) (0.5.8)
+        GAP_STRING_HELP: tool tip of the gap text boxes
+        _DAYS_PER_MONTH: average Gregorian month (365.25 / 12 days) for 'm' in gap texts
+        _DAYS_PER_HOUR: 1 / 24 (gap text parsing)
+        _DAYS_PER_MINUTE: 1 / 1440 (gap text parsing)
+        _DAYS_PER_SECOND: 1 / 86400 (gap text parsing)
+        _GAP_UNIT_SECONDS: seconds per unit of a gap text, every accepted spelling; m = month = 2 629 800 s (0.5.8)
+        _GAP_HINT: short unit list a log line about an unread gap text ends with (0.5.8)
+        TIME_CLOCKS: the clocks of date-time x axes, in page order (local, utc, mjd)
+        DEFAULT_TIME_CLOCKS: default clocks: local time only
+        CLOCK_PAGE_SUFFIX: page-name suffix of each clock ('' for local)
+        CLOCK_TITLES: clock names for people (GUI, logs, notes)
+        UTC_AXIS_LABEL: axis label of a UTC clock axis
+        MJD_AXIS_LABEL: axis label of an MJD clock axis
+        UTC_DATETIME_FORMAT: tick format of a UTC date-time axis (ISO 8601, 'Z')
+        _OFFSET_ONLY_NAME: zone names that only repeat the offset or say UTC (left off labels)
+        MIN_GAP_K: smallest K of the small-gap rule (0.5.8)
+        MJD_VEUSZ_EPOCH: MJD of the Veusz date origin 2009-01-01T00:00:00 UTC.
+        MJD_RANGE: Plausible MJD range of a time column (1941 .. 2132); values outside are : not taken for MJD (and MJD 0 padding rows are ignored).
+        _TIME_NAME_HINT: column / axis names that suggest time (MJD, DMJD, JD, TIME, DATE)
+        _SECONDS_NAMES: column names whose values are seconds
+        _TIME_NOTE: start of the graph-notes line written by the time layout
+        _MISSING: Every page is fitted on save, after the time and gap layouts: each axis's tick labels are worked out the way Veusz will draw them (vszh5_writer.axi...
+        _LABEL_PAD_CM: room kept beside a time-axis label that sets the plot width (cm)
+        _DATA_SETTING_OF: the setting that holds each widget kind's main dataset (widget names)
+        _TAG_WORD: characters not allowed in a tag word (replaced by '_')
+        MISSING_VALUE_WORDS: cell texts that mean no value (pandas' NA strings): no exact-text copy needed
+        NUMERIC_TICK_FORMAT: tick-label format of numeric axes: up to 12 significant digits
+        DEFAULT_RAM_LIMIT_PERCENT: default RAM limit: offload above this much of the computer's RAM in use (%)
+        OFFLOAD_DIR_ENV: environment variable naming the folder for offload files
+        OFFLOAD_MIN_BYTES: datasets smaller than this (bytes of values) stay in RAM
+        _RAM_CHECK_S: RAM use is read at most this often while datasets are added (s)
+        _HEAP_TRIM_S: freed heap is handed back to the system at most this often (s)
+        _RAM_LIMIT: the program-wide RAM limit (set_ram_limit)
+        _NOTE_S: (0.5.7) Offload messages are logged at most this often (s), with totals.
+# %%%%% More Info
+    Imported by every AutoPlot program and plugin; needs numpy, h5py and
+    vszh5_writer only (no Qt, no Veusz).
+    Tests: python -m unittest discover -s tests
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    TimeLayout holds the options; finalize() lays out time axes
+    (_layout_time_axis), then other x axes (_layout_numeric_axis), then drops
+    plot copies no widget draws (_drop_unused_plot_copies).
+    Memory: release_memory() after
+    the last reference to dropped data is gone (gc, GPU pools, malloc_trim /
+    HeapCompact + working-set trim); KeptReads keeps per-file data until Clear.
+    Tick labels: finalize() fits every page
+    (_fit_page): vertical two-line date labels and long numbers, margins and
+    page sizes so Veusz draws every major tick label; undone before the next fit.
+    Clocks: TimeLayout(clocks=...)
+    draws date-time x axes in local time, UTC and / or MJD, one set of pages per
+    clock, rebuilt on every save (see "Time-axis clocks").
+    Offload: above the RAM limit
+    (set_ram_limit) datasets and kept file data go to a pickle file
+    (OffloadStore) and are read back where used (see "Offloading").
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.5.7: Plot data offloaded to disk when this computer's RAM use passes a limit.
 Date: 2026-11-17
 #              Operator request 2026-11-17: offload to disk (pickle) when a
@@ -959,6 +1391,7 @@ import threading
 import time
 import weakref
 from collections import OrderedDict
+from fractions import Fraction                       # 0.5.8: exact gap texts
 try:
     from collections.abc import Mapping
 except ImportError:  # pragma: no cover - Python 2 era
@@ -969,7 +1402,7 @@ import numpy as np
 import vszh5_writer
 from vszh5_writer import VeuszWriter, VszDoc, vz_text
 
-VERSION = "0.5.7"
+VERSION = "0.5.9"
 WRITER_VERSION = vszh5_writer.__version__
 DATASET_SETTINGS = frozenset((
     "xData", "yData", "labels", "scalePoints", "yDataLow", "yDataHigh",
@@ -1226,13 +1659,26 @@ def mark_local_time_axis(axis, label="Local time"):
 # total absolute gap expressed in MJD-days so callers can hand the
 # value straight to ``detect_time_breaks_unit_aware`` without changing
 # the engine signature.
-_GAP_TOKEN_REGEX = re.compile(
-    r"([+-]?\d+(?:\.\d+)?)\s*(min|[mMdDhHsS]?)", re.IGNORECASE
-)
-#: (0.4.0) Tool tip of the gap text boxes.
+#
+# 0.5.8: the whole entry must be read, token after token: a number and its
+# unit, optional spaces between them and between tokens, nothing else.
+# Before 0.5.8 the tokens were found anywhere in the text, so "00:10:00"
+# read as 0 h + 10 h + 0 h = 10 h, "1x2" as 3 h and ".5h" as 5 h.  Also new:
+# a clock "H:MM" or "H:MM:SS(.s)" (hours:minutes[:seconds]), the long unit
+# names (sec, minutes, hours, days, months ...) and exponents ("1e3s").  A
+# bare number alone is still hours; with several tokens each needs a unit.
+_GAP_NUMBER = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d{1,3})?"
+_GAP_TOKEN_REGEX = re.compile(r"\s*(" + _GAP_NUMBER + r")\s*([A-Za-z]*)\s*")
+_GAP_NUMBER_REGEX = re.compile(r"\s*\+?(" + _GAP_NUMBER + r")\s*$")      # 0.5.8
+_GAP_CLOCK_REGEX = re.compile(                                          # 0.5.8
+    r"\s*(\d+):(\d{1,2})(?::(\d{1,2}(?:\.\d*)?))?\s*$")
+#: (0.4.0) Tool tip of the gap text boxes (0.5.8: clocks and unit names).
 GAP_STRING_HELP = ("Units: s = seconds, min = minutes, h = hours, d = days, "
-                   "m = months (30.4375 days).  Examples: '90s', '15min', '12h', "
-                   "'3d', '1m 3d 2h'.  A bare number is hours.")
+                   "m = months (30.4375 days); also sec, minutes, hours, days, months.  "
+                   "Examples: '90s', '15min', '12h', '3d', '1m 3d 2h', '0:15' or "
+                   "'00:15:00' (hours:minutes[:seconds]).  A bare number is hours.  "
+                   "An entry that cannot be read is not used (the log says so and the "
+                   "box turns red).")
 
 # Average Gregorian month length (365.25 / 12) -- intentionally the same
 # value used by other scientific tools (e.g. pandas) so 1m + 1m + ... = ~year.
@@ -1240,84 +1686,192 @@ _DAYS_PER_MONTH = 30.4375
 _DAYS_PER_HOUR = 1.0 / 24.0
 _DAYS_PER_MINUTE = _DAYS_PER_HOUR / 60.0     # 0.4.0
 _DAYS_PER_SECOND = _DAYS_PER_MINUTE / 60.0   # 0.4.0
+#: (0.5.8) Seconds per unit of a gap text, every accepted spelling (lower
+#: case; "m" is months, as since 0.0.19 - 30.4375 d = 2 629 800 s; minutes
+#: are "min").  Integers: the text is read exactly (fractions.Fraction) and
+#: rounded once, so "16min" is 960 s, not 959.9999999999999 s as the
+#: day-based sum of 0.4.0-0.5.7 gave.
+_GAP_UNIT_SECONDS = dict(
+    [(u, 1) for u in ("s", "sec", "secs", "second", "seconds")]
+    + [(u, 60) for u in ("min", "mins", "minute", "minutes")]
+    + [(u, 3600) for u in ("h", "hr", "hrs", "hour", "hours")]
+    + [(u, 86400) for u in ("d", "day", "days")]
+    + [(u, 2629800) for u in ("m", "mo", "month", "months")])
 
 
-def parse_gap_string(text, log_cb=None):
-    # type: (object, Optional[Callable[[str], None]]) -> float
-    """Parse a human-readable gap string into MJD-days.
-
-    Supported syntaxes (case-insensitive, whitespace tolerated)::
-
-        "5m3d2h"   -> 5 months + 3 days + 2 hours, in days
-        "5m 3d 2h" -> same
-        "3d"       -> 3 days
-        "120h"     -> 5 days
-        "120"      -> 120 hours = 5 days   (bare number = hours)
-        "0" / ""   -> 0.0  (disables absolute threshold)
-        None       -> 0.0
-
-    On parse failure returns 0.0 and (when ``log_cb`` is provided)
-    emits a warning so the GUI log shows that the entry was ignored.
-    Mixed unit ordering (e.g. ``"2h5m"``) is accepted -- the parser
-    sums all matched tokens.
-    """
+def _gap_fraction(text):
+    # type: (object) -> Tuple[Optional[Fraction], Optional[str]]
+    """The exact seconds of a gap text (0.5.8): ``(Fraction, None)`` or
+    ``(None, problem)``; check_gap_string has the syntax."""
     if text is None:
-        return 0.0
+        return Fraction(0), None
     try:
         s = str(text).strip()
     except Exception:
-        return 0.0
+        return None, "not text"
     if not s:
-        return 0.0
-    # Strip ALL internal whitespace so "5m 3d 2h" and "5m3d2h" parse the
-    # same way.  Then iterate number+unit pairs.
-    compact = "".join(s.split())
-    if not compact:
-        return 0.0
+        return Fraction(0), None
+    if s.startswith("-"):
+        return None, "a gap cannot be negative"
+    bare = _GAP_NUMBER_REGEX.match(s)
+    if bare is not None:                      # a bare number alone: hours
+        return Fraction(bare.group(1)) * 3600, None
+    clock = _GAP_CLOCK_REGEX.match(s)
+    if clock is not None:                     # hours:minutes[:seconds]
+        hours, minutes = int(clock.group(1)), int(clock.group(2))
+        seconds = Fraction(clock.group(3)) if clock.group(3) else Fraction(0)
+        if minutes >= 60 or seconds >= 60:
+            return None, "minutes and seconds of a clock must be under 60"
+        return hours * 3600 + minutes * 60 + seconds, None
+    if ":" in s:
+        return None, "a clock is hours:minutes or hours:minutes:seconds"
+    total, position = Fraction(0), 0
+    while position < len(s):
+        token = _GAP_TOKEN_REGEX.match(s, position)
+        if token is None or token.end() == position:
+            return None, "cannot read %r" % (s[position:],)
+        unit = token.group(2).lower()
+        if not unit:
+            return None, "give every number a unit (s, min, h, d, m) when there are several"
+        if unit not in _GAP_UNIT_SECONDS:
+            return None, "unknown unit %r (s, min, h, d, m)" % (token.group(2),)
+        total += Fraction(token.group(1)) * _GAP_UNIT_SECONDS[unit]
+        position = token.end()
+    return total, None
 
-    # Fast path: pure number (no unit suffix anywhere).
+
+def check_gap_seconds(text):
+    # type: (object) -> Tuple[float, Optional[str]]
+    """Read a gap text in seconds (0.5.8): ``(seconds, problem)``, the
+    exact value of the text rounded once to a float (check_gap_string)."""
+    exact, problem = _gap_fraction(text)
+    if problem is not None:
+        return 0.0, problem
     try:
-        as_float = float(compact)
-    except (TypeError, ValueError):
-        as_float = None
-    if as_float is not None:
-        # Bare number => hours (pre-0.0.19 spinbox semantics).
-        return as_float * _DAYS_PER_HOUR
+        seconds = float(exact)
+    except OverflowError:
+        return 0.0, "the number is too large"
+    return (seconds, None) if math.isfinite(seconds) else (0.0, "the number is too large")
 
-    total_days = 0.0
-    matched_span = 0
-    saw_token = False
-    for m in _GAP_TOKEN_REGEX.finditer(compact):
-        num_str = m.group(1)
-        unit = (m.group(2) or "").lower()
-        if not num_str:
-            continue
-        try:
-            value = float(num_str)
-        except (TypeError, ValueError):
-            continue
-        if unit == "min":                            # 0.4.0
-            total_days += value * _DAYS_PER_MINUTE
-        elif unit == "s":                            # 0.4.0
-            total_days += value * _DAYS_PER_SECOND
-        elif unit == "m":
-            total_days += value * _DAYS_PER_MONTH
-        elif unit == "d":
-            total_days += value
-        elif unit == "h":
-            total_days += value * _DAYS_PER_HOUR
-        else:
-            # No unit on this fragment -- treat as hours (back-compat).
-            total_days += value * _DAYS_PER_HOUR
-        matched_span = m.end()
-        saw_token = True
 
-    if not saw_token or matched_span != len(compact):
+def check_gap_string(text):
+    # type: (object) -> Tuple[float, Optional[str]]
+    """Read a gap text (0.5.8): ``(days, problem)``.
+
+    ``problem`` is None when the whole entry was read (``days`` >= 0; an
+    empty entry is 0 = not set) and otherwise says why it was not
+    (``days`` is then 0.0).  The days are the exact value of the text
+    rounded once (check_gap_seconds gives the seconds the same way; use
+    it for a TimeLayout, whose gaps are seconds).  Accepted,
+    case-insensitive, spaces allowed between a number and its unit and
+    between tokens::
+
+        "120"        -> 120 hours = 5 days  (a bare number alone is hours)
+        "90s", "15min", "2h", "3d", "1m"    (m = month = 30.4375 days)
+        "5m 3d 2h", "5m3d2h", "2h 30min"    (the tokens add up)
+        "1.5h", ".5h", "1e3s"
+        "0:15", "00:15:00", "1:30:15.5"     (hours:minutes[:seconds])
+        "", None, "0"                       -> 0 (not set)
+
+    Not accepted: anything left over ("00:10:00x", "1x2", "15 mins ago"),
+    a negative gap, an unknown unit ("5ms", "2w"), a number without a unit
+    next to other tokens ("1d 2"), minutes or seconds of 60 or more in a
+    clock ("1:75"), inf / nan.
+    """
+    exact, problem = _gap_fraction(text)
+    if problem is not None:
+        return 0.0, problem
+    try:
+        days = float(exact / 86400)
+    except OverflowError:
+        return 0.0, "the number is too large"
+    return (days, None) if math.isfinite(days) else (0.0, "the number is too large")
+
+
+def describe_gap_seconds(seconds):
+    # type: (float) -> str
+    """A read gap for people (0.5.8): ``"15 min"``, ``"1.5 h"``, ``"not set"``
+    at 0 (TimeLayout's _seconds_text: exact seconds follow when the short
+    form is not exact)."""
+    if not seconds or seconds <= 0:
+        return "not set"
+    return _seconds_text(seconds)
+
+
+def describe_gap_days(days):
+    # type: (float) -> str
+    """describe_gap_seconds for a gap in days (0.5.8)."""
+    return describe_gap_seconds((days or 0.0) * 86400.0)
+
+
+#: (0.5.8) The short unit list a log line about an unread gap text ends with.
+_GAP_HINT = "Units s, min, h, d, m (months) or hours:minutes[:seconds]; e.g. 90s, 15min, 2h, 0:15"
+
+
+def parse_gap_seconds(text, log_cb=None, what="gap"):
+    # type: (object, Optional[Callable[[str], None]], str) -> float
+    """parse_gap_string in seconds (0.5.8; exact, for TimeLayout manual_s /
+    axis_manual_s): 0.0 for an entry that cannot be read, logged."""
+    seconds, problem = check_gap_seconds(text)
+    if problem is not None:
         if log_cb:
-            log_cb("  parse_gap_string: could not parse %r; "
-                   "treating as 0 (no absolute gap)." % (s,))
+            log_cb("  The fixed %s %r is not used: %s (%s)." % (what, str(text).strip(),
+                                                              problem, _GAP_HINT))
         return 0.0
-    return total_days
+    return seconds
+
+
+def parse_gap_string(text, log_cb=None, what="gap"):
+    # type: (object, Optional[Callable[[str], None]], str) -> float
+    """Parse a human-readable gap string into MJD-days (check_gap_string).
+
+    ``"5m 3d 2h"`` = 5 months + 3 days + 2 hours; ``"120"`` = 120 hours;
+    ``"0:15"`` = 15 minutes; empty = 0 (no fixed gap).  An entry that cannot
+    be read returns 0.0 (the K / n rule applies) and, with ``log_cb``, a log
+    line naming the entry, why, and ``what`` (e.g. "small gap") - 0.5.8:
+    before, part of an entry could be read and the rest ignored.
+    """
+    days, problem = check_gap_string(text)
+    if problem is not None:
+        if log_cb:
+            log_cb("  The fixed %s %r is not used: %s (%s)." % (what, str(text).strip(),
+                                                              problem, _GAP_HINT))
+        return 0.0
+    return days
+
+def gap_text(value):
+    """argparse type of --gap-small / --gap-large (0.5.8): the text itself
+    when check_gap_string() reads all of it, else ArgumentTypeError with
+    the reason (argparse stops with it)."""
+    import argparse
+    _days, problem = check_gap_string(value)
+    if problem is not None:
+        raise argparse.ArgumentTypeError("%r: %s (%s)" % (value, problem, _GAP_HINT))
+    return str(value).strip()
+
+
+def _gap_factor(value, minimum, name):
+    """A finite number >= ``minimum`` for argparse (0.5.8), else ArgumentTypeError."""
+    import argparse
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("%s must be a number, not %r" % (name, value))
+    if not math.isfinite(number) or number < minimum:
+        raise argparse.ArgumentTypeError("%s must be a number >= %g, not %r"
+                                         % (name, minimum, value))
+    return number
+
+
+def gap_factor_k(value):
+    """argparse type of --gap-k (0.5.8): a finite K >= MIN_GAP_K."""
+    return _gap_factor(value, MIN_GAP_K, "K")
+
+
+def gap_factor_n(value):
+    """argparse type of --gap-n (0.5.8): a finite n >= 0 (0 = no axis breaks)."""
+    return _gap_factor(value, 0.0, "n")
+
 
 def add_gap_arguments(parser, time_axes=False):
     """Add the gap options to an argparse parser (0.5.3): --gap-k,
@@ -1328,14 +1882,17 @@ def add_gap_arguments(parser, time_axes=False):
     group = parser.add_argument_group(
         "gaps", "A small gap breaks the line, a large gap breaks the x axis; either can be "
         "turned off. Time axes and (unless --no-numeric-gaps) any sorted x.")
-    group.add_argument("--gap-k", type=float, default=vszh5_writer.GAP_K,
-                       help="small gap: step > K x median step (default %(default)s)")
-    group.add_argument("--gap-small", default="",
-                       help="fixed small gap on time axes, e.g. 90s, 15min, 2h (overrides K)")
-    group.add_argument("--gap-n", type=float, default=vszh5_writer.GAP_AXIS_N,
+    # 0.5.8: every value is checked when the command line is read (argparse
+    # stops with the reason); before, an unreadable gap text was ignored
+    group.add_argument("--gap-k", type=gap_factor_k, default=vszh5_writer.GAP_K,
+                       help="small gap: step > K x median step, K >= 1 (default %(default)s)")
+    group.add_argument("--gap-small", type=gap_text, default="",
+                       help="fixed small gap on time axes, e.g. 90s, 15min, 2h, 0:15 "
+                            "(overrides K)")
+    group.add_argument("--gap-n", type=gap_factor_n, default=vszh5_writer.GAP_AXIS_N,
                        help="large gap: no data for > n x the small gap (0 = never; "
                             "default %(default)s)")
-    group.add_argument("--gap-large", default="",
+    group.add_argument("--gap-large", type=gap_text, default="",
                        help="fixed large gap on time axes, e.g. 12h, 3d (overrides n)")
     group.add_argument("--no-line-breaks", action="store_true",
                        help="draw every line across its gaps")
@@ -1370,15 +1927,298 @@ def ram_limit_from_args(args):
     return set_ram_limit(getattr(args, "ram_limit", DEFAULT_RAM_LIMIT_PERCENT))
 
 
-def layout_from_args(args):
+def layout_from_args(args, log_cb=None):
     """The TimeLayout of the add_gap_arguments() options in ``args`` (0.5.3;
-    0.5.6: --time-axes)."""
+    0.5.6: --time-axes; 0.5.8: ``log_cb`` reports a gap text that cannot be
+    read - argparse already refuses one, so only for a hand-made ``args``)."""
     return TimeLayout(k=args.gap_k, n=args.gap_n,
-                      manual_s=parse_gap_string(args.gap_small) * 86400.0,
-                      axis_manual_s=parse_gap_string(args.gap_large) * 86400.0,
+                      manual_s=parse_gap_seconds(args.gap_small, log_cb, "small gap"),
+                      axis_manual_s=parse_gap_seconds(args.gap_large, log_cb, "large gap"),
                       break_lines=not args.no_line_breaks, break_axis=not args.no_axis_breaks,
                       numeric=not args.no_numeric_gaps,
                       clocks=getattr(args, "time_axes", None))
+
+
+# %% Page kinds: per file, combined axis, overlay (0.5.9)
+# Every plotter of the suite can draw three kinds of page:
+#   per_file - the pages of one file (as before);
+#   combined - "combined axis": pages like a file's own, but each trace holds
+#              the same quantity of every file joined end to end (in file
+#              order, then sorted on x, stable), so each axis spans the full
+#              range of all the files; the gap rules lay the joined traces out
+#              like any other (the steps between files are gaps);
+#   overlay  - every file's traces stacked on one graph (as before).
+# In the project and in the Plots tab the combined pages come just above the
+# overlay pages (move_pages_before).
+#: (0.5.9) The page kinds, in the order the GUIs list them.
+PAGE_KINDS = ("per_file", "combined", "overlay")
+#: (0.5.9) Their names in the GUIs and the log.
+PAGE_KIND_TEXT = {"per_file": "Per file", "combined": "Combined axis", "overlay": "Overlay"}
+#: (0.5.9) Default page kinds: all three.
+DEFAULT_PAGE_KINDS = PAGE_KINDS
+_PAGE_KIND_WORDS = {"per_file": "per_file", "perfile": "per_file", "file": "per_file",
+                    "files": "per_file", "per-file": "per_file", "combined": "combined",
+                    "combined_axis": "combined", "combined-axis": "combined", "combine": "combined",
+                    "concatenated": "combined", "overlay": "overlay", "overlays": "overlay"}
+
+
+def page_kinds(value=None):
+    """
+    The page kinds asked for (0.5.9), in PAGE_KINDS order.
+
+    ``value``: None (the default: all three), an iterable of kinds, or a text
+    such as "per_file,combined" / "overlay" / "all" / "none" (spaces,
+    commas and "+" separate; "-" and "_" in a word are the same).  Unknown
+    words raise ValueError (argparse turns it into a message).
+    """
+    if value is None:
+        return tuple(DEFAULT_PAGE_KINDS)
+    if isinstance(value, str):
+        words = [w for w in re.split(r"[\s,+]+", value.strip().lower()) if w]
+    else:
+        words = [str(w).strip().lower() for w in value]
+    if words == ["all"]:
+        return tuple(PAGE_KINDS)
+    if words in (["none"], []):
+        return ()
+    chosen = set()
+    for word in words:
+        kind = _PAGE_KIND_WORDS.get(word.replace("-", "_"), _PAGE_KIND_WORDS.get(word))
+        if kind is None:
+            raise ValueError("unknown page kind %r (per_file, combined, overlay, all, none)"
+                             % word)
+        chosen.add(kind)
+    return tuple(k for k in PAGE_KINDS if k in chosen)
+
+
+def describe_page_kinds(kinds):
+    """Log line of the page kinds (0.5.9): "Pages: Per file, Combined axis, Overlay"."""
+    kinds = page_kinds(kinds)
+    return "Pages: %s" % (", ".join(PAGE_KIND_TEXT[k] for k in kinds) if kinds else "none")
+
+
+def add_page_arguments(parser):
+    """Add --pages to an argparse parser (0.5.9): which page kinds to draw
+    (per_file, combined, overlay; default all); page_kinds_from_args() reads it."""
+    import argparse
+
+    def kinds(text):
+        """argparse type: page_kinds() with argparse's error."""
+        try:
+            return page_kinds(text)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc))
+    parser.add_argument("--pages", type=kinds, default=tuple(DEFAULT_PAGE_KINDS),
+                        metavar="KINDS",
+                        help="page kinds to draw: per_file, combined (combined axis: every "
+                             "file's data joined on one axis), overlay - comma separated, or "
+                             "all / none (default all)")
+    return parser
+
+
+def page_kinds_from_args(args):
+    """The page kinds of add_page_arguments() in ``args`` (0.5.9; all when absent)."""
+    return page_kinds(getattr(args, "pages", None))
+
+
+def concatenate_on_x(xs, ys, with_sources=False):
+    """
+    Join the traces of several files into one (0.5.9, combined-axis pages).
+
+    ``xs``: the x arrays of the files, in file order; ``ys``: their y arrays
+    (same lengths; or a list per file of several y arrays sharing that x).
+    The pieces are joined in the order given and then sorted on x with a
+    stable sort (equal x keep their file order; NaN x go last), so a gap
+    rule sees one ascending axis.  Returns ``(x, y)`` - or ``(x, [y, ...])``
+    for several y arrays - float64 for numbers, the values themselves
+    otherwise; nothing is rounded.  ``with_sources``: also return, as a
+    third item, the file (0, 1, ... in the order given) of every joined row
+    (file_index_array), for set_combined_sources.
+    """
+    if not xs:
+        empty = (np.empty(0), ([] if ys and isinstance(ys[0], (list, tuple)) else np.empty(0)))
+        return empty + (file_index_array([]),) if with_sources else empty
+    several = isinstance(ys[0], (list, tuple))
+    x_all = np.concatenate([np.asarray(x).reshape(-1) for x in xs])
+    order = np.argsort(x_all, kind="stable") if x_all.dtype.kind in "fiub" else None
+    x_sorted = x_all if order is None else x_all[order]
+    if with_sources:
+        files = file_index_array([np.asarray(x).size for x in xs])
+        files = files if order is None else files[order]
+
+    def joined(parts):
+        """One y joined like x."""
+        y_all = np.concatenate([np.asarray(p).reshape(len(np.asarray(p)), -1)
+                                if np.asarray(p).ndim > 1 else np.asarray(p) for p in parts])
+        return y_all if order is None else y_all[order]
+    if several:
+        result = (x_sorted, [joined([y[i] for y in ys]) for i in range(len(ys[0]))])
+    else:
+        result = (x_sorted, joined(ys))
+    return result + (files,) if with_sources else result
+
+
+def file_index_array(rows):
+    """The file (0, 1, ...) of every row of pieces of ``rows`` rows each,
+    joined in that order (0.5.9), in the smallest unsigned integer type
+    (uint8 below 256 files, uint16 below 65536): 1 or 2 bytes a row."""
+    rows = [int(n) for n in rows]
+    dtype = np.uint8 if len(rows) <= 256 else np.uint16 if len(rows) <= 65536 else np.uint32
+    return np.repeat(np.arange(len(rows), dtype=dtype), rows)
+
+
+def set_combined_sources(doc, names, sources):
+    """
+    Record which file each row of the combined-axis x datasets ``names``
+    came from (0.5.9): ``sources`` holds one file number per row, in the
+    rows' (sorted) order.  The gap layout of finalize() then cuts a joined
+    trace only where none of its files has data (combined_gap_positions)
+    and breaks the axis as an overlay of the same files would be broken.
+    The array is not saved; it is kept in RAM in the smallest integer type
+    and moves to the offload file with the datasets above the RAM limit.
+    A name not in ``doc`` is skipped.
+    """
+    store = getattr(doc, "combined_of", None)
+    if store is None:
+        return
+    array = np.asarray(sources).reshape(-1)
+    if array.size and array.dtype.kind not in "ui":
+        raise ValueError("file numbers must be integers")
+    if array.size and int(array.min()) < 0:
+        raise ValueError("file numbers must not be negative")
+    if array.size:                                     # the smallest unsigned type
+        top = int(array.max())
+        array = array.astype(np.uint8 if top < 256 else np.uint16 if top < 65536
+                             else np.uint32, copy=False)
+    for name in names:
+        if isinstance(name, str) and name in doc.datasets:
+            store[name] = array
+
+
+def combined_sources(doc, name, size):
+    """The file number of every row of the combined x dataset ``name``
+    (0.5.9; set_combined_sources), or None when ``name`` is not a joined
+    trace or its length is not ``size``."""
+    given = getattr(doc, "combined_of", {}).get(name)
+    if given is None:
+        return None
+    if isinstance(given, OffloadedValue):              # moved to disk above the RAM limit
+        given = given.load()
+    given = np.asarray(given).reshape(-1)
+    return given if given.size == int(size) else None
+
+
+def combined_gap_positions(values, sources, line_of, log_of=None, break_lines=True):
+    """
+    Gap rows of a joined trace (0.5.9): ``values`` are its x values in the
+    gap rule's units (sorted; NaN allowed), ``sources`` the file of every
+    row.  Each file is measured on its own samples - ``line_of(piece)`` its
+    small-gap threshold, ``log_of(piece)`` its log-scale threshold (0: no
+    log test) - and covers the runs between its own gaps.  A step of the
+    joined trace is cut only when no single run of any file spans it and it
+    is longer than the larger threshold of the two files beside it (and,
+    with a log test, larger on a log scale too): the trace breaks where no
+    file has data, never inside a file's own sampling (a coarse sweep
+    joined with a fine one, files of different cadences).
+
+    Returns ``(positions, thresholds, pieces)``: the insertion indices as
+    vszh5_writer.gap_positions gives them (empty when ``break_lines`` is
+    off), each file's small-gap threshold and each file's values (for the
+    axis-break rule, which then sees the files as an overlay would).
+    Unsorted values give no positions.
+    """
+    values = np.asarray(values, dtype=float).reshape(-1)
+    sources = np.asarray(sources).reshape(-1)
+    empty = np.zeros(0, dtype=np.int64)
+    if sources.shape != values.shape:
+        return empty, [], [values]
+    pieces, thresholds, log_limits, starts, ends = [], {}, {}, [], []
+    for number in np.unique(sources):
+        piece = values[sources == number]
+        line = float(line_of(piece) or 0.0)
+        log_limit = float(log_of(piece) or 0.0) if log_of is not None else 0.0
+        pieces.append(piece)
+        thresholds[number], log_limits[number] = line, log_limit
+        real = piece[np.isfinite(piece)]
+        if not real.size:
+            continue
+        own = vszh5_writer.gap_positions(real, line)
+        if own.size and log_limit > 0.0:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                own = own[(np.log(real[own]) - np.log(real[own - 1])) > log_limit]
+        starts.append(real[np.concatenate(([0], own))])
+        ends.append(real[np.concatenate((own - 1, [real.size - 1]))])
+    lines = [thresholds[k] for k in sorted(thresholds)]
+    if not break_lines or values.size < 2 or not starts:
+        return empty, lines, pieces
+    steps = np.diff(values)
+    finite = np.isfinite(steps)
+    if np.any(steps[finite] < 0):
+        return empty, lines, pieces                    # not in order: no gaps defined
+    # The runs of every file merged into the stretches that have data.
+    run_a = np.concatenate(starts)
+    run_b = np.concatenate(ends)
+    by_start = np.argsort(run_a, kind="stable")
+    run_a, run_b = run_a[by_start], np.maximum.accumulate(run_b[by_start])
+    new = np.concatenate(([True], run_a[1:] > run_b[:-1]))
+    first = np.flatnonzero(new)
+    last = np.concatenate((first[1:] - 1, [run_a.size - 1]))
+    have_a, have_b = run_a[first], run_b[last]
+    candidates = np.flatnonzero(finite & (steps > 0))
+    left, right = values[candidates], values[candidates + 1]
+    where = np.searchsorted(have_a, left, side="right") - 1
+    covered = (where >= 0) & (right <= have_b[np.maximum(where, 0)])
+    candidates = candidates[~covered]
+    if not candidates.size:
+        return empty, lines, pieces
+    left_file, right_file = sources[candidates], sources[candidates + 1]
+    line = np.maximum([thresholds[k] for k in left_file], [thresholds[k] for k in right_file])
+    keep = (line > 0.0) & (steps[candidates] > line)
+    log_limit = np.maximum([log_limits[k] for k in left_file],
+                           [log_limits[k] for k in right_file])
+    if np.any(log_limit > 0.0):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_steps = np.log(values[candidates + 1]) - np.log(values[candidates])
+        keep &= (log_limit <= 0.0) | (log_steps > log_limit)
+    return (candidates[keep] + 1).astype(np.int64), lines, pieces
+
+
+def overlapping_ranges(xs):
+    """How many of the files' x ranges overlap an earlier one (0.5.9): the
+    combined trace interleaves their samples there.  ``xs``: x arrays."""
+    spans = []
+    for x in xs:
+        values = np.asarray(x, dtype=float).reshape(-1) if np.asarray(x).dtype.kind in "fiub" \
+            else np.empty(0)
+        values = values[np.isfinite(values)]
+        if values.size:
+            spans.append((float(values.min()), float(values.max())))
+    spans.sort()
+    count, highest = 0, None
+    for low, high in spans:
+        if highest is not None and low < highest:
+            count += 1
+        highest = high if highest is None else max(highest, high)
+    return count
+
+
+def move_pages_before(doc, pages, anchor):
+    """
+    Put ``pages`` (pages of ``doc``) just before the page ``anchor`` (0.5.9:
+    combined pages just above the overlays, in the project and the Plots
+    tab).  ``anchor`` None, or not a page of ``doc``, leaves the order as it
+    is.  The pages keep their own order.
+    """
+    root = doc.Root
+    children = root.children
+    if anchor is None or anchor not in children:
+        return
+    moving = [p for p in pages if p in children and p is not anchor]
+    if not moving:
+        return
+    rest = [c for c in children if c not in moving]
+    at = rest.index(anchor)
+    children[:] = rest[:at] + moving + rest[at:]
 
 
 # %% Time-axis clocks (0.5.6)
@@ -1502,6 +2342,16 @@ def local_zone_description(now=None):
 
 
 # %% Time axes: local ISO 8601, line breaks and axis breaks (0.5.0)
+#: (0.5.8) Smallest K of the small-gap rule (the K boxes start there too).
+MIN_GAP_K = 1.0
+
+
+def _finite_seconds(value):
+    """A fixed gap in seconds (0.5.8): finite and > 0, else 0.0 (not set)."""
+    seconds = float(value or 0.0)
+    return seconds if math.isfinite(seconds) and seconds > 0.0 else 0.0
+
+
 class TimeLayout(object):
     """
     Gap rule and gap options of every x axis (0.5.0 time axes; 0.5.3 any
@@ -1539,18 +2389,21 @@ class TimeLayout(object):
         """Store the gap settings (negative values are clamped to 0).
 
         k: small-gap factor - a trace's line breaks where its step dt exceeds
-        k x median(dt) of that trace.
+        k x median(dt) of that trace.  0.5.8: at least 1 (as the K boxes; a
+        K below 1 cut the line at ordinary steps); not a number = the default.
         n: large-gap factor - the x axis breaks where no trace has data for
         dt > n x the largest small-gap threshold; 0 disables axis breaks.
         manual_s / axis_manual_s: fixed small / large gap in seconds; > 0
-        overrides k / n (time axes).
+        overrides k / n (time axes).  0.5.8: not finite (inf, NaN) = 0.
         break_lines / break_axis / numeric: the 0.5.3 options (class text).
         clocks: the 0.5.6 time-axis clocks (time_clocks(); None = local only).
         """
-        self.k = float(k)
-        self.n = max(0.0, float(n))
-        self.manual_s = max(0.0, float(manual_s or 0.0))
-        self.axis_manual_s = max(0.0, float(axis_manual_s or 0.0))
+        k = float(vszh5_writer.GAP_K if k is None else k)
+        self.k = max(MIN_GAP_K, k) if math.isfinite(k) else float(vszh5_writer.GAP_K)
+        n = float(n or 0.0)
+        self.n = max(0.0, n) if math.isfinite(n) else 0.0
+        self.manual_s = _finite_seconds(manual_s)
+        self.axis_manual_s = _finite_seconds(axis_manual_s)
         self.break_lines = bool(break_lines)
         self.break_axis = bool(break_axis)
         self.numeric = bool(numeric)
@@ -1869,6 +2722,7 @@ def _layout_time_axis(doc, graph, axis):
     if not dated:
         clock = None                          # elapsed seconds: no clock
     local_names, union, thresholds = [], [], []
+    utc_union = []                                     # 0.5.8: UTC seconds of every trace
     for xy, x_name, y_name, kind in timed:
         values = np.asarray(doc.datasets[x_name][1]["data"], dtype=float)
         if kind == "mjd":
@@ -1884,8 +2738,19 @@ def _layout_time_axis(doc, graph, axis):
         else:
             utc, utc_name = values, x_name
         seconds = utc                                  # gap rule in seconds
-        threshold = vszh5_writer.gap_threshold(seconds, layout.k, layout.manual_s)
-        cut = vszh5_writer.gap_positions(seconds, threshold)
+        utc_union.append(utc)
+        files = combined_sources(doc, x_name, values.size)
+        if files is not None:
+            # 0.5.9: a combined-axis trace: cut where none of its files has
+            # data; the axis-break threshold is the largest of its files'
+            # (as on an overlay of the same files)
+            cut, file_lines, _pieces = combined_gap_positions(
+                seconds, files, lambda piece: vszh5_writer.gap_threshold(
+                    piece, layout.k, layout.manual_s))
+            threshold = max(file_lines) if file_lines else 0.0
+        else:
+            threshold = vszh5_writer.gap_threshold(seconds, layout.k, layout.manual_s)
+            cut = vszh5_writer.gap_positions(seconds, threshold)
         if not layout.break_lines:                     # 0.5.3: lines across gaps
             cut = cut[:0]
         thresholds.append(threshold)
@@ -1933,7 +2798,16 @@ def _layout_time_axis(doc, graph, axis):
     # the fixed large gap).
     pairs = []
     axis_threshold = layout.axis_threshold(max(thresholds) if thresholds else 0.0)
-    if axis_threshold > 0:
+    if axis_threshold > 0 and clock == "local":
+        # 0.5.8: found in UTC seconds and moved onto the local axis, so a
+        # daylight-saving change is neither a gap (spring forward: a 1-hour
+        # jump of the local clock) nor hides one (fall back: a 3-hour hole
+        # is 2 hours on the local clock); before, the local page was broken
+        # by the local steps and could differ from the UTC and MJD pages.
+        utc_all = np.concatenate(utc_union)
+        pairs = _clock_break_pairs(utc_all, np.concatenate(union),
+                                   vszh5_writer.axis_break_pairs(utc_all, axis_threshold))
+    elif axis_threshold > 0:
         pairs = vszh5_writer.axis_break_pairs(np.concatenate(union), axis_threshold)
     if pairs and clock == "mjd":
         # 0.5.6: found in UTC seconds (the same samples as the other
@@ -1966,6 +2840,46 @@ def _layout_time_axis(doc, graph, axis):
     axis.time_layout_key = (layout.key(), _clock_of(graph))
     _set_gap_note(graph, layout.describe())
     return True
+
+
+def _clock_break_pairs(utc_values, clock_values, utc_pairs,
+                       margin=vszh5_writer.GAP_AXIS_MARGIN):
+    """
+    Axis breaks found in UTC seconds, moved onto another clock's axis (0.5.8).
+
+    ``utc_values`` / ``clock_values``: the UTC seconds and the clock's value
+    (e.g. local Veusz seconds) of the same samples; ``utc_pairs``: the
+    vszh5_writer.axis_break_pairs of ``utc_values``.  Each break separates
+    the samples before a UTC gap from those after it; on the clock's axis it
+    runs from the latest clock value before the gap to the earliest after
+    it, shrunk by ``margin`` of that length at each end (the writer's rule).
+    Where the clock leaves no room (a fall-back hour folded into a short
+    gap) that break is left out: no clock value may be hidden.  Without a
+    daylight-saving change the result is the writer's own pairs of the
+    clock values.
+    """
+    utc = np.asarray(utc_values, dtype=float).ravel()
+    other = np.asarray(clock_values, dtype=float).ravel()
+    keep = np.isfinite(utc) & np.isfinite(other)
+    utc, other = utc[keep], other[keep]
+    if not utc_pairs or utc.size < 2:
+        return []
+    order = np.argsort(utc, kind="stable")
+    utc, other = utc[order], other[order]
+    before = np.maximum.accumulate(other)              # latest clock value so far
+    after = np.minimum.accumulate(other[::-1])[::-1]   # earliest clock value from here
+    pairs = []
+    for start, stop in utc_pairs:
+        last = int(np.searchsorted(utc, start, side="right")) - 1
+        first = int(np.searchsorted(utc, stop, side="left"))
+        if last < 0 or first >= utc.size or first <= last:
+            continue
+        low, high = float(before[last]), float(after[first])
+        if high <= low:
+            continue                                   # no room on this clock
+        pad = float(margin) * (high - low)
+        pairs.append((low + pad, high - pad))
+    return pairs
 
 
 def _set_gap_note(graph, note):
@@ -2023,8 +2937,17 @@ def _layout_numeric_axis(doc, graph, axis):
         plans.append((xy, x_name, y_name, values))
     series = []
     for xy, x_name, y_name, values in plans:
-        series.append(values)
-        cut = vszh5_writer.rule_gap_positions(values, rule)
+        files = combined_sources(doc, x_name, values.size)
+        if files is not None:
+            # 0.5.9: a combined-axis trace: cut where none of its files has
+            # data; the axis breaks see its files as an overlay would
+            cut, _lines, pieces = combined_gap_positions(
+                values, files, rule.line_threshold, rule.log_threshold,
+                break_lines=rule.break_lines)
+            series.extend(pieces)
+        else:
+            series.append(values)
+            cut = vszh5_writer.rule_gap_positions(values, rule)
         plot_x, plot_y = x_name, y_name
         y_entry = doc.datasets.get(y_name) if isinstance(y_name, str) else None
         if (cut.size and y_entry is not None and y_entry[0] == "1d"
@@ -3347,6 +4270,7 @@ class NativeDocument:
         self.utc_of = {}              # 0.5.1: the reverse map, local copy -> UTC name
         self.local_zones = {}         # 0.5.6: local dataset name -> its zone (None = computer)
         self.mjd_of = {}              # 0.5.6: UTC date dataset -> exact MJD (name or array)
+        self.combined_of = {}         # 0.5.9: combined x dataset -> file of every row
         self._clock_copies = {}       # 0.5.6: UTC / MJD plot copy -> its type tag
         # 0.5.7: offloading to disk above the RAM limit (see "Offloading")
         self.ram_limit_percent = None  # None = the program's limit (ram_limit())
@@ -3388,6 +4312,7 @@ class NativeDocument:
         self.utc_of = {}
         self.local_zones = {}                      # 0.5.6
         self.mjd_of = {}
+        self.combined_of = {}                      # 0.5.9
         self._clock_copies = {}
         if hasattr(self, "_plot_copies"):
             self._plot_copies = {}
@@ -3425,9 +4350,10 @@ class NativeDocument:
 
     def offload(self, percent=None, limit=None):
         """
-        Move every dataset held in RAM (OFFLOAD_MIN_BYTES or more) and the
-        exact MJD arrays to this project's offload file (0.5.7); returns how
-        many datasets moved.
+        Move every dataset held in RAM (OFFLOAD_MIN_BYTES or more), the
+        exact MJD arrays and (0.5.9) the file numbers of the combined x
+        datasets to this project's offload file (0.5.7); returns how many
+        datasets / arrays moved.
 
         Called by _ram_guard when this computer's RAM use reaches the limit
         (``percent`` / ``limit`` are logged); can be called directly (tests,
@@ -3449,7 +4375,13 @@ class NativeDocument:
         mjd_keys = [k for k, v in self.mjd_of.items()
                     if isinstance(v, np.ndarray) and v.nbytes >= OFFLOAD_MIN_BYTES]
         total += sum(self.mjd_of[k].nbytes for k in mjd_keys)
-        if not names and not mjd_keys:
+        # 0.5.9: the file numbers of the combined x datasets (one array may
+        # serve several names: it is written once)
+        source_keys = [k for k, v in getattr(self, "combined_of", {}).items()
+                       if isinstance(v, np.ndarray) and v.nbytes >= OFFLOAD_MIN_BYTES]
+        total += sum(v.nbytes for v in {id(self.combined_of[k]): self.combined_of[k]
+                                        for k in source_keys}.values())
+        if not names and not mjd_keys and not source_keys:
             return 0
         free = store.free_bytes()
         if free is not None and free < total * 1.2 + 64e6:
@@ -3465,6 +4397,15 @@ class NativeDocument:
             array = self.mjd_of[key]
             offset, length = store.put(array)
             self.mjd_of[key] = OffloadedValue(store, offset, length, int(array.nbytes))
+        written = {}
+        for key in source_keys:
+            array = self.combined_of[key]
+            if id(array) not in written:
+                offset, length = store.put(array)
+                written[id(array)] = (array, OffloadedValue(store, offset, length,
+                                                            int(array.nbytes)))
+            self.combined_of[key] = written[id(array)][1]
+        written = None
         parts = array = None                       # the last references to the RAM copies
         now = time.monotonic()
         if now - self._heap_trimmed >= _HEAP_TRIM_S:     # freed numpy buffers back to the OS
@@ -3474,13 +4415,13 @@ class NativeDocument:
             why = "RAM in use on this computer %.1f %% >= limit %g %%" % (percent, limit)
         else:
             why = "offload asked for"
-        self._offload_totals[0] += len(names) + len(mjd_keys)
+        self._offload_totals[0] += len(names) + len(mjd_keys) + len(source_keys)
         self._offload_totals[1] += total
         self._notes.add("%s: %d dataset(s), %.1f MB of plot data moved to disk so far (%s, "
                         "%.1f MB)" % (why, self._offload_totals[0], self._offload_totals[1] / 1e6,
                                       store.path, store.size / 1e6),
                         self.offload_log, self.offload_messages)
-        return len(names) + len(mjd_keys)
+        return len(names) + len(mjd_keys) + len(source_keys)
 
     def _offload_note(self, text):
         """Log ``text`` at once (warnings) and keep it in offload_messages."""

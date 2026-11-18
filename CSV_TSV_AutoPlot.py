@@ -49,6 +49,176 @@ Compatible with: Python 3.8+ (pandas >= 1.3, qtpy with PySide6 or PyQt5)
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 6.2.0: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * NEW CombinedPlot page (graph CombinedGraph), just above
+#                OverlayPlot: each Y column of every file joined on X
+#                ("Combined_<X>": date X as UTC with a local display copy;
+#                "Combined_<Y>"), stable-sorted; only files whose X is of the
+#                first file's kind are joined (the others are logged); the
+#                files' rows go to the gap layout (cut only where no file has
+#                data).
+#              * create_overlay_and_individual_plots(kinds): the overlay page
+#                and the per-file pages only when ticked.
+#              * Pages to draw in Plot Configuration; a change redraws the
+#                plots 0.5 s later.  Batch: --pages.
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        _default_parser_is_exact: True when pandas' default C float parser reads _PARSER_PROBE exactly.
+        scan_number_forms: (long digit run, exponent notation) found in the file (6.1.3); read in 4 MiB blocks, a run across two blocks included; (True, True) when the file c...
+        CSVProcessingConfig (class): How the files are read.
+        PlotConfig (class): Plot formatting.
+        LoadedFile (class): One delimited file in memory.
+        exact_cell_texts: {column: every cell as text} for the numeric ``columns`` whose float64 ``values`` cannot hold the cells exactly (6.1.3): integers beyond +/-2**53,...
+        delimiter_from_text: GUI text -> delimiter ('\\t' typed as two characters means a tab).
+        detect_delimiter: Most frequent of , TAB ; | in the first non-comment lines.
+        read_file_metadata: The lines before the header line.
+        load_csv_file: (LoadedFile or None, status message) of one file.
+        load_files: Load files in parallel threads; (files in input order, messages).
+        get_common_columns: Columns in ALL files (intersection).
+        get_all_columns: Columns of ANY file (union).
+        _naive_zone: Zone of time stamps written without one, when they are local time.
+        column_values: ('numeric' | 'date' | 'text', values) of one column, rows kept.
+        VeuszPlotter (class): Builds the project: one overlay page and one page per file.
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "CSV/TSV AutoPlot"
+        APP_VERSION = "6.2.0"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        VEUSZ_EPOCH: Veusz datetime zero (UTC)
+        MIN_PARSED_FRACTION: a column is numeric / date when >= 80 % of its cells parse
+        _PARSER_PROBE: numbers the inexact pandas parsers read wrongly (checked once at import)
+        PANDAS_NEEDS_ROUND_TRIP: True when pandas' default C parser is not exact (pandas 2.0.3 / 3.0.5 measured; 3.1.1 is exact)
+        _FORM_TABLE: byte map d = digit or point, e = e/E, s = sign, x = other (scan_number_forms)
+        COLOURS: trace colours (Tableau 10, hex, the same in Veusz and the Plots tab)
+# %%%%% More Info
+    Run:  python CSV_TSV_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python CSV_TSV_AutoPlot.py a.csv --x Time --y V --output out.vszh5
+    Date-time columns are stored as Veusz date-times (UTC) and drawn in local
+    ISO 8601 (VSZH5_DISPLAY_TZ overrides the computer's zone); the stamps as
+    written are kept as text.  Numbers are read exactly (PANDAS_NEEDS_ROUND_TRIP).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Pages to draw (all ticked): Per file - each file's own pages;
+    Combined axis - the same quantity of every file joined end to end and
+    sorted on x (one trace spanning every file, cut only where no file has
+    data), just above the overlays; Overlay - the files' traces on one graph.
+    Batch: --pages per_file,combined,overlay (any of them).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 6.1.9: Gap options enforced.
+Date: 2026-11-17
+#              * The Plots tab follows every gap option and clock changed after
+#                a run (GapOptionsBox.follow; replaces _time_axes_changed,
+#                which followed the clocks only); the rule in force and any
+#                unreadable fixed-gap text are logged at the run and the save;
+#                the texts are checked while typed; --gap-* checked at the
+#                command line.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        _default_parser_is_exact: True when pandas' default C float parser reads _PARSER_PROBE exactly.
+        scan_number_forms: (long digit run, exponent notation) found in the file (6.1.3); read in 4 MiB blocks, a run across two blocks included; (True, True) when the file c...
+        CSVProcessingConfig (class): How the files are read.
+        PlotConfig (class): Plot formatting.
+        LoadedFile (class): One delimited file in memory.
+        exact_cell_texts: {column: every cell as text} for the numeric ``columns`` whose float64 ``values`` cannot hold the cells exactly (6.1.3): integers beyond +/-2**53,...
+        delimiter_from_text: GUI text -> delimiter ('\\t' typed as two characters means a tab).
+        detect_delimiter: Most frequent of , TAB ; | in the first non-comment lines.
+        read_file_metadata: The lines before the header line.
+        load_csv_file: (LoadedFile or None, status message) of one file.
+        load_files: Load files in parallel threads; (files in input order, messages).
+        get_common_columns: Columns in ALL files (intersection).
+        get_all_columns: Columns of ANY file (union).
+        _naive_zone: Zone of time stamps written without one, when they are local time.
+        column_values: ('numeric' | 'date' | 'text', values) of one column, rows kept.
+        VeuszPlotter (class): Builds the project: one overlay page and one page per file.
+        _build_gui_classes: Import Qt and define the GUI classes on first use.
+        main: Command line entry point; returns the exit code.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        APP_NAME = "CSV/TSV AutoPlot"
+        APP_VERSION = "6.1.9"
+        APP_DESCRIPTION: one-line description (command line help, About box)
+        VEUSZ_EPOCH: Veusz datetime zero (UTC)
+        MIN_PARSED_FRACTION: a column is numeric / date when >= 80 % of its cells parse
+        _PARSER_PROBE: numbers the inexact pandas parsers read wrongly (checked once at import)
+        PANDAS_NEEDS_ROUND_TRIP: True when pandas' default C parser is not exact (pandas 2.0.3 / 3.0.5 measured; 3.1.1 is exact)
+        _FORM_TABLE: byte map d = digit or point, e = e/E, s = sign, x = other (scan_number_forms)
+        COLOURS: trace colours (Tableau 10, hex, the same in Veusz and the Plots tab)
+# %%%%% More Info
+    Run:  python CSV_TSV_AutoPlot.py [files]   (GUI; View menu: light/dark)
+          python CSV_TSV_AutoPlot.py a.csv --x Time --y V --output out.vszh5
+    Date-time columns are stored as Veusz date-times (UTC) and drawn in local
+    ISO 8601 (VSZH5_DISPLAY_TZ overrides the computer's zone); the stamps as
+    written are kept as text.  Numbers are read exactly (PANDAS_NEEDS_ROUND_TRIP).
+    Every dataset carries the Veusz tags source_<file> and type_<kind>, traces
+    are named after their data, and values float64 cannot hold keep their text
+    (*_exact_text).
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    Batch gap flags: --gap-k K --gap-small 90s --gap-n N --gap-large 12h
+    --no-line-breaks --no-axis-breaks --no-numeric-gaps.
+    Clear removes the files, their data, the project (nothing cleared is
+    saved later) and the plots, and gives the memory back to the operating
+    system (release_memory).  Without Clear, added files join the data already
+    read: only new or changed files are read, the project is rebuilt from all.
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 6.1.8: RAM limit - plot data offloaded to disk above it.
 Date: 2026-11-17
 #              * RamLimitBox under the gap and time-axis options; offload
@@ -559,7 +729,7 @@ from _autoplot_native import (float_loses_text, tag_data,  # noqa: E402
                               trace_widget_name)
 
 APP_NAME = "CSV/TSV AutoPlot"
-APP_VERSION = "6.1.8"
+APP_VERSION = "6.2.0"
 __version__ = APP_VERSION
 APP_DESCRIPTION = ("Delimited text files (CSV, TSV, custom) to native Veusz .vszh5 "
                    "projects, with interactive pyqtgraph plots.")
@@ -953,10 +1123,21 @@ class VeuszPlotter:
 
     def create_overlay_and_individual_plots(self, files: Sequence[LoadedFile], x_column: str,
                                             y_columns: Sequence[str],
-                                            plot_config: Optional[PlotConfig] = None) -> int:
-        """Build every page; returns the number of traces."""
+                                            plot_config: Optional[PlotConfig] = None,
+                                            kinds: Optional[Sequence[str]] = None) -> int:
+        """Build every page; returns the number of overlay traces.
+
+        6.2.0: ``kinds`` (_autoplot_native.page_kinds; default all) chooses
+        the pages: "per_file" (Page_<file>), "combined" (CombinedPlot: each Y
+        column of every file joined end to end and sorted on X, so the axes
+        span the full range; just above the overlay) and "overlay"
+        (OverlayPlot).  The datasets of every file are stored either way.
+        """
+        from _autoplot_native import page_kinds, move_pages_before
+        kinds = page_kinds(kinds)
         config = plot_config or PlotConfig()
         doc = self.doc
+        first_page = len(doc.Root.children)
         notes = ["File Metadata:", "=" * 60, ""]
         for loaded in files:
             notes += ["File: %s" % loaded.path, "-" * 60]
@@ -969,6 +1150,7 @@ class VeuszPlotter:
         overlay_page = doc.Root.Add("page", name="OverlayPlot")
         overlay_page.notes.val = notes_text
         overlay = overlay_page.Add("graph", name="OverlayGraph")
+        joined: List[Tuple[LoadedFile, str, np.ndarray, Dict[str, np.ndarray]]] = []  # 6.2.0
         overlay_kind: Optional[str] = None
         used_stems: Set[str] = set()
         per_file: List[Tuple[LoadedFile, str, str, str, List[Tuple[str, str]]]] = []
@@ -1036,6 +1218,7 @@ class VeuszPlotter:
                                      "their text is kept in %s_exact_text"
                                      % (loaded.name, y_col, y_name))
             per_file.append((loaded, stem, x_kind, x_name, traces))
+            joined.append((loaded, x_kind, x_values, y_values_of))           # 6.2.0
             if overlay_kind is None:
                 overlay_kind = x_kind
             for y_col, y_name in traces:
@@ -1049,7 +1232,18 @@ class VeuszPlotter:
                 n_traces += 1
         self._configure_graph(overlay, "Overlay: %s" % config.title, config,
                               overlay_kind == "date")
-        for loaded, stem, x_kind, x_name, traces in per_file:
+        if "overlay" not in kinds:                      # 6.2.0: overlay not asked for
+            overlay_page.Remove()
+            n_traces = 0
+        combined_page = None
+        if "combined" in kinds and joined:
+            combined_page = self._combined_page(joined, x_column, y_columns, config,
+                                                line_style, marker, notes_text)
+        if "per_file" not in kinds:                     # 6.2.0: no page per file
+            per_file_pages: List[Tuple[LoadedFile, str, str, str, List[Tuple[str, str]]]] = []
+        else:
+            per_file_pages = per_file
+        for loaded, stem, x_kind, x_name, traces in per_file_pages:
             page = doc.Root.Add("page", name="Page_%s" % stem)
             page.notes.val = header_notes(
                 loaded.metadata or ["(No metadata lines before header)"], source=loaded.path,
@@ -1060,9 +1254,96 @@ class VeuszPlotter:
                                       yData=y_name),
                             COLOURS[index % len(COLOURS)], line_style, marker, config, y_col)
             self._configure_graph(graph, stem, config, x_kind == "date")
-        self.log_message("Created %d pages: 1 overlay + %d file pages, %d overlay trace(s)"
-                         % (1 + len(per_file), len(per_file), n_traces))
+        # 6.2.0: the combined page just above the overlay (here the first
+        # page: the overlay comes before the file pages)
+        if combined_page is not None:
+            built = doc.Root.children[first_page:]
+            anchor = next((p for p in built if p is not combined_page), None)
+            move_pages_before(doc, [combined_page], anchor)
+        n_pages = len(doc.Root.children) - first_page
+        self.log_message("Created %d pages: %s overlay, %s combined, %d file pages, %d overlay "
+                         "trace(s)" % (n_pages, "1" if "overlay" in kinds else "no",
+                                       "1" if combined_page is not None else "no",
+                                       len(per_file_pages), n_traces))
         return n_traces
+
+    def _combined_page(self, joined: Sequence[Tuple[LoadedFile, str, np.ndarray,
+                                                    Dict[str, np.ndarray]]],
+                       x_column: str, y_columns: Sequence[str], config: PlotConfig,
+                       line_style: str, marker: str, notes_text: str) -> Optional[Any]:
+        """
+        The combined-axis page (6.2.0): CombinedPlot / CombinedGraph, one trace
+        per Y column holding that column of every file joined end to end and
+        sorted on X (stable: equal X keep their file order; _autoplot_native
+        concatenate_on_x), so the axes span the full range of all files.
+
+        Only files whose X column is of the first file's kind (dates or
+        numbers) are joined; the others are named in the log.  A Y column's
+        trace joins the files that have it; files with the same set of Y
+        columns share one joined X dataset ("Combined_<X>", "Combined_<X>_2",
+        ...; date X: UTC with a local display copy).  The gap options lay the
+        joined traces out like any other.  Nothing is rounded.
+        """
+        from _autoplot_native import concatenate_on_x, overlapping_ranges, set_combined_sources
+        doc = self.doc
+        kind = joined[0][1]
+        use = [entry for entry in joined if entry[1] == kind]
+        for loaded, other, _x, _y in joined:
+            if other != kind:
+                self.log_message("Combined axis: %s has a %s X column, the others %s - not "
+                                 "joined" % (loaded.name, other, kind))
+        x_sets: Dict[Tuple[int, ...], str] = {}
+        traces: List[Tuple[str, str, str]] = []
+        for y_col in y_columns:
+            members = tuple(i for i, entry in enumerate(use) if y_col in entry[3])
+            if not members:
+                continue
+            xs = [use[i][2] for i in members]
+            x_all, y_all, row_files = concatenate_on_x(xs, [use[i][3][y_col] for i in members],
+                                                   with_sources=True)
+            if members not in x_sets:
+                name = "Combined_%s" % x_column
+                if x_sets:
+                    name = "%s_%d" % (name, len(x_sets) + 1)
+                x_sets[members] = name
+                if kind == "date":
+                    doc.SetDataDateTime(name, x_all)
+                    local = doc.SetDataLocalTime(name)
+                    tag_data(doc, [name], "Combined", (x_column, "x_data", "time_utc",
+                                                       "combined"))
+                    tag_data(doc, [local], "Combined", (x_column, "x_data", "time_local",
+                                                        "combined"))
+                else:
+                    doc.SetData(name, x_all)
+                    tag_data(doc, [name], "Combined", (x_column, "x_data", "combined"))
+                # 6.2.0: the file of every row - the gap layout cuts the joined
+                # trace only where none of the files has data
+                set_combined_sources(doc, [name], row_files)
+                overlap = overlapping_ranges(xs)
+                if overlap:
+                    self.log_message("Combined axis: the X ranges of %d file(s) overlap an "
+                                     "earlier file - their samples interleave" % overlap)
+            y_name = "Combined_%s" % y_col
+            doc.SetData(y_name, y_all)
+            tag_data(doc, [y_name], "Combined", (y_col, "y_data", "combined"))
+            traces.append((y_col, y_name, x_sets[members]))
+        if not traces:
+            return None
+        page = doc.Root.Add("page", name="CombinedPlot")
+        names = [entry[0].name for entry in use]
+        page.notes.val = "\n".join(
+            ["Combined axis: every selected Y column of %d file(s) joined end to end and "
+             "sorted on %s (stable: equal values keep their file order)." % (len(use), x_column),
+             "Files, in order (rows): " + ", ".join(
+                 "%s (%d)" % (n, len(e[2])) for n, e in zip(names, use)), "", notes_text])
+        graph = page.Add("graph", name="CombinedGraph")
+        for index, (y_col, y_name, x_name) in enumerate(traces):
+            self._style(graph.Add("xy", name=trace_widget_name(y_name), xData=x_name,
+                                  yData=y_name),
+                        COLOURS[index % len(COLOURS)], line_style, marker, config, y_col)
+        self._configure_graph(graph, "Combined axis: %s (%d files)" % (config.title, len(use)),
+                              config, kind == "date")
+        return page
 
     @staticmethod
     def _style(xy: Any, colour: str, line_style: str, marker: str, config: PlotConfig,
@@ -1131,7 +1412,7 @@ def _build_gui_classes():
     Keeps the batch mode (``--output``) free of Qt; returns (QApplication,
     CSVAutoPlotMainWindow).
     """
-    from qtpy.QtCore import Qt
+    from qtpy.QtCore import Qt, QTimer
     from qtpy.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
                                 QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                 QLineEdit, QListWidget, QMainWindow, QMessageBox,
@@ -1277,6 +1558,21 @@ def _build_gui_classes():
 
             plot_group = QGroupBox("Plot Configuration")
             plot_form = QFormLayout(plot_group)
+            # 6.2.0: Per file / Combined axis / Overlay pages; a box changed
+            # after a run draws the project again with them
+            self.page_types_box = suite.PageTypesBox(notes={
+                "per_file": "CSV/TSV: one page per file ('Page_<file>'), the Y columns "
+                            "against that file's X column.",
+                "combined": "CSV/TSV: 'CombinedPlot', each Y column of every file joined "
+                            "and sorted on X (files whose X are dates, or numbers, like the "
+                            "first file's).",
+                "overlay": "CSV/TSV: 'OverlayPlot', every file's Y columns stacked."})
+            plot_form.addRow(self.page_types_box)
+            self._pages_timer = QTimer(self)
+            self._pages_timer.setSingleShot(True)
+            self._pages_timer.setInterval(500)
+            self._pages_timer.timeout.connect(self._page_kinds_changed)
+            self.page_types_box.kinds_changed.connect(lambda _k: self._pages_timer.start())
             self.title_input = QLineEdit(self.plot_config.title)
             self.title_input.setToolTip("Title written on every page.")
             plot_form.addRow("Plot Title:", self.title_input)
@@ -1312,7 +1608,12 @@ def _build_gui_classes():
             main_layout.addWidget(plot_group)
             # 6.1.4: gaps in the x data (time stamps or numbers): line / axis breaks
             self.gap_box = suite.GapOptionsBox(time_axes=True)      # 6.1.7: + Local / UTC / MJD
-            self.gap_box.time_axes_box.clocks_changed.connect(self._time_axes_changed)
+            # 6.1.9: any gap option or clock changed after a run redraws the
+            # Plots tab with it (GapOptionsBox.follow; was the clocks only)
+            self.gap_box.follow(
+                lambda: self.plotter.doc if self.plotter is not None else None,
+                lambda: self.plot_panel, self.log_message,
+                ready=lambda: self.save_btn.isEnabled())
             main_layout.addWidget(self.gap_box)
             # 6.1.8: offload plot data to disk above this computer's RAM limit
             self.ram_box = suite.RamLimitBox()
@@ -1561,7 +1862,11 @@ def _build_gui_classes():
                 QMessageBox.warning(self, APP_NAME, "Select one or more Y columns.")
                 return
             config = self._plot_config()
-            config.gaps = self.gap_box.time_layout()        # 6.1.4
+            config.gaps = self.gap_box.time_layout(self.log_message)   # 6.1.4; 6.1.9: logged
+            from _autoplot_native import describe_page_kinds
+            kinds = self.page_types_box.kinds()                         # 6.2.0
+            self._built_page_kinds = kinds
+            self.log_message(describe_page_kinds(kinds))
             # 6.1.5: the previous project and its plots go before the new one is
             # built (it holds every loaded file again)
             if self.plot_panel is not None:
@@ -1575,7 +1880,8 @@ def _build_gui_classes():
             plotter.doc.offload_log = self.log_message           # 6.1.8
             try:
                 n_traces = plotter.create_overlay_and_individual_plots(
-                    self._files(), self.x_column_combo.currentText(), y_columns, config)
+                    self._files(), self.x_column_combo.currentText(), y_columns, config,
+                    kinds=kinds)
             except Exception as exc:
                 QMessageBox.critical(self, APP_NAME, "Plot generation failed:\n%s" % exc)
                 self.log_message("Plot generation error: %s" % exc)
@@ -1593,21 +1899,14 @@ def _build_gui_classes():
                 except Exception as exc:
                     self.log_message("Plots tab could not draw the project: %s" % exc)
 
-        def _time_axes_changed(self, _clocks: Any) -> None:
-            """6.1.7: a time-axis box changed - a processed project gets the
-            new clocks and the Plots tab is drawn again (nothing during a run;
-            the save reads the boxes itself)."""
-            plotter = getattr(self, "plotter", None)
-            if plotter is None or self.plot_panel is None or not self.save_btn.isEnabled():
+        def _page_kinds_changed(self) -> None:
+            """6.2.0: a page box changed after a run - draw the project again with
+            the ticked kinds (nothing before the first run)."""
+            if self.plotter is None or not self.save_btn.isEnabled():
                 return
-            try:
-                plotter.doc.time_layout = self.gap_box.time_layout()
-                pages = self.plot_panel.set_document(plotter.doc)
-            except Exception as exc:
-                self.log_message("Plots tab could not redraw for the time axes: %s" % exc)
+            if getattr(self, "_built_page_kinds", None) == self.page_types_box.kinds():
                 return
-            self.log_message("%s Plots tab: %d page(s)."
-                             % (plotter.doc.time_layout.describe_clocks(), pages))
+            self.generate_plots()
 
         def save_to_veusz(self) -> None:
             """Ask for a file name and save the .vszh5 project."""
@@ -1619,7 +1918,7 @@ def _build_gui_classes():
             if not path:
                 return
             try:
-                self.plotter.doc.time_layout = self.gap_box.time_layout()   # 6.1.4
+                self.plotter.doc.time_layout = self.gap_box.time_layout(self.log_message)
                 self.last_saved = self.plotter.save_project(path, self.logging_box.isChecked())
             except Exception as exc:
                 QMessageBox.critical(self, APP_NAME, "Error saving:\n%s" % exc)
@@ -1674,9 +1973,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="date-times written without a zone are UTC or local time")
     parser.add_argument("--version", action="version", version="%s %s" % (APP_NAME, APP_VERSION))
     from _autoplot_native import (add_gap_arguments, add_memory_arguments, layout_from_args,
-                                  ram_limit_from_args)
+                                  ram_limit_from_args, add_page_arguments, page_kinds_from_args)
     add_gap_arguments(parser, time_axes=True)  # 6.1.4: --gap-k ...; 6.1.7: --time-axes
     add_memory_arguments(parser)               # 6.1.8: --ram-limit
+    add_page_arguments(parser)                 # 6.2.0: --pages per_file,combined,overlay
     args = parser.parse_args(argv)
     ram_limit_from_args(args)
     if args.output:
@@ -1691,7 +1991,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         plotter.create_overlay_and_individual_plots(
             files, args.x, args.y, PlotConfig(title=args.title, x_label=args.x,
                                               y_label=", ".join(args.y),
-                                              naive_time=args.naive_time))
+                                              naive_time=args.naive_time),
+            kinds=page_kinds_from_args(args))
         print("\n".join(plotter.messages))
         print("Wrote", plotter.save_project(args.output))
         return 0

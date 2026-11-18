@@ -1,8 +1,14 @@
 # FitsAutoPlot suite — requirements and tested environments
 
-Revision 0.2.6 (2026-11-17). Applies to the 2026-11-17 suite 0.4.7 (FITS / Franks AutoPlot 0.4.6,
-R&S 1.1.7, ATR 0.2.7, CSV/TSV 6.1.8, Touchstone 0.7.6, writer 0.0.31, `_autoplot_native` 0.5.7,
-`_autoplot_common` 0.4.7, `_autoplot_pyqtgraph` 0.3.6, `_suite_gui` 0.1.5, plugins 0.3.6). 0.2.6:
+Revision 0.2.8 (2026-11-17). Applies to the 2026-11-17 suite 0.4.9 (FITS / Franks AutoPlot 0.4.8,
+R&S 1.2.0, ATR 0.3.0, CSV/TSV 6.2.0, Touchstone 0.8.0, writer 0.0.31, `_autoplot_native` 0.5.9,
+`_autoplot_common` 0.4.9, `_autoplot_pyqtgraph` 0.3.8, `_suite_gui` 0.1.7, plugins 0.3.8). 0.2.8:
+the Per file / Combined axis / Overlay pages need no new packages (the files are joined and
+stable-sorted with numpy: `concatenate`, `argsort(kind="stable")`, `searchsorted`); tested on
+Python 3.12.3 only, as asked (206 unit tests). 0.2.7:
+the gap options enforced need no new packages (gap texts are read exactly with the standard
+library's `fractions`; the command-line checks use `argparse`); tested on Python 3.12.3 only, as
+asked (184 unit tests). 0.2.6:
 the RAM limit (offload to disk) needs no new packages: the computer's RAM use is read with psutil
 when installed, else `/proc/meminfo` (Linux) or `GlobalMemoryStatusEx` (Windows, `ctypes`); the
 offload file is written with the standard library (`pickle`, `tempfile`); tested on Python 3.12.3

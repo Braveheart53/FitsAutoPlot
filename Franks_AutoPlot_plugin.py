@@ -26,6 +26,99 @@ Author Business Phone: +1 (304) 456-2216
 --------
 Utilizing Semantic Schema as External Release.Internal Release.Working version
 
+# %%%% 0.3.8: Pages to draw: Per file, Combined axis, Overlay.
+Date: 2026-11-17
+#              Operator request 2026-11-17: Per file, Combined axis and
+#              Overlay pages in every program; a combined page looks like a
+#              file's own page but holds the same quantity of every file
+#              joined end to end (the full range on each axis, not overlaid),
+#              listed just above the overlays; gaps and the RAM limit apply.
+#              * Pages to draw (PageTypesBox) replaces "Combine files only";
+#                NEW field "pages" (default per_file,combined,overlay); the old
+#                combined_only field still unticks Per file.  The combined
+#                page comes from Franks_AutoPlot.push_combined_franks_pages.
+#              Checked (Python 3.12.3): tests/test_page_kinds.py (22 tests)
+#              and the whole suite; real files of every program with every
+#              page-kind set, in RAM and offloaded (the files identical):
+#              each combined trace equals the files' traces joined and
+#              stable-sorted, the pages are in order (combined just above the
+#              overlays) and the gaps are the same in the project, the Plots
+#              tab and the saved file; with Combined axis off the projects are
+#              the 0.4.8 ones (every dataset and script line).
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal qtpy dialog used by the plugin entry point.
+        FranksAutoPlotPlugin (class): Veusz menu entry for native ASCII project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Veusz 3.x's exec loader supplies its selected filename as local "plugin".
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> Franks AutoPlot (Batch).  Writes a
+    separate native .vszh5 project; the host Veusz document is not changed.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    The data of a run are released when the
+    project is written (release_memory).
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Pages to draw (all ticked): Per file - each file's own pages;
+    Combined axis - the same quantity of every file joined end to end and
+    sorted on x (one trace spanning every file, cut only where no file has
+    data), just above the overlays; Overlay - the files' traces on one graph.
+    Plugin field: pages (per_file,combined,overlay).
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
+# %%%% 0.3.7: Gap options enforced.
+Date: 2026-11-17
+#              * As FITS AutoPlot plugin 0.3.7: checked gap texts, the hours box
+#                when the small-gap text cannot be read, exact seconds.
+#              Checked (Python 3.12.3): tests/test_gap_enforcement.py (20 tests)
+#              and the whole suite; every option set before a run and changed
+#              after it, in CSV/TSV (a file with known gaps, 64 cases at the
+#              boundaries), FITS (GBT tack, UWBR Vacuum, 30-day 1PPS), ATR,
+#              R&S and Touchstone: the project, the Plots tab and the saved
+#              file agree; real files without a daylight-saving change give
+#              the same .vszh5 as 0.4.7 (every dataset and script line).
+# %%%%% Function Descriptions
+        _PluginBatchDialog (class): Modal qtpy dialog used by the plugin entry point.
+        FranksAutoPlotPlugin (class): Veusz menu entry for native ASCII project export, not host-document editing.
+# %%%%% Variable Descriptions
+    Define all utilized variables
+        _HOST_PLUGIN_PATH: Veusz 3.x's exec loader supplies its selected filename as local "plugin".
+        _THIS_DIR: folder of this plugin file (the Veusz host's plugin path when loaded by Veusz)
+# %%%%% More Info
+    Veusz: Tools -> NRAO / FitsAutoPlot -> Franks AutoPlot (Batch).  Writes a
+    separate native .vszh5 project; the host Veusz document is not changed.
+    Gaps (every plot generator): a small gap (step > K x median step, or a
+    fixed time) can break the line / trace; a large gap (no trace has data for
+    > n x the small gap, or a fixed time) can break the x axis; each is a check
+    box (GUI) or flag (--no-line-breaks, --no-axis-breaks), and "also on x axes
+    that are not time" (--no-numeric-gaps to turn off) applies the rule to sorted
+    frequency / angle / index axes with a log-scale test, so a log sweep is not
+    cut.  Rule: vszh5_writer 0.0.30 GapRule; notes state the rule in use.
+    The data of a run are released when the
+    project is written (release_memory).
+    Time axes: Local time (default), UTC and MJD tick boxes; one set of pages
+    per ticked clock ("<page>_utc", "<page>_mjd").  Local time is the zone of
+    the computer running the program, read for every sample (DST-aware); the
+    axis label names it (VSZH5_DISPLAY_TZ overrides it).
+    RAM limit: when this computer's RAM in use (all programs) reaches the
+    share set under the options (default 80 %, 0 = never), the plot data go to
+    a temporary pickle file and the .vszh5 is written from it on Save.
+    Requirements, optional packages and the tested Python 3.8 / 3.12
+    environments: REQUIREMENTS.md (mamba: environment-py38.yml,
+    environment-py312.yml).  Release notes: RELEASE_suite-2026-11-09.md.
 # %%%% 0.3.6: RAM limit - plot data offloaded to disk above it.
 Date: 2026-11-17
 #              * Dialog: the RamLimitBox (shared value, default 80 %); offload
@@ -453,7 +546,7 @@ Date: 2026-05-16
 # %% Imports
 from __future__ import annotations
 
-__version__ = "0.3.6"          # Semantic Versioning: see the Revisions entries above
+__version__ = "0.3.8"          # Semantic Versioning: see the Revisions entries above
 
 # %%% IMPORTS - Standard library
 
@@ -505,7 +598,8 @@ from _autoplot_common import (                      # noqa: E402
     is_gpu_available, enable_gpu, gpu_backend_name,
     gpu_enabled, gpu_tooltip, gpu_usage_text, reset_gpu_usage,
     # v0.0.19: string gap parser
-    parse_gap_string, GAP_STRING_HELP,
+    parse_gap_string, GAP_STRING_HELP, check_gap_seconds,   # 0.3.7
+    parse_gap_seconds,
     begin_native_plugin_export, finish_native_plugin_export,
 )
 try:
@@ -679,6 +773,14 @@ class _PluginBatchDialog(QDialog):
         # gap), so they stay enabled while either break is on
         self.gap_lines_cb.toggled.connect(self._enable_gap_values)
         self.gap_axis_cb.toggled.connect(self._enable_gap_values)
+        # 0.3.7: the fixed-gap texts are checked while typed (red frame and the
+        # reason when an entry cannot be read)
+        try:
+            from _suite_gui import watch_gap_text
+            watch_gap_text(self.gap_abs_str, "small gap")
+            watch_gap_text(self.gap_axis_str, "large gap")
+        except Exception:  # pragma: no cover - _suite_gui missing
+            pass
 
         # v0.0.19: hide legend keys on every page.
         self.hide_keys_cb = QCheckBox("Hide legend keys on all pages")
@@ -688,15 +790,12 @@ class _PluginBatchDialog(QDialog):
         self.hide_keys_cb.setChecked(False)
         root.addWidget(self.hide_keys_cb)
 
-        self.combined_only_cb = QCheckBox(
-            "Combined (overlay) plots only -- skip per-file pages"
-        )
-        self.combined_only_cb.setToolTip(
-            "Build only the overlay pages (all files on one graph per unit)"
-            " and no page per file - much faster to open for hundreds of "
-            "files.")
-        self.combined_only_cb.setChecked(False)
-        root.addWidget(self.combined_only_cb)
+        # 0.3.8: Per file / Combined axis / Overlay pages (replaces the
+        # "Combined (overlay) plots only -- skip per-file pages" box)
+        from _suite_gui import PageTypesBox
+        self.page_types_box = PageTypesBox(notes={
+            "combined": "Franks: a page 'Combined', every file of the same layout joined and sorted on MJD."})
+        root.addWidget(self.page_types_box)
 
         # --- Datetime-duplicate plots (v0.0.11) ---------------------------
         # v0.0.11: datetime-duplicate toggle.
@@ -932,6 +1031,11 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
             vzp.FieldFloat("gap_axis_n",
                            descr="Large gap n (x-axis break: dt > n x small gap; 0 = none)",
                            default=100.0),
+            # 0.3.8: page kinds
+            vzp.FieldText("pages",
+                          descr="Pages: per_file, combined (combined axis), overlay - comma "
+                                "separated, or all",
+                          default="per_file,combined,overlay"),
             vzp.FieldText("gap_axis_string",
                           descr="Large gap fixed, e.g. 12h or 3d (overrides n)",
                           default=""),
@@ -1007,7 +1111,16 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                                                        ("utc", "time_utc", False),
                                                        ("mjd", "time_mjd", False))
                  if bool(fields.get(_key, _default))])
-        dlg.combined_only_cb.setChecked(bool(fields.get("combined_only") or False))
+        # 0.3.8: page kinds from the "pages" field; the old "combined_only"
+        # field still unticks Per file
+        from _autoplot_native import page_kinds, describe_page_kinds
+        try:
+            _kinds = page_kinds(fields.get("pages") or None)
+        except ValueError:
+            _kinds = page_kinds(None)
+        if fields.get("combined_only"):
+            _kinds = tuple(k for k in _kinds if k != "per_file")
+        dlg.page_types_box.set_kinds(_kinds)
         # v0.0.11: pre-seed the datetime-duplicate checkbox
         dlg.datetime_dup_cb.setChecked(
             bool(fields.get("datetime_duplicate") or False)
@@ -1105,6 +1218,7 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
         # v0.0.16: spinbox is in HOURS -- convert to MJD-days.
         gap_absolute_hours = float(dlg.gap_abs_spin.value())
         gap_absolute = gap_absolute_hours / 24.0
+        gap_absolute_s = gap_absolute_hours * 3600.0      # 0.3.7: exact seconds for the layout
         # v0.0.19: free-form gap string overrides spinbox when set.
         gap_string_text = ""
         try:
@@ -1112,11 +1226,21 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
         except Exception:
             gap_string_text = ""
         if gap_string_text:
-            gap_absolute = parse_gap_string(gap_string_text,
-                                            log_cb=dlg.append_log)
+            # 0.3.7: an entry that cannot be read is logged and the hours box
+            # is used (before, it gave 0 and the hours box was ignored too)
+            _seconds, _problem = check_gap_seconds(gap_string_text)
+            if _problem is None:
+                gap_absolute, gap_absolute_s = _seconds / 86400.0, _seconds
+            else:
+                dlg.append_log("  The fixed small gap %r is not used: %s; %s." % (
+                    gap_string_text, _problem,
+                    "the hours box (%r h) is used" % gap_absolute_hours
+                    if gap_absolute_hours > 0 else "the K rule applies"))
         # v0.0.19: hide-legend-keys checkbox
         hide_keys = bool(dlg.hide_keys_cb.isChecked())
-        plot_individual = not bool(dlg.combined_only_cb.isChecked())
+        kinds = dlg.page_types_box.kinds()                 # 0.3.8
+        dlg.append_log(describe_page_kinds(kinds))
+        plot_individual = "per_file" in kinds
         # v0.0.11: datetime-duplicate toggle
         datetime_duplicate = bool(dlg.datetime_dup_cb.isChecked())
         # v0.0.15: density-pct + dt page-variant toggles.
@@ -1174,8 +1298,24 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
                 })
             dlg.parse_progress.setValue(idx)
             app.processEvents()
+        # 0.3.8: the combined-axis page (every file of the same layout joined
+        # on one MJD axis), just above the overlay pages
+        if "combined" in kinds and file_records:
+            try:
+                from Franks_AutoPlot import push_combined_franks_pages
+                ordered = [(p, d) for p, d in sorted(results.items(), key=lambda item: (
+                    os.path.basename(str(item[0])), str(item[0]))) if not isinstance(d, Exception)]
+                push_combined_franks_pages(
+                    interface, ordered, log_cb=dlg.append_log, emit_datestr=emit_datestr,
+                    gap_k=gap_k, gap_absolute=gap_absolute,
+                    datetime_duplicate=datetime_duplicate,
+                    datetime_label_density_pct=datetime_label_density_pct,
+                    datetime_emit_numeric_dt=datetime_emit_numeric_dt,
+                    datetime_emit_text_dt=datetime_emit_text_dt, hide_keys=hide_keys)
+            except Exception as exc:
+                dlg.append_log("  Combined-axis page failed: %s" % exc)
         # Build cross-file column-name overlay pages on the host document.
-        if file_records:
+        if file_records and "overlay" in kinds:
             try:
                 build_unit_overlay_pages_franks(
                     interface, file_records,
@@ -1204,8 +1344,9 @@ class FranksAutoPlotPlugin(vzp.ToolsPlugin if vzp is not None else object):
         from _autoplot_native import TimeLayout
         _axis_text = dlg.gap_axis_str.text().strip()
         interface.time_layout = TimeLayout(
-            k=gap_k, n=float(dlg.gap_axis_spin.value()), manual_s=gap_absolute * 86400.0,
-            axis_manual_s=(parse_gap_string(_axis_text, log_cb=dlg.append_log) * 86400.0
+            k=gap_k, n=float(dlg.gap_axis_spin.value()), manual_s=gap_absolute_s,
+            axis_manual_s=(parse_gap_seconds(_axis_text, log_cb=dlg.append_log,
+                                             what="large gap")
                            if _axis_text else 0.0),
             break_lines=dlg.gap_lines_cb.isChecked(), break_axis=dlg.gap_axis_cb.isChecked(),
             numeric=dlg.gap_numeric_cb.isChecked(),
